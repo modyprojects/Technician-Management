@@ -1,0 +1,1198 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>ניהול טכנאים · דמו חי</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;600;700&family=Assistant:wght@400;600;700&display=swap">
+<style>
+/* Layout: demo bar on top; technician = phone frame + guide; office = right sidebar + work area. Single light look matching the mockups. */
+:root{
+  --ink:#18212B; --ink2:#263241; --ink3:#2C3846; --muted:#5E6A78; --soft:#8A9AAB;
+  --line:#DDE3E9; --line2:#EEF1F4; --bg:#F2F4F6; --card:#FFFFFF; --tint:#F7F8FA;
+  --accent:#155E75; --accent-d:#0E4457; --accent-l:#EAF3F6; --on-dark:#FFFFFF; --on-dark2:#AEB8C4; --on-dark3:#C9D1DA;
+  --warn-bg:#FFF6E5; --warn-bd:#E8B44A; --warn-fg:#7A4B00; --warn-ink:#3D2600;
+  --danger:#B42318; --danger-bg:#FDECEA; --danger-fg:#8A1C12;
+  --s-new:#1F5FA8; --s-new-bg:#DCEBFA; --s-new-fg:#123B6B;
+  --s-go:#C79A00; --s-go-bg:#FFF2CC; --s-go-fg:#5C4300;
+  --s-work:#6A3FB5; --s-work-bg:#ECE3FA; --s-work-fg:#3D2370;
+  --s-done:#2E7D32; --s-done-bg:#DDF3E2; --s-done-fg:#1B4D1F;
+  --s-cont:#C2570C; --s-cont-bg:#FDE7D3; --s-cont-fg:#6B2E00;
+  --s-cancel:#4A5563; --s-cancel-bg:#E4E7EB; --s-cancel-fg:#2C3540;
+  --t-y:#2E7D32; --t-e:#C62828; --t-s:#1F5FA8;
+  --display:'Rubik',system-ui,sans-serif; --body:'Assistant','Segoe UI',system-ui,sans-serif;
+  color-scheme:light;
+}
+html,body{height:100%}
+body{display:flex;flex-direction:column}
+#stagewrap{flex:1;min-height:0;display:flex;justify-content:center;overflow:hidden}
+#stage{container-type:inline-size;container-name:stage;width:100%;height:100%;overflow:auto;background:var(--bg)}
+body[data-device=tablet] #stagewrap,body[data-device=phone] #stagewrap{background:#C9D1DA;padding-block:14px}
+body[data-device=tablet] #stage{width:min(820px,100%);border:10px solid #0F161E;border-radius:24px}
+body[data-device=phone] #stage{width:min(390px,100%);border:10px solid #0F161E;border-radius:34px}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;direction:rtl}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0}
+.num{font-variant-numeric:tabular-nums}
+input,textarea,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid #C9D1DA;border-radius:8px;padding:8px 10px}
+textarea{resize:vertical}
+
+/* demo bar */
+.demobar{flex:none;background:#0F161E;color:var(--on-dark);padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:30}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:#0F161E}
+.demobar .brand{font-family:var(--display);font-weight:600;font-size:15px;white-space:nowrap}
+.demobar .brand small{font-family:var(--body);color:var(--on-dark2);font-weight:400;margin-inline-start:6px}
+.roles{display:flex;background:#1C2632;border-radius:10px;padding:3px;gap:2px;flex-wrap:wrap}
+.roles button{border:0;background:transparent;color:var(--on-dark3);padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px}
+.roles button.on{background:var(--card);color:var(--ink)}
+.dbtn{border:1px solid #33414F;background:#1C2632;color:var(--on-dark);border-radius:8px;padding:6px 12px;font-weight:700;font-size:13px;white-space:nowrap}
+.dbtn:hover{background:#263241}
+.dbtn .cnt{background:var(--s-cont);border-radius:999px;padding:0 6px;font-size:11px;margin-inline-start:4px}
+.spacer{flex:1}
+
+/* shared bits */
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+.sub{font-size:13px;color:var(--muted)}
+.btn{border:1px solid #C9D1DA;background:var(--card);border-radius:8px;padding:8px 14px;font-weight:700;font-size:14px;white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-dark)}
+.btn.pri:hover{background:var(--accent-d)}
+.btn.dng{color:var(--danger);border-color:#E3A29B}
+.btn:disabled{opacity:.45}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 13px;font-weight:700;font-size:13px}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--on-dark)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle}
+.tog{width:40px;height:23px;border-radius:999px;background:#C9D1DA;border:0;position:relative;padding:0;flex:none}
+.tog::after{content:"";position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;background:var(--card);transition:right .15s}
+.tog.on{background:var(--accent)}
+.tog.on::after{right:20px}
+.tog:disabled{opacity:.6}
+.scrollx{overflow-x:auto;max-width:100%}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:right;font-size:12px;color:var(--muted);font-weight:700;padding:9px 10px;background:var(--tint);border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--tint)}
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--on-dark);padding:12px 18px;border-radius:12px;font-weight:600;font-size:14px;z-index:90;max-width:min(560px,calc(100% - 32px));box-shadow:0 6px 24px rgba(0,0,0,.25);text-align:center}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+
+/* technician */
+.techwrap{display:flex;gap:28px;justify-content:center;align-items:flex-start;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.phone{width:390px;max-width:100%;height:min(800px,calc(100vh - 110px));min-height:560px;background:var(--bg);border:10px solid #0F161E;border-radius:38px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(15,22,30,.25);flex:none}
+.ph-status{height:30px;background:var(--ink);color:var(--on-dark);display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:700;flex:none}
+.ph-head{background:var(--ink);color:var(--on-dark);padding:4px 16px 14px;flex:none}
+.ph-head a,.ph-back{color:var(--on-dark3);font-size:14px;background:none;border:0;padding:4px 0}
+.ph-main{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.ph-foot{padding:12px 14px 16px;background:var(--card);border-top:1px solid var(--line);flex:none}
+.ph-nav{height:62px;background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:center;flex:none}
+.ph-nav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:700;color:var(--muted)}
+.ph-nav button.on{color:var(--accent)}
+.bigbtn{width:100%;height:54px;border-radius:12px;border:0;font-weight:700;font-size:17px;color:var(--on-dark);display:flex;align-items:center;justify-content:center;gap:8px}
+.bigbtn:disabled{background:#E4E7EB!important;color:var(--muted)!important}
+.stat{flex:1;background:var(--ink2);border-radius:10px;padding:8px 10px}
+.stat b{font-family:var(--display);font-size:20px;display:block}
+.stat span{font-size:12px;color:var(--on-dark2)}
+button.stat{border:1px solid #3A4A5B;color:var(--on-dark);text-align:right;display:block}
+button.stat:hover{background:var(--ink3)}
+.li{display:flex;gap:10px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line2);width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:right}
+.li:last-child{border-bottom:0}
+.li .t{font-family:var(--display);font-weight:600;font-size:15px;width:46px;flex:none}
+.act{height:54px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:700;background:var(--card);border:1px solid #C9D1DA}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.row:last-child{border-bottom:0}
+.row .k{color:var(--muted);white-space:nowrap}
+.media{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.thumb{aspect-ratio:1;max-width:100%;border-radius:10px;background:linear-gradient(135deg,#B9C6D2,#8A9AAB);position:relative;overflow:hidden;background-size:cover;background-position:center}
+.thumb.vid::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--on-dark);font-size:18px}
+.addm{aspect-ratio:1;max-width:100%;border:2px dashed #C9D1DA;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:700;flex-direction:column;gap:2px;background:none;position:relative}
+.addm input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.seg{display:flex;background:#E4E7EB;border-radius:10px;padding:3px}
+.seg button{flex:1;border:0;background:transparent;padding:7px;border-radius:8px;font-weight:700;color:var(--muted);font-size:14px}
+.seg button.on{background:var(--card);color:var(--ink)}
+.res{height:84px;border-radius:14px;border:2px solid #C9D1DA;background:var(--card);font-size:18px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.res small{font-size:12px;font-weight:600;opacity:.8}
+.reason{border-radius:10px;padding:10px 12px;font-weight:600;text-align:right;border:1px solid var(--line);background:var(--card);width:100%;font-size:14px}
+.reason.on{border:2px solid var(--s-cont);background:var(--s-cont-bg);color:var(--s-cont-fg)}
+.sig{width:100%;height:150px;border:1px solid #C9D1DA;border-radius:10px;background:var(--card);touch-action:none;display:block}
+.guide{max-width:340px;display:flex;flex-direction:column;gap:12px;padding-top:8px}
+.guide ol{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:8px;font-size:15px;line-height:1.55}
+
+/* office */
+.office{display:flex;min-height:100%}
+.side{width:220px;flex:none;background:var(--ink);padding:16px 10px;display:flex;flex-direction:column;gap:2px}
+.side .logo{font-family:var(--display);color:var(--on-dark);font-size:17px;padding:0 8px 14px}
+.side .nav{display:flex;flex-direction:column;gap:2px}
+.side .nav button{border:0;background:none;color:var(--on-dark3);text-align:right;padding:10px 12px;border-radius:8px;font-weight:600;font-size:15px}
+.side .nav button.on{background:var(--ink2);color:var(--on-dark)}
+.side .me{margin-top:auto;border-top:1px solid var(--ink3);padding:12px 6px 0;display:flex;gap:10px;align-items:center;color:var(--on-dark)}
+.side .me .av{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.side .me small{display:block;color:var(--on-dark2);font-size:12px}
+.work{flex:1;min-width:0;padding-block:22px;padding-inline:26px;display:flex;flex-direction:column;gap:16px}
+.ptitle{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.ptitle h1{font-size:24px}
+.ptitle .sub{margin-top:4px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs button{border:0;background:none;padding:10px 16px;font-weight:700;font-size:15px;color:var(--muted);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.grid{display:grid;gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{padding:14px 16px}
+.kpi .l{font-size:13px;color:var(--muted)}
+.kpi .v{font-family:var(--display);font-size:28px;font-weight:600;line-height:1.15}
+.kpi .d{font-size:12px;font-weight:700;margin-top:3px;color:var(--muted)}
+.sec{padding:16px 18px;min-width:0}
+.sec h2{font-size:16px;margin-bottom:12px}
+.bar{display:grid;grid-template-columns:150px 1fr 44px;gap:10px;align-items:center;font-size:14px;margin:8px 0}
+.track{height:14px;background:var(--line2);border-radius:4px;overflow:hidden;display:flex}
+.track span{display:block;height:100%}
+.cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.cal{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.calhead,.calbody{display:grid}
+.calhead{border-bottom:1px solid var(--line);font-weight:700;font-size:14px}
+.calhead>div{padding:10px 12px;border-right:1px solid var(--line2)}
+.calcol{position:relative;border-right:1px solid var(--line2)}
+.hr{position:absolute;right:0;left:0;border-top:1px solid var(--line2)}
+.ev{position:absolute;right:5px;left:5px;border-radius:8px;padding:5px 8px;font-size:12px;line-height:1.3;overflow:hidden;text-align:right;border:0;border-right:4px solid}
+.ev b{font-size:13px;display:block}
+.ev:hover{filter:brightness(.97);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.drawer-bg{position:fixed;inset:0;background:rgba(15,22,30,.4);z-index:60;display:flex;justify-content:flex-end}
+.drawer{width:min(440px,100%);height:100%;background:var(--card);display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,0,0,.25);padding-bottom:env(safe-area-inset-bottom,0px)}
+.drawer .dh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.drawer .db{padding:16px 20px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:14px}
+.drawer .df{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+.xbtn{border:0;background:var(--bg);border-radius:8px;width:36px;height:36px;font-size:17px;flex:none}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:7px 12px;font-size:14px}
+.kv>span:nth-child(odd){color:var(--muted)}
+.note{background:var(--accent-l);border:1px solid #B7D4DE;border-radius:10px;padding:10px 14px;font-size:13px;color:var(--accent-d);line-height:1.5}
+.modal-bg{position:fixed;inset:0;background:rgba(15,22,30,.5);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding-block:30px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.modal{background:var(--card);border-radius:14px;width:min(860px,100%);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.ol-top{background:#0F6CBD;color:var(--on-dark);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mailbox{display:grid;grid-template-columns:260px 1fr;min-height:420px}
+.mailitem{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid var(--line2);background:none;padding:10px 14px}
+.mailitem.on{background:var(--accent-l)}
+.vis{border-right:4px solid;padding:14px 16px}
+
+@container stage (max-width:900px){
+  .office{flex-direction:column}
+  .side{width:auto;flex-direction:row;align-items:center;flex-wrap:wrap;padding:8px 12px}
+  .side .logo{padding:0 4px}
+  .side .nav{flex-direction:row;flex-wrap:wrap}
+  .side .nav button{padding:8px 10px;font-size:14px}
+  .side .me{display:none}
+  .work{padding-inline:16px;padding-block:16px}
+  .cols2,.cols3{grid-template-columns:minmax(0,1fr)}
+  .bar{grid-template-columns:110px 1fr 40px}
+  .mailbox{grid-template-columns:minmax(0,1fr)}
+  /* technician: real app, no phone mockup */
+  .guide{display:none}
+  .techwrap{padding:0;height:100%;display:block}
+  .phone{width:100%;max-width:none;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
+  .ph-status{display:none}
+  .ph-head{padding-top:max(12px,env(safe-area-inset-top,0px))}
+  .ph-nav{height:auto;padding-block:8px max(8px,env(safe-area-inset-bottom,0px))}
+}
+@container stage (min-width:600px) and (max-width:900px){
+  /* tablet: wider technician layout, bigger touch targets */
+  .ph-main{padding:18px 24px;gap:14px}
+  .ph-main>*{width:100%;max-width:760px;margin-inline:auto}
+  .ph-head,.ph-foot{padding-inline:24px}
+  .ph-head h1{font-size:26px!important}
+  .li{padding-block:14px}
+  .bigbtn{height:60px;font-size:19px;max-width:760px;margin-inline:auto}
+  .act{height:62px;font-size:14px}
+  .media{grid-template-columns:repeat(6,1fr)}
+}
+@container stage (max-width:520px){
+  td,th{white-space:nowrap;padding:9px 8px}
+  .scrollx{-webkit-overflow-scrolling:touch}
+  .ptitle h1{font-size:21px}
+  .kpi .v{font-size:24px}
+  .tabs button{padding:8px 10px;font-size:14px}
+  .bar{grid-template-columns:90px 1fr 34px;font-size:13px}
+}
+@media (max-width:700px){
+  .demobar{gap:6px 8px;padding-block:6px}
+  .demobar .brand small{display:none}
+  .roles button{padding:5px 8px;font-size:12px}
+  .dbtn{padding:5px 8px;font-size:12px}
+  #devices{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="demobar">
+  <span class="brand">ניהול טכנאים <small>דמו חי · גרסה 2 · נתונים בדויים</small></span>
+  <div class="roles" id="roles"></div>
+  <div class="roles" id="devices" aria-label="תצוגה לפי מכשיר"></div>
+  <span class="spacer"></span>
+  <button class="dbtn" data-act="outlookOpen" data-track="דמו · שליחת זימון מ-Outlook">📅 שליחת זימון מ-Outlook</button>
+  <button class="dbtn" data-act="mailsOpen" data-track="דמו · מיילים שנשלחו">✉ מיילים שנשלחו<span class="cnt" id="mailcnt">0</span></button>
+  <button class="dbtn" data-act="reset">איפוס</button>
+</div>
+<div id="stagewrap"><div id="stage"><div id="app" style="min-height:100%"></div></div></div>
+<div id="overlay"></div>
+<div id="toast" class="toast" hidden></div>
+<script>
+// ===== helpers =====
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const fromMin = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+const D = s => new Date(s + 'T12:00:00');
+const iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const addDays = (s, n) => { const d = D(s); d.setDate(d.getDate() + n); return iso(d); };
+const ddmm = s => s.slice(8) + '.' + s.slice(5, 7);
+const DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+const DAYS_S = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'];
+const dayName = s => DAYS[D(s).getDay()];
+const isWork = s => D(s).getDay() <= 4;
+const nowHM = () => { const d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const TODAY = '2026-10-21';
+const rnd = (seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(20261021);
+const pick = a => a[Math.floor(rnd() * a.length)];
+
+const ST = {
+  new:    { l: 'שובצה',      c: 'var(--s-new)',    bg: 'var(--s-new-bg)',    fg: 'var(--s-new-fg)' },
+  go:     { l: 'בדרך',       c: 'var(--s-go)',     bg: 'var(--s-go-bg)',     fg: 'var(--s-go-fg)' },
+  work:   { l: 'בטיפול',     c: 'var(--s-work)',   bg: 'var(--s-work-bg)',   fg: 'var(--s-work-fg)' },
+  done:   { l: 'טופל',       c: 'var(--s-done)',   bg: 'var(--s-done-bg)',   fg: 'var(--s-done-fg)' },
+  cont:   { l: 'המשך טיפול', c: 'var(--s-cont)',   bg: 'var(--s-cont-bg)',   fg: 'var(--s-cont-fg)' },
+  cancel: { l: 'בוטלה',      c: 'var(--s-cancel)', bg: 'var(--s-cancel-bg)', fg: 'var(--s-cancel-fg)' }
+};
+const pill = (s, extra = '') => `<span class="pill" style="background:${ST[s].bg};color:${ST[s].fg}">${ST[s].l}${extra}</span>`;
+const OPEN = ['new', 'go', 'work'];
+
+// ===== reference data =====
+const TECHS = [
+  { id: 'y', name: 'יורם',  color: 'var(--t-y)', phone: '050-000-0001', email: 'yoram@example.co.il' },
+  { id: 'e', name: 'אדי',   color: 'var(--t-e)', phone: '050-000-0002', email: 'edi@example.co.il' },
+  { id: 's', name: 'שמואל', color: 'var(--t-s)', phone: '050-000-0003', email: 'shmuel@example.co.il' }
+];
+const tech = id => TECHS.find(t => t.id === id);
+const PLACES = [
+  { name: 'מרלוג', type: 'מרכז לוגיסטי', addr: 'הרכבת 12, אזור תעשייה', phone: '03-000-1000', hours: 'א׳–ה׳ 07:00–16:00', on: true },
+  { name: 'סניף בני ברק', type: 'סניף', addr: 'ז׳בוטינסקי 100, בני ברק', phone: '03-000-2000', hours: 'א׳–ה׳ 08:00–19:00', on: true },
+  { name: 'סניף ראשון לציון', type: 'סניף', addr: 'רוטשילד 50, ראשון לציון', phone: '03-000-3000', hours: 'א׳–ה׳ 08:00–19:00', on: true }
+];
+const PRODUCTS = [
+  { sku: 'BT-1120', name: 'ברז אמבטיה רב-דרך', brand: 'אקווה-ליין', sup: 'מ.ס. יבוא', w: 5, issues: ['המפצל לא מעביר', 'טפטוף מהפיה'] },
+  { sku: 'KT-2041', name: 'ברז מטבח נשלף', brand: 'אקווה-ליין', sup: 'מ.ס. יבוא', w: 4, issues: ['טפטוף', 'הנשלף לא חוזר למקום'] },
+  { sku: 'WC-300',  name: 'מיכל הדחה סמוי', brand: 'נובה', sup: 'גל-טק סחר', w: 3, issues: ['ההדחה לא נעצרת', 'נזילה לאסלה'] },
+  { sku: 'SH-510',  name: 'מערכת מקלחת תרמוסטטית', brand: 'טרה-סאן', sup: 'א.ר. אינסטלציה', w: 2, issues: ['המים לא מתחממים'] },
+  { sku: 'KT-1800', name: 'ברז מטבח פרח', brand: 'נובה', sup: 'גל-טק סחר', w: 2, issues: ['ידית רופפת'] },
+  { sku: 'BS-220',  name: 'כיור אמבטיה + סיפון', brand: 'פלורה', sup: 'מ.ס. יבוא', w: 1, issues: ['נזילה מהסיפון'] }
+];
+const prod = sku => PRODUCTS.find(p => p.sku === sku);
+const REASONS = [
+  { name: 'ממתין לחלקי חילוף', on: true, w: 8 },
+  { name: 'נדרש ביקור נוסף', on: true, w: 4 },
+  { name: 'נדרשת בדיקת מתקין', on: true, w: 3 },
+  { name: 'הזמנת מוצר חדש', on: true, w: 2 },
+  { name: 'לקוח לא נמצא', on: true, w: 1 }
+];
+const USERS = [
+  { name: 'משתמש יוצר', email: 'admin@example.co.il', role: 'creator' },
+  { name: 'דורון', email: 'doron@example.co.il', role: 'mgr' },
+  { name: 'שיראל', email: 'shirel@example.co.il', role: 'cs' },
+  { name: 'נציגה 2', email: 'rep2@example.co.il', role: 'cs' }
+];
+const ROLE = {
+  tech:    { l: 'טכנאי · יורם', short: 'טכנאי', who: 'יורם' },
+  cs:      { l: 'שירות לקוחות · שיראל', short: 'שירות לקוחות', who: 'שיראל', bg: 'var(--s-work)' },
+  mgr:     { l: 'מנהל · דורון', short: 'מנהל', who: 'דורון', bg: 'var(--accent)' },
+  creator: { l: 'יוצר', short: 'יוצר', who: 'משתמש יוצר', bg: 'var(--ink)' }
+};
+const PERMS = [
+  ['cal', 'יומן טכנאים'], ['calls', 'קריאות – צפייה וחיפוש'], ['card', 'כרטיס קריאה – תמונות, הקלטות, חתימה'],
+  ['cancel', 'ביטול קריאה'], ['dashGen', 'דשבורד · כללי'], ['dashTech', 'דשבורד · טכנאים'], ['dashProd', 'דשבורד · מוצרים וספקים'],
+  ['export', 'ייצוא ל-Excel'], ['settings', 'הגדרות'], ['usage', 'מדדי שימוש']
+];
+const TEMPLATE = [
+  ['מספר פנייה', 'req', true], ['מספר משימה', 'task', true], ['נציגה מטפלת', 'rep', true], ['שם לקוח', 'customer', true],
+  ['טלפון', 'phone', true], ['טלפון נוסף', 'phone2', false], ['עיר', 'city', true], ['רחוב ומספר', 'street', true],
+  ['בניין', 'building', false], ['קומה', 'floor', false], ['דירה', 'apt', false], ['הערות הגעה', 'arrival', false],
+  ['סוג קריאה', 'type', true], ['מוצר', 'product', true], ['מק"ט', 'sku', true], ['תיאור התקלה', 'desc', true],
+  ['באחריות', 'warranty', true], ['לאסוף לפני הביקור', 'collect', false], ['לאסוף מ', 'collectFrom', false], ['הערות לטכנאי', 'techNote', false]
+];
+
+const BASE_REASONS = REASONS.map(r => ({ ...r }));
+// ===== state =====
+let S;
+function freshState() {
+  REASONS.splice(0, REASONS.length, ...BASE_REASONS.map(r => ({ ...r })));
+  return {
+    role: 'tech', techView: 'home', techSel: null, techCal: 'day', techCalDate: TODAY,
+    officeView: 'cal', callSel: null, calDate: TODAY, calFilter: 'all', drawer: null,
+    q: '', fStatus: 'all', fTech: 'all', dashTab: 'gen', setTab: 'users',
+    collected: {}, close: { choice: null, reason: null, signer: '', ink: false, sig: null },
+    rec: null, overlay: null, mailSel: null, confirmCancel: false,
+    perms: {
+      mgr: { cal: 1, calls: 1, card: 1, cancel: 1, dashGen: 1, dashTech: 1, dashProd: 1, export: 1, settings: 0, usage: 0 },
+      cs:  { cal: 1, calls: 1, card: 1, cancel: 0, dashGen: 0, dashTech: 0, dashProd: 0, export: 0, settings: 0, usage: 0 }
+    },
+    mailCfg: { done: { rep: 1, box: 'service@example.co.il', mgr: 0, media: 1, rec: 1 }, cont: { rep: 1, box: 'service@example.co.il', mgr: 1, media: 1, rec: 1 }, unparsed: { rep: 1, box: 0 }, techNew: 1, techCancel: 1, techCollect: 1 },
+    required: Object.fromEntries(TEMPLATE.map(t => [t[1], t[2]])),
+    reasonsOn: Object.fromEntries(REASONS.map(r => [r.name, true])),
+    fixedText: 'קריאת השירות טופלה לשביעות רצון הלקוח',
+    mails: [], track: {}, logins: { tech: 1, cs: 0, mgr: 0, creator: 0 }, hist: { tech: [], cs: [], mgr: [], creator: [] },
+    notifs: [
+      { id: 4, kind: 'collect', title: 'תזכורת: מה לאסוף היום', sub: '3 פריטים מ-3 מקומות: מרלוג, סניף ראשון לציון, סניף בני ברק', time: 'היום 07:00', read: false },
+      { id: 3, kind: 'new', title: 'קריאה חדשה שובצה לך', sub: 'דניאל רז · נס ציונה · חמישי 22.10 · 13:00', time: 'אתמול 17:05', req: '48252', n: 1, read: false },
+      { id: 2, kind: 'new', title: 'קריאה חדשה שובצה לך', sub: 'מרים אלון · רחובות · חמישי 22.10 · 09:00', time: 'אתמול 16:40', req: '48251', n: 1, read: false },
+      { id: 1, kind: 'follow', title: 'נקבע ביקור המשך', sub: 'אבי כהן · נס ציונה · היום 11:30 · ביקור 2', time: 'אתמול 15:10', req: '48205', n: 2, read: true }
+    ], notifSeq: 5,
+    calls: seedCalls()
+  };
+}
+
+// ===== seed calls =====
+function seedCalls() {
+  const calls = [];
+  const FIRST = ['דנה','משה','רונית','אבי','שרה','יוסי','מיכל','דוד','נועה','גיל','רינה','אלון','מרים','חיים','ליאת','עדי','רון','תמר','שלומית','אורי','הילה','בני','קרן','עמית'];
+  const LAST = ['לוי','כהן','מזרחי','פרץ','ביטון','דהן','אברהם','פרידמן','אזולאי','שושן','רוזן','גל','חדד','נחום','ברק','אוחיון','שלום','עמר','מלכה','סויסה'];
+  const CITIES = [['רחובות','הרצל'],['נס ציונה','הבנים'],['ראשון לציון','רוטשילד'],['חולון','סוקולוב'],['בת ים','בלפור'],['יבנה','הנשיא'],['לוד','הרצל'],['רמלה','ויצמן'],['מודיעין','עמק דותן'],['שוהם','התאנה']];
+  const wpick = arr => { const tot = arr.reduce((a, x) => a + x.w, 0); let r = rnd() * tot; for (const x of arr) { r -= x.w; if (r <= 0) return x; } return arr[0]; };
+  let req = 47800;
+  // historical: Oct 1 – Oct 20
+  for (let d = '2026-10-01'; d <= '2026-10-20'; d = addDays(d, 1)) {
+    if (!isWork(d)) continue;
+    for (const t of TECHS) {
+      const n = 3 + Math.floor(rnd() * 3);
+      let start = 8 * 60;
+      for (let i = 0; i < n; i++) {
+        const p = wpick(PRODUCTS); const [city, st] = pick(CITIES);
+        const travel = 20 + Math.floor(rnd() * 22) + (t.id === 'e' ? 6 : 0);
+        const treat = 30 + Math.floor(rnd() * 32) + (t.id === 'e' ? 5 : 0);
+        const arrive = start + 15; const end = arrive + treat;
+        const contP = p.sku === 'BT-1120' ? .5 : p.sku === 'WC-300' ? .42 : .2;
+        const cont = rnd() < contP;
+        calls.push({
+          req: String(req++), customer: pick(FIRST) + ' ' + pick(LAST), phone: '05' + Math.floor(rnd() * 9) + '-000-' + pad(Math.floor(rnd() * 99)) + pad(Math.floor(rnd() * 99)),
+          city, street: st + ' ' + (1 + Math.floor(rnd() * 80)), building: '', floor: String(Math.floor(rnd() * 6)), apt: String(1 + Math.floor(rnd() * 20)), arrival: '',
+          type: rnd() < .85 ? 'תיקון' : 'התקנה', sku: p.sku, desc: pick(p.issues), warranty: rnd() < .8 ? 'כן' : 'לא', rep: rnd() < .8 ? 'שיראל' : 'נציגה 2',
+          visits: [{ n: 1, task: 1, tech: t.id, date: d, start: fromMin(start), end: fromMin(start + 90), status: cont ? 'cont' : 'done',
+            departAt: fromMin(arrive - travel), arriveAt: fromMin(arrive), endAt: fromMin(end), reason: cont ? wpick(REASONS).name : null,
+            summary: cont ? 'נדרש המשך טיפול, הלקוח עודכן.' : 'בוצע תיקון, נבדק ותקין.', rec: rnd() < .55 ? 20 + Math.floor(rnd() * 60) : 0,
+            media: [{ t: 'img' }, ...(rnd() < .3 ? [{ t: 'vid' }] : [])], signer: cont ? null : 'הלקוח' }]
+        });
+        start += 105 + Math.floor(rnd() * 20);
+      }
+    }
+  }
+  // close most old follow-ups with a second visit (keeps a few open)
+  calls.filter(c => c.visits[0].status === 'cont' && c.visits[0].date < '2026-10-14').forEach((c, i) => {
+    if (i % 5 === 0) return;
+    const d0 = c.visits[0]; const nd = (() => { let x = addDays(d0.date, 3 + (i % 4)); while (!isWork(x)) x = addDays(x, 1); return x; })();
+    if (nd > '2026-10-20') return;
+    c.visits.push({ n: 2, task: 2, tech: d0.tech, date: nd, start: '15:30', end: '17:00', status: 'done', departAt: '15:02', arriveAt: '15:34', endAt: '16:20', summary: 'הוחלף החלק, הכל תקין.', rec: 0, media: [{ t: 'img' }], signer: 'הלקוח' });
+  });
+  const V = (o) => Object.assign({ n: 1, task: 1, status: 'new', departAt: null, arriveAt: null, endAt: null, summary: '', rec: 0, media: [], reason: null, signer: null, collect: '', collectFrom: '' }, o);
+  const C = (o) => Object.assign({ building: '', floor: '', apt: '', arrival: '', type: 'תיקון', warranty: 'כן', rep: 'שיראל', phone2: '', techNote: '' }, o);
+  calls.push(
+    C({ req: '48213', customer: 'משפחת לוי', phone: '050-000-1122', city: 'רחובות', street: 'הרצל 14', building: 'א', floor: '3', apt: '9', arrival: 'חניה בכחול-לבן, אינטרקום 9', sku: 'KT-2041', desc: 'הברז מטפטף גם כשהוא סגור, הלקוחה מדווחת על רטיבות מתחת לכיור.', warranty: 'כן · עד 03/2028',
+      visits: [V({ task: 2, tech: 'y', date: TODAY, start: '09:00', end: '11:00', collect: 'ברז מטבח חלופי KT-2041', collectFrom: 'מרלוג' })] }),
+    C({ req: '48205', customer: 'אבי כהן', phone: '052-000-3344', city: 'נס ציונה', street: 'הבנים 7', floor: '1', apt: '2', arrival: 'בית פרטי, שער צהוב', sku: 'BT-1120', desc: 'הברז לא מעביר בין ראש מקלחת לפיה.', warranty: 'כן · עד 06/2027',
+      visits: [V({ n: 1, task: 2, tech: 's', date: '2026-10-19', start: '10:00', end: '12:00', status: 'cont', departAt: '09:32', arriveAt: '10:05', endAt: '10:48', reason: 'ממתין לחלקי חילוף', summary: 'המפצל שבור מבפנים, הוזמנה מחסנית מפצל מהספק. הברז פועל חלקית (פיה בלבד).', rec: 65, media: [{ t: 'img' }, { t: 'img' }, { t: 'vid' }] }),
+               V({ n: 2, task: 3, tech: 'y', date: TODAY, start: '11:30', end: '13:00', collect: 'מחסנית מפצל BT-1120', collectFrom: 'סניף ראשון לציון' })] }),
+    C({ req: '48240', customer: 'רונית מזרחי', phone: '053-000-4455', city: 'ראשון לציון', street: 'ז׳בוטינסקי 30', sku: 'WC-300', desc: 'ההדחה לא נעצרת.',
+      visits: [V({ tech: 'y', date: TODAY, start: '14:00', end: '15:30', collect: 'מנגנון מילוי WC-300', collectFrom: 'סניף בני ברק' })] }),
+    C({ req: '48241', customer: 'קבלן ש.ב. בנייה', phone: '08-000-6677', city: 'יבנה', street: 'הנשיא 5', type: 'התקנה', sku: 'KT-1800', desc: 'התקנת 4 ברזים בדירות חדשות.', warranty: 'לא',
+      visits: [V({ tech: 'y', date: TODAY, start: '16:00', end: '18:00' })] }),
+    C({ req: '48198', customer: 'דוד פרץ', phone: '050-000-8899', city: 'חולון', street: 'סוקולוב 12', sku: 'BS-220', desc: 'נזילה מהסיפון.',
+      visits: [V({ tech: 'e', date: TODAY, start: '08:00', end: '09:30', status: 'done', departAt: '07:35', arriveAt: '08:02', endAt: '08:52', summary: 'הוחלף סיפון, נבדק ללא נזילה.', media: [{ t: 'img' }, { t: 'img' }], signer: 'דוד פרץ' })] }),
+    C({ req: '48226', customer: 'יעל שושן', phone: '054-000-1212', city: 'בת ים', street: 'בלפור 40', sku: 'SH-510', desc: 'המים לא מתחממים.',
+      visits: [V({ tech: 'e', date: TODAY, start: '10:00', end: '11:30', status: 'go', departAt: '09:40' })] }),
+    C({ req: '48233', customer: 'מוטי אזולאי', phone: '052-000-3434', city: 'תל אביב', street: 'אבן גבירול 88', sku: 'WC-300', desc: 'נזילה מהמיכל לאסלה.',
+      visits: [V({ tech: 'e', date: TODAY, start: '13:30', end: '15:30' })] }),
+    C({ req: '48190', customer: 'נועה ברק', phone: '054-000-7788', city: 'מודיעין', street: 'עמק דותן 22', sku: 'WC-300', desc: 'מנגנון המילוי לא נסגר.',
+      visits: [V({ tech: 's', date: TODAY, start: '08:00', end: '09:30', status: 'cont', departAt: '07:30', arriveAt: '07:58', endAt: '08:40', reason: 'ממתין לחלקי חילוף', summary: '', rec: 51, media: [{ t: 'img' }, { t: 'img' }] })] }),
+    C({ req: '48219', customer: 'אורן גל', phone: '050-000-5656', city: 'שוהם', street: 'התאנה 3', sku: 'KT-2041', desc: 'ראש הנשלף לא חוזר למקום.',
+      visits: [V({ tech: 's', date: TODAY, start: '09:40', end: '11:20', status: 'work', departAt: '09:20', arriveAt: '09:52' })] }),
+    C({ req: '48236', customer: 'מרים חדד', phone: '053-000-9090', city: 'לוד', street: 'הרצל 60', sku: 'BT-1120', desc: 'טפטוף מהפיה.',
+      visits: [V({ tech: 's', date: TODAY, start: '12:30', end: '14:00' })] }),
+    C({ req: '48140', customer: 'אלון דהן', phone: '052-000-2323', city: 'רמלה', street: 'ויצמן 15', sku: 'SH-510', desc: 'המים לא מתחממים במקלחת.',
+      visits: [V({ n: 1, tech: 's', date: '2026-10-08', start: '10:00', end: '11:30', status: 'cont', departAt: '09:30', arriveAt: '10:02', endAt: '10:55', reason: 'נדרשת בדיקת מתקין', summary: 'צנרת חמה לא תקינה, נדרש מתקין.' }),
+               V({ n: 2, task: 2, tech: 's', date: '2026-10-14', start: '13:00', end: '14:30', status: 'cont', departAt: '12:40', arriveAt: '13:05', endAt: '13:50', reason: 'ממתין לחלקי חילוף', summary: 'נבדק עם מתקין, הוזמן קרטוש תרמוסטטי.' }),
+               V({ n: 3, task: 3, tech: 's', date: TODAY, start: '15:00', end: '17:00', collect: 'קרטוש תרמוסטטי SH-510', collectFrom: 'מרלוג' })] }),
+    C({ req: '48251', customer: 'מרים אלון', phone: '050-000-4141', city: 'רחובות', street: 'יעקב 9', sku: 'KT-2041', desc: 'טפטוף מהברז.', visits: [V({ tech: 'y', date: '2026-10-22', start: '09:00', end: '10:30' })] }),
+    C({ req: '48252', customer: 'דניאל רז', phone: '050-000-5252', city: 'נס ציונה', street: 'ויצמן 3', sku: 'WC-300', desc: 'ההדחה חלשה.', visits: [V({ tech: 'y', date: '2026-10-22', start: '13:00', end: '14:30' })] }),
+    C({ req: '48253', customer: 'שלומית סויסה', phone: '054-000-5353', city: 'חולון', street: 'סוקולוב 40', sku: 'BT-1120', desc: 'המפצל לא מעביר.', visits: [V({ tech: 'e', date: '2026-10-22', start: '10:00', end: '11:30' })] })
+  );
+  return calls;
+}
+
+// ===== derived =====
+const lastVisit = c => c.visits[c.visits.length - 1];
+const callStatus = c => lastVisit(c).status;
+const allVisits = () => S.calls.flatMap(c => c.visits.map(v => ({ c, v })));
+const findCall = req => S.calls.find(c => c.req === req);
+const can = p => S.role === 'creator' || (S.perms[S.role] && !!S.perms[S.role][p]);
+// ===== technician (יורם) =====
+const ME = 'y';
+const IC = {
+  pin: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  phone: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+  wa: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l1.5-4A8 8 0 1 1 8 18.5z"/></svg>',
+  user: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  home: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9H3z"/></svg>',
+  cal: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  cam: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  vid: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg>',
+  mic: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'
+};
+const myVisits = date => allVisits().filter(x => x.v.tech === ME && x.v.date === date && x.v.status !== 'cancel').sort((a, b) => toMin(a.v.start) - toMin(b.v.start));
+const selVisit = () => { if (!S.techSel) return null; const c = findCall(S.techSel.req); return { c, v: c.visits.find(v => v.n === S.techSel.n) }; };
+
+function backBtn() { return '<button class="ph-back" data-act="back">› חזרה</button>'; }
+function phone(head, main, foot, nav) {
+  if ((S.techView === 'cal' || S.techView === 'prof') && !head.includes('data-act="back"')) head = '<button class="ph-back" data-act="back" style="display:block">› חזרה</button>' + head;
+  return `<div class="techwrap"><div class="phone">
+    <div class="ph-status num"><span>${nowHM()}</span><span>●●● 5G</span></div>
+    <div class="ph-head">${head}</div>
+    <div class="ph-main" id="phmain">${main}</div>
+    ${foot ? `<div class="ph-foot">${foot}</div>` : ''}
+    ${nav ? techNav() : ''}
+  </div>${guide()}</div>`;
+}
+function techNav() {
+  const t = [['home', 'היום', IC.home], ['cal', 'יומן', IC.cal], ['prof', 'פרופיל', IC.user]];
+  return `<div class="ph-nav">${t.map(([k, l, i]) => `<button class="${S.techView === k ? 'on' : ''}" data-act="techTab" data-v="${k}" data-track="טכנאי · לשונית ${l}">${i}${l}</button>`).join('')}</div>`;
+}
+function guide() {
+  return `<aside class="guide">
+    <h2 style="font-size:18px">מה לנסות כאן</h2>
+    <ol>
+      <li>לחץ על <b>משפחת לוי</b> ברשימה של היום.</li>
+      <li>לחץ <b>Waze</b>: הסטטוס הופך ל"בדרך". שעת היציאה נרשמת ברקע, והטכנאי לא רואה אותה.</li>
+      <li>לחץ <b>הגעתי</b>, הוסף <b>תמונה אחרי הטיפול</b> (חובה) ו<b>סיכום</b> בכתיבה או בהקלטה.</li>
+      <li>ב<b>סיום ביקור</b> בחר "טופל" וחתום, או "המשך טיפול" ובחר סיבה.</li>
+      <li>פתח <b>✉ מיילים שנשלחו</b> למעלה, ואז עבור ל<b>שירות לקוחות</b> או ל<b>מנהל</b> כדי לראות את העדכון ביומן, בכרטיס ובדשבורד.</li>
+      <li>אבי כהן הוא <b>ביקור המשך</b>: הכרטיס מראה מה נעשה בביקור הקודם.</li>
+    </ol>
+    <div class="note">שעות היציאה, ההגעה והסיום נרשמות ברקע ומוצגות רק במשרד, לא לטכנאי.</div>
+  </aside>`;
+}
+
+function techHome() {
+  const vs = myVisits(TODAY);
+  const open = vs.filter(x => OPEN.includes(x.v.status));
+  const closed = vs.filter(x => !OPEN.includes(x.v.status));
+  const next = open.find(x => x.v.status === 'work') || open.find(x => x.v.status === 'go') || open[0];
+  const head = `<div class="sub" style="color:var(--on-dark2)">יום ${dayName(TODAY)} · ${ddmm(TODAY)}.2026</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px"><h1 style="font-size:22px">בוקר טוב, יורם</h1><span style="display:flex;gap:8px;align-items:center"><span style="width:36px;height:36px;border-radius:50%;background:var(--t-y);display:flex;align-items:center;justify-content:center;font-weight:700">י</span>${bellBtn()}</span></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><div class="stat"><b class="num">${open.length}</b><span>ביקורים היום</span></div><button class="stat" data-act="techGo" data-v="doneList" data-track="טכנאי · הושלמו"><b class="num">${closed.length}</b><span>הושלמו ›</span></button></div>`;
+  let main = '';
+  if (next) {
+    const { c, v } = next;
+    main += `<div class="card" style="padding:14px;border:2px solid var(--accent)">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--accent)">${v.status === 'new' ? 'הביקור הבא' : 'עכשיו'} · ${v.start}–${v.end}</span>${pill(v.status)}</div>
+      <div style="font-family:var(--display);font-weight:600;font-size:18px;margin-top:6px">${esc(c.customer)}${v.n > 1 ? ' <span class="pill" style="background:var(--s-cont-bg);color:var(--s-cont-fg)">↻ ביקור המשך</span>' : ''}</div>
+      <div class="sub">${esc(c.street)}, ${esc(c.city)} · ${esc(prod(c.sku).name)}</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        ${v.status === 'new' ? `<button class="bigbtn" style="height:44px;font-size:15px;background:var(--accent)" data-act="waze" data-req="${c.req}" data-n="${v.n}" data-track="טכנאי · ניווט ב-Waze">${IC.pin} יוצא · Waze</button>` : ''}
+        <button class="btn" style="flex:1;height:44px" data-act="openVisit" data-req="${c.req}" data-n="${v.n}" data-track="טכנאי · פתיחת כרטיס קריאה">פרטי קריאה</button>
+      </div></div>`;
+  }
+  const coll = open.filter(x => x.v.collect);
+  if (coll.length) {
+    const groups = {};
+    coll.forEach(x => (groups[x.v.collectFrom || 'לא צוין'] ||= []).push(x));
+    const doneN = coll.filter(x => S.collected[x.c.req + '-' + x.v.n]).length;
+    main += `<section class="card" style="padding:10px 14px;background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-ink)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><b style="font-size:13px;color:var(--warn-fg)">מה לאסוף לפני יציאה</b><span style="font-size:12px;color:var(--warn-fg)">${doneN} מתוך ${coll.length} נאסף</span></div>
+      ${Object.entries(groups).map(([pl, xs], i) => `<div style="${i ? 'border-top:1px solid #F0D9A8;padding-top:6px;margin-top:6px' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:13px">${esc(pl)}</b><button style="border:0;background:none;font-size:12px;color:var(--accent);font-weight:700" data-act="wazePlace" data-p="${esc(pl)}" data-track="טכנאי · Waze למקום איסוף">Waze ›</button></div>
+        ${xs.map(x => { const k = x.c.req + '-' + x.v.n; const on = !!S.collected[k]; return `<label style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:13px;${on ? 'text-decoration:line-through;color:#7A6A4F' : ''}"><input type="checkbox" data-in="collect" data-k="${k}" ${on ? 'checked' : ''} style="width:18px;height:18px;margin:0;padding:0"> ${esc(x.v.collect)} · ל${esc(x.c.customer.split(' ').slice(-1)[0])} ${x.v.start}</label>`; }).join('')}
+      </div>`).join('')}
+    </section>`;
+  }
+  main += `<section class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px 4px"><b style="font-size:14px">לו"ז היום</b><button class="chip" style="padding:3px 10px;font-size:12px" data-act="techTab" data-v="cal">יומן ›</button></div>
+    ${open.length ? open.map(({ c, v }) => `<button class="li" data-act="openVisit" data-req="${c.req}" data-n="${v.n}" data-track="טכנאי · פתיחת כרטיס קריאה"><span class="t num">${v.start}</span><span style="flex:1;min-width:0"><b style="font-size:14px">${esc(c.customer)}</b><div class="sub">${esc(c.city)} · ${v.n > 1 ? '↻ ביקור המשך' : esc(prod(c.sku).name)}</div></span>${pill(v.status)}</button>`).join('') : '<div class="empty">אין עוד ביקורים היום</div>'}
+    ${closed.length ? `<button data-act="techGo" data-v="doneList" style="display:block;width:100%;text-align:right;border:0;border-top:1px solid var(--line2);background:none;padding:8px 14px;font-size:12px;color:var(--muted)">הושלמו היום: ${closed.map(x => esc(x.c.customer)).join(', ')} <b style="color:var(--accent)">לפרטים ›</b></button>` : ''}
+  </section>`;
+  return phone(head, main, '', true);
+}
+
+function techCall() {
+  const { c, v } = selVisit(); const p = prod(c.sku);
+  const prev = c.visits.filter(x => x.n < v.n && x.status !== 'cancel').slice(-1)[0];
+  const head = `${backBtn('› היום', 'data-act="techTab" data-v="home"')}<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:4px"><div><div class="sub" style="color:var(--on-dark2)">פנייה ${c.req} · משימה ${v.task} · ביקור ${v.n}</div><h1 style="font-size:21px">${esc(c.customer)}</h1></div>${pill(v.status)}</div>`;
+  let main = '';
+  if (prev) main += `<section class="card" style="padding:10px 14px;border:2px solid var(--s-cont);background:#FFF8F2">
+    <b style="font-size:13px;color:var(--s-cont-fg)">↻ ביקור המשך · היה כבר ביקור אצל הלקוח</b>
+    <div style="font-size:13px;color:var(--ink2);margin-top:4px">ביקור ${prev.n} · ${ddmm(prev.date)} · ${tech(prev.tech).name} · <b style="color:var(--s-cont-fg)">${esc(prev.reason || ST[prev.status].l)}</b></div>
+    ${prev.summary ? `<div style="font-size:14px;line-height:1.45;margin-top:4px">"${esc(prev.summary)}"</div>` : ''}
+    <div style="font-size:12px;color:var(--muted);margin-top:4px">${prev.media.length} תמונות/סרטונים${prev.rec ? ` · הקלטה ${Math.floor(prev.rec / 60)}:${pad(prev.rec % 60)}` : ''}</div></section>`;
+  main += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+    <button class="act" style="background:var(--accent);color:var(--on-dark);border-color:var(--accent)" data-act="waze" data-req="${c.req}" data-n="${v.n}" data-track="טכנאי · ניווט ב-Waze">${IC.pin}Waze</button>
+    <button class="act" data-act="dial" data-to="${esc(c.phone)}" data-who="ללקוח" data-track="טכנאי · חיוג ללקוח">${IC.phone}לקוח</button>
+    <button class="act" data-act="dial" data-to="${esc(c.phone)}" data-who="וואטסאפ ללקוח" data-track="טכנאי · וואטסאפ ללקוח">${IC.wa}וואטסאפ</button>
+    <button class="act" data-act="dial" data-to="03-000-9000" data-who="לנציגה ${esc(c.rep)}" data-track="טכנאי · חיוג לנציגה">${IC.user}נציגה</button></div>
+  <section class="card" style="padding:4px 14px">
+    <div class="row"><span class="k">כתובת</span><b>${esc(c.street)}, ${esc(c.city)}</b></div>
+    <div class="row" style="display:grid;grid-template-columns:repeat(3,1fr)"><div><div class="k" style="font-size:12px">בניין</div><b>${esc(c.building || '—')}</b></div><div><div class="k" style="font-size:12px">קומה</div><b>${esc(c.floor || '—')}</b></div><div><div class="k" style="font-size:12px">דירה</div><b>${esc(c.apt || '—')}</b></div></div>
+    ${c.arrival ? `<div class="row"><span class="k">הערות הגעה</span><span>${esc(c.arrival)}</span></div>` : ''}
+    <div class="row"><span class="k">טלפון</span><span dir="ltr" class="num">${esc(c.phone)}</span></div>
+    <div class="row"><span class="k">מוצר</span><span>${esc(p.name)}</span></div>
+    <div class="row"><span class="k">מק"ט</span><span dir="ltr">${p.sku}</span></div>
+    <div class="row"><span class="k">באחריות</span><span style="font-weight:700;color:${c.warranty.startsWith('כן') ? 'var(--s-done)' : 'var(--muted)'}">${esc(c.warranty)}</span></div>
+    <div class="row"><span class="k">נציגה מטפלת</span><span>${esc(c.rep)}</span></div>
+  </section>
+  <section class="card" style="padding:10px 14px"><div class="sub" style="font-weight:700">תיאור התקלה</div><div style="font-size:15px;line-height:1.45">${esc(c.desc)}</div></section>
+  ${v.collect ? `<section class="card" style="padding:10px 14px;background:var(--warn-bg);border-color:var(--warn-bd)"><div style="font-size:12px;color:var(--warn-fg);font-weight:700">לאסוף לפני הביקור</div><div style="display:flex;justify-content:space-between;gap:8px;color:var(--warn-ink);font-size:14px"><span>${esc(v.collect)} · <b>מ${esc(v.collectFrom)}</b></span><button style="border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;white-space:nowrap" data-act="wazePlace" data-p="${esc(v.collectFrom)}">Waze ›</button></div></section>` : ''}
+  <div class="sub" style="display:flex;gap:6px;align-items:center">📅 נקלט אוטומטית מזימון Outlook</div>`;
+  let foot;
+  if (v.status === 'new' || v.status === 'go') foot = `<button class="bigbtn" style="background:var(--s-work)" data-act="arrived" data-track="טכנאי · הגעתי">הגעתי · התחלת טיפול</button><div class="sub" style="text-align:center;margin-top:6px">${v.status === 'new' ? 'אפשר ללחוץ Waze קודם כדי לסמן "בדרך"' : 'הסטטוס: בדרך ללקוח'}</div>`;
+  else if (v.status === 'work') foot = `<button class="bigbtn" style="background:var(--s-work)" data-act="techGo" data-v="work">המשך לטיפול ›</button>`;
+  else foot = `<div class="sub" style="text-align:center">הביקור נסגר · ${pill(v.status)}</div>`;
+  return phone(head, main, foot, false);
+}
+
+function techWork() {
+  const { c, v } = selVisit(); v.draft ||= { media: [], summary: '', rec: 0, mode: 'text' };
+  const d = v.draft;
+  const mediaBlock = (kind, label) => `<section class="card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:14px">${label}${kind === 'after' ? ' <span style="color:var(--danger)">*</span>' : ''}</b><span class="sub">${kind === 'after' ? 'חובה: לפחות תמונה או סרטון' : 'תמונות או סרטונים · לא חובה'}</span></div>
+    <div class="media">${d.media.filter(m => m.when === kind).map(m => `<div class="thumb ${m.t === 'vid' ? 'vid' : ''}" ${m.url ? `style="background-image:url('${m.url}')"` : ''}></div>`).join('')}
+      <label class="addm">${IC.cam}תמונה<input type="file" accept="image/*" data-in="media" data-when="${kind}" data-t="img" aria-label="הוספת תמונה"></label>
+      <label class="addm">${IC.vid}סרטון<input type="file" accept="video/*" data-in="media" data-when="${kind}" data-t="vid" aria-label="הוספת סרטון"></label>
+      <button class="addm" data-act="sampleMedia" data-when="${kind}">+ דוגמה</button></div></section>`;
+  const head = `<div style="display:flex;justify-content:space-between;align-items:center">${backBtn('› פרטי קריאה', 'data-act="techGo" data-v="call"')}${pill(v.status)}</div><h1 style="font-size:19px;margin-top:6px">${esc(c.customer)} · ${esc(prod(c.sku).name)}</h1>`;
+  const recLabel = s => `${Math.floor(s / 60)}:${pad(s % 60)}`;
+  const main = mediaBlock('before', 'לפני הטיפול') + mediaBlock('after', 'אחרי הטיפול') + `
+    <section class="card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:14px">סיכום הטיפול <span style="color:var(--danger)">*</span></b><span class="sub">חובה: כתיבה או הקלטה</span></div>
+      <div class="seg" style="margin-bottom:10px"><button class="${d.mode === 'text' ? 'on' : ''}" data-act="sumMode" data-v="text">✎ כתיבה</button><button class="${d.mode === 'rec' ? 'on' : ''}" data-act="sumMode" data-v="rec">🎙 הקלטה</button></div>
+      ${d.mode === 'text' ? `<textarea id="summary" data-in="summary" rows="5" style="width:100%" placeholder="מה נעשה בביקור?">${esc(d.summary)}</textarea>` :
+      `<div style="display:flex;align-items:center;gap:12px;background:var(--bg);border-radius:10px;padding:12px">
+        <button data-act="${S.rec ? 'recStop' : 'recStart'}" aria-label="${S.rec ? 'עצירת הקלטה' : 'התחלת הקלטה'}" style="width:48px;height:48px;border-radius:50%;border:0;background:${S.rec ? 'var(--ink)' : 'var(--danger)'};color:var(--on-dark);flex:none">${S.rec ? '■' : IC.mic}</button>
+        <div style="flex:1"><b id="recTime" class="num">${S.rec ? '0:00' : d.rec ? recLabel(d.rec) : 'אין הקלטה'}</b><div class="sub">${S.rec ? 'מקליט… (הדמיה – המיקרופון לא מופעל בדמו)' : d.rec ? 'ההקלטה נשמרה. לחץ שוב כדי להקליט מחדש.' : 'לחץ כדי להתחיל להקליט'}</div></div></div>`}
+      ${d.mode === 'text' && d.rec ? `<div class="sub" style="margin-top:6px">יש גם הקלטה של ${recLabel(d.rec)}</div>` : ''}
+    </section>`;
+  const hasAfter = d.media.some(m => m.when === 'after');
+  const ok = (d.summary.trim() || d.rec) && hasAfter;
+  const foot = `<button class="bigbtn" id="finishBtn" style="background:var(--ink)" data-act="techGo" data-v="close" ${ok ? '' : 'disabled'}>סיום ביקור ›</button><div class="sub" id="finishHint" style="text-align:center;margin-top:6px">${workHint(d)}</div>`;
+  return phone(head, main, foot, false);
+}
+
+function workReady(d) { return !!((d.summary.trim() || d.rec) && d.media.some(m => m.when === 'after')); }
+function workHint(d) { const sum = d.summary.trim() || d.rec, aft = d.media.some(m => m.when === 'after'); return sum && aft ? 'אפשר לסיים את הביקור' : !sum && !aft ? 'חסרים: תמונה אחרי הטיפול וסיכום' : !aft ? 'חסרה תמונה או סרטון אחרי הטיפול' : 'חסר סיכום כתוב או הקלטה'; }
+function techClose() {
+  const { c, v } = selVisit(); const k = S.close;
+  const head = `${backBtn('› חזרה לטיפול', 'data-act="techGo" data-v="work"')}<h1 style="font-size:19px;margin-top:6px">סיום ביקור · ${esc(c.customer)}</h1>`;
+  let main = `<b style="font-size:14px">מה התוצאה של הביקור? <span style="color:var(--danger)">*</span></b>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="res" data-act="closeChoice" data-v="done" style="${k.choice === 'done' ? 'border-color:var(--s-done);background:var(--s-done-bg);color:var(--s-done-fg)' : ''}">✓ טופל<small>הקריאה תיסגר</small></button>
+      <button class="res" data-act="closeChoice" data-v="cont" style="${k.choice === 'cont' ? 'border-color:var(--s-cont);background:var(--s-cont-bg);color:var(--s-cont-fg)' : ''}">↻ המשך טיפול<small>חוזר למשרד</small></button></div>`;
+  if (k.choice === 'done') main += `<section class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="background:var(--s-done-bg);color:var(--s-done-fg);border-radius:10px;padding:10px 12px;font-weight:700;line-height:1.4">"${esc(S.fixedText)}"</div>
+      <label for="signer" style="font-size:13px;font-weight:700">שם החותם <span style="color:var(--danger)">*</span></label>
+      <input id="signer" data-in="signer" value="${esc(k.signer)}" placeholder="שם הלקוח">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:700">חתימת הלקוח <span style="color:var(--danger)">*</span></span><button style="border:0;background:none;color:var(--accent);font-weight:700;font-size:13px" data-act="sigClear">נקה</button></div>
+      <canvas id="sig" class="sig" aria-label="שטח חתימה"></canvas>
+      <div class="sub">חותמים עם האצבע או העכבר</div></section>`;
+  else if (k.choice === 'cont') main += `<section class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px"><b style="font-size:13px">סיבה <span style="color:var(--danger)">*</span></b>
+      ${REASONS.filter(r => S.reasonsOn[r.name]).map(r => `<button class="reason ${k.reason === r.name ? 'on' : ''}" data-act="closeReason" data-v="${esc(r.name)}">${esc(r.name)}${k.reason === r.name ? ' ✓' : ''}</button>`).join('')}
+      <div class="sub">ללא חתימה. שירות הלקוחות יקבל מייל עם פרטי הקריאה, הסטטוס והסיבה.</div></section>`;
+  else main += `<div class="empty">בחר תוצאה כדי להמשיך</div>`;
+  const ready = k.choice === 'done' ? (k.signer.trim() && k.ink) : k.choice === 'cont' ? !!k.reason : false;
+  const col = k.choice === 'cont' ? 'var(--s-cont)' : 'var(--s-done)';
+  const foot = `<button class="bigbtn" id="sendBtn" style="background:${col}" data-act="sendClose" ${ready ? '' : 'disabled'} data-track="טכנאי · סיום ביקור">${k.choice === 'cont' ? 'שליחה · המשך טיפול' : k.choice === 'done' ? 'שליחה · הקריאה טופלה' : 'בחר תוצאה'}</button>`;
+  return phone(head, main, foot, false);
+}
+
+function techCalendar() {
+  const v = S.techCal, date = S.techCalDate;
+  const weekStart = (() => { const d = D(date); d.setDate(d.getDate() - d.getDay()); return iso(d); })();
+  const label = v === 'day' ? `${dayName(date)} ${ddmm(date)}` : v === 'week' ? `${ddmm(weekStart)}–${ddmm(addDays(weekStart, 4))}` : 'אוקטובר 2026';
+  const head = `<div style="display:flex;justify-content:space-between;align-items:center"><h1 style="font-size:22px">היומן שלי</h1>
+    <span style="display:flex;gap:4px;align-items:center;color:var(--on-dark3)"><button class="ph-back" data-act="calShift" data-d="-1" aria-label="הקודם">‹</button><span class="num" style="font-size:14px">${label}</span><button class="ph-back" data-act="calShift" data-d="1" aria-label="הבא">›</button>${bellBtn()}</span></div>`;
+  let main = `<div class="seg">${[['day', 'יומי'], ['week', 'שבועי'], ['month', 'חודשי']].map(([k, l]) => `<button class="${v === k ? 'on' : ''}" data-act="techCalView" data-v="${k}" data-track="טכנאי · יומן ${l}">${l}</button>`).join('')}</div>`;
+  const colorOf = st => ST[st];
+  if (v === 'day') {
+    const days = [0, 1, 2, 3, 4].map(i => addDays(weekStart, i));
+    main += `<div style="display:flex;gap:6px">${days.map(d => { const n = myVisits(d).length; const on = d === date; return `<button data-act="techCalDay" data-d="${d}" style="flex:1;border-radius:12px;padding:7px 0;text-align:center;${on ? 'background:var(--accent);color:var(--on-dark);border:0' : 'background:var(--card);border:1px solid var(--line)'}"><div style="font-size:12px;opacity:.8">${DAYS_S[D(d).getDay()]}</div><div class="num" style="font-family:var(--display);font-weight:600;font-size:17px">${+d.slice(8)}</div><div style="font-size:10px;opacity:.85">${n} ביקורים</div></button>`; }).join('')}</div>`;
+    const H = 44, vs = myVisits(date);
+    main += `<section class="card" style="position:relative;height:${10 * H}px;overflow:hidden;flex:none">
+      ${[...Array(10)].map((_, i) => `<div class="hr" style="top:${i * H}px"><span style="position:absolute;top:2px;right:6px;font-size:11px;color:var(--muted)">${pad(8 + i)}:00</span></div>`).join('')}
+      ${vs.map(({ c, v: x }) => { const s = colorOf(x.status); const t = (toMin(x.start) - 480) / 60 * H; const h = (toMin(x.end) - toMin(x.start)) / 60 * H; return `<button class="ev" data-act="openVisit" data-req="${c.req}" data-n="${x.n}" style="top:${t + 2}px;height:${h - 4}px;right:52px;left:8px;background:${s.bg};color:${s.fg};border-right-color:${s.c}"><b>${esc(c.customer)} · ${x.start}</b>${esc(c.city)} · ${x.n > 1 ? '↻ ביקור המשך' : esc(prod(c.sku).name)}</button>`; }).join('')}
+      ${!vs.length ? '<div class="empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">אין ביקורים ביום הזה</div>' : ''}
+    </section>`;
+  } else if (v === 'week') {
+    const W = 62, days = [0, 1, 2, 3, 4].map(i => addDays(weekStart, i));
+    main += `<section class="card" style="overflow:hidden;flex:none"><div style="display:grid;grid-template-columns:24px repeat(5,minmax(0,1fr));border-bottom:1px solid var(--line)"><div></div>${days.map(d => `<button data-act="techCalDay" data-d="${d}" style="border:0;background:none;padding:6px 0;${d === TODAY ? 'color:var(--accent)' : ''}"><div style="font-size:11px;color:var(--muted)">${DAYS_S[D(d).getDay()]}</div><b class="num">${+d.slice(8)}</b></button>`).join('')}</div>
+      <div style="display:grid;grid-template-columns:24px repeat(5,minmax(0,1fr));height:${10 * W}px"><div style="position:relative">${[0, 2, 4, 6, 8].map(i => `<span style="position:absolute;top:${i * W + 1}px;right:3px;font-size:10px;color:var(--muted)">${pad(8 + i)}</span>`).join('')}</div>
+      ${days.map(d => `<div style="position:relative;border-right:1px solid var(--line2);${d === TODAY ? 'background:var(--accent-l)' : ''}">${myVisits(d).map(({ c, v: x }) => { const s = colorOf(x.status); const t = (toMin(x.start) - 480) / 60 * W; const h = Math.max(18, (toMin(x.end) - toMin(x.start)) / 60 * W - 2); return `<button data-act="openVisit" data-req="${c.req}" data-n="${x.n}" style="position:absolute;top:${t + 1}px;height:${h}px;right:2px;left:2px;background:${s.bg};color:${s.fg};border:0;border-right:3px solid ${s.c};border-radius:5px;padding:3px 4px;font-size:10px;font-weight:700;line-height:1.25;overflow:hidden;text-align:right;display:flex;flex-direction:column;gap:1px"><span style="font-size:11px">${esc(c.customer.split(' ')[0])}</span><span style="font-weight:600;opacity:.9">${esc(c.city)}</span><span class="num" dir="ltr" style="font-weight:600;opacity:.9;text-align:right;font-size:9.5px;letter-spacing:-.2px">${x.start}-${x.end}</span></button>`; }).join('')}</div>`).join('')}</div></section>
+      <div style="display:flex;gap:10px;font-size:11px;justify-content:center;flex-wrap:wrap">${['new', 'work', 'done', 'cont'].map(k => `<span><span class="dot" style="background:${ST[k].c}"></span> ${ST[k].l}</span>`).join('')}</div>`;
+  } else {
+    let cells = ''; const start = '2026-09-27';
+    for (let i = 0; i < 35; i++) {
+      const d = addDays(start, i), inm = d.slice(5, 7) === '10', we = D(d).getDay() >= 5, n = inm ? myVisits(d).length : 0, on = d === TODAY;
+      cells += `<button data-act="techCalDay" data-d="${d}" ${inm ? '' : 'disabled'} style="border:1px solid var(--line2);border-radius:8px;padding:5px 2px;min-height:54px;${on ? 'background:var(--accent);color:var(--on-dark)' : we || !inm ? 'background:var(--tint);color:var(--soft)' : 'background:var(--card)'}"><div class="num" style="font-family:var(--display);font-weight:600">${+d.slice(8)}</div>${n ? `<div style="font-size:10px;font-weight:700;${on ? '' : 'color:var(--accent)'}">${n} ביק׳</div>` : ''}</button>`;
+    }
+    const monthN = allVisits().filter(x => x.v.tech === ME && x.v.date.slice(5, 7) === '10').length;
+    main += `<section class="card" style="padding:10px;flex:none"><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-bottom:6px;text-align:center;font-size:12px;color:var(--muted);font-weight:700">${DAYS_S.map(x => `<div>${x}</div>`).join('')}</div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${cells}</div></section>
+      <div class="sub" style="text-align:center">${monthN} ביקורים באוקטובר · לחיצה על יום פותחת אותו</div>`;
+  }
+  return phone(head, main, '', true);
+}
+
+const NK = { new: ['🆕', 'var(--s-new-bg)'], follow: ['↻', 'var(--s-cont-bg)'], change: ['🕑', 'var(--s-go-bg)'], cancel: ['✕', 'var(--danger-bg)'], collect: ['📦', 'var(--warn-bg)'] };
+function bellBtn() {
+  const n = S.notifs.filter(x => !x.read).length;
+  return `<button data-act="openNotifs" data-track="טכנאי · פעמון התראות" aria-label="התראות${n ? ', ' + n + ' חדשות' : ''}" style="position:relative;border:0;background:var(--ink2);color:var(--on-dark);width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>${n ? `<span class="num" style="position:absolute;top:-3px;left:-3px;background:var(--danger);color:var(--on-dark);border-radius:999px;font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 4px;display:flex;align-items:center;justify-content:center">${n}</span>` : ''}</button>`;
+}
+function techNotifs() {
+  const unread = S.notifs.filter(x => !x.read), read = S.notifs.filter(x => x.read);
+  const item = x => `<button data-act="openNotif" data-id="${x.id}" style="display:flex;gap:10px;align-items:flex-start;width:100%;text-align:right;border:0;border-bottom:1px solid var(--line2);background:${x.read ? 'var(--card)' : 'var(--accent-l)'};padding:12px 14px">
+      <span style="width:34px;height:34px;border-radius:50%;background:${NK[x.kind][1]};display:flex;align-items:center;justify-content:center;flex:none;font-size:15px">${NK[x.kind][0]}</span>
+      <span style="flex:1;min-width:0"><span style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">${esc(x.title)}</b><span class="sub" style="white-space:nowrap;font-size:12px">${esc(x.time)}</span></span><span class="sub" style="display:block;margin-top:2px;color:var(--ink2)">${esc(x.sub)}</span></span>
+      ${x.read ? '' : '<span class="dot" style="background:var(--accent);margin-top:6px"></span>'}</button>`;
+  const head = `${backBtn()}<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px"><h1 style="font-size:22px">התראות</h1>${unread.length ? '<button class="ph-back" data-act="readAll" style="font-size:13px">סמן הכל כנקרא</button>' : ''}</div>`;
+  const main = `${unread.length ? `<div class="sub" style="font-weight:700">חדשות · ${unread.length}</div><section class="card" style="overflow:hidden;flex:none">${unread.map(item).join('')}</section>` : ''}
+    ${read.length ? `<div class="sub" style="font-weight:700">קודמות</div><section class="card" style="overflow:hidden;flex:none">${read.map(item).join('')}</section>` : ''}
+    ${!S.notifs.length ? '<div class="empty">אין התראות</div>' : ''}
+    <div class="sub" style="text-align:center">לחיצה על התראה פותחת את הקריאה. אילו התראות נשלחות קובעים בהגדרות ← מיילים והתראות.</div>`;
+  return phone(head, main, '', true);
+}
+function techDoneList() {
+  const closed = myVisits(TODAY).filter(x => !OPEN.includes(x.v.status));
+  const head = `${backBtn()}<h1 style="font-size:22px;margin-top:4px">הושלמו היום</h1><div class="sub" style="color:var(--on-dark2)">${closed.length} ביקורים · צפייה בלבד</div>`;
+  const main = closed.length ? `<section class="card" style="overflow:hidden;flex:none">${closed.map(({ c, v }) => `<button class="li" data-act="openDone" data-req="${c.req}" data-n="${v.n}"><span class="t num">${v.start}</span><span style="flex:1;min-width:0"><b style="font-size:14px">${esc(c.customer)}</b><div class="sub">${esc(c.city)} · ${esc(prod(c.sku).name)}</div></span>${pill(v.status)}</button>`).join('')}</section>` : '<div class="empty">עוד לא הושלמו ביקורים היום</div>';
+  return phone(head, main, '', true);
+}
+function techDoneView() {
+  const c = findCall(S.doneSel.req), v = c.visits.find(x => x.n === S.doneSel.n), p = prod(c.sku);
+  const head = `${backBtn()}<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:4px"><div><div class="sub" style="color:var(--on-dark2)">פנייה ${c.req} · ביקור ${v.n}</div><h1 style="font-size:21px">${esc(c.customer)}</h1></div>${pill(v.status)}</div>`;
+  const main = `<div class="note" style="display:flex;gap:8px;align-items:center">🔒 הביקור נשלח. אפשר לצפות בפרטים, אבל לא לערוך אותם.</div>
+    ${v.status === 'cont' ? `<section class="card" style="padding:10px 14px;background:var(--s-cont-bg);border-color:var(--s-cont)"><b style="color:var(--s-cont-fg)">המשך טיפול · ${esc(v.reason)}</b><div class="sub">המשרד יקבע ביקור חדש, והוא יופיע אצלך ביומן</div></section>` : ''}
+    <section class="card" style="padding:4px 14px">
+      <div class="row"><span class="k">כתובת</span><b>${esc(c.street)}, ${esc(c.city)}</b></div>
+      <div class="row"><span class="k">מוצר</span><span>${esc(p.name)}</span></div>
+      <div class="row"><span class="k">מק"ט</span><span dir="ltr">${p.sku}</span></div>
+      <div class="row"><span class="k">תיאור התקלה</span><span>${esc(c.desc)}</span></div></section>
+    <section class="card" style="padding:12px 14px"><b style="font-size:14px">הסיכום שלך</b>
+      ${v.summary ? `<div style="line-height:1.5;margin-top:4px">${esc(v.summary)}</div>` : ''}
+      ${v.rec ? `<button class="btn" style="margin-top:8px" data-act="toast" data-msg="מנגן הקלטה (הדמיה)">▶ הקלטה ${Math.floor(v.rec / 60)}:${pad(v.rec % 60)}</button>` : ''}
+      ${!v.summary && !v.rec ? '<div class="sub">אין סיכום</div>' : ''}</section>
+    ${['before', 'after'].map(w => { const ms = v.media.filter(m => (m.when || 'after') === w); return ms.length ? `<section class="card" style="padding:12px 14px"><b style="font-size:14px">${w === 'before' ? 'לפני הטיפול' : 'אחרי הטיפול'}</b><div class="media" style="margin-top:8px">${ms.map(m => `<div class="thumb ${m.t === 'vid' ? 'vid' : ''}" ${m.url ? `style="background-image:url('${m.url}')"` : ''}></div>`).join('')}</div></section>` : ''; }).join('')}
+    ${v.status === 'done' ? `<section class="card" style="padding:12px 14px"><b style="font-size:14px">אישור הלקוח</b><div style="margin-top:4px;font-size:14px">"${esc(S.fixedText)}"</div><div class="sub" style="margin-top:4px">נחתם ע"י ${esc(v.signer || '')}</div>${v.sigImg ? `<img src="${v.sigImg}" alt="חתימת הלקוח" style="width:100%;height:110px;object-fit:contain;border:1px solid var(--line);border-radius:10px;margin-top:8px;background:var(--card)">` : ''}</section>` : ''}`;
+  return phone(head, main, '', true);
+}
+function techProfile() {
+  const wk = allVisits().filter(x => x.v.tech === ME && x.v.date >= '2026-10-18' && x.v.date <= '2026-10-22');
+  const row = (l, r) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line2);font-size:15px">${l}${r}</div>`;
+  const head = `<div style="display:flex;align-items:center;gap:14px;padding-top:6px"><span style="width:56px;height:56px;border-radius:50%;background:var(--t-y);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:24px">י</span><div><h1 style="font-size:22px">יורם</h1><div class="sub" style="color:var(--on-dark2)">טכנאי שירות · <span dir="ltr">050-000-0001</span></div></div></div>`;
+  const main = `<section class="card" style="padding:12px;display:flex;text-align:center"><div style="flex:1"><b class="num" style="font-family:var(--display);font-size:22px">${wk.length}</b><div class="sub">ביקורים השבוע</div></div><div style="flex:1"><b class="num" style="font-family:var(--display);font-size:22px">${wk.filter(x => x.v.status === 'done').length}</b><div class="sub">טופלו</div></div></section>
+    <div class="sub" style="font-weight:700">התראות</div>
+    <section class="card">${row('זימון חדש או שינוי ביומן', `<button class="tog on" data-act="toggleSelf" aria-label="זימון חדש"></button>`)}${row('תזכורת "מה לאסוף" בבוקר', `<button class="tog on" data-act="toggleSelf" aria-label="תזכורת"></button>`)}${row('צליל התראה', `<button class="tog" data-act="toggleSelf" aria-label="צליל"></button>`)}</section>
+    <div class="sub" style="font-weight:700">עזרה</div>
+    <section class="card">${row('📞 חיוג למשרד', '<button class="chip" data-act="dial" data-to="03-000-9000" data-who="למשרד">חיוג</button>')}${row('⚠ דיווח על תקלה באפליקציה', '<button class="chip" data-act="toast" data-msg="הדיווח נשלח למשרד (הדמיה)">דיווח</button>')}</section>
+    <div class="sub" style="text-align:center">גרסה 2.0 · דמו</div>`;
+  return phone(head, main, '', true);
+}
+
+function renderTech() {
+  if (S.techView === 'call') return techCall();
+  if (S.techView === 'work') return techWork();
+  if (S.techView === 'close') return techClose();
+  if (S.techView === 'cal') return techCalendar();
+  if (S.techView === 'prof') return techProfile();
+  if (S.techView === 'notif') return techNotifs();
+  if (S.techView === 'doneList') return techDoneList();
+  if (S.techView === 'doneView') return techDoneView();
+  return techHome();
+}
+
+// signature pad
+function initSig() {
+  const cv = document.getElementById('sig'); if (!cv) return;
+  const r = cv.getBoundingClientRect(); cv.width = r.width * 2; cv.height = r.height * 2;
+  const g = cv.getContext('2d'); g.scale(2, 2); g.lineWidth = 2.4; g.lineCap = 'round'; g.strokeStyle = '#18212B';
+  if (S.close.sig) { const im = new Image(); im.onload = () => g.drawImage(im, 0, 0, r.width, r.height); im.src = S.close.sig; }
+  let draw = false;
+  const pos = e => { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  cv.onpointerdown = e => { draw = true; cv.setPointerCapture(e.pointerId); const [x, y] = pos(e); g.beginPath(); g.moveTo(x, y); };
+  cv.onpointermove = e => { if (!draw) return; const [x, y] = pos(e); g.lineTo(x, y); g.stroke(); };
+  cv.onpointerup = () => { if (!draw) return; draw = false; S.close.ink = true; S.close.sig = cv.toDataURL(); updateSend(); };
+}
+function updateSend() {
+  const b = document.getElementById('sendBtn'); if (!b) return;
+  const k = S.close; const ok = k.choice === 'done' ? (k.signer.trim() && k.ink) : k.choice === 'cont' ? !!k.reason : false;
+  b.disabled = !ok;
+}
+// ===== office =====
+const NAV = [
+  ['cal', 'יומן טכנאים', () => can('cal')],
+  ['calls', 'קריאות', () => can('calls')],
+  ['dash', 'דשבורד', () => can('dashGen') || can('dashTech') || can('dashProd')],
+  ['settings', 'הגדרות', () => can('settings')],
+  ['usage', 'מדדי שימוש', () => can('usage')]
+];
+function renderOffice() {
+  const items = NAV.filter(n => n[2]());
+  if (!items.find(n => n[0] === S.officeView) && S.officeView !== 'card') S.officeView = items[0] ? items[0][0] : 'none';
+  if (S.officeView === 'card' && !can('calls')) S.officeView = items[0] ? items[0][0] : 'none';
+  const r = ROLE[S.role];
+  const side = `<aside class="side"><div class="logo">ניהול טכנאים</div><nav class="nav">${items.map(([k, l]) => `<button class="${S.officeView === k || (k === 'calls' && S.officeView === 'card') ? 'on' : ''}" data-act="nav" data-v="${k}" data-track="${r.short} · ${l}">${l}</button>`).join('')}</nav>
+    <div class="me"><span class="av" style="background:${r.bg}">${r.who[0]}</span><span>${esc(r.who)}<small>הרשאה: ${r.short}</small></span></div></aside>`;
+  const V = { cal: offCal, calls: offCalls, card: offCard, dash: offDash, settings: offSettings, usage: offUsage }[S.officeView];
+  return `<div class="office">${side}<main class="work">${V && (S.officeView === 'card' || (S.officeView === 'dash' && S.techDetail)) ? `<div><button class="btn" data-act="back" style="padding:6px 12px">› חזרה ל${S.officeView === 'dash' ? 'דשבורד' : backName()}</button></div>` : ''}${V ? V() : '<div class="empty">להרשאה הזו אין מסכים פעילים. אפשר להדליק אותם בהגדרות (בתפקיד יוצר).</div>'}</main></div>`;
+}
+const exportBtn = () => can('export') ? `<button class="btn" data-act="export" data-track="${ROLE[S.role].short} · ייצוא ל-Excel">ייצוא ל-Excel</button>` : '';
+
+// --- calendar
+function laneLayout(items) {
+  const xs = items.map(x => ({ x, s: toMin(x.v.start), e: toMin(x.v.end) })).sort((a, b) => a.s - b.s);
+  let cluster = [], end = -1; const out = [];
+  const flush = () => { const lanes = []; cluster.forEach(it => { let i = lanes.findIndex(l => l <= it.s); if (i < 0) { i = lanes.length; lanes.push(0); } lanes[i] = it.e; it.lane = i; }); cluster.forEach(it => { it.n = lanes.length; out.push(it); }); cluster = []; };
+  xs.forEach(it => { if (it.s >= end && cluster.length) flush(); cluster.push(it); end = Math.max(end, it.e); });
+  if (cluster.length) flush();
+  return out;
+}
+function offCal() {
+  const mode = S.calView || 'day', date = S.calDate, H = 60;
+  const techs = TECHS.filter(t => S.calFilter === 'all' || S.calFilter === t.id);
+  const inF = x => x.v.status !== 'cancel' && (S.calFilter === 'all' || x.v.tech === S.calFilter);
+  const weekStart = (() => { const d = D(date); d.setDate(d.getDate() - d.getDay()); return iso(d); })();
+  const MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const title = mode === 'day' ? `${dayName(date)} ${ddmm(date)}` : mode === 'week' ? `שבוע ${ddmm(weekStart)}–${ddmm(addDays(weekStart, 4))}` : `${MONTHS[+date.slice(5, 7) - 1]} ${date.slice(0, 4)}`;
+  const evBtn = (c, v, style) => { const s = ST[v.status]; return `<button class="ev" data-act="drawer" data-req="${c.req}" data-n="${v.n}" data-track="${ROLE[S.role].short} · פתיחת ביקור ביומן" style="${style};background:${s.bg};color:${s.fg};border-right-color:${s.c}"`; };
+  let body = '';
+  if (mode === 'day') {
+    const day = allVisits().filter(x => x.v.date === date && inF(x));
+    const grid = `56px repeat(${techs.length},minmax(0,1fr))`;
+    body = `<div class="scrollx"><div class="cal" style="min-width:${techs.length > 1 ? 640 : 320}px">
+      <div class="calhead" style="grid-template-columns:${grid}"><div></div>${techs.map(t => `<div><span class="dot" style="background:${t.color}"></span> ${t.name} <span class="sub" style="font-weight:400">· ${day.filter(x => x.v.tech === t.id).length} ביקורים</span></div>`).join('')}</div>
+      <div class="calbody" style="grid-template-columns:${grid}">
+        <div style="position:relative;height:${10 * H}px">${[...Array(10)].map((_, i) => `<span style="position:absolute;top:${i * H + 2}px;right:8px;font-size:11px;color:var(--muted)" class="num">${pad(8 + i)}:00</span>`).join('')}</div>
+        ${techs.map(t => `<div class="calcol" style="height:${10 * H}px">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `<div class="hr" style="top:${i * H}px"></div>`).join('')}
+          ${laneLayout(day.filter(x => x.v.tech === t.id)).map(({ x: { c, v }, lane, n }) => { const top = (toMin(v.start) - 480) / 60 * H; const h = Math.max(36, (toMin(v.end) - toMin(v.start)) / 60 * H - 4); const w = 100 / n; return evBtn(c, v, `top:${top + 2}px;height:${h}px;right:calc(${lane * w}% + 4px);left:auto;width:calc(${w}% - 8px)`) + `><b>${esc(c.customer)}</b>${v.start} · ${esc(c.city)}${v.n > 1 ? ' · ביקור ' + v.n : ''}<br>${ST[v.status].l}</button>`; }).join('')}
+        </div>`).join('')}
+      </div></div></div>${!day.length ? '<div class="empty">אין ביקורים ביום הזה</div>' : ''}`;
+  } else if (mode === 'week') {
+    const days = [0, 1, 2, 3, 4].map(i => addDays(weekStart, i));
+    body = `<div class="scrollx"><div class="cal" style="min-width:760px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))">
+      ${days.map(d => { const vs = allVisits().filter(x => x.v.date === d && inF(x)).sort((a, b) => toMin(a.v.start) - toMin(b.v.start) || a.v.tech.localeCompare(b.v.tech)); return `<div style="border-right:1px solid var(--line2);min-height:420px;${d === TODAY ? 'background:var(--accent-l)' : ''}">
+        <button data-act="calGoDay" data-d="${d}" style="width:100%;border:0;border-bottom:1px solid var(--line);background:none;padding:10px 12px;text-align:right;font-weight:700;${d === TODAY ? 'color:var(--accent)' : ''}">${dayName(d)} <span class="num">${ddmm(d)}</span> <span class="sub" style="font-weight:400">· ${vs.length}</span></button>
+        <div style="padding:8px;display:flex;flex-direction:column;gap:6px">${vs.map(({ c, v }) => { const s = ST[v.status]; const t = tech(v.tech); return `<button data-act="drawer" data-req="${c.req}" data-n="${v.n}" style="text-align:right;border:0;border-right:4px solid ${t.color};background:${s.bg};color:${s.fg};border-radius:7px;padding:6px 8px;font-size:12px;line-height:1.3"><b class="num">${v.start}–${v.end}</b> · ${esc(c.customer)}<div style="opacity:.85">${esc(c.city)} · ${t.name} · ${s.l}</div></button>`; }).join('') || '<div class="sub" style="text-align:center;padding:12px">אין ביקורים</div>'}</div></div>`; }).join('')}
+    </div></div><div class="sub">הפס בצד כל ביקור הוא צבע הטכנאי, והרקע הוא הסטטוס. לחיצה על כותרת יום פותחת את התצוגה היומית.</div>`;
+  } else {
+    const first = date.slice(0, 8) + '01'; const fd = D(first); const start = addDays(first, -fd.getDay());
+    let cells = '';
+    for (let i = 0; i < 42; i++) {
+      const d = addDays(start, i); const inm = d.slice(0, 7) === date.slice(0, 7); if (i >= 35 && !inm && i % 7 === 0) break;
+      const vs = inm ? allVisits().filter(x => x.v.date === d && inF(x)) : []; const we = D(d).getDay() >= 5;
+      const per = techs.map(t => [t, vs.filter(x => x.v.tech === t.id).length]).filter(p => p[1]);
+      const cont = vs.filter(x => x.v.status === 'cont').length;
+      cells += `<button data-act="calGoDay" data-d="${d}" ${inm ? '' : 'disabled'} style="border:1px solid var(--line2);border-radius:8px;min-height:96px;padding:6px 8px;text-align:right;display:flex;flex-direction:column;gap:4px;${d === TODAY ? 'outline:2px solid var(--accent);background:var(--card)' : we || !inm ? 'background:var(--tint);color:var(--soft)' : 'background:var(--card)'}">
+        <span style="display:flex;justify-content:space-between;width:100%"><b class="num" style="font-family:var(--display)">${+d.slice(8)}</b>${vs.length ? `<span class="sub num" style="font-weight:700">${vs.length} ביק׳</span>` : ''}</span>
+        ${per.map(([t, n]) => `<span style="font-size:12px"><span class="dot" style="background:${t.color}"></span> ${t.name} <span class="num">${n}</span></span>`).join('')}
+        ${cont ? `<span class="pill" style="background:var(--s-cont-bg);color:var(--s-cont-fg);font-size:11px;padding:1px 7px">${cont} המשך טיפול</span>` : ''}</button>`;
+    }
+    body = `<div class="scrollx"><div class="card" style="padding:10px;min-width:700px"><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:6px;text-align:center;font-size:12px;font-weight:700;color:var(--muted)">${DAYS.map(x => `<div>${x}</div>`).join('')}</div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">${cells}</div></div></div><div class="sub">לחיצה על יום פותחת את התצוגה היומית שלו.</div>`;
+  }
+  return `<div class="ptitle"><div><h1>יומן טכנאים · ${title}</h1><div class="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><div class="seg" style="min-width:210px">${[['day', 'יום'], ['week', 'שבוע'], ['month', 'חודש']].map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" data-act="calView" data-v="${k}" data-track="${ROLE[S.role].short} · יומן ${l}">${l}</button>`).join('')}</div>
+    <button class="btn" data-act="calDay" data-d="-1" aria-label="הקודם">‹</button><button class="btn" data-act="calToday">היום</button><button class="btn" data-act="calDay" data-d="1" aria-label="הבא">›</button></div></div>
+  <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="sub" style="font-weight:700">טכנאי:</span><button class="chip ${S.calFilter === 'all' ? 'on' : ''}" data-act="calFilter" data-v="all">כולם</button>${TECHS.map(t => `<button class="chip ${S.calFilter === t.id ? 'on' : ''}" data-act="calFilter" data-v="${t.id}" data-track="${ROLE[S.role].short} · סינון יומן לפי טכנאי"><span class="dot" style="background:${t.color}"></span> ${t.name}</button>`).join('')}</div>
+    <div style="display:flex;gap:12px;font-size:12px;flex-wrap:wrap">${['new', 'go', 'work', 'done', 'cont'].map(k => `<span><span class="dot" style="background:${ST[k].c};border-radius:3px"></span> ${ST[k].l}</span>`).join('')}</div></div>
+  ${body}`;
+}
+
+function drawerHtml() {
+  const c = findCall(S.drawer.req), v = c.visits.find(x => x.n === S.drawer.n), p = prod(c.sku);
+  const live = v.status === 'new' ? 'טרם יצא' : v.status === 'go' ? `בדרך ללקוח · יצא ${v.departAt}` : v.status === 'work' ? `הגיע ${v.arriveAt} · בטיפול` : v.status === 'done' ? `טופל ${v.endAt}${v.signer ? ' · נחתם ע"י ' + esc(v.signer) : ''}` : v.status === 'cont' ? `הסתיים ${v.endAt} · המשך טיפול – ${esc(v.reason)}` : 'בוטל';
+  return `<div class="drawer-bg" data-act="closeOverlay"><div class="drawer" role="dialog" aria-label="פרטי ביקור" data-stop="1">
+    <div class="dh"><div><div class="sub">פנייה ${c.req} · ביקור ${v.n}</div><h2 style="font-size:22px">${esc(c.customer)}</h2><div style="margin-top:6px">${pill(v.status)}</div></div><button class="xbtn" data-act="closeOverlay" aria-label="סגירה">✕</button></div>
+    <div class="db"><div class="kv"><span>מועד</span><span>${dayName(v.date)} ${ddmm(v.date)} · ${v.start}–${v.end}</span><span>טכנאי</span><span><span class="dot" style="background:${tech(v.tech).color}"></span> ${tech(v.tech).name}</span><span>טלפון</span><span dir="ltr" style="text-align:right">${esc(c.phone)}</span><span>כתובת</span><span>${esc(c.street)}, ${esc(c.city)}</span><span>מוצר</span><span>${esc(p.name)}</span><span>מק"ט</span><span dir="ltr" style="text-align:right">${p.sku}</span><span>נציגה</span><span>${esc(c.rep)}</span></div>
+      <div class="card" style="padding:10px 12px;background:var(--tint)"><div class="sub" style="font-weight:700">תיאור התקלה</div>${esc(c.desc)}</div>
+      <div class="card" style="padding:10px 12px;background:var(--tint)"><div class="sub" style="font-weight:700">מצב בשטח</div>${live}</div></div>
+    <div class="df">${can('calls') ? `<button class="btn pri" style="flex:1" data-act="openCard" data-req="${c.req}">לכרטיס הקריאה המלא ›</button>` : ''}<button class="btn" data-act="dial" data-to="${tech(v.tech).phone}" data-who="לטכנאי ${tech(v.tech).name}">חיוג לטכנאי</button></div>
+  </div></div>`;
+}
+
+// --- calls list
+function offCalls() {
+  const counts = { all: S.calls.length }; S.calls.forEach(c => counts[callStatus(c)] = (counts[callStatus(c)] || 0) + 1);
+  return `<div class="ptitle"><div><h1>קריאות</h1><div class="sub">כל הקריאות שנקלטו מ-Outlook. לחיצה על שורה פותחת את כרטיס הקריאה.</div></div>${exportBtn()}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><input id="q" data-in="q" value="${esc(S.q)}" placeholder="חיפוש לפי שם, טלפון, מספר פנייה או מק״ט" style="flex:1;min-width:220px;padding:10px 14px" aria-label="חיפוש קריאות">
+      <select id="fTech" data-in="fTech" aria-label="סינון לפי טכנאי"><option value="all">כל הטכנאים</option>${TECHS.map(t => `<option value="${t.id}" ${S.fTech === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${[['all', 'הכל'], ...['new', 'go', 'work', 'done', 'cont', 'cancel'].map(k => [k, ST[k].l])].map(([k, l]) => `<button class="chip ${S.fStatus === k ? 'on' : ''}" data-act="fStatus" data-v="${k}">${l} <span style="opacity:.6" class="num">${counts[k] || 0}</span></button>`).join('')}</div>
+    <section class="card" style="overflow:hidden"><div class="scrollx" id="callsBody">${callsTable()}</div></section>`;
+}
+function callsTable() {
+  const q = S.q.trim();
+  let rows = S.calls.filter(c => (S.fStatus === 'all' || callStatus(c) === S.fStatus) && (S.fTech === 'all' || lastVisit(c).tech === S.fTech) && (!q || [c.req, c.customer, c.phone, c.sku, c.city].some(x => x.includes(q))));
+  rows.sort((a, b) => (lastVisit(b).date + lastVisit(b).start).localeCompare(lastVisit(a).date + lastVisit(a).start));
+  const total = rows.length; rows = rows.slice(0, 40);
+  return `<table><thead><tr><th>פנייה</th><th>לקוח</th><th>עיר</th><th>מוצר</th><th>מק"ט</th><th>טכנאי</th><th>ביקורים</th><th>ביקור אחרון / הבא</th><th>סטטוס</th><th>נציגה</th></tr></thead><tbody>
+    ${rows.map(c => { const v = lastVisit(c); const t = tech(v.tech); return `<tr class="click" data-act="openCard" data-req="${c.req}" data-track="${ROLE[S.role].short} · פתיחת כרטיס קריאה"><td><b style="color:var(--accent)">${c.req}</b></td><td><b>${esc(c.customer)}</b></td><td>${esc(c.city)}</td><td>${esc(prod(c.sku).name)}</td><td dir="ltr" style="text-align:right">${c.sku}</td><td><span class="dot" style="background:${t.color}"></span> ${t.name}</td><td style="text-align:center" class="num">${c.visits.length}</td><td class="num">${v.date === TODAY ? 'היום' : ddmm(v.date)} ${v.start}</td><td>${pill(v.status, v.status === 'cont' ? ' · ' + esc(v.reason) : '')}</td><td>${esc(c.rep)}</td></tr>`; }).join('')}
+  </tbody></table>${!total ? '<div class="empty">לא נמצאו קריאות</div>' : `<div class="sub" style="padding:10px 14px">מציג ${rows.length} מתוך ${total}</div>`}`;
+}
+
+// --- call card
+function offCard() {
+  const c = findCall(S.callSel), p = prod(c.sku), last = lastVisit(c), isOpen = OPEN.includes(last.status);
+  const visitHtml = v => { const s = ST[v.status]; const t = tech(v.tech);
+    return `<section class="card vis" style="border-right-color:${s.c}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="font-size:16px">ביקור ${v.n} · ${v.date === TODAY ? 'היום' : ddmm(v.date)} · ${v.start}–${v.end}</h2>${pill(v.status, v.reason ? ' · ' + esc(v.reason) : '')}</div>
+      <div class="sub" style="margin-top:4px"><span class="dot" style="background:${t.color}"></span> ${t.name} · משימה ${v.task}</div>
+      ${v.departAt || v.arriveAt ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;font-size:12px">${v.departAt ? `<span class="pill" style="background:var(--bg);color:var(--ink2)">יציאה ${v.departAt}</span>` : ''}${v.arriveAt ? `<span class="pill" style="background:var(--bg);color:var(--ink2)">הגעה ${v.arriveAt}</span>` : ''}${v.endAt ? `<span class="pill" style="background:var(--bg);color:var(--ink2)">סיום ${v.endAt}</span><span class="pill" style="background:var(--bg);color:var(--ink2)">בטיפול ${toMin(v.endAt) - toMin(v.arriveAt)} דק׳</span>` : ''}</div>` : ''}
+      ${v.collect ? `<div style="margin-top:10px;background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--warn-ink)"><b>לאסוף:</b> ${esc(v.collect)} · מ${esc(v.collectFrom)}</div>` : ''}
+      ${can('card') && (v.summary || v.rec) ? `<div class="sub" style="font-weight:700;margin-top:12px">סיכום הטכנאי</div>${v.summary ? `<div style="line-height:1.5">${esc(v.summary)}</div>` : ''}${v.rec ? `<button class="btn" style="margin-top:8px" data-act="toast" data-msg="מנגן הקלטה של ${Math.floor(v.rec / 60)}:${pad(v.rec % 60)} דק׳ (הדמיה)">▶ הקלטה ${Math.floor(v.rec / 60)}:${pad(v.rec % 60)}</button>` : ''}` : ''}
+      ${can('card') && v.media.length ? `<div class="sub" style="font-weight:700;margin-top:12px">תמונות וסרטונים (${v.media.length})</div><div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">${v.media.map(m => `<div class="thumb ${m.t === 'vid' ? 'vid' : ''}" style="width:64px;${m.url ? `background-image:url('${m.url}')` : ''}"></div>`).join('')}</div>` : ''}
+      ${can('card') && v.status === 'done' ? `<div class="sub" style="font-weight:700;margin-top:12px">חתימת לקוח</div><div style="font-size:14px">"${esc(S.fixedText)}" · ${esc(v.signer || '')}</div>${v.sigImg ? `<img src="${v.sigImg}" alt="חתימת הלקוח" style="height:60px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--card)">` : ''}` : ''}
+    </section>`; };
+  return `<div class="sub"><button style="border:0;background:none;color:var(--accent);font-weight:700;padding:0" data-act="nav" data-v="calls">קריאות</button> › פנייה ${c.req}</div>
+    <div class="ptitle"><div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h1 style="font-size:26px">${esc(c.customer)}</h1>${pill(last.status, last.status !== 'cancel' ? ' · ביקור ' + last.n : '')}</div><div class="sub">פנייה ${c.req} · נציגה מטפלת: ${esc(c.rep)} · ${c.visits.length} ביקורים</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="toast" data-msg="נפתח הזימון ב-Outlook (הדמיה)">פתח זימון ב-Outlook</button><button class="btn" data-act="dial" data-to="${tech(last.tech).phone}" data-who="לטכנאי">חיוג לטכנאי</button>${can('cancel') && isOpen ? `<button class="btn dng" data-act="askCancel">ביטול קריאה</button>` : ''}</div></div>
+    ${S.confirmCancel ? `<div class="card" style="padding:12px 16px;background:var(--danger-bg);border-color:#E3A29B;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="flex:1;color:var(--danger-fg)">לבטל את הביקור הפתוח? הוא יירד מהיומן של ${tech(last.tech).name}.</b><button class="btn dng" data-act="doCancel">כן, לבטל</button><button class="btn" data-act="noCancel">לא</button></div>` : ''}
+    <div class="cols2" style="grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);align-items:start">
+      <div class="grid"><section class="card sec"><h2>לקוח וכתובת</h2><div class="kv"><span>טלפון</span><span dir="ltr" style="text-align:right">${esc(c.phone)}</span><span>כתובת</span><span>${esc(c.street)}, ${esc(c.city)}</span><span>בניין / קומה / דירה</span><span>${esc(c.building || '—')} / ${esc(c.floor || '—')} / ${esc(c.apt || '—')}</span>${c.arrival ? `<span>הערות הגעה</span><span>${esc(c.arrival)}</span>` : ''}</div></section>
+        <section class="card sec"><h2>פרטי הקריאה</h2><div class="kv"><span>סוג קריאה</span><span>${esc(c.type)}</span><span>מוצר</span><span>${esc(p.name)}</span><span>מק"ט</span><span dir="ltr" style="text-align:right">${p.sku}</span><span>מותג / ספק</span><span>${p.brand} · ${p.sup}</span><span>באחריות</span><span>${esc(c.warranty)}</span><span>תיאור התקלה</span><span>${esc(c.desc)}</span></div></section>
+        ${S.mails.filter(m => m.req === c.req).length ? `<section class="card sec"><h2>מיילים שנשלחו</h2>${S.mails.filter(m => m.req === c.req).map(m => `<button class="mailitem" data-act="mailsOpen" data-id="${m.id}"><b style="font-size:13px">${esc(m.subject)}</b><div class="sub">${m.time}</div></button>`).join('')}</section>` : ''}</div>
+      <div class="grid">${[...c.visits].reverse().map(visitHtml).join('')}</div>
+    </div>`;
+}
+
+// --- dashboard
+function offDash() {
+  const tabs = [['gen', 'כללי', 'dashGen'], ['tech', 'טכנאים', 'dashTech'], ['prod', 'מוצרים וספקים', 'dashProd']].filter(t => can(t[2]));
+  if (!tabs.find(t => t[0] === S.dashTab)) S.dashTab = tabs[0][0];
+  const body = S.techDetail && can('dashTech') ? dashTechDetail(S.techDetail) : { gen: dashGen, tech: dashTech, prod: dashProd }[S.dashTab]();
+  return `<div class="ptitle"><div><h1>דשבורד</h1><div class="sub">אוקטובר 2026 · מחושב מהנתונים בדמו ומתעדכן עם כל ביקור שנסגר</div></div>${exportBtn()}</div>
+    <div class="tabs">${tabs.map(([k, l]) => `<button class="${S.dashTab === k ? 'on' : ''}" data-act="dashTab" data-v="${k}" data-track="${ROLE[S.role].short} · דשבורד ${l}">${l}</button>`).join('')}</div>${body}`;
+}
+const closedV = () => allVisits().filter(x => x.v.status === 'done' || x.v.status === 'cont');
+const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0;
+const travelOf = v => v.departAt && v.arriveAt ? toMin(v.arriveAt) - toMin(v.departAt) : null;
+const treatOf = v => v.arriveAt && v.endAt ? toMin(v.endAt) - toMin(v.arriveAt) : null;
+function bars(rows, color) { const mx = Math.max(1, ...rows.map(r => r[1])); return rows.map(([l, x, c]) => `<div class="bar"><span>${l}</span><div class="track"><span style="width:${x / mx * 100}%;background:${c || color}"></span></div><span class="num">${x}</span></div>`).join(''); }
+function dashGen() {
+  const cv = closedV(); const first = S.calls.filter(c => c.visits[0].status === 'done' || c.visits[0].status === 'cont');
+  const fix1 = first.length ? Math.round(first.filter(c => c.visits[0].status === 'done').length / first.length * 100) : 0;
+  const openCont = S.calls.filter(c => callStatus(c) === 'cont');
+  const gaps = S.calls.filter(c => c.visits.length > 1).map(c => (D(c.visits[1].date) - D(c.visits[0].date)) / 864e5);
+  const live = TECHS.map(t => { const vs = allVisits().filter(x => x.v.tech === t.id && x.v.date === TODAY).sort((a, b) => toMin(a.v.start) - toMin(b.v.start)); const cur = vs.find(x => x.v.status === 'work') || vs.find(x => x.v.status === 'go'); const nxt = vs.find(x => x.v.status === 'new'); return { t, vs, cur, nxt }; });
+  const weeks = [['27.9–3.10', '2026-09-27'], ['4–10.10', '2026-10-04'], ['11–17.10', '2026-10-11'], ['18–24.10', '2026-10-18']].map(([l, s]) => [l, allVisits().filter(x => x.v.date >= s && x.v.date <= addDays(s, 6)).length]);
+  const wmx = Math.max(...weeks.map(w => w[1]));
+  const rs = REASONS.map(r => [r.name, cv.filter(x => x.v.reason === r.name).length]);
+  return `<div class="kpis">
+      <div class="card kpi"><div class="l">ביקורים החודש</div><div class="v num">${allVisits().filter(x => x.v.date.slice(5, 7) === '10').length}</div><div class="d">כולל מתוכננים</div></div>
+      <div class="card kpi"><div class="l">נסגר בביקור ראשון</div><div class="v num">${fix1}%</div><div class="d">מתוך קריאות שבוקרו</div></div>
+      <div class="card kpi"><div class="l">המשך טיפול פתוחים</div><div class="v num" style="color:var(--s-cont)">${openCont.length}</div><div class="d">ללא ביקור חדש</div></div>
+      <div class="card kpi"><div class="l">זמן נסיעה ממוצע</div><div class="v num">${avg(cv.map(x => travelOf(x.v)).filter(x => x != null))}<small style="font-size:15px"> דק׳</small></div><div class="d">Waze → הגעתי</div></div>
+      <div class="card kpi"><div class="l">זמן טיפול ממוצע</div><div class="v num">${avg(cv.map(x => treatOf(x.v)).filter(x => x != null))}<small style="font-size:15px"> דק׳</small></div><div class="d">הגעתי → סיום</div></div>
+      <div class="card kpi"><div class="l">ימים עד ביקור המשך</div><div class="v num">${gaps.length ? (gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(1) : '—'}</div><div class="d">ממוצע</div></div></div>
+    <section class="card sec"><h2>עכשיו בשטח</h2><div class="cols3">${live.map(({ t, vs, cur, nxt }) => `<div class="card" style="padding:12px 14px;border-right:4px solid ${t.color}"><div style="display:flex;justify-content:space-between;gap:6px">${can('dashTech') ? `<button data-act="techDetail" data-t="${t.id}" data-f="all" style="border:0;background:none;padding:0;font-weight:700;color:var(--accent)">${t.name} ›</button>` : `<b>${t.name}</b>`}${cur ? pill(cur.v.status) : '<span class="pill" style="background:var(--bg);color:var(--muted)">פנוי</span>'}</div><div class="sub" style="margin-top:4px">${cur ? esc(cur.c.customer) + ', ' + esc(cur.c.city) : nxt ? 'הבא: ' + esc(nxt.c.customer) + ' ' + nxt.v.start : 'אין עוד ביקורים היום'}</div><div style="font-size:13px;margin-top:6px">היום: ${vs.filter(x => !OPEN.includes(x.v.status)).length}/${vs.length} הושלמו</div></div>`).join('')}</div></section>
+    <div class="cols2"><section class="card sec"><h2>ביקורים לפי טכנאי ותוצאה</h2>${TECHS.map(t => { const d = cv.filter(x => x.v.tech === t.id && x.v.status === 'done').length, c = cv.filter(x => x.v.tech === t.id && x.v.status === 'cont').length; const tot = Math.max(...TECHS.map(tt => cv.filter(x => x.v.tech === tt.id).length)); return `<div class="bar"><span>${can('dashTech') ? `<button data-act="techDetail" data-t="${t.id}" data-f="all" style="border:0;background:none;padding:0;color:var(--accent);font-weight:700"><span class="dot" style="background:${t.color}"></span> ${t.name} ›</button>` : `<span class="dot" style="background:${t.color}"></span> ${t.name}`}</span><div class="track"><span style="width:${d / tot * 100}%;background:var(--s-done)"></span><span style="width:${c / tot * 100}%;background:var(--s-cont)"></span></div><span class="num">${d + c}</span></div>`; }).join('')}<div style="display:flex;gap:14px;font-size:12px;margin-top:8px"><span><span class="dot" style="background:var(--s-done)"></span> טופל</span><span><span class="dot" style="background:var(--s-cont)"></span> המשך טיפול</span></div></section>
+      <section class="card sec"><h2>סיבות להמשך טיפול</h2>${bars(rs, 'var(--s-cont)')}</section></div>
+    <section class="card sec"><h2>ביקורים לפי שבוע</h2><div style="display:flex;align-items:flex-end;gap:18px;height:170px;border-bottom:1px solid var(--line);padding:0 6px">${weeks.map(([l, n]) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><span class="num" style="font-size:12px">${n}</span><div style="width:100%;max-width:70px;height:${n / wmx * 140}px;background:var(--accent);border-radius:4px 4px 0 0"></div></div>`).join('')}</div><div style="display:flex;gap:18px;padding:6px 6px 0;font-size:12px;color:var(--muted);text-align:center">${weeks.map(w => `<span style="flex:1">${w[0]}</span>`).join('')}</div></section>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:0"><h2>המשך טיפול – הכי ותיקים</h2></div><div class="scrollx"><table><thead><tr><th>פנייה</th><th>לקוח</th><th>טכנאי אחרון</th><th>סיבה</th><th>פתוח</th><th>נציגה</th></tr></thead><tbody>${openCont.sort((a, b) => lastVisit(a).date.localeCompare(lastVisit(b).date)).slice(0, 6).map(c => { const v = lastVisit(c); const days = Math.round((D(TODAY) - D(v.date)) / 864e5); return `<tr class="click" data-act="openCard" data-req="${c.req}"><td>${c.req}</td><td><b>${esc(c.customer)}</b></td><td>${tech(v.tech).name}</td><td>${pill('cont', ' · ' + esc(v.reason))}</td><td class="num" style="${days > 7 ? 'color:var(--danger);font-weight:700' : ''}">${days ? days + ' ימים' : 'היום'}</td><td>${esc(c.rep)}</td></tr>`; }).join('')}</tbody></table></div></section>`;
+}
+function dashTech() {
+  const cv = closedV();
+  const st = TECHS.map(t => { const m = cv.filter(x => x.v.tech === t.id); const firsts = S.calls.filter(c => c.visits[0].tech === t.id && ['done', 'cont'].includes(c.visits[0].status)); const days = new Set(m.map(x => x.v.date)).size; return { t, n: m.length, d: m.filter(x => x.v.status === 'done').length, c: m.filter(x => x.v.status === 'cont').length, f1: firsts.length ? Math.round(firsts.filter(c => c.visits[0].status === 'done').length / firsts.length * 100) : 0, tr: avg(m.map(x => travelOf(x.v)).filter(x => x != null)), tt: avg(m.map(x => treatOf(x.v)).filter(x => x != null)), pd: days ? (m.length / days).toFixed(1) : 0 }; });
+  return `<div class="cols3">${st.map(s => `<section class="card sec" style="border-top:4px solid ${s.t.color}"><div style="display:flex;justify-content:space-between;align-items:center"><button data-act="techDetail" data-t="${s.t.id}" data-f="all" data-track="${ROLE[S.role].short} · פירוט טכנאי" style="border:0;background:none;padding:0;font-family:var(--display);font-weight:600;font-size:18px;color:var(--accent)">${s.t.name} ›</button><span class="sub">${s.pd} ביקורים ליום</span></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;text-align:center">${[[s.n, 'ביקורים', 'var(--ink)', 'all'], [s.d, 'טופל', 'var(--s-done)', 'done'], [s.c, 'המשך טיפול', 'var(--s-cont)', 'cont']].map(([v, l, c, f]) => `<button data-act="techDetail" data-t="${s.t.id}" data-f="${f}" style="background:var(--tint);border:1px solid transparent;border-radius:8px;padding:8px"><div class="num" style="font-family:var(--display);font-size:22px;font-weight:600;color:${c}">${v}</div><div class="sub" style="font-size:12px">${l}</div></button>`).join('')}</div>
+      <div class="kv" style="margin-top:12px;grid-template-columns:1fr auto"><span>נסגר בביקור ראשון</span><b class="num">${s.f1}%</b><span>זמן נסיעה ממוצע</span><b class="num">${s.tr} דק׳</b><span>זמן טיפול ממוצע</span><b class="num">${s.tt} דק׳</b></div></section>`).join('')}</div>
+    <div class="cols2"><section class="card sec"><h2>זמן נסיעה ממוצע (דק׳)</h2>${bars(st.map(s => [s.t.name, s.tr, s.t.color]))}</section><section class="card sec"><h2>זמן טיפול ממוצע (דק׳)</h2>${bars(st.map(s => [s.t.name, s.tt, s.t.color]))}</section></div>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:0"><h2>סיבות להמשך טיפול לפי טכנאי</h2></div><div class="scrollx"><table><thead><tr><th>סיבה</th>${TECHS.map(t => `<th style="text-align:center">${t.name}</th>`).join('')}<th style="text-align:center">סה"כ</th></tr></thead><tbody>${REASONS.map(r => { const v = TECHS.map(t => cv.filter(x => x.v.tech === t.id && x.v.reason === r.name).length); return `<tr><td>${esc(r.name)}</td>${v.map(x => `<td style="text-align:center" class="num">${x}</td>`).join('')}<td style="text-align:center" class="num"><b>${v.reduce((a, b) => a + b, 0)}</b></td></tr>`; }).join('')}</tbody></table></div></section>`;
+}
+
+function dashTechDetail(id) {
+  const t = tech(id), f = S.tdFilter || 'all';
+  const all = allVisits().filter(x => x.v.tech === id).sort((a, b) => (b.v.date + b.v.start).localeCompare(a.v.date + a.v.start));
+  const closed = all.filter(x => ['done', 'cont'].includes(x.v.status));
+  const firsts = S.calls.filter(c => c.visits[0].tech === id && ['done', 'cont'].includes(c.visits[0].status));
+  const rows = all.filter(x => f === 'all' || (f === 'open' ? OPEN.includes(x.v.status) : x.v.status === f));
+  const cnt = k => k === 'all' ? all.length : k === 'open' ? all.filter(x => OPEN.includes(x.v.status)).length : all.filter(x => x.v.status === k).length;
+  const fm = m => m == null ? '—' : m + ' דק׳';
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px"><button class="btn" data-act="techDetailBack">› חזרה לדשבורד</button><h2 style="font-size:22px"><span class="dot" style="background:${t.color};width:12px;height:12px"></span> ${t.name} · כל הביקורים</h2></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${TECHS.map(x => `<button class="chip ${x.id === id ? 'on' : ''}" data-act="techDetail" data-t="${x.id}" data-f="${f}">${x.name}</button>`).join('')}</div></div>
+    <div class="kpis">
+      <div class="card kpi"><div class="l">ביקורים</div><div class="v num">${all.length}</div><div class="d">אוקטובר, כולל מתוכננים</div></div>
+      <div class="card kpi"><div class="l">טופל</div><div class="v num" style="color:var(--s-done)">${cnt('done')}</div><div class="d">${closed.length ? Math.round(cnt('done') / closed.length * 100) : 0}% מהביקורים שנסגרו</div></div>
+      <div class="card kpi"><div class="l">המשך טיפול</div><div class="v num" style="color:var(--s-cont)">${cnt('cont')}</div><div class="d">סיבה מובילה: ${esc((REASONS.map(r => [r.name, closed.filter(x => x.v.reason === r.name).length]).sort((a, b) => b[1] - a[1])[0] || ['—'])[0])}</div></div>
+      <div class="card kpi"><div class="l">נסגר בביקור ראשון</div><div class="v num">${firsts.length ? Math.round(firsts.filter(c => c.visits[0].status === 'done').length / firsts.length * 100) : 0}%</div><div class="d">מתוך ${firsts.length} קריאות</div></div>
+      <div class="card kpi"><div class="l">זמן נסיעה ממוצע</div><div class="v num">${avg(closed.map(x => travelOf(x.v)).filter(x => x != null))}<small style="font-size:15px"> דק׳</small></div></div>
+      <div class="card kpi"><div class="l">זמן טיפול ממוצע</div><div class="v num">${avg(closed.map(x => treatOf(x.v)).filter(x => x != null))}<small style="font-size:15px"> דק׳</small></div></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${[['all', 'הכל'], ['open', 'פתוחים / מתוכננים'], ['done', 'טופל'], ['cont', 'המשך טיפול'], ['cancel', 'בוטלה']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" data-act="tdFilter" data-v="${k}">${l} <span class="num" style="opacity:.6">${cnt(k)}</span></button>`).join('')}</div>
+    <section class="card" style="overflow:hidden"><div class="scrollx"><table><thead><tr><th>תאריך</th><th>שעה</th><th>פנייה</th><th>ביקור</th><th>לקוח</th><th>עיר</th><th>מוצר</th><th>מק"ט</th><th>סטטוס</th><th>נסיעה</th><th>טיפול</th><th>תיעוד</th><th>חתימה</th></tr></thead><tbody>
+      ${rows.map(({ c, v }) => `<tr class="click" data-act="openCard" data-req="${c.req}"><td class="num">${v.date === TODAY ? 'היום' : ddmm(v.date)}</td><td class="num">${v.start}</td><td><b style="color:var(--accent)">${c.req}</b></td><td class="num" style="text-align:center">${v.n}</td><td><b>${esc(c.customer)}</b></td><td>${esc(c.city)}</td><td>${esc(prod(c.sku).name)}</td><td dir="ltr" style="text-align:right">${c.sku}</td><td>${pill(v.status, v.reason ? ' · ' + esc(v.reason) : '')}</td><td class="num">${fm(travelOf(v))}</td><td class="num">${fm(treatOf(v))}</td><td class="sub">${v.media.length ? '📷 ' + v.media.length : ''}${v.rec ? ' 🎙' : ''}${v.summary ? ' ✎' : ''}</td><td>${v.signer ? '✓' : ''}</td></tr>`).join('')}
+    </tbody></table></div>${!rows.length ? '<div class="empty">אין ביקורים בסינון הזה</div>' : `<div class="sub" style="padding:10px 14px">${rows.length} ביקורים · לחיצה על שורה פותחת את כרטיס הקריאה</div>`}</section>`;
+}
+function dashProd() {
+  const by = key => { const m = {}; S.calls.forEach(c => { const k = prod(c.sku)[key]; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
+  const rows = PRODUCTS.map(p => { const cs = S.calls.filter(c => c.sku === p.sku); const vs = cs.flatMap(c => c.visits).filter(v => ['done', 'cont'].includes(v.status)); const cont = vs.length ? Math.round(vs.filter(v => v.status === 'cont').length / vs.length * 100) : 0; const w = cs.length ? Math.round(cs.filter(c => c.warranty.startsWith('כן')).length / cs.length * 100) : 0; const iss = {}; cs.forEach(c => iss[c.desc] = (iss[c.desc] || 0) + 1); return { p, n: cs.length, cont, w, top: Object.entries(iss).sort((a, b) => b[1] - a[1])[0]?.[0] || '—' }; }).sort((a, b) => b.n - a.n);
+  return `<div class="cols2"><section class="card sec"><h2>קריאות לפי מותג</h2>${bars(by('brand'), 'var(--accent)')}</section><section class="card sec"><h2>קריאות לפי ספק</h2>${bars(by('sup'), 'var(--accent)')}</section></div>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:0;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h2>מק"טים עם הכי הרבה קריאות</h2><span class="sub">מסומן באדום: שיעור המשך טיפול מעל 40%</span></div><div class="scrollx"><table><thead><tr><th>מק"ט</th><th>מוצר</th><th>מותג</th><th>ספק</th><th>קריאות</th><th>באחריות</th><th>% המשך טיפול</th><th>תקלה נפוצה</th></tr></thead><tbody>${rows.map(r => `<tr><td dir="ltr" style="text-align:right">${r.p.sku}</td><td>${r.p.name}</td><td>${r.p.brand}</td><td>${r.p.sup}</td><td class="num"><b>${r.n}</b></td><td class="num">${r.w}%</td><td class="num" style="${r.cont > 40 ? 'color:var(--danger);font-weight:700' : ''}">${r.cont}%</td><td>${esc(r.top)}</td></tr>`).join('')}</tbody></table></div></section>
+    <div class="note">מק"ט ותיאור התקלה מגיעים מזימון ה-Outlook. מותג וספק מגיעים מקטלוג המוצרים. כדי שהניתוח יהיה אמין, "מוצר" ו"מק"ט" הם שדות חובה בזימון.</div>`;
+}
+
+// --- settings
+const SETS = [['users', 'משתמשים והרשאות'], ['techs', 'טכנאים'], ['places', 'מקומות איסוף'], ['reasons', 'סיבות המשך טיפול'], ['mail', 'מיילים והתראות'], ['template', 'תבנית זימון']];
+const tog = (on, act, attrs = '', dis = false) => `<button class="tog ${on ? 'on' : ''}" data-act="${act}" ${attrs} ${dis ? 'disabled' : ''} aria-pressed="${on ? 'true' : 'false'}"></button>`;
+function offSettings() {
+  const t = S.setTab, title = SETS.find(s => s[0] === t)[1];
+  const body = { users: setUsers, techs: setTechs, places: setPlaces, reasons: setReasons, mail: setMail, template: setTemplate }[t]();
+  return `<div class="ptitle"><div><h1>הגדרות · ${title}</h1><div class="sub">שינוי כאן משפיע מיד על הדמו</div></div></div>
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div style="width:200px;flex:none;display:flex;flex-direction:column;gap:4px">${SETS.map(([k, l]) => `<button data-act="setTab" data-v="${k}" style="text-align:right;padding:10px 14px;border-radius:8px;font-weight:700;font-size:14px;${t === k ? 'background:var(--card);border:1px solid var(--line);color:var(--accent)' : 'border:1px solid transparent;background:none;color:var(--ink2)'}">${l}</button>`).join('')}</div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">${body}</div></div>`;
+}
+function setUsers() {
+  const rp = r => `<span class="pill" style="background:${ROLE[r].bg};color:var(--on-dark)">${ROLE[r].short}</span>`;
+  return `<section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px;display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">משתמשים</h2><button class="btn pri" data-act="toast" data-msg="הוספת משתמש תהיה זמינה בגרסה המלאה">+ הוספת משתמש</button></div><div class="scrollx"><table><thead><tr><th>שם</th><th>מייל</th><th>הרשאה</th><th>מצב</th></tr></thead><tbody>${USERS.map(u => `<tr><td><b>${u.name}</b></td><td dir="ltr" style="text-align:right;color:var(--muted)">${u.email}</td><td>${rp(u.role)}</td><td><span class="pill" style="background:var(--s-done-bg);color:var(--s-done-fg)">פעיל</span></td></tr>`).join('')}</tbody></table></div></section>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px"><h2 style="margin:0">מה כל הרשאה רואה</h2><div class="sub" style="margin-top:4px">יוצר רואה הכל ולא ניתן להגביל אותו. נסה לכבות משהו למנהל, ואז לעבור למעלה לתפקיד "מנהל".</div></div><div class="scrollx"><table><thead><tr><th>מסך / פעולה</th><th style="text-align:center">יוצר</th><th style="text-align:center">מנהל</th><th style="text-align:center">שירות לקוחות</th></tr></thead><tbody>${PERMS.map(([k, l]) => `<tr><td>${l}</td><td style="text-align:center;color:var(--s-done);font-weight:700">✓ 🔒</td><td style="text-align:center">${tog(S.perms.mgr[k], 'perm', `data-r="mgr" data-k="${k}" aria-label="${l} למנהל"`)}</td><td style="text-align:center">${tog(S.perms.cs[k], 'perm', `data-r="cs" data-k="${k}" aria-label="${l} לשירות לקוחות"`)}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+function setTechs() {
+  return `<section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px;display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">טכנאים</h2><button class="btn pri" data-act="toast" data-msg="הוספת טכנאי תהיה זמינה בגרסה המלאה">+ הוספת טכנאי</button></div><div class="scrollx"><table><thead><tr><th>צבע</th><th>שם</th><th>טלפון</th><th>מייל ב-Outlook</th><th>מכשיר</th><th>פעיל</th></tr></thead><tbody>${TECHS.map(t => `<tr><td><span class="dot" style="background:${t.color};width:14px;height:14px;border-radius:4px"></span></td><td><b>${t.name}</b></td><td dir="ltr" style="text-align:right">${t.phone}</td><td dir="ltr" style="text-align:right;color:var(--muted)">${t.email}</td><td>סמארטפון</td><td>${tog(true, 'toggleSelf', 'aria-label="פעיל"')}</td></tr>`).join('')}</tbody></table></div></section>
+    <div class="note">זימון משויך לטכנאי לפי המייל שלו בשדה "אל" ב-Outlook. טכנאי שמכובה לא מקבל זימונים חדשים, וההיסטוריה שלו נשמרת בדשבורד.</div>`;
+}
+function setPlaces() {
+  return `<section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px;display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">מקומות איסוף</h2><button class="btn pri" data-act="toast" data-msg="הוספת מקום תהיה זמינה בגרסה המלאה">+ הוספת מקום</button></div><div class="scrollx"><table><thead><tr><th>שם</th><th>סוג</th><th>כתובת (ל-Waze)</th><th>טלפון</th><th>שעות פתיחה</th><th>פעיל</th></tr></thead><tbody>${PLACES.map(p => `<tr><td><b>${p.name}</b></td><td>${p.type}</td><td>${p.addr}</td><td dir="ltr" style="text-align:right">${p.phone}</td><td>${p.hours}</td><td>${tog(true, 'toggleSelf', 'aria-label="פעיל"')}</td></tr>`).join('')}</tbody></table></div></section>
+    <div class="note">השמות כאן הם האפשרויות בשדה "לאסוף מ:" בזימון. הכתובת משמשת לכפתור ה-Waze במסך הבית של הטכנאי. הכתובות לדוגמה בלבד.</div>`;
+}
+function setReasons() {
+  const cv = closedV();
+  return `<section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px"><h2 style="margin:0">סיבות המשך טיפול</h2><div class="sub" style="margin-top:4px">סיבה מכובה נעלמת מהטכנאי מיד. נסה לכבות אחת ולסגור ביקור בתפקיד טכנאי.</div></div><div class="scrollx"><table><thead><tr><th>סדר</th><th>סיבה</th><th style="text-align:center">שימוש החודש</th><th>פעילה</th></tr></thead><tbody>${REASONS.map((r, i) => `<tr><td class="num" style="color:var(--muted)">${i + 1}</td><td><b>${r.name}</b></td><td style="text-align:center" class="num">${cv.filter(x => x.v.reason === r.name).length}</td><td style="display:flex;gap:10px;align-items:center">${tog(S.reasonsOn[r.name], 'reasonOn', `data-k="${esc(r.name)}" aria-label="${esc(r.name)}"`)}${r.added && !cv.some(x => x.v.reason === r.name) ? `<button class="chip" style="padding:3px 10px;font-size:12px;color:var(--danger)" data-act="delReason" data-k="${esc(r.name)}">מחיקה</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap"><input id="newReason" data-in="newReason" placeholder="סיבה חדשה, למשל: נדרש אישור ספק" style="flex:1;min-width:200px" aria-label="סיבה חדשה"><button class="btn pri" data-act="addReason" data-track="יוצר · הוספת סיבת המשך טיפול">+ הוספת סיבה</button></div>
+      <div class="sub" style="padding:0 18px 12px">סיבה חדשה מופיעה מיד לטכנאי במסך הסגירה, בדשבורד ובסינון. אפשר למחוק רק סיבה שעוד לא השתמשו בה, וסיבה שכבר בשימוש אפשר רק לכבות.</div></section>
+    <section class="card sec"><h2>נוסח אישור "טופל"</h2><label for="fixedText" class="sub">הנוסח שהלקוח חותם עליו כשהטכנאי בוחר "טופל"</label><input id="fixedText" data-in="fixedText" value="${esc(S.fixedText)}" style="width:100%;margin-top:6px"></section>`;
+}
+function setMail() {
+  const m = S.mailCfg;
+  const line = (l, r, sub = '') => `<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:11px 0;border-bottom:1px solid var(--line2)"><span>${l}${sub ? `<div class="sub">${sub}</div>` : ''}</span>${r}</div>`;
+  const card = (k, title, col) => `<section class="card sec" style="border-top:4px solid ${col}"><h2>${title}</h2>${line('הנציגה המטפלת (מהזימון)', tog(m[k].rep, 'mailCfg', `data-k="${k}" data-f="rep" aria-label="נציגה"`))}${line('תיבת שירות לקוחות', `<span dir="ltr" class="sub">${m[k].box}</span>`)}${line('העתק למנהל (דורון)', tog(m[k].mgr, 'mailCfg', `data-k="${k}" data-f="mgr" aria-label="העתק למנהל"`))}${line('לצרף תמונות וסרטונים', tog(m[k].media, 'mailCfg', `data-k="${k}" data-f="media" aria-label="מדיה"`), 'אחרת – רק קישור לכרטיס הקריאה')}</section>`;
+  return `<div class="cols2">${card('done', '✓ ביקור שטופל', 'var(--s-done)')}${card('cont', '↻ ביקור שעבר להמשך טיפול', 'var(--s-cont)')}</div>
+    <div class="cols2"><section class="card sec"><h2>התראות לטכנאי (בטלפון)</h2>${line('זימון חדש או שינוי ביומן', tog(m.techNew, 'mailCfg', 'data-f="techNew" aria-label="זימון חדש"'))}${line('ביטול ביקור', tog(m.techCancel, 'mailCfg', 'data-f="techCancel" aria-label="ביטול"'))}${line('תזכורת "מה לאסוף" בבוקר', tog(m.techCollect, 'mailCfg', 'data-f="techCollect" aria-label="תזכורת"'), 'בשעה 07:00, רק אם יש מה לאסוף')}</section>
+      <section class="card sec"><h2>זימון שלא נקלט</h2>${line('מייל לנציגה ששלחה את הזימון', tog(m.unparsed.rep, 'mailCfg', 'data-k="unparsed" data-f="rep" aria-label="מייל לנציגה"'), 'עם רשימת השדות החסרים')}<div class="sub" style="margin-top:8px">נסה: "📅 שליחת זימון מ-Outlook" למעלה, עם שדה חובה ריק.</div></section></div>`;
+}
+function setTemplate() {
+  return `<section class="card sec"><h2>זיהוי זימון</h2><div class="kv" style="grid-template-columns:220px 1fr"><span>נושא הזימון מתחיל ב-</span><b>[קריאת שירות]</b><span>בדיקת תיבת Outlook</span><b>כל 5 דקות</b><span>מספר פנייה שכבר קיים</span><b>מצטרף לקריאה כביקור נוסף</b></div></section>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px"><h2 style="margin:0">תוויות בזימון</h2><div class="sub" style="margin-top:4px">שדה חובה שחסר בזימון גורם לכך שהזימון לא ייקלט, והנציגה מקבלת מייל.</div></div><div class="scrollx"><table><thead><tr><th>תווית (כמו שכתובה בזימון)</th><th>חובה</th></tr></thead><tbody>${TEMPLATE.map(([l, k]) => `<tr><td><b>${l}:</b></td><td>${tog(S.required[k], 'reqOn', `data-k="${k}" aria-label="${l} חובה"`, k === 'req')}</td></tr>`).join('')}</tbody></table></div></section>`;
+}
+
+// --- usage
+function offUsage() {
+  const base = [['יורם', 'tech', 38, 5, 'היום 09:07', 'סמארטפון'], ['אדי', 'tech', 31, 5, 'היום 09:40', 'סמארטפון'], ['שמואל', 'tech', 35, 5, 'היום 09:52', 'סמארטפון'], ['שיראל', 'cs', 42, 5, 'היום 10:02', 'מחשב'], ['נציגה 2', 'cs', 6, 2, 'לפני 3 ימים', 'מחשב'], ['דורון', 'mgr', 14, 4, 'אתמול 17:20', 'מחשב + נייד'], ['משתמש יוצר', 'creator', 22, 5, 'היום 08:15', 'מחשב']];
+  const live = { 'יורם': S.logins.tech, 'שיראל': S.logins.cs, 'דורון': S.logins.mgr, 'משתמש יוצר': S.logins.creator };
+  const rb = r => r === 'tech' ? 'var(--t-y)' : ROLE[r].bg;
+  const top = Object.entries(S.track).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const baseTop = [['טכנאי · פתיחת כרטיס קריאה', 412], ['טכנאי · ניווט ב-Waze', 176], ['טכנאי · הגעתי', 171], ['טכנאי · סיום ביקור', 168], ['שירות לקוחות · יומן טכנאים', 154], ['שירות לקוחות · פתיחת כרטיס קריאה', 109], ['מנהל · דשבורד כללי', 38], ['מנהל · ייצוא ל-Excel', 9]];
+  const cv = closedV(); const recN = cv.filter(x => x.v.rec).length;
+  return `<div class="ptitle"><div><h1>מדדי שימוש</h1><div class="sub">מי נכנס ועל מה לוחצים · השבוע</div></div>${exportBtn()}</div>
+    <div class="kpis"><div class="card kpi"><div class="l">משתמשים פעילים</div><div class="v num">6 / 7</div><div class="d" style="color:var(--danger)">נציגה 2 כמעט לא נכנסת</div></div><div class="card kpi"><div class="l">כניסות השבוע</div><div class="v num">${188 + Object.values(S.logins).reduce((a, b) => a + b, 0)}</div><div class="d" style="color:var(--s-done)">▲ 12% משבוע שעבר</div></div><div class="card kpi"><div class="l">סיכומים בהקלטה</div><div class="v num">${cv.length ? Math.round(recN / cv.length * 100) : 0}%</div><div class="d">השאר בכתיבה</div></div><div class="card kpi"><div class="l">ביקורים שנסגרו באפליקציה</div><div class="v num">96%</div><div class="d">4% דווחו בטלפון</div></div></div>
+    <section class="card" style="overflow:hidden"><div class="sec" style="padding-bottom:6px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h2 style="margin:0">כניסות לפי משתמש</h2><span class="sub">מסומן בצהוב: פעיל פחות מ-3 ימים בשבוע · כולל כניסות בדמו הזה</span></div><div class="scrollx"><table><thead><tr><th>משתמש</th><th>הרשאה</th><th style="text-align:center">כניסות</th><th style="text-align:center">ימים פעילים</th><th>כניסה אחרונה</th><th>מכשיר</th></tr></thead><tbody>${base.map(([n, r, c, d, l, dev]) => `<tr style="${d < 3 ? 'background:var(--warn-bg)' : ''}"><td><b>${n}</b></td><td><span class="pill" style="background:${rb(r)};color:var(--on-dark)">${r === 'tech' ? 'טכנאי' : ROLE[r].short}</span></td><td style="text-align:center" class="num"><b>${c + (live[n] || 0)}</b></td><td style="text-align:center" class="num">${d}/5</td><td>${live[n] ? 'עכשיו (בדמו)' : l}</td><td class="sub">${dev}</td></tr>`).join('')}</tbody></table></div></section>
+    <div class="cols2"><section class="card sec"><h2>על מה לוחצים הכי הרבה (השבוע)</h2>${bars(baseTop.map(([l, n]) => [l, n + (S.track[l] || 0)]), 'var(--accent)')}</section>
+      <section class="card sec"><h2>הלחיצות שלך בדמו הזה</h2>${top.length ? bars(top, 'var(--s-work)') : '<div class="empty">עוד לא נלחץ כלום. עבור בין המסכים וחזור לכאן.</div>'}</section></div>`;
+}
+// ===== mails =====
+let mailSeq = 1;
+function pushMail(m) { m.id = mailSeq++; m.time = `${ddmm(TODAY)} · ${nowHM()}`; S.mails.unshift(m); }
+function mailForVisit(c, v) {
+  const k = v.status, cfg = S.mailCfg[k], p = prod(c.sku), t = tech(v.tech);
+  const to = [cfg.rep ? c.rep : null, cfg.box].filter(Boolean).join(' ; ');
+  const cc = cfg.mgr ? 'דורון (מנהל)' : '';
+  const head = k === 'done' ? `✓ טופל · פנייה ${c.req} · ${c.customer} · ${c.city}` : `↻ המשך טיפול · פנייה ${c.req} · ${c.customer} · ${c.city}`;
+  const banner = k === 'done' ? `<span class="pill" style="background:var(--s-done-bg);color:var(--s-done-fg)">הקריאה טופלה ונסגרה</span>` : `<span class="pill" style="background:var(--s-cont-bg);color:var(--s-cont-fg)">המשך טיפול · ${esc(v.reason)}</span>`;
+  const html = `${banner}
+    ${k === 'cont' ? `<div style="background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:8px;padding:10px 12px;color:var(--warn-ink)"><b>מה צריך לעשות:</b> לקבוע ביקור חדש ב-Outlook עם אותו מספר פנייה (${c.req}). הוא יצורף לקריאה כביקור ${v.n + 1}.</div>` : ''}
+    <div class="kv"><span>לקוח</span><span>${esc(c.customer)} · <span dir="ltr">${esc(c.phone)}</span></span><span>כתובת</span><span>${esc(c.street)}, ${esc(c.city)}</span><span>מוצר / מק"ט</span><span>${esc(p.name)} · ${p.sku}</span><span>טכנאי</span><span>${t.name} · ביקור ${v.n}</span></div>
+    <div style="background:var(--tint);border-radius:8px;padding:10px 12px"><div class="sub" style="font-weight:700">סיכום הטכנאי</div>${v.summary ? esc(v.summary) : ''}${v.rec ? `<div class="sub">הקלטה ${Math.floor(v.rec / 60)}:${pad(v.rec % 60)} · ההאזנה בכרטיס הקריאה</div>` : ''}</div>
+    ${cfg.media && v.media.length ? `<div><div class="sub" style="font-weight:700;margin-bottom:6px">תמונות וסרטונים (${v.media.length})</div><div style="display:flex;gap:8px;flex-wrap:wrap">${v.media.map(m => `<div class="thumb ${m.t === 'vid' ? 'vid' : ''}" style="width:58px;${m.url ? `background-image:url('${m.url}')` : ''}"></div>`).join('')}</div></div>` : ''}
+    ${k === 'done' ? `<div>✍ נחתם ע"י <b>${esc(v.signer)}</b>: "${esc(S.fixedText)}"</div>` : ''}
+    <div><button class="btn pri" data-act="openCardFromMail" data-req="${c.req}">לכרטיס הקריאה ›</button></div>`;
+  pushMail({ kind: k, req: c.req, to, cc, subject: head, html });
+}
+
+// ===== outlook simulation =====
+let OL = null;
+function inviteBody(f) { return TEMPLATE.map(([l, k]) => `${l}: ${f[k] ?? ''}`).join('\n'); }
+function sampleInvite(kind) {
+  if (kind === 'follow') { const c = findCall('48190'); return { subject: `[קריאת שירות] 48190 · ${c.customer} · ${c.city}`, tech: 's', date: '2026-10-22', start: '11:00', end: '12:30', body: inviteBody({ req: '48190', task: '2', rep: 'שיראל', customer: c.customer, phone: c.phone, city: c.city, street: c.street, type: 'תיקון', product: prod(c.sku).name, sku: c.sku, desc: c.desc, warranty: 'כן', collect: 'מנגנון מילוי WC-300', collectFrom: 'מרלוג' }) }; }
+  const f = { req: '48300', task: '1', rep: 'שיראל', customer: 'רותם אלמוג', phone: '052-000-7070', phone2: '', city: 'רחובות', street: 'בילו 22', building: 'ב', floor: '2', apt: '5', arrival: 'כניסה מהחניה', type: 'תיקון', product: 'ברז מטבח נשלף', sku: 'KT-2041', desc: 'הנשלף לא חוזר למקום', warranty: 'כן', collect: 'ראש נשלף KT-2041', collectFrom: 'סניף ראשון לציון', techNote: '' };
+  if (kind === 'missing') { f.phone = ''; f.street = ''; }
+  return { subject: '[קריאת שירות] 48300 · רותם אלמוג · רחובות', tech: 'y', date: TODAY, start: '17:00', end: '18:00', body: inviteBody(f) };
+}
+function outlookHtml() {
+  const f = OL;
+  return `<div class="modal-bg" data-act="closeOverlay"><div class="modal" role="dialog" aria-label="זימון ב-Outlook" data-stop="1">
+    <div class="ol-top"><b>Outlook · פגישה חדשה (הדמיה)</b><button class="xbtn" style="background:rgba(255,255,255,.15);color:var(--on-dark)" data-act="closeOverlay" aria-label="סגירה">✕</button></div>
+    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+      <div class="note">כך הנציגה עובדת היום: זימון רגיל ב-Outlook לפי התבנית. האפליקציה קוראת אותו לבד. אפשר לערוך כל שדה, או לבחור דוגמה:
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn" data-act="olSample" data-v="new">לקוח חדש</button><button class="btn" data-act="olSample" data-v="follow">ביקור המשך (פנייה 48190)</button><button class="btn" data-act="olSample" data-v="missing">זימון עם שדות חסרים</button></div></div>
+      <div style="display:grid;grid-template-columns:70px 1fr;gap:8px 10px;align-items:center">
+        <label for="olTo">אל</label><select id="olTo" data-in="ol" data-f="tech">${TECHS.map(t => `<option value="${t.id}" ${f.tech === t.id ? 'selected' : ''}>${t.name} &lt;${t.email}&gt;</option>`).join('')}</select>
+        <label for="olSub">נושא</label><input id="olSub" data-in="ol" data-f="subject" value="${esc(f.subject)}">
+        <label for="olDate">מועד</label><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="olDate" data-in="ol" data-f="date">${['2026-10-21', '2026-10-22'].map(d => `<option value="${d}" ${f.date === d ? 'selected' : ''}>${dayName(d)} ${ddmm(d)}</option>`).join('')}</select><input id="olStart" data-in="ol" data-f="start" value="${f.start}" style="width:80px" aria-label="שעת התחלה"><input id="olEnd" data-in="ol" data-f="end" value="${f.end}" style="width:80px" aria-label="שעת סיום"></div>
+      </div>
+      <label for="olBody" class="sub" style="font-weight:700">גוף הזימון (לפי התבנית)</label>
+      <textarea id="olBody" data-in="ol" data-f="body" rows="14" style="width:100%;font-size:14px;line-height:1.55">${esc(f.body)}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-start"><button class="btn pri" data-act="olSend" data-track="דמו · זימון נשלח">שליחה</button><button class="btn" data-act="closeOverlay">ביטול</button></div>
+    </div></div></div>`;
+}
+function parseInvite() {
+  const f = OL; const val = {};
+  for (const [l, k] of TEMPLATE) { const re = new RegExp('^[ \\t]*' + l.replace(/[.*+?^${}()|[\]\\"]/g, m => '\\' + m) + '[ \\t]*:[ \\t]*(.*)$', 'm'); const m = f.body.match(re); const x = m ? m[1].trim() : ''; val[k] = x === '—' ? '' : x; }
+  if (!f.subject.trim().startsWith('[קריאת שירות]')) { toast('הנושא לא מתחיל ב-"[קריאת שירות]", לכן האפליקציה מתעלמת מהזימון (כמו מכל פגישה רגילה).'); return; }
+  const missing = TEMPLATE.filter(([l, k]) => S.required[k] && !val[k]).map(t => t[0]);
+  if (val.sku && !prod(val.sku)) missing.push('מק"ט (לא קיים בקטלוג)');
+  if (val.collect && val.collectFrom && !PLACES.find(p => p.name === val.collectFrom)) missing.push('לאסוף מ (מקום לא מוכר)');
+  if (missing.length) {
+    if (S.mailCfg.unparsed.rep) pushMail({ kind: 'unparsed', req: val.req, to: val.rep || 'שיראל', cc: '', subject: `⚠ זימון לא נקלט · ${f.subject}`, html: `<span class="pill" style="background:var(--danger-bg);color:var(--danger-fg)">הזימון לא נקלט לאפליקציה</span><div>הזימון ל${tech(f.tech).name} ב-${ddmm(f.date)} ${f.start} לא נקלט כי חסרים בו שדות חובה:</div><ul style="margin:0;padding-inline-start:20px">${missing.map(m => `<li><b>${esc(m)}</b></li>`).join('')}</ul><div class="note">מה לעשות: לעדכן את הזימון ב-Outlook ולשלוח שוב. הוא ייקלט אוטומטית, והטכנאי יראה אותו.</div>` });
+    S.overlay = null; render(); toast(`הזימון לא נקלט: חסר ${missing.join(', ')}. נשלח מייל לנציגה.`); return;
+  }
+  let c = findCall(val.req);
+  const visit = { task: +val.task || 1, tech: f.tech, date: f.date, start: f.start, end: f.end, status: 'new', departAt: null, arriveAt: null, endAt: null, summary: '', rec: 0, media: [], reason: null, signer: null, collect: val.collect, collectFrom: val.collectFrom };
+  if (c) { visit.n = c.visits.length + 1; c.visits.push(visit); }
+  else { visit.n = 1; c = { req: val.req, customer: val.customer, phone: val.phone, phone2: val.phone2, city: val.city, street: val.street, building: val.building, floor: val.floor, apt: val.apt, arrival: val.arrival, type: val.type, sku: val.sku, desc: val.desc, warranty: val.warranty, rep: val.rep, techNote: val.techNote, visits: [visit] }; S.calls.push(c); }
+  S.overlay = null; render();
+  if (f.tech === ME && S.mailCfg.techNew) S.notifs.unshift({ id: S.notifSeq++, kind: visit.n > 1 ? 'follow' : 'new', title: visit.n > 1 ? 'נקבע ביקור המשך' : 'קריאה חדשה שובצה לך', sub: `${c.customer} · ${c.city} · ${dayName(f.date)} ${ddmm(f.date)} · ${f.start}${visit.n > 1 ? ' · ביקור ' + visit.n : ''}`, time: 'עכשיו', req: c.req, n: visit.n, read: false });
+  toast(`נקלט אוטומטית: ${c.customer} · ביקור ${visit.n} אצל ${tech(f.tech).name}, ${dayName(f.date)} ${ddmm(f.date)} ${f.start}`);
+}
+function mailsHtml() {
+  const sel = S.mails.find(m => m.id === S.mailSel) || S.mails[0];
+  return `<div class="modal-bg" data-act="closeOverlay"><div class="modal" role="dialog" aria-label="מיילים שנשלחו" data-stop="1" style="width:min(980px,100%)">
+    <div class="ol-top" style="background:var(--ink)"><b>מיילים שנשלחו מהאפליקציה (הדמיה)</b><button class="xbtn" style="background:rgba(255,255,255,.15);color:var(--on-dark)" data-act="closeOverlay" aria-label="סגירה">✕</button></div>
+    ${S.mails.length ? `<div class="mailbox"><div style="border-left:1px solid var(--line);overflow:auto;max-height:70vh">${S.mails.map(m => `<button class="mailitem ${sel && sel.id === m.id ? 'on' : ''}" data-act="mailSel" data-id="${m.id}"><b style="font-size:13px;display:block">${esc(m.subject)}</b><span class="sub">${m.time} · אל ${esc(m.to)}</span></button>`).join('')}</div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-width:0"><div class="kv" style="grid-template-columns:50px 1fr;font-size:13px"><span>אל</span><span>${esc(sel.to)}</span>${sel.cc ? `<span>העתק</span><span>${esc(sel.cc)}</span>` : ''}<span>נושא</span><b>${esc(sel.subject)}</b></div><div style="border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:12px;font-size:14px">${sel.html}</div></div></div>`
+      : `<div class="empty" style="padding:50px 20px">עוד לא נשלחו מיילים. סגור ביקור בתפקיד טכנאי, או שלח זימון עם שדה חסר.</div>`}
+  </div></div>`;
+}
+
+// ===== toast =====
+let tTimer;
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(tTimer); tTimer = setTimeout(() => t.hidden = true, 4200); }
+
+// ===== render =====
+function render() {
+  document.getElementById('devices').innerHTML = [['auto', 'מסך מלא'], ['tablet', 'טאבלט'], ['phone', 'טלפון']].map(([k, l]) => `<button class="${(S.device || 'auto') === k ? 'on' : ''}" data-act="device" data-v="${k}">${l}</button>`).join('');
+  document.getElementById('roles').innerHTML = Object.entries(ROLE).map(([k, r]) => `<button class="${S.role === k ? 'on' : ''}" data-act="role" data-v="${k}">${r.l}</button>`).join('');
+  document.getElementById('mailcnt').textContent = S.mails.length;
+  const ph = document.getElementById('phmain'); const sc = ph ? ph.scrollTop : 0; const prevView = S._lastView;
+  document.getElementById('app').innerHTML = S.role === 'tech' ? renderTech() : renderOffice();
+  const view = S.role + S.techView + S.officeView + (S.techSel ? S.techSel.req : '') + (S.callSel || '');
+  const ph2 = document.getElementById('phmain'); if (ph2 && prevView === view) ph2.scrollTop = sc;
+  S._lastView = view;
+  document.getElementById('overlay').innerHTML = S.overlay === 'drawer' ? drawerHtml() : S.overlay === 'outlook' ? outlookHtml() : S.overlay === 'mails' ? mailsHtml() : '';
+  initSig();
+}
+
+// ===== back navigation: always one level up to the screen it was opened from =====
+const OFF_KEYS = ['officeView', 'calView', 'calDate', 'calFilter', 'dashTab', 'techDetail', 'tdFilter', 'fStatus', 'fTech', 'setTab'];
+const snap = keys => Object.fromEntries(keys.map(k => [k, S[k]]));
+function backName() { const o = S.backOffice; if (!o) return 'קריאות'; return o.officeView === 'cal' ? 'יומן' : o.officeView === 'dash' ? (o.techDetail ? 'פירוט הטכנאי' : 'דשבורד') : o.officeView === 'usage' ? 'מדדי שימוש' : 'קריאות'; }
+// ===== actions =====
+const A = {
+  back: () => {
+    S.overlay = null; S.confirmCancel = false;
+    if (S.role === 'tech') {
+      const v = S.techView;
+      if (v === 'close') S.techView = 'work';
+      else if (v === 'doneView') S.techView = 'doneList';
+      else if (v === 'work') S.techView = 'call';
+      else if (v === 'call') { Object.assign(S, S.backTech || { techView: 'home' }); S.techSel = null; }
+      else S.techView = 'home';
+    } else if (S.officeView === 'card') { Object.assign(S, S.backOffice || { officeView: 'calls' }); }
+    else if (S.officeView === 'dash') S.techDetail = null;
+    render();
+  },
+  role: e => { S.role = e.dataset.v; S.logins[S.role]++; S.overlay = null; S.confirmCancel = false; if (S.role === 'tech') { S.techView = 'home'; S.techSel = null; } else if (S.officeView === 'card') S.officeView = 'calls'; render(); },
+  device: e => { S.device = e.dataset.v; document.body.dataset.device = S.device; render(); },
+  reset: () => { S = freshState(); mailSeq = 1; render(); toast('הדמו אופס לנתוני הפתיחה'); },
+  toast: e => toast(e.dataset.msg),
+  dial: e => toast(`חיוג ${e.dataset.who}: ${e.dataset.to} (בדמו לא מתבצעת שיחה)`),
+  export: () => toast('בגרסה המלאה יורד קובץ Excel עם הנתונים שבמסך. בדמו לא נוצר קובץ.'),
+  toggleSelf: e => { e.classList.toggle('on'); e.setAttribute('aria-pressed', e.classList.contains('on')); },
+  // technician
+  techTab: e => { S.techView = e.dataset.v; S.techSel = null; if (e.dataset.v === 'cal') S.techCalDate = TODAY; render(); },
+  openVisit: e => { if (S.techView === 'home' || S.techView === 'cal') S.backTech = snap(['techView', 'techCal', 'techCalDate']); S.techSel = { req: e.dataset.req, n: +e.dataset.n }; S.techView = 'call'; S.close = { choice: null, reason: null, signer: '', ink: false, sig: null }; render(); },
+  waze: e => { const c = findCall(e.dataset.req), v = c.visits.find(x => x.n === +e.dataset.n); if (v.status === 'new') { v.status = 'go'; v.departAt = nowHM(); toast('הסטטוס: בדרך · נפתח ניווט ב-Waze (בדמו לא נפתח)'); } else toast('נפתח ניווט ב-Waze (בדמו לא נפתח)'); render(); },
+  wazePlace: e => toast(`ניווט ב-Waze אל ${e.dataset.p} (בדמו לא נפתח)`),
+  arrived: () => { const { v } = selVisit(); v.status = 'work'; v.arriveAt = nowHM(); S.techView = 'work'; render(); toast('הסטטוס: בטיפול'); },
+  techGo: e => { S.techView = e.dataset.v; render(); },
+  sampleMedia: e => { const { v } = selVisit(); const n = v.draft.media.filter(m => m.when === e.dataset.when).length; v.draft.media.push({ t: n % 2 ? 'vid' : 'img', when: e.dataset.when }); render(); },
+  sumMode: e => { selVisit().v.draft.mode = e.dataset.v; render(); },
+  recStart: () => { S.rec = { t0: Date.now() }; S.recTimer = setInterval(() => { const el = document.getElementById('recTime'); if (el) { const s = Math.floor((Date.now() - S.rec.t0) / 1000); el.textContent = Math.floor(s / 60) + ':' + pad(s % 60); } }, 250); render(); },
+  recStop: () => { const s = Math.max(3, Math.floor((Date.now() - S.rec.t0) / 1000)); clearInterval(S.recTimer); S.rec = null; selVisit().v.draft.rec = s; render(); },
+  closeChoice: e => { S.close.choice = e.dataset.v; render(); },
+  closeReason: e => { S.close.reason = e.dataset.v; render(); },
+  sigClear: () => { S.close.ink = false; S.close.sig = null; render(); },
+  sendClose: () => {
+    const { c, v } = selVisit(); const d = v.draft || { media: [], summary: '', rec: 0 }; const k = S.close;
+    Object.assign(v, { status: k.choice, endAt: nowHM(), summary: d.summary.trim(), rec: d.rec, media: d.media, reason: k.choice === 'cont' ? k.reason : null, signer: k.choice === 'done' ? k.signer.trim() : null, sigImg: k.choice === 'done' ? k.sig : null });
+    delete v.draft; mailForVisit(c, v);
+    S.techView = 'home'; S.techSel = null; S.close = { choice: null, reason: null, signer: '', ink: false, sig: null };
+    render(); toast(v.status === 'done' ? 'הביקור נסגר כ"טופל". נשלח מייל לשירות הלקוחות.' : 'הביקור הועבר להמשך טיפול. נשלח מייל לשירות הלקוחות.');
+  },
+  openDone: e => { S.doneSel = { req: e.dataset.req, n: +e.dataset.n }; S.techView = 'doneView'; render(); },
+  openNotifs: () => { S.techView = 'notif'; S.techSel = null; render(); },
+  readAll: () => { S.notifs.forEach(x => x.read = true); render(); },
+  openNotif: e => { const x = S.notifs.find(n => n.id === +e.dataset.id); x.read = true; if (x.req) { S.backTech = { techView: 'notif', techCal: S.techCal, techCalDate: S.techCalDate }; S.techSel = { req: x.req, n: x.n }; S.techView = 'call'; S.close = { choice: null, reason: null, signer: '', ink: false, sig: null }; } else S.techView = 'home'; render(); },
+  techCalView: e => { S.techCal = e.dataset.v; render(); },
+  techCalDay: e => { S.techCalDate = e.dataset.d; S.techCal = 'day'; render(); },
+  calShift: e => { const n = +e.dataset.d; if (S.techCal === 'month') { toast('בדמו יש נתונים רק לאוקטובר'); return; } if (S.techCal === 'week') S.techCalDate = addDays(S.techCalDate, 7 * n); else { let d = addDays(S.techCalDate, n); while (!isWork(d)) d = addDays(d, n); S.techCalDate = d; } render(); },
+  // office
+  nav: e => { S.officeView = e.dataset.v; S.confirmCancel = false; S.techDetail = null; render(); },
+  drawer: e => { S.drawer = { req: e.dataset.req, n: +e.dataset.n }; S.overlay = 'drawer'; render(); },
+  closeOverlay: () => { S.overlay = null; render(); },
+  openCard: e => { if (!can('calls')) { toast('להרשאה הזו אין גישה לכרטיס הקריאה'); return; } if (S.officeView !== 'card') S.backOffice = snap(OFF_KEYS); S.callSel = e.dataset.req; S.officeView = 'card'; S.overlay = null; S.confirmCancel = false; render(); },
+  openCardFromMail: e => { if (S.role === 'tech') { S.role = 'cs'; S.logins.cs++; } A.openCard(e); },
+  calDay: e => { const n = +e.dataset.d, m = S.calView || 'day'; if (m === 'week') S.calDate = addDays(S.calDate, 7 * n); else if (m === 'month') { const d = D(S.calDate.slice(0, 8) + '01'); d.setMonth(d.getMonth() + n); S.calDate = iso(d); } else { let d = addDays(S.calDate, n); while (!isWork(d)) d = addDays(d, n); S.calDate = d; } render(); },
+  calView: e => { S.calView = e.dataset.v; render(); },
+  calGoDay: e => { S.calDate = e.dataset.d; S.calView = 'day'; render(); },
+  calToday: () => { S.calDate = TODAY; render(); },
+  calFilter: e => { S.calFilter = e.dataset.v; render(); },
+  fStatus: e => { S.fStatus = e.dataset.v; render(); },
+  dashTab: e => { S.dashTab = e.dataset.v; S.techDetail = null; render(); },
+  techDetail: e => { S.techDetail = e.dataset.t; S.tdFilter = e.dataset.f || 'all'; render(); document.querySelector('.work')?.scrollIntoView(); },
+  techDetailBack: () => { S.techDetail = null; render(); },
+  tdFilter: e => { S.tdFilter = e.dataset.v; render(); },
+  setTab: e => { S.setTab = e.dataset.v; render(); },
+  perm: e => { if (S.role !== 'creator') { toast('רק יוצר יכול לשנות הרשאות'); return; } const p = S.perms[e.dataset.r]; p[e.dataset.k] = p[e.dataset.k] ? 0 : 1; render(); },
+  addReason: () => { const el = document.getElementById('newReason'); const n = (el ? el.value : '').trim(); if (!n) { toast('כתוב את שם הסיבה ואז לחץ הוספה'); el && el.focus(); return; } if (REASONS.some(r => r.name === n)) { toast('הסיבה הזו כבר קיימת ברשימה'); return; } REASONS.push({ name: n, on: true, w: 0, added: true }); S.reasonsOn[n] = true; render(); toast(`הסיבה "${n}" נוספה ומופיעה לטכנאי במסך הסגירה`); },
+  delReason: e => { const k = e.dataset.k; const i = REASONS.findIndex(r => r.name === k); if (i >= 0) REASONS.splice(i, 1); delete S.reasonsOn[k]; render(); toast(`הסיבה "${k}" נמחקה`); },
+  reasonOn: e => { const k = e.dataset.k; if (S.reasonsOn[k] && Object.values(S.reasonsOn).filter(Boolean).length === 1) { toast('חייבת להישאר לפחות סיבה אחת פעילה'); return; } S.reasonsOn[k] = !S.reasonsOn[k]; render(); },
+  mailCfg: e => { const f = e.dataset.f, k = e.dataset.k; if (k) S.mailCfg[k][f] = S.mailCfg[k][f] ? 0 : 1; else S.mailCfg[f] = S.mailCfg[f] ? 0 : 1; render(); },
+  reqOn: e => { S.required[e.dataset.k] = !S.required[e.dataset.k]; render(); },
+  askCancel: () => { S.confirmCancel = true; render(); },
+  noCancel: () => { S.confirmCancel = false; render(); },
+  doCancel: () => { const cc = findCall(S.callSel), v = lastVisit(cc); v.status = 'cancel'; if (v.tech === ME && S.mailCfg.techCancel) S.notifs.unshift({ id: S.notifSeq++, kind: 'cancel', title: 'ביקור בוטל', sub: `${cc.customer} · ${cc.city} · ${dayName(v.date)} ${ddmm(v.date)} · ${v.start}`, time: 'עכשיו', req: cc.req, n: v.n, read: false }); S.confirmCancel = false; render(); toast(`הביקור בוטל וירד מהיומן של ${tech(v.tech).name}`); },
+  // demo bar
+  outlookOpen: () => { OL = sampleInvite('new'); S.overlay = 'outlook'; render(); },
+  olSample: e => { OL = sampleInvite(e.dataset.v); render(); },
+  olSend: () => parseInvite(),
+  mailsOpen: e => { S.overlay = 'mails'; S.mailSel = e.dataset.id ? +e.dataset.id : (S.mails[0] || {}).id; render(); },
+  mailSel: e => { S.mailSel = +e.dataset.id; render(); }
+};
+
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act],[data-stop]'); if (!el || el.dataset.stop) return;
+  if (el.disabled) return;
+  if (el.dataset.track) S.track[el.dataset.track] = (S.track[el.dataset.track] || 0) + 1;
+  const f = A[el.dataset.act]; if (f) f(el, ev);
+});
+document.addEventListener('input', ev => {
+  const el = ev.target; const k = el.dataset && el.dataset.in; if (!k) return;
+  if (k === 'q') { S.q = el.value; document.getElementById('callsBody').innerHTML = callsTable(); }
+  else if (k === 'fTech') { S.fTech = el.value; document.getElementById('callsBody').innerHTML = callsTable(); }
+  else if (k === 'summary') { const v = selVisit().v; v.draft.summary = el.value; const b = document.getElementById('finishBtn'); if (b) b.disabled = !workReady(v.draft); const h = document.getElementById('finishHint'); if (h) h.textContent = workHint(v.draft); }
+  else if (k === 'signer') { S.close.signer = el.value; updateSend(); }
+  else if (k === 'fixedText') { S.fixedText = el.value; }
+  else if (k === 'ol') { OL[el.dataset.f] = el.value; }
+});
+document.addEventListener('change', ev => {
+  const el = ev.target; const k = el.dataset && el.dataset.in;
+  if (k === 'collect') { S.collected[el.dataset.k] = el.checked; if (el.checked) S.track['טכנאי · סימון "נאסף"'] = (S.track['טכנאי · סימון "נאסף"'] || 0) + 1; render(); }
+  else if (k === 'media' && el.files && el.files[0]) { const v = selVisit().v; v.draft.media.push({ t: el.dataset.t, when: el.dataset.when, url: el.dataset.t === 'img' ? URL.createObjectURL(el.files[0]) : null }); render(); }
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.id === 'newReason') { A.addReason(); return; } if (ev.key === 'Escape' && S.overlay) { S.overlay = null; render(); } });
+
+S = freshState();
+render();
+</script>
+
+</body></html>

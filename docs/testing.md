@@ -1,0 +1,11 @@
+# Testing and Verification Plan
+- Unit tests for Zod validation, appointment parsing, status-transition rules, transcript approvals, XLSX formula sanitization and event idempotency.
+- Integration tests: DB unique constraints, role-based table grants/RLS, private Storage access, offline retry, atomic visit completion + email outbox.
+- Auth/access negative tests: anonymous, technician A, technician B, customer service, manager, creator; forbidden role escalation, disabled users and tampered visit IDs.
+- Secret leakage checks: code/history/CI output/build bundles/sourcemaps/error responses; no privileged env variable values anywhere public.
+- Offline: initial login online, cache selected assigned visits, disconnect, capture photo/signature/audio, queue completion, close/reopen tab, reconnect, sync interrupted, retry once, conflict with office cancellation, low storage, sign out.
+- Real Android and iPhone PWA tests are mandatory for offline before pilot; don't promise background uploads while app is closed.
+- UI regression: compare approved demo against actual app at 390, 820, 1440 px, Hebrew RTL, keyboard navigation and accessible touch targets.
+- Email: no real sends in dev; mock manager+customer-service recipients, provider failure and retries; only send after server final state and approved summary.
+- Excel: authorized filters and Hebrew, no media or signed URLs, sanitize formula prefixes.
+- Before pilot: independent security assessment, documented backup/restore demonstration, retention/privacy review, MFA setup, realistic load/storage tests.
