@@ -1,5 +1,12 @@
 # Work Log (English only)
 
+## 2026-11-02 — PR #1 merged; first Production deployment
+- PR #1 (Step 0) merged to `main` by the owner: merge commit `3f977fc` at 12:55 Israel time (10:55:50 UTC); parents `e70a33c` (previous `main`) and `6a05b4d` (Step 0 branch head). CI on `6a05b4d` had passed every step before the merge (run 41430037190); CI on the `main` push of `3f977fc` also passed every step (run 41432692571).
+- First Production deployment (read-only check, 2026-11-02): `dpl_5h2HN7WLr7NHtuJoqooBCgwdsUXG`, target Production, READY, built from `main` at `3f977fc`, functions in `fra1`; `vercel.json` allowed the build because it is Production from `main`. Served at both Production domains, `technician-management-mody-projects.vercel.app` and `technician-management.vercel.app`, and at Vercel's automatic addresses for `main` (`technician-management-git-main-mody-projects.vercel.app`) and for the deployment itself.
+- Protection before the merge and after the deployment (read-only checks): Vercel Authentication on All Deployments; Password Protection off; Trusted IPs off; one team member (the owner); firewall IP bypass rules are not available on Vercel Hobby. Protection Bypass for Automation and shareable links cannot be read through the available tools; Claude Code created none (the owner confirmed earlier that Protection Bypass for Automation was empty).
+- Owner anonymous-access check (2026-11-02, private window): both Production domains and `/dev/showcase` show the Vercel login screen, not the app.
+- D32 (local-only development, Vercel deployments disabled) was proposed and withdrawn the same day; D31 remains in force and the workflow is unchanged. No local commits, `vercel.json` changes or local-development documents were made for it.
+
 ## 2026-11-02 — Step 0 approved; pre-merge changes
 - Owner visual approval recorded (2026-11-02): visual review round 1 approved and the Step 0 screens approved as they are (Preview of commit `e488b54`).
 - Owner anonymous-access check (2026-11-02): opening the Preview in a private browser window showed the Vercel login screen, not the app. (The Claude Code environment cannot reach `*.vercel.app` because of its network policy.)
