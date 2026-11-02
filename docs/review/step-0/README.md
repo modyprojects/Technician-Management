@@ -1,7 +1,7 @@
 # Step 0 review screenshots
 
 Fictitious data only. Taken with `npm run screenshots` (Playwright, Chromium) from a local production
-build of commit `76b4aa2`, at 390 x 844, 820 x 1180 and 1440 x 900 px. Demo references come from
+build of the commit that contains them (latest: "Step 0 review round 1: tablet table headroom"), at 390 x 844, 820 x 1180 and 1440 x 900 px. Demo references come from
 `docs/demo.html` with its demo bar hidden.
 
 | Width | Technician shell | Office shell | Other |

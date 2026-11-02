@@ -132,6 +132,10 @@ button.stat:hover { background: var(--ink3); }
 @container stage (min-width: 521px) and (max-width: 900px) {
   td, th { padding-inline: 8px; }
   th.col-fit { white-space: normal; }
+  /* Long-text columns (city, rep) may wrap here like customer and product, so the table keeps
+     headroom for font-rendering differences instead of fitting to the pixel. */
+  td.col-fit:not(.col-center) { width: auto; white-space: normal; }
+  th.col-fit:not(.col-center) { width: auto; }
 }
 /* Desktop (owner review 2026-11-02, TE-31): header and bottom-nav backgrounds stay full width,
    their content aligns with the 760px card column. */
