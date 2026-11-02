@@ -1,19 +1,19 @@
 # Technician Management — functional specification
 
-Last updated: 2026-10-26. Precedence: `docs/decisions.md` → `docs/demo-deviations.md` → `docs/demo.html`.
+Last updated: 2026-11-01. Precedence: `docs/decisions.md` → `docs/demo-deviations.md` → `docs/demo.html`.
 
 ## Goal
-A responsive PWA that replaces the technicians' WhatsApp group: technicians document and close service visits on their phones; the office follows status, history and analytics. Office scheduling stays in Outlook. The app reads invitations from the Microsoft 365 calendar (D18). **Real use starts only after Microsoft 365 is connected (D23); until then everything is testing with fictitious data**, using the Outlook invitation simulator (D24).
+A responsive PWA that replaces the technicians' WhatsApp group: technicians document and close service visits on their phones or tablets; the office follows status, history and analytics, mainly on desktop. Every screen for every role works on phone, tablet and desktop; no role is locked to a device (D27). Office scheduling stays in Outlook. The app reads invitations from the Microsoft 365 calendar (D18). **Real use starts only after Microsoft 365 is connected (D23); until then everything is testing with fictitious data**, using the Outlook invitation simulator (D24).
 
 ## Out of scope
 - Creating or scheduling service calls inside the app (scheduling stays in Outlook).
 - Any ONE ERP integration, preparation, export, field or format (D07).
 - Push, SMS or WhatsApp notifications (D10).
 - Scheduled background jobs in the first release (D25).
-- GPS / vehicle tracking, customer satisfaction messages, tablets (future).
+- GPS / vehicle tracking, customer satisfaction messages. (Tablets are in the first release, D27.)
 
 ## User roles
-- **Technician**: sees only his assigned visits. Phone-first: schedule, pickup list, customer contact and navigation, arrival, before/after media, written or spoken summary, parts replaced, signature for resolved visits, follow-up reason and next-visit notes.
+- **Technician**: sees only his assigned visits. Phone- and tablet-first, also usable on desktop (D27): schedule, pickup list, customer contact and navigation, arrival, before/after media, written or spoken summary, parts replaced, signature for resolved visits, follow-up reason and next-visit notes.
 - **Customer Service**: all calls and customers; office screens; unparsed-invitations list; read-only calendar; in-app notifications; simulator in test environments (D24). Cancellation rights: OPEN (decisions.md open #5).
 - **Manager**: everything Customer Service has, plus dashboard, product/supplier analysis, Excel export, user management for standard users, product editing, audited corrections, simulator in test environments.
 - **Creator**: all rights, auditable; MFA required in production.
@@ -70,6 +70,11 @@ For both outcomes, to Manager and the customer-service mailbox, through a transa
 
 ## Excel export (D11)
 Authorized filtered rows, Hebrew, text only, no media or links, formula-injection safe. Columns OPEN (open #18).
+
+## Devices and screen sizes (D27, D28)
+- Every screen for every role works at ~390 px (phone), ~820 px (tablet) and ~1440 px (desktop), following the demo's container-query breakpoints: technician layout widens from 600 px; office sidebar becomes a top bar at 900 px and below; compact tables at 520 px and below.
+- Technician screens are designed for phone and tablet first; above ~900 px they keep the tablet layout (content centred up to 760 px). Office screens are designed for desktop first and stay usable on tablet and phone.
+- During development screens are reviewed in a desktop browser at the three sizes and from screenshots; real phone and tablet tests (touch, PWA install, camera, offline) come in later steps and before launch.
 
 ## Visual and language rules
 `docs/demo.html` defines layout, colors, typography and flows, as amended by `docs/demo-deviations.md`. UI Hebrew RTL. Engineering docs English.

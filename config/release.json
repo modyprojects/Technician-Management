@@ -1,0 +1,4 @@
+{
+  "note": "Testing period (D31): /dev is served in Vercel Preview and Production, behind Vercel Authentication, and the bundle fixture check is off. Set testingPeriod to false at the go-live gate (docs/deployment.md).",
+  "testingPeriod": true
+}
