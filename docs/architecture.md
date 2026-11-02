@@ -4,9 +4,9 @@
 Vercel-hosted Next.js PWA → authenticated server actions / API routes → Supabase Postgres (RLS), Auth and private Storage. The browser uses only the publishable key and user-authorized access; rare privileged server operations use the secret key. External integrations sit behind server-only adapters.
 
 ## Environments
-- **Development and Preview:** fictitious data only; Outlook invitation simulator enabled (D24).
-- **Production:** used for real work only after Microsoft 365 is connected (D23); simulator disabled by environment setting.
-- Separate Supabase projects for development and production. Preview never points at production.
+- **Development and Preview:** fictitious data only; Outlook invitation simulator enabled (D24); Preview visible to the owner only during the testing period (D29).
+- **Production:** used for real work only after Microsoft 365 is connected (D23); simulator disabled by environment setting. Until go-live it is the owner's protected viewing address for approved versions with fictitious data only, may serve `/dev`, and will point to the development Supabase project (D31, known deviation; see the go-live gate in `docs/deployment.md`).
+- Separate Supabase projects for development and production from go-live, once the owner approves a production project (D30). During the testing period Vercel Production uses the development project (D31 known deviation). Preview never points at a production database.
 
 ## Business model
 Customers → service calls → visits. Technician assignment belongs to visits. Visits own media, recordings, transcripts, parts and signatures. Call status, visit status and device sync state are distinct. Products are created from invitations (D19); brand and supplier optional.

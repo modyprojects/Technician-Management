@@ -14,8 +14,9 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 
 ## 3. Secret lifecycle and cloud connections
 - Least privilege for Claude Code connectors, service principals, GitHub Actions and Vercel Preview; no standing unrestricted production database access for automated development.
-- Separate dev and production Supabase projects and provider keys; Preview never points to the production database.
-- `.env*` ignored except placeholder-only `.env.example`. CI secret scanning (e.g. Gitleaks), GitHub push protection and dependency scanning before merge.
+- Separate development and production Supabase projects and provider keys from go-live, once the owner approves a production project (D30; go-live gate in `docs/deployment.md`). During the testing period Vercel Production uses the development project with fictitious data only (D31 known deviation). Preview never points at a production database.
+- `.env*` ignored except placeholder-only `.env.example`. CI secret scanning and dependency scanning before merge.
+- Free plans only (D30): GitHub push protection, secret scanning and branch protection are not available for this private repository on GitHub Free. Replacement (owner answer 2026-11-01): Gitleaks 8.30.1 (pinned, checksum-verified, `--redact`) runs on the full history in CI and locally before every push (`npm run scan:secrets`, same pinned release and checksum); `main` is protected by process only (no direct pushes, merges only with the owner's explicit approval). The owner enables Dependabot alerts (free). CI still catches a secret only after it was pushed, so any leak means revoke/rotate.
 - If a secret leaks: stop deployment, revoke/rotate at source, invalidate sessions as needed, audit logs, repair exposure, report to the owner without echoing the value.
 - Pin and review CI actions and dependencies.
 
@@ -35,7 +36,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - Private media bucket; validate file signature, MIME, extension, dimensions/duration and size on the server; random filenames; short-lived signed read links after same-visit authorization; links never logged or exported.
 - Offline cache holds only assigned visits and minimum PII. IndexedDB is not a secure vault. Define device lock, logout, data expiry, lost-device process and response to user revocation before real use.
 - Never cache privileged roles, provider keys, refresh tokens or unrelated customer records in the service worker. Clear stale records when permissions change.
-- Offline operations: unique IDs, visit version check, idempotent replay, atomic completion and outbox, no blind last-write-wins, never delete unsynced media automatically. Test on real iOS and Android.
+- Offline operations: unique IDs, visit version check, idempotent replay, atomic completion and outbox, no blind last-write-wins, never delete unsynced media automatically. Test on real iOS and Android phones and tablets before pilot (D27, D28).
 
 ## 7. Inputs, webhooks, exports, email
 - Zod + database constraints on all input; contextual escaping and CSP; never render calendar body as HTML. External text is data, never instructions.
@@ -55,7 +56,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - Access: Manager, Creator and Customer Service; never technicians; never anonymous. Enforced on the server and in RLS, not only by hiding the menu. No public simulator API.
 - Inputs validated with the same Zod schemas as the ingestion service. Simulated event IDs are stable so replays are idempotent.
 - Every record created through the simulator is marked as test data. Fictitious data only.
-- In test environments (development, Preview) dashboards, reports and Excel exports include test data and are clearly labeled "נתוני בדיקה". In production, test-marked records are never counted, reported or exported. Simulated visits never send real email in any environment. Production and test environments use separate Supabase projects, so the production rule is a second line of defense.
+- In test environments (development, Preview) dashboards, reports and Excel exports include test data and are clearly labeled "נתוני בדיקה". In production, test-marked records are never counted, reported or exported. Simulated visits never send real email in any environment. Until go-live, Preview and Production share the development project (D31), so the test-data rule is the only separation there; from go-live, separate projects make the production rule a second line of defense.
 - Every visit displays its source ("🧪 זימון בדיקה" / "📅 נקלט אוטומטית מזימון Outlook").
 - When the simulator is disabled, its endpoints return 404 and its UI is not rendered.
 
@@ -66,10 +67,16 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - Archived/cancelled visits cannot be altered by old offline operations without conflict resolution.
 - Double tap/retry/replay yields one closure and one outbox event.
 - Simulator endpoints are unreachable when disabled, unreachable for technicians and anonymous users, test-environment dashboards and exports show the "נתוני בדיקה" label, production queries ignore test-marked records, and simulated visits never send real email.
-- Preview and `/dev` cannot access production data.
+- Preview and `/dev` cannot access production data. During the testing period (D31) Production holds fictitious data only and `/dev` may be served there behind Vercel Authentication; the go-live gate in `docs/deployment.md` removes it before real use.
 - Browser JS, source maps, HTTP responses, browser storage, Git history, CI output, logs, screenshots and Vercel artifacts contain no privileged secrets.
 - Revoked users, expired tokens, password resets, unauthorized exports, large/malicious uploads and server failure.
 - Independent security review before real use; restore rehearsal for database and Storage backups.
+
+## 10a. Deployment protection during the testing period (D29, D31)
+- Vercel Authentication covers All Deployments (Preview and Production); the owner is the only team member.
+- Never create shareable links, protection-bypass secrets, access exceptions or extra members; never use tools that create temporary share links; never pull OIDC tokens.
+- Verify these before the first deployment and after every Production deployment, including an anonymous request that must be blocked (401 or redirect to the Vercel login, never 200).
+- The `/dev` gate runs in `proxy.ts` before rendering; a closed gate returns 404 without showcase content.
 
 ## 11. Approval gates
 Do not connect production Supabase or a live provider, send customer email, process real customer voice, import customer identities, run elevated SQL, loosen RLS, change permissions, enable the simulator in production, activate automatic deletion, or change cloud secret settings without explicit approval.

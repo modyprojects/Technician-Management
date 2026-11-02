@@ -1,4 +1,6 @@
-# Prompt P0-1 — Step 0 plan only (version 2, 2026-10-26)
+# Prompt P0-1 — Step 0 plan only (version 3, 2026-11-01)
+
+Version 3 aligns the prompt with D27–D31 (responsive for every role, desktop review during development, owner-only Preview, free plans only, protected Production as the owner's viewing address).
 
 Paste the block below into a new Claude Code session on the `technician-management` repository.
 
@@ -30,9 +32,9 @@ Inspect the repository read-only and propose the smallest safe plan for Step 0:
 Your plan, in Hebrew, must include:
 1. Every file you will create or change, with one line on why.
 2. Every dependency with an exact version, and why it is needed.
-3. How the Preview stays private, and anything I must switch on in Vercel myself.
+3. How the Preview stays private so that only I can open it (D29), and anything I must switch on in Vercel myself.
 4. Expected cost. If it is zero on current plans, say so explicitly.
-5. How I can check the result on my phone and computer (390px, 820px, 1440px).
+5. How I can check the result in my desktop browser at 390px, 820px and 1440px and from screenshots (D28). Real phone and tablet checks come in later steps.
 6. What you will NOT do in Step 0.
 7. Any conflict you found between the documents. Do not resolve it yourself; list it and ask me.
 
