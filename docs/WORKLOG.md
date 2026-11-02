@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-02 — Step 0 approved; pre-merge changes
+- Owner visual approval recorded (2026-11-02): visual review round 1 approved and the Step 0 screens approved as they are (Preview of commit `e488b54`).
+- Owner anonymous-access check (2026-11-02): opening the Preview in a private browser window showed the Vercel login screen, not the app. (The Claude Code environment cannot reach `*.vercel.app` because of its network policy.)
+- Next.js telemetry disabled for every build: `NEXT_TELEMETRY_DISABLED=1` in the `build` script (Vercel, CI and local builds).
+- PR #1 marked ready for review. No merge to `main` and no Production deployment until the owner explicitly approves the merge.
+
 ## 2026-11-02 — Step 0 first deployments and visual review round 1
 - Push 1 (`0f62168`): Vercel targeted the project's first deployment at Production; `vercel.json` skipped it (CANCELED, nothing built or served). The owner-authored commit was accepted (no Hobby block). Push 2 (`36b772b`): Preview READY, functions in `fra1`, stable branch address `technician-management-git-claude-trusting-872277-mody-projects.vercel.app`. Draft PR #1 opened; CI passed (all steps, about 2 minutes); the superseded run was cancelled by the concurrency setting. Vercel Authentication still on All Deployments, single member, after the deployment.
 - Anonymous-access check could not run from the Claude Code environment: its network policy denies `*.vercel.app` (proxy 403); not bypassed. The owner checks it in a private window or allows the hosts in the environment settings.
