@@ -1,0 +1,90 @@
+/*
+ * Design tokens and base styles, copied from docs/demo.html (lines 1 and 7-36).
+ * Tailwind is loaded without its preflight reset so the base matches the demo.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "../styles/ui.css" layer(components);
+
+/* Demo :root tokens (demo.html L7-21). Names and values are verbatim, except the
+   font stacks, which point at the self-hosted Rubik and Assistant from next/font. */
+:root {
+  --ink: #18212B; --ink2: #263241; --ink3: #2C3846; --muted: #5E6A78; --soft: #8A9AAB;
+  --line: #DDE3E9; --line2: #EEF1F4; --bg: #F2F4F6; --card: #FFFFFF; --tint: #F7F8FA;
+  --accent: #155E75; --accent-d: #0E4457; --accent-l: #EAF3F6; --on-dark: #FFFFFF; --on-dark2: #AEB8C4; --on-dark3: #C9D1DA;
+  --warn-bg: #FFF6E5; --warn-bd: #E8B44A; --warn-fg: #7A4B00; --warn-ink: #3D2600;
+  --danger: #B42318; --danger-bg: #FDECEA; --danger-fg: #8A1C12;
+  --s-new: #1F5FA8; --s-new-bg: #DCEBFA; --s-new-fg: #123B6B;
+  --s-go: #C79A00; --s-go-bg: #FFF2CC; --s-go-fg: #5C4300;
+  --s-work: #6A3FB5; --s-work-bg: #ECE3FA; --s-work-fg: #3D2370;
+  --s-done: #2E7D32; --s-done-bg: #DDF3E2; --s-done-fg: #1B4D1F;
+  --s-cont: #C2570C; --s-cont-bg: #FDE7D3; --s-cont-fg: #6B2E00;
+  --s-cancel: #4A5563; --s-cancel-bg: #E4E7EB; --s-cancel-fg: #2C3540;
+  --t-y: #2E7D32; --t-e: #C62828; --t-s: #1F5FA8;
+  --display: var(--font-rubik), system-ui, sans-serif;
+  --body: var(--font-assistant), 'Segoe UI', system-ui, sans-serif;
+  color-scheme: light;
+
+  /* Named versions of colors the demo hard-codes in real (non-demo-chrome) UI. */
+  --control-line: #C9D1DA;   /* inputs, .btn, .tog off, .act borders */
+  --danger-line: #E3A29B;    /* .btn.dng border */
+  --seg-bg: #E4E7EB;         /* .seg track, disabled .bigbtn */
+  --stat-line: #3A4A5B;      /* clickable header stat border */
+  --note-line: #B7D4DE;      /* .note border */
+}
+
+/* Tailwind utility names for the tokens (bg-card, text-ink, font-display, ...). */
+@theme inline {
+  --color-ink: var(--ink); --color-ink2: var(--ink2); --color-ink3: var(--ink3);
+  --color-muted: var(--muted); --color-soft: var(--soft);
+  --color-line: var(--line); --color-line2: var(--line2); --color-bg: var(--bg);
+  --color-card: var(--card); --color-tint: var(--tint);
+  --color-accent: var(--accent); --color-accent-d: var(--accent-d); --color-accent-l: var(--accent-l);
+  --color-on-dark: var(--on-dark); --color-on-dark2: var(--on-dark2); --color-on-dark3: var(--on-dark3);
+  --color-warn-bg: var(--warn-bg); --color-warn-bd: var(--warn-bd); --color-warn-fg: var(--warn-fg); --color-warn-ink: var(--warn-ink);
+  --color-danger: var(--danger); --color-danger-bg: var(--danger-bg); --color-danger-fg: var(--danger-fg);
+  --font-display: var(--display);
+  --font-body: var(--body);
+}
+
+/* Base (demo.html L1 host reset and L22-36). */
+@layer base {
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  img { max-width: 100%; }
+  [hidden]:not([hidden=until-found i]) { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    direction: rtl;
+  }
+  * { box-sizing: border-box; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; }
+  input, textarea, select {
+    font: inherit;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--control-line);
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  textarea { resize: vertical; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+}

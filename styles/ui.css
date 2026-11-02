@@ -1,0 +1,140 @@
+/*
+ * Component and shell styles copied from docs/demo.html (CSS lines 26-220), limited to
+ * the classes Step 0 uses. Demo-only chrome (demo bar, role/device switcher, phone frame,
+ * fake status bar, guide panel) is not copied (demo-deviations X-01..X-07).
+ * Breakpoints are the demo's container queries on the "stage" container.
+ */
+
+/* App stage: the demo's #stagewrap/#stage/#app (L25-26, L233).
+   Deviation for owner review: the demo gives #app only min-height:100%, so the technician
+   ".phone{height:100%}" rule never resolves and the bottom nav ends up after the content.
+   A definite height keeps the header and bottom nav fixed and scrolls only .ph-main,
+   as the demo's "real app" rule intends. Taller pages still scroll inside .stage. */
+.stagewrap { flex: 1; min-height: 0; display: flex; justify-content: center; overflow: hidden; }
+.stage { container-type: inline-size; container-name: stage; width: 100%; height: 100%; overflow: auto; background: var(--bg); }
+.app-root { height: 100%; }
+
+.num { font-variant-numeric: tabular-nums; }
+
+/* Shared bits (L52-79). */
+.pill { display: inline-block; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.sub { font-size: 13px; color: var(--muted); }
+.btn { border: 1px solid var(--control-line); background: var(--card); border-radius: 8px; padding: 8px 14px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--on-dark); }
+.btn.pri:hover { background: var(--accent-d); }
+.btn.dng { color: var(--danger); border-color: var(--danger-line); }
+.btn:disabled { opacity: .45; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 13px; font-weight: 700; font-size: 13px; }
+.chip.on { background: var(--ink); border-color: var(--ink); color: var(--on-dark); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
+.tog { width: 40px; height: 23px; border-radius: 999px; background: var(--control-line); border: 0; position: relative; padding: 0; flex: none; }
+.tog::after { content: ""; position: absolute; top: 3px; right: 3px; width: 17px; height: 17px; border-radius: 50%; background: var(--card); transition: right .15s; }
+.tog.on { background: var(--accent); }
+.tog.on::after { right: 20px; }
+.tog:disabled { opacity: .6; }
+.scrollx { overflow-x: auto; max-width: 100%; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: right; font-size: 12px; color: var(--muted); font-weight: 700; padding: 9px 10px; background: var(--tint); border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--tint); }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+/* Inline link-button look the demo uses for in-text navigation (L847, L888). */
+.lnk { color: var(--accent); font-weight: 700; text-decoration: none; }
+
+/* Technician (L82-114). .techwrap/.phone are the real app layout; the phone frame itself is DROP. */
+.techwrap { height: 100%; display: block; }
+.phone { width: 100%; height: 100%; background: var(--bg); overflow: hidden; display: flex; flex-direction: column; }
+.ph-head { background: var(--ink); color: var(--on-dark); padding: max(12px, env(safe-area-inset-top, 0px)) 16px 14px; flex: none; }
+.ph-head a, .ph-back { color: var(--on-dark3); font-size: 14px; background: none; border: 0; padding: 4px 0; }
+.ph-main { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ph-foot { padding: 12px 14px 16px; background: var(--card); border-top: 1px solid var(--line); flex: none; }
+.ph-nav { height: auto; padding-block: 8px max(8px, env(safe-area-inset-bottom, 0px)); background: var(--card); border-top: 1px solid var(--line); display: flex; justify-content: space-around; align-items: center; flex: none; }
+.ph-nav button { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ph-nav button.on { color: var(--accent); }
+.bigbtn { width: 100%; height: 54px; border-radius: 12px; border: 0; font-weight: 700; font-size: 17px; color: var(--on-dark); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.bigbtn:disabled { background: var(--seg-bg) !important; color: var(--muted) !important; }
+.stat { flex: 1; background: var(--ink2); border-radius: 10px; padding: 8px 10px; }
+.stat b { font-family: var(--display); font-size: 20px; display: block; }
+.stat span { font-size: 12px; color: var(--on-dark2); }
+button.stat { border: 1px solid var(--stat-line); color: var(--on-dark); text-align: right; display: block; }
+button.stat:hover { background: var(--ink3); }
+.li { display: flex; gap: 10px; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line2); width: 100%; background: none; border-left: 0; border-right: 0; border-top: 0; text-align: right; }
+.li:last-child { border-bottom: 0; }
+.li .t { font-family: var(--display); font-weight: 600; font-size: 15px; width: 46px; flex: none; }
+.act { height: 54px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700; background: var(--card); border: 1px solid var(--control-line); }
+.row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 8px 0; border-bottom: 1px solid var(--line2); }
+.row:last-child { border-bottom: 0; }
+.row .k { color: var(--muted); white-space: nowrap; }
+.seg { display: flex; background: var(--seg-bg); border-radius: 10px; padding: 3px; }
+.seg button { flex: 1; border: 0; background: transparent; padding: 7px; border-radius: 8px; font-weight: 700; color: var(--muted); font-size: 14px; }
+.seg button.on { background: var(--card); color: var(--ink); }
+
+/* Office (L119-149). */
+.office { display: flex; min-height: 100%; }
+.side { width: 220px; flex: none; background: var(--ink); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.side .logo { font-family: var(--display); color: var(--on-dark); font-size: 17px; padding: 0 8px 14px; }
+.side .nav { display: flex; flex-direction: column; gap: 2px; }
+.side .nav button { border: 0; background: none; color: var(--on-dark3); text-align: right; padding: 10px 12px; border-radius: 8px; font-weight: 600; font-size: 15px; }
+.side .nav button.on { background: var(--ink2); color: var(--on-dark); }
+.side .me { margin-top: auto; border-top: 1px solid var(--ink3); padding: 12px 6px 0; display: flex; gap: 10px; align-items: center; color: var(--on-dark); }
+.side .me .av { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+.side .me small { display: block; color: var(--on-dark2); font-size: 12px; }
+.work { flex: 1; min-width: 0; padding-block: 22px; padding-inline: 26px; display: flex; flex-direction: column; gap: 16px; }
+.ptitle { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.ptitle h1 { font-size: 24px; }
+.ptitle .sub { margin-top: 4px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tabs button { border: 0; background: none; padding: 10px 16px; font-weight: 700; font-size: 15px; color: var(--muted); border-bottom: 3px solid transparent; }
+.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.kpi { padding: 14px 16px; }
+.kpi .l { font-size: 13px; color: var(--muted); }
+.kpi .v { font-family: var(--display); font-size: 28px; font-weight: 600; line-height: 1.15; }
+.kpi .d { font-size: 12px; font-weight: 700; margin-top: 3px; color: var(--muted); }
+.sec { padding: 16px 18px; min-width: 0; }
+.sec h2 { font-size: 16px; margin-bottom: 12px; }
+.cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.note { background: var(--accent-l); border: 1px solid var(--note-line); border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--accent-d); line-height: 1.5; }
+
+/*
+ * Breakpoints (L176-212).
+ * Owner decision 2026-11-01 (demo-deviations v1.2): above 900px the technician app keeps the
+ * tablet layout (full-width header and nav, content centred up to 760px), because the demo's
+ * >900px state is the phone mockup (DROP X-03).
+ */
+@container stage (min-width: 600px) {
+  /* tablet and wider: wider technician layout, bigger touch targets */
+  .ph-main { padding: 18px 24px; gap: 14px; }
+  .ph-main > * { width: 100%; max-width: 760px; margin-inline: auto; }
+  .ph-head, .ph-foot { padding-inline: 24px; }
+  .ph-head h1 { font-size: 26px !important; }
+  .li { padding-block: 14px; }
+  .bigbtn { height: 60px; font-size: 19px; max-width: 760px; margin-inline: auto; }
+  .act { height: 62px; font-size: 14px; }
+}
+/* Desktop (owner review 2026-11-02, TE-31): header and bottom-nav backgrounds stay full width,
+   their content aligns with the 760px card column. */
+@container stage (min-width: 901px) {
+  .ph-head > * { max-width: 760px; margin-inline: auto; }
+  .ph-nav { padding-inline: max(0px, calc((100% - 760px) / 2)); }
+}
+@container stage (max-width: 900px) {
+  .office { flex-direction: column; }
+  .side { width: auto; flex-direction: row; align-items: center; flex-wrap: wrap; padding: 8px 12px; }
+  .side .logo { padding: 0 4px; }
+  .side .nav { flex-direction: row; flex-wrap: wrap; }
+  .side .nav button { padding: 8px 10px; font-size: 14px; }
+  .side .me { display: none; }
+  .work { padding-inline: 16px; padding-block: 16px; }
+  .cols2, .cols3 { grid-template-columns: minmax(0, 1fr); }
+}
+@container stage (max-width: 520px) {
+  td, th { white-space: nowrap; padding: 9px 8px; }
+  .scrollx { -webkit-overflow-scrolling: touch; }
+  .ptitle h1 { font-size: 21px; }
+  .kpi .v { font-size: 24px; }
+  .tabs button { padding: 8px 10px; font-size: 14px; }
+}

@@ -13,3 +13,7 @@ test-results/
 *.p12
 *.pfx
 secrets/
+next-env.d.ts
+*.tsbuildinfo
+/playwright/.cache/
+blob-report/
