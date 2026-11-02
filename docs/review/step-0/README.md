@@ -1,7 +1,7 @@
 # Step 0 review screenshots
 
 Fictitious data only. Taken with `npm run screenshots` (Playwright, Chromium) from a local production
-build of commit `0f62168`, at 390 x 844, 820 x 1180 and 1440 x 900 px. Demo references come from
+build of commit `76b4aa2`, at 390 x 844, 820 x 1180 and 1440 x 900 px. Demo references come from
 `docs/demo.html` with its demo bar hidden.
 
 | Width | Technician shell | Office shell | Other |
@@ -13,4 +13,5 @@ build of commit `0f62168`, at 390 x 844, 820 x 1180 and 1440 x 900 px. Demo refe
 Expected differences from the demo: the pickup card (Step 3) and the Excel button (PENDING OF-14) are not
 in Step 0; the manager navigation includes Settings (SE-03); the office table shows 14 sample rows; the
 technician layout above 900 px continues the tablet layout with header and navigation content on the
-760 px column (TE-31); the bottom navigation stays at the bottom of the screen (TE-32). Both approved 2026-11-02.
+760 px column (TE-31); the bottom navigation stays at the bottom of the screen (TE-32). Both approved 2026-11-02. Visual review round 1 (2026-11-02): next-visit card actions 50/50 from
+600 px (TE-33); table column alignment and sizing (G-07).
