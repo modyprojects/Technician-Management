@@ -25,7 +25,8 @@ test.describe("breakpoint boundaries", () => {
     for (const [width, wrap] of [[520, "nowrap"], [521, "normal"]] as const) {
       await page.setViewportSize({ width, height: 900 });
       await openPage(page, "/dev/showcase/office");
-      expect(await page.locator("td").first().evaluate((el) => getComputedStyle(el).whiteSpace)).toBe(wrap);
+      // Customer column: long text, so it wraps above 520px (short columns never wrap, design-system "Tables").
+      expect(await page.locator("tbody tr:first-child td:nth-child(2)").evaluate((el) => getComputedStyle(el).whiteSpace)).toBe(wrap);
     }
   });
 });

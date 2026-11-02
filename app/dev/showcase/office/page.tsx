@@ -13,6 +13,9 @@ import {
 
 export const metadata: Metadata = { title: "מסגרת משרד · תצוגת פיתוח" };
 
+// Short columns are centred and sized to content; customer and product take the rest (design-system.md "Tables").
+const SHORT = "col-center col-fit";
+
 // Office shell with the demo's calls list as sample content (fictitious data, inert controls).
 export default function OfficeShellShowcase() {
   return (
@@ -51,16 +54,16 @@ export default function OfficeShellShowcase() {
             <table>
               <thead>
                 <tr>
-                  <th>פנייה</th>
+                  <th className={SHORT}>פנייה</th>
                   <th>לקוח</th>
-                  <th>עיר</th>
+                  <th className="col-fit">עיר</th>
                   <th>מוצר</th>
-                  <th>מק&quot;ט</th>
-                  <th>טכנאי</th>
-                  <th>ביקורים</th>
-                  <th>ביקור אחרון / הבא</th>
-                  <th>סטטוס</th>
-                  <th>נציגה</th>
+                  <th className={SHORT}>מק&quot;ט</th>
+                  <th className={SHORT}>טכנאי</th>
+                  <th className={SHORT}>ביקורים</th>
+                  <th className={SHORT}>ביקור אחרון / הבא</th>
+                  <th className={SHORT}>סטטוס</th>
+                  <th className="col-fit">נציגה</th>
                 </tr>
               </thead>
               <tbody>
@@ -68,28 +71,26 @@ export default function OfficeShellShowcase() {
                   const t = TECHS[c.tech];
                   return (
                     <tr key={c.req} className="click">
-                      <td>
+                      <td className={SHORT}>
                         <b style={{ color: "var(--accent)" }}>{c.req}</b>
                       </td>
                       <td>
                         <b>{c.customer}</b>
                       </td>
-                      <td>{c.city}</td>
+                      <td className="col-fit">{c.city}</td>
                       <td>{c.product}</td>
-                      <td dir="ltr" style={{ textAlign: "right" }}>
+                      <td className={SHORT} dir="ltr">
                         {c.sku}
                       </td>
-                      <td>
+                      <td className={SHORT}>
                         <span className="dot" style={{ background: t.color }} /> {t.name}
                       </td>
-                      <td style={{ textAlign: "center" }} className="num">
-                        {c.visits}
-                      </td>
-                      <td className="num">{c.when}</td>
-                      <td>
+                      <td className={`${SHORT} num`}>{c.visits}</td>
+                      <td className={`${SHORT} num`}>{c.when}</td>
+                      <td className={SHORT}>
                         <StatusPill status={c.status} extra={c.reason ? ` · ${c.reason}` : ""} />
                       </td>
-                      <td>{c.rep}</td>
+                      <td className="col-fit">{c.rep}</td>
                     </tr>
                   );
                 })}

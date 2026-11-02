@@ -39,6 +39,10 @@ th { text-align: right; font-size: 12px; color: var(--muted); font-weight: 700; 
 td { padding: 10px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
 tr.click { cursor: pointer; }
 tr.click:hover td { background: var(--tint); }
+/* Table columns (owner review 2026-11-02, design-system.md "Tables"): short columns are centred
+   and sized to their content; long-text columns stay right-aligned and take the remaining width. */
+th.col-center, td.col-center { text-align: center; }
+th.col-fit, td.col-fit { width: 1%; white-space: nowrap; }
 .empty { padding: 28px; text-align: center; color: var(--muted); }
 /* Inline link-button look the demo uses for in-text navigation (L847, L888). */
 .lnk { color: var(--accent); font-weight: 700; text-decoration: none; }
@@ -114,6 +118,20 @@ button.stat:hover { background: var(--ink3); }
   .li { padding-block: 14px; }
   .bigbtn { height: 60px; font-size: 19px; max-width: 760px; margin-inline: auto; }
   .act { height: 62px; font-size: 14px; }
+}
+/* Next-visit card actions (owner review 2026-11-02, TE-33): from 600px the Waze and details
+   buttons share the row 50/50; below 600px the demo's layout is unchanged. */
+.next-actions { display: flex; gap: 8px; margin-top: 12px; }
+@container stage (min-width: 600px) {
+  .next-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .next-actions > * { width: 100%; max-width: none; margin-inline: 0; }
+}
+/* Tablet tables (owner review 2026-11-02): the demo's compact 8px side padding (its <=520px rule)
+   and wrapping headers on content-sized columns, so the calls table fits at 820px without
+   sideways scrolling. Phones keep the demo's single-line, sideways-scrolling table. */
+@container stage (min-width: 521px) and (max-width: 900px) {
+  td, th { padding-inline: 8px; }
+  th.col-fit { white-space: normal; }
 }
 /* Desktop (owner review 2026-11-02, TE-31): header and bottom-nav backgrounds stay full width,
    their content aligns with the 760px card column. */

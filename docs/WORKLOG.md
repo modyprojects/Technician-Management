@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-02 — Step 0 first deployments and visual review round 1
+- Push 1 (`0f62168`): Vercel targeted the project's first deployment at Production; `vercel.json` skipped it (CANCELED, nothing built or served). The owner-authored commit was accepted (no Hobby block). Push 2 (`36b772b`): Preview READY, functions in `fra1`, stable branch address `technician-management-git-claude-trusting-872277-mody-projects.vercel.app`. Draft PR #1 opened; CI passed (all steps, about 2 minutes); the superseded run was cancelled by the concurrency setting. Vercel Authentication still on All Deployments, single member, after the deployment.
+- Anonymous-access check could not run from the Claude Code environment: its network policy denies `*.vercel.app` (proxy 403); not bypassed. The owner checks it in a private window or allows the hosts in the environment settings.
+- Fixed Production address recorded (owner): `technician-management-mody-projects.vercel.app`; Vercel also lists `technician-management.vercel.app` as the project domain.
+- Visual review round 1 (owner): next-visit card buttons 50/50 from 600 px, phone unchanged (demo-deviations TE-33); table rule for all tables: short columns centred and content-sized, long-text right-aligned, extra width to customer and product, tablet compact padding and wrapping headers so the calls table fits at 820 px (design-system.md "Tables", demo-deviations G-07). New tests in `tests/e2e/review-round1.spec.ts` (a removed sizing rule fails them).
+
 ## 2026-11-02 — Step 0 owner review before the first push
 - Owner approved: commit identity option (a) (author and committer = owner's GitHub account `modyprojects`, Claude as co-author in every commit; GitHub shows "Unverified" because the environment signs with its own key; open decision 24 to find verified, transparent signing without the owner's private key); first deployment option (a) (two pushes to the feature branch, read-only check after each, stop and report if not as expected); the two pushes and a Draft PR.
 - Owner checked himself: Protection Bypass for Automation is empty; no payment method on GitHub (Actions stop at the free quota instead of billing); Dependabot alerts enabled.

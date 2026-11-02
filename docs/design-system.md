@@ -20,6 +20,14 @@
 
 **Do not add screens or change the approved aesthetic without permission**, except essential security/error states that are shown for review first.
 
+## Tables (owner, 2026-11-02; demo-deviations G-07)
+Applies to every table.
+- **Short columns** (status, dates, times, counts, technician, SKU, request number): centred and sized to their content (`col-center col-fit`).
+- **Long-text columns** (customer, product, city, rep): right-aligned. Customer and product take the remaining width; city and rep are sized to their content (`col-fit`).
+- **Tablet (521–900 px):** 8 px side padding (the demo's compact rule) and the headers of content-sized columns may wrap, so a full calls table fits without sideways scrolling.
+- **Phone (520 px and below):** as in the demo: single-line cells and sideways scrolling inside `.scrollx`.
+- Checked by `tests/e2e/review-round1.spec.ts` at 390 / 820 / 1440 px.
+
 ## Implementation (Step 0)
 - Tokens: `app/globals.css` declares the demo's 46 `:root` custom properties with the same names and values (font stacks point at the self-hosted Rubik and Assistant), plus named versions of colours the demo hard-codes (`--control-line`, `--danger-line`, `--seg-bg`, `--stat-line`, `--note-line`). `@theme inline` exposes them to Tailwind utilities (`bg-card`, `text-ink`, `font-display`...). Tailwind's preflight reset is not loaded, so base styles match the demo.
 - Components and shells: `styles/ui.css` copies the demo classes in use; React components in `components/ui`, `components/tech`, `components/office` wrap them.

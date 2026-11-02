@@ -5,7 +5,7 @@
 **v0.3 changes:** Outlook invitation simulator added as a testing feature (X-05, SIM-01 to SIM-12). Real use of the app starts only when Microsoft 365 is connected.
 **v0.4 changes:** owner approved: SKU normalization and name rule (PR-07), simulator switch by environment setting only (SIM-11, SIM-12), customer service may use the simulator in test environments (SIM-10).
 **v1.1 changes:** dashboards and exports in test environments include test data with a "נתוני בדיקה" label (SIM-08, SIM-13); visit source label (TE-12, SIM-14).
-**v1.2 changes (owner answers 2026-11-01):** dev-only side-by-side size view under `/dev` (X-03); technician layout above ~900 px (TE-31); every role at every width (D27); fictitious data in the testing-period Production (G-05, aligned with D31). TE-32 (fixed bottom navigation, proposed by Claude Code) and the desktop alignment of header and navigation content in TE-31 were approved at the owner's Step 0 review on 2026-11-02.
+**v1.2 changes (owner answers 2026-11-01):** dev-only side-by-side size view under `/dev` (X-03); technician layout above ~900 px (TE-31); every role at every width (D27); fictitious data in the testing-period Production (G-05, aligned with D31). TE-32 (fixed bottom navigation, proposed by Claude Code) and the desktop alignment of header and navigation content in TE-31 were approved at the owner's Step 0 review on 2026-11-02. Visual review round 1 (2026-11-02): next-visit card actions 50/50 from 600 px (TE-33); table column alignment and sizing (G-07).
 **Applies to:** `docs/demo.html` ("ניהול טכנאים · דמו חי · גרסה 2").
 
 ## Precedence
@@ -38,6 +38,7 @@ Decision IDs like `d05` refer to the owner's decision board. `docs/decisions.md`
 | G-04 | Screens hidden by a client-side `can()` check | CHANGE | Same visibility in UI, **plus** server/RLS enforcement. A hidden button is not access control | security.md §5 |
 | G-05 | Fictitious seed data (customers, phones, addresses) | KEEP (dev only) | Only under `/dev`. Served in development and Vercel Preview, and in Vercel Production only during the testing period behind Vercel Authentication (D31; `config/release.json` `testingPeriod`). Removed from Production at the go-live gate (`docs/deployment.md`). Never present after go-live | security.md, D31 |
 | G-06 | Toasts ending in "(הדמיה)" / "בדמו לא…" | CHANGE | Real action, or no toast. Never claim an action happened when it did not | ROADMAP "Stop immediately if" |
+| G-07 | All tables: every cell right-aligned except the visit count; the browser shares extra width across all columns (a wide gap opens next to the status pill) | CHANGE | Short columns (status, dates, times, counts, technician, SKU, request number) centred and sized to their content; long-text columns (customer, product, city, rep) right-aligned; extra width goes to customer and product. From 521 to 900 px tables use 8 px side padding and the headers of content-sized columns may wrap, so the calls table fits at 820 px; phones keep the demo's single-line table that scrolls sideways. Rule in `docs/design-system.md` ("Tables") | owner 2026-11-02 |
 
 ## Demo-only chrome (DROP)
 
@@ -89,6 +90,7 @@ Decision IDs like `d05` refer to the owner's decision board. `docs/decisions.md`
 | TE-30 | Profile: "⚠ דיווח על תקלה באפליקציה" (toast only) | PENDING | Where the report goes | d26 |
 | TE-31 | Above 900 px the demo shows the technician app only inside the phone mockup (DROP X-03) | CHANGE | Continue the tablet layout (600 px and wider): full-width dark header and bottom navigation, content centred up to 760 px, tablet-size touch targets. Above 900 px the header content (date, greeting, avatar, bell, counters) and the bottom-navigation buttons also align with the 760 px column; only their backgrounds are full width | D27, owner 2026-11-01 and 2026-11-02 |
 | TE-32 | At 900 px and below the demo's `.phone{height:100%}` does not resolve, so the bottom navigation follows the content (on a tablet it floats mid-screen) | CHANGE | Header and bottom navigation stay fixed and only the content scrolls, at every width, as the demo's "real app" rule intends | owner 2026-11-02 |
+| TE-33 | Next-visit card: "יוצא · Waze" fills the row and "פרטי קריאה" takes only its content width, at every width | CHANGE | Below 600 px exactly as in the demo. From 600 px (tablet and desktop) both buttons share the row 50/50; Waze stays the primary dark button | owner 2026-11-02 |
 
 ## Office (customer service, manager, creator)
 

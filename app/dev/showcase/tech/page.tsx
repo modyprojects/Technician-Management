@@ -45,7 +45,7 @@ export default function TechShellShowcase() {
             {h.next.customer}
           </div>
           <div className="sub">{h.next.sub}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div className="next-actions">
             <BigButton color="var(--accent)" compact>
               <PinIcon /> יוצא · Waze
             </BigButton>
