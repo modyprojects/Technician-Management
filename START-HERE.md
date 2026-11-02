@@ -1,12 +1,12 @@
 # START HERE — first-time app builder, cloud-only
 
 ## 1. What this package is
-Documentation, a preserved HTML design prototype and preparation for Claude Code. Not an operating app or a guarantee of security. No credentials, real customer records, Supabase migrations or production configuration are included.
+Documentation, a preserved HTML design prototype and the Step 0 app foundation (Next.js base with fictitious data only, deployed to the protected Production on 2026-11-02). Not an operating app for real use or a guarantee of security. No credentials, environment-variable values, real customer records or Supabase migrations are included.
 
 ## 2. What is already available
 Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; do not install VS Code / Node.js locally merely to begin.
 
-## 3. First actions (no coding yet)
+## 3. First actions (no coding yet) — items 1–7 done for Step 0; item 8 applies to every following step
 1. Create or confirm a **private** GitHub repository (`technician-management`).
 2. Upload files and folders from this unpacked starter, **not the zip file**. Keep `CLAUDE.md` in root and `docs/demo.html` unchanged.
 3. Ensure no customer data or credentials are present. `.env.example` contains variable names only.
@@ -18,7 +18,7 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 
 ## 4. Your services
 - GitHub: private source, revision history and Pull Requests.
-- Vercel: development/Preview; verify Preview is access-controlled, visible only to the owner during the testing period (D29), and uses development-only config. Production is the owner's protected viewing address for approved versions (D31). Free plans only (D30): GitHub Free, Vercel Hobby, and the existing Supabase project `Technician-Management` (about $10/month, owner-approved, d36).
+- Vercel: development/Preview; verify Preview is access-controlled, visible only to the owner during the testing period (D29), and uses development-only config. Production is the owner's protected viewing address for approved versions (D31); its two domains, `technician-management-mody-projects.vercel.app` (the owner's fixed address) and `technician-management.vercel.app`, both stay behind Vercel Authentication. Free plans only (D30): GitHub Free, Vercel Hobby, and the existing Supabase project `Technician-Management` (about $10/month, owner-approved, d36).
 - Supabase: Auth, Postgres and private Storage, after later stage approval; separate development and production projects from go-live (D30, go-live gate); during the testing period Vercel Production uses the development project (D31).
 - Microsoft 365: NOT available yet. Testing uses the Outlook invitation simulator (D24); real use starts only after Microsoft 365 is connected (D23).
 
@@ -39,4 +39,8 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 Never paste provider/API secrets into Claude's chat, GitHub, a PR, a screenshot or logs. Never approve production table changes when evaluating a plan. Never claim a feature is live merely because it is present in the mockup. Never accept a Preview wired to real customer records.
 
 ## 7. Next
-**Step 0 planning can start** once the private repo holds this package and the connected Claude workspace can access it. Step 1 schema and live external providers remain gated by later approvals.
+**Step 0 is complete:** merged to `main` and deployed to the protected Production on 2026-11-02 (fictitious data only). Production domains, both behind Vercel Authentication and open only to the owner:
+- `https://technician-management-mody-projects.vercel.app` (the owner's fixed Production address)
+- `https://technician-management.vercel.app`
+
+**Next: Step 1 (database and RLS)**, only after Claude's Hebrew plan and the owner's approval. Step 1 schema and live external providers remain gated by later approvals.
