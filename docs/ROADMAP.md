@@ -1,6 +1,6 @@
 # Step-by-Step Build Plan
 
-Technical writing and prompts in English. **Consultation, questions, explanations and approval requests in Hebrew.** Every step: PLAN (Hebrew) → APPROVE → IMPLEMENT → TEST → PREVIEW → OWNER REVIEW → PR → LOG. No step starts automatically.
+Technical writing and prompts in English. **Consultation, questions, explanations and approval requests in Hebrew.** Every step: PLAN (Hebrew) → APPROVE → IMPLEMENT → TEST → PREVIEW → OWNER REVIEW → PR → LOG. No step starts automatically, and no PR starts without the owner's explicit approval (D52).
 
 **The owner sees the screens throughout.** Every step that touches UI ends with a Preview link (owner-only, D29), screenshots at 390/820/1440 px and a Hebrew list of what to check. Every screen works for every role at all three widths (D27). During development the owner reviews in a desktop browser (D28). Approved versions reach the protected Production address only by an owner-approved merge to `main`; deployment protection is verified before and after every Production deployment, on both Production domains (D31). Screens are shown with fake data and approved **before** real logic is connected. Large screens are shown in parts.
 
@@ -32,11 +32,11 @@ Real use starts only after Microsoft 365 is connected (D23). Steps 0–10 run wi
 8. Move to Step 1 only after approving the ERD, schema and RLS.
 
 ## Step 1: PR sequence (plan version 6, approved 2026-11-03)
-Every new step starts with a Hebrew plan and the owner's explicit approval. Step 1 runs as separate PRs:
+Every new step starts with a Hebrew plan and the owner's explicit approval. Step 1 runs as separate PRs; each PR starts only after the owner explicitly approves it (D52):
 
 | PR | Content | Owner approvals |
 |---|---|---|
-| 1.1 Documentation | Decisions D33–D51 across the docs, `CLAUDE.md`, `docs/PROJECT-MAP.md`, PR template, WORKLOG; optional docs-only Production-build skip for the owner's approval | Content → merge |
+| 1.1 Documentation | Decisions D33–D51 across the docs (D52 approval workflow added 2026-11-03 as an owner-approved scope extension), `CLAUDE.md`, `docs/PROJECT-MAP.md`, PR template, WORKLOG | Content → merge |
 | 1.2 Database test infrastructure | Pinned Supabase CLI, CI `db` job, smoke test, check that migrations contain no test rows, test-data census coverage; database tests under `tests/db` (the CLI accepts this path; no deviation) | CI → merge |
 | 1.3 Migration 1: access and permissions | Hardening, profiles, technicians, permission matrix (D33), account requests (D34), audit, test-data rules and census; the first-Creator function is created but not run (D49) | Review → **owner's Auth settings change (D50)** → apply → merge |
 | 1.4 Migration 2: reference data, customers and products | Brands, suppliers, products, customers, call types and continuation reasons (D48), pickup places | Review → apply → merge |
@@ -44,7 +44,11 @@ Every new step starts with a Hebrew plan and the owner's explicit approval. Step
 | 1.6 Migration 4: integrity and offline | Offline operations, review items (D44), corrections, field versions | Review → apply → merge |
 | 1.7 Report and close | Hebrew who-can-see-what and test report, ERD, census, PROJECT-MAP, WORKLOG | Merge; end of Step 1 |
 
-- Every migration apply and every merge needs the owner's separate explicit approval; a migration is applied immediately before its merge.
+- **Approvals (D52).** Approval to start a PR, to apply a migration and to merge a PR are separate; none implies another.
+  - **Within an approved scope:** after the owner approves a PR's scope, Claude Code may independently implement, commit, push, run checks and fix issues within that scope. A material scope expansion needs additional approval.
+  - **Migrations:** every migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations; a material change needs renewed approval.
+  - **Merges:** every merge into `main` needs the owner's explicit approval for that specific PR, documentation-only and tests-only PRs included. No automatic merging into `main`.
+  - A migration is applied immediately before its merge.
 - **Before PR 1.3** the owner changes the Supabase Auth settings himself (D50): "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, Data API exposed schemas limited to `public` (and the default `graphql_public`). Claude never changes Supabase, Vercel or GitHub settings.
 - Deployment protection is verified before and after every Production deployment (D31).
 

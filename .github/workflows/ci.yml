@@ -45,7 +45,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: CI script tests (Vercel ignore rule, migration guard)
+      - name: CI script tests (migration guard)
         run: npm run test:ci
 
       - name: Migration guard (D47, no test data in migrations)

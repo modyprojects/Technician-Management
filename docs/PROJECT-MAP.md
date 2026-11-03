@@ -29,7 +29,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `components/tech/` | Technician shell, home header, bottom navigation |
 | `components/office/` | Office shell and sidebar |
 | `config/release.json` | `testingPeriod` switch (D31): `/dev` in Vercel Production and the bundle fixture check; set to `false` at the go-live gate (`docs/deployment.md`) |
-| `vercel.json`, `scripts/vercel-ignore.sh` | Production build guard: `npm ci`; builds only Preview, or Production from `main` (D31). The script also skips a Production build from `main` when only documentation changed (`docs/**`, `*.md`); this rule is proposed in PR 1.1 and needs the owner's approval |
+| `vercel.json` | Production build guard: `npm ci`; builds only Preview deployments and Production from `main` (D31); anything else is skipped (fails closed) |
 | `next.config.ts` | Baseline security headers for every route (`docs/security.md`) |
 | `.npmrc` | Supply-chain settings: exact versions, no install scripts, 7-day release cooldown |
 | `.env.example` | Environment variable **names** only; no values |
@@ -37,7 +37,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
-| `tests/ci/` | Tests for CI and deployment scripts (`node --test`): the Vercel ignore rule and the migration guard |
+| `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
 | `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no privileges, every table has RLS and a test-data marker (D47) |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled. Not used for the remote project |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
