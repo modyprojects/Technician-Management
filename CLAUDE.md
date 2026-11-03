@@ -13,18 +13,29 @@
 
 ## Cloud-first and approval protocol
 - Existing connections: GitHub, Vercel, Supabase. Do not reconnect without a concrete issue. The owner does not use local VS Code or Node.js.
-- At the start of each phase, present a short Hebrew plan: objective, files and tables affected, how to verify, security impact, external calls, cost and decisions needed. **Wait for explicit approval before implementing.**
-- **Approval workflow (D52):**
-  - **Start:** every new PR needs the owner's explicit approval before it starts.
-  - **Within the approved scope:** after the owner approves a PR's scope, Claude Code may independently implement, commit, push, run checks and fix issues within that approved scope. A material scope expansion needs additional approval.
-  - **Merge:** every merge into `main` needs the owner's explicit approval for that specific PR, including documentation-only and tests-only PRs. No automatic merging into `main`.
-  - **Migrations:** every database migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval.
-  - **Separate approvals:** approval to start a PR, to apply a migration or to merge a PR never implies approval of the other actions. D31 protection checks still apply before and after every Production deployment.
-- Each session: read current decisions and the last 3 WORKLOG entries. Work on a feature branch, open a PR, provide an access-controlled Preview that only the owner can open during the testing period (D29), and never merge to `main` without the owner's explicit approval of that specific PR (D52).
+- **Autonomous development (D53, supersedes D52's start and merge approvals):**
+  - **Autonomous within the approved scope:** Claude Code creates branches, commits and PRs, builds features and UI, runs tests, fixes issues and reviews code (parallel agents allowed). It continues to the next task without routine approvals.
+  - **Merge:** squash-merge a PR only when every mandatory check has passed on the exact merge candidate. Never merge with failing, pending, skipped, missing or inconclusive mandatory checks. Never push or force-push to `main`.
+  - **Owner approval still required:**
+    - Merging any change that weakens protections in `CLAUDE.md`, `docs/security.md`, `.github/workflows/**`, `vercel.json`, `proxy.ts`, `app/dev/_gate.ts` or `config/release.json`.
+    - Every remote Supabase operation, read-only included, approved per operation (D52 migration rules still apply; see Security contract).
+    - Open owner-level decisions in `docs/decisions.md`. Meanwhile use clearly labelled, reversible, deny-by-default temporary behaviour and continue with independent work.
+  - **Independent review:** changes to authentication, authorization, proxy/gate, environment handling or deployment configuration need a review by an agent that did not write the code. Record the result in the PR.
+  - **Planning approval:** not required for work inside the approved scope. If an operation needs approval, pause only that operation and continue independent work.
+- **Migrations (D52):** every database migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval.
+- Each session: read current decisions and the last 3 WORKLOG entries. Work on a feature branch, open a PR, and provide an access-controlled Preview that only the owner can open during the testing period (D29). Merge only as D53 allows.
 - Free plans only (D30): GitHub Free, Vercel Hobby, and the existing Supabase project `Technician-Management` (about $10/month, owner-approved, d36). No new projects, accounts or services and nothing that can create a charge; if something needs a paid plan, stop and tell the owner. Commits are authored with the owner's GitHub account and end with `Co-Authored-By: Claude <noreply@anthropic.com>`; PR descriptions state that Claude Code wrote the code under the owner's direction. If a deployment is blocked, stop and report.
-- Production (D31) is the owner's fixed, protected viewing address for approved versions. It changes only by merging to `main` after the owner approves that specific merge (Hebrew summary of changes and test results first). Never push directly to `main`. Verify deployment protection before and after every Production deployment, on both Production domains (`technician-management-mody-projects.vercel.app` and `technician-management.vercel.app`).
-- High-risk stop gates: production access, migrations, RLS/auth changes, credentials, access grants, real emails, paid services, transcription, destructive operations, third-party integrations, real customer data, production deployment.
-- Prefer read-only inspection. Never list, copy or print credentials, tokens, environment-variable values or real records.
+- Production (D31, D53) is the owner's fixed, protected viewing address. It changes only by merging to `main` through the existing protected Vercel workflow. Never push directly to `main`.
+  - **Checks:** before each merge and after each Production deployment, Claude Code verifies (read-only) CI, the deployment's commit SHA, the READY state, Vercel Authentication on All Deployments, and the Production domains (`technician-management-mody-projects.vercel.app`, `technician-management.vercel.app` and the `main` branch address). It reports any check it cannot perform.
+  - **On failure:** if a protection check fails or is inconclusive, stop further merges until the owner confirms, and continue independent development and testing.
+  - **Owner checks:** the owner's anonymous-access and dashboard checks are periodic. They are not required after every routine merge.
+  - **Never** disable deployment protection or bypass mandatory security checks.
+  - Research for an automated anonymous-access check is kept in `docs/research/d31-anonymous-access-check.md`. It is not implemented yet.
+- High-risk stop gates: production access outside the protected Vercel workflow, remote Supabase operations, migrations, RLS/auth changes, credentials, access grants, real emails, paid services, transcription, destructive operations, third-party integrations, real customer data, weakening any protection.
+- Prefer read-only inspection. Never read, request, list, copy or print credentials, tokens, API keys, passwords, environment-variable values or real records.
+  - Environment-variable **names** and existing source references may be inspected.
+  - If a value is needed, tell the owner the variable name; the owner configures it.
+  - Do not access unrelated company resources or credentials.
 
 ## Non-negotiable product scope
 - Single responsive Next.js + TypeScript + Tailwind PWA: every screen for every role works on phone, tablet and desktop; no role is locked to a device (D27). Demo look per `demo.html` as amended by `demo-deviations.md`. No demo bar, role switcher or fake actions in the app.
@@ -51,6 +62,11 @@
 - Protect Preview, auth routes, admin endpoints, exports, media links, webhook and simulator endpoints, debug tools. During the testing period Preview and Production are owner-only (D29, D31): never create shareable links, protection-bypass secrets, access exceptions or extra access for anyone.
 - Validate at every trust boundary: rate limits, CSRF/origin, replay, uploads, query bounds, XLSX formulas, webhooks, offline retries.
 - CI: build, lint, typecheck, tests including negative auth/RLS tests, secret scanning.
+- **Supabase (D53).**
+  - **Only project:** Technician-Management (ref `ooxozvvrljjkyfduuiks`). Never access, list, read, query, inspect or modify any other Supabase project or organization resource, through any tool, CLI, API, script or subagent.
+  - **Banned calls:** never call `list_projects` or `get_organization`. If a tool unexpectedly returns information about another project, do not use or repeat it; tell the owner without disclosing it.
+  - **Per-operation approval:** every remote operation on Technician-Management, including read-only ones, needs the owner's prior approval of that specific operation.
+  - **Allowed without approval:** preparing migrations and running isolated local database tests that never contact the real project.
 
 ## Clean architecture
 - Routes: `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`.
@@ -60,9 +76,9 @@
 - TypeScript strict, Zod for inputs, migrations for schema, explicit constraints and unique event identifiers.
 
 ## Visual approval and user guides
-- Implement design tokens from the demo; build a restricted `/dev/showcase`; prototype screens with fake data; get visual approval; then connect behavior. Check every screen for every role at 390 / 820 / 1440 px (D27).
+- Implement design tokens from the demo; build a restricted `/dev/showcase`; prototype screens with fake data; show them to the owner; then connect behavior (D53: without waiting for visual approval). Check every screen for every role at 390 / 820 / 1440 px (D27).
 - **The owner sees the screens during the work, not only at the end.** For every step that adds or changes UI:
-  1. **Screens first:** build the screen with fake data, show it, get the owner's visual approval, and only then connect real logic.
+  1. **Screens first:** build the screen with fake data and show it. Visual approval is not a gate (D53): the owner's feedback becomes new development tasks, and other work continues.
   2. **Preview link:** every PR has a working, access-controlled Preview link that only the owner can open (D29). During development he reviews it in a desktop browser at 390 / 820 / 1440 px and from screenshots (D28); real phone and tablet checks come in later steps and before launch. Explain in Hebrew how to open it (including login, if needed).
   3. **Screenshots:** attach screenshots at 390 / 820 / 1440 px to the PR, next to the matching demo screen. Take them from a local production build of the same commit (not from the protected Preview), store them under `docs/review/<step>/` and embed them in the PR.
   4. **What to look at:** a short Hebrew list of what changed and what the owner should check.
@@ -71,12 +87,12 @@
 - Maintain Hebrew guides with real screenshots (fake data only) as features become tested. Never document unfinished behavior as available.
 
 ## Definition of Done per approved phase
-1. Hebrew explanation and owner approval.
+1. Hebrew explanation of what was built (D53: no separate planning approval within the approved scope).
 2. Build, lint, typecheck and tests pass, including negative auth/RLS tests; report unresolved findings.
-3. Owner-only protected Preview link (D29) and screenshots (390 / 820 / 1440 px) sent to the owner for desktop review (D28) with a Hebrew "what to look at" list; compared with the demo and `demo-deviations.md`; owner visual approval recorded.
+3. Owner-only protected Preview or Production link (D29) and screenshots (390 / 820 / 1440 px) sent to the owner for desktop review (D28), with a Hebrew "what to look at" list, compared with the demo and `demo-deviations.md`. The owner's feedback becomes new tasks (D53).
 4. English WORKLOG updated; `docs/PROJECT-MAP.md` updated when repository structure or feature status changes; `decisions.md` updated if needed; Hebrew guides updated for completed features.
 5. Test data marked and labelled per D47.
 6. PR with test instructions; no unapproved production or external side effects.
 
 ## Work plan
-See `docs/ROADMAP.md` and `docs/THINKING-AHEAD.md`. Step 0 is complete (merged and deployed 2026-11-02). Every new step requires a Hebrew plan and the owner's explicit approval before implementation, and every new PR requires the owner's explicit approval before it starts (D52).
+See `docs/ROADMAP.md` and `docs/THINKING-AHEAD.md`. Step 0 is complete (merged and deployed 2026-11-02). Since D53 (2026-11-03), development runs autonomously within the approved scope; the owner-approval exceptions listed under "Cloud-first and approval protocol" still apply. Current priority (owner, 2026-11-03): the interactive UI demo with fictional data (`/dev/demo`), before the remaining Step 1 database work.
