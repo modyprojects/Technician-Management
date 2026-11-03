@@ -12,7 +12,6 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "next typegen && tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:ci": "node --test \"tests/ci/*.test.mjs\"",
     "screenshots": "SCREENSHOTS=1 playwright test tests/e2e/screenshots.spec.ts --project=desktop",
     "scan:bundle": "node scripts/check-bundle.mjs",
     "scan:secrets": "bash scripts/scan-secrets.sh"
