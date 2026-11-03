@@ -45,6 +45,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: CI script tests (migration guard)
+        run: npm run test:ci
+
+      - name: Migration guard (D47, no test data in migrations)
+        run: npm run check:migrations
+
       - name: Build
         run: npm run build
         env:

@@ -12,10 +12,22 @@
 - Step 0 automated checks (`tests/e2e`, run in CI at 390 / 820 / 1440 px): Hebrew RTL, no horizontal overflow, layout per breakpoint and boundary widths (520/521, 599/600, 900/901), control sizes from the demo, every token equal to `docs/demo.html`, fonts loaded, security headers, and the `/dev` gate: every branch of the gate logic (including Vercel Preview and Production before and after go-live), a positive control on the open server, and for every `/dev` page on the closed server and with a non-local Host: 404 without the page's own content for document, RSC, prefetch, segment-prefetch, `.rsc` and segment-file requests. `responsive.spec.ts` asserts the fixed bottom navigation proposed as TE-32 and changes if the owner rejects it. Negative auth/RLS tests start in Steps 1–2.
 
 ## Step 1 database tests (approved Step 1 plan, 2026-11-03)
-- **Where they run:** pgTAP tests against a local Supabase database started by the pinned Supabase CLI in a CI job (`db`). No secrets and no connection to the remote project. Local fixtures are marked `automated_test` and exist only in local CI, never in migrations (D47). Down migrations are tested in CI.
+- **Where they run:** pgTAP tests against a local Supabase database started by the pinned Supabase CLI in CI (the `Database tests` workflow, `.github/workflows/db.yml`). No secrets and no connection to the remote project. Local fixtures are marked `automated_test` and exist only in local CI, never in migrations (D47). Down migrations are tested in CI.
 - **Remote project:** migrations are applied to the existing development project only with the owner's explicit approval for each apply. After each approved apply, only read-only verification (for example the applied migration list and the test-data census). Tests never write to the remote project.
-- **Location:** `tests/db/` (preferred, `CLAUDE.md`: tests in `tests/`). If the Supabase CLI requires `supabase/tests/`, that is recorded as a documented deviation for the owner's approval. Decided in PR 1.2.
-- **PR 1.2 (infrastructure):** pinned Supabase CLI, the `db` job, a smoke test, a check that no migration inserts test rows, and the census-coverage framework.
+- **Location:** `tests/db/` (`CLAUDE.md`: tests in `tests/`). The Supabase CLI runs it with `supabase test db tests/db`, so there is no deviation (decided in PR 1.2).
+- **PR 1.2 (infrastructure, implemented):**
+  - Supabase CLI 2.122.0, pinned and checksum-verified (`scripts/install-supabase-cli.sh`).
+  - The `Database tests` workflow (`.github/workflows/db.yml`): it runs only when database files change, starts only the local database (`supabase db start`) and runs `supabase test db tests/db`.
+  - Smoke tests (`tests/db/000_smoke.test.sql`), catalog-wide so they also guard every object added later:
+    - Postgres 17.
+    - No table, sequence or function privileges for `anon` or `PUBLIC` in `public` or `private`.
+    - RLS on every table.
+    - A test-data marker on every table (D47 census-coverage framework; exemptions must be listed in the test).
+  - Negative controls:
+    - A probe table without RLS made three tests fail.
+    - A probe sequence made the sequence test fail.
+    - Both show Supabase's default grants to `anon` (tables, sequences), which Migration 1 revokes.
+  - The migration guard (`scripts/check-migrations.mjs`, tests in `tests/ci/check-migrations.test.mjs`) runs in both workflows.
 - **Roles in every category:** anonymous, signed in without a profile, deactivated, Technician A, Technician B, Customer Service, Manager, Creator and `service_role`, with permission-matrix variations where a key matters (D33).
 - Each category is covered as soon as the tables it needs exist (PRs 1.3–1.6); tables planned for later steps (for example media, transcripts and signature text versions in Step 4) get their tests in that step.
 

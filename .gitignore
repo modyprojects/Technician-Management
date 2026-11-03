@@ -17,3 +17,7 @@ next-env.d.ts
 *.tsbuildinfo
 /playwright/.cache/
 blob-report/
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
