@@ -45,6 +45,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: CI script tests (Vercel ignore rule)
+        run: npm run test:ci
+
       - name: Build
         run: npm run build
         env:

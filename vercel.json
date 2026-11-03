@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci",
-  "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then exit 1; fi; if [ \"$VERCEL_ENV\" = \"production\" ] && [ \"$VERCEL_GIT_COMMIT_REF\" = \"main\" ]; then exit 1; fi; echo \"Skipped: only Preview or main builds (D31).\"; exit 0"
+  "ignoreCommand": "bash scripts/vercel-ignore.sh"
 }
