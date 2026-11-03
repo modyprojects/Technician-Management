@@ -29,18 +29,17 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `components/tech/` | Technician shell, home header, bottom navigation |
 | `components/office/` | Office shell and sidebar |
 | `config/release.json` | `testingPeriod` switch (D31): `/dev` in Vercel Production and the bundle fixture check; set to `false` at the go-live gate (`docs/deployment.md`) |
-| `vercel.json`, `scripts/vercel-ignore.sh` | Production build guard: `npm ci`; builds only Preview, or Production from `main` (D31). The script also skips a Production build from `main` when only documentation changed (`docs/**`, `*.md`); this rule is proposed in PR 1.1 and needs the owner's approval |
+| `vercel.json` | Production build guard: `npm ci`; builds only Preview deployments and Production from `main` (D31); anything else is skipped (fails closed) |
 | `next.config.ts` | Baseline security headers for every route (`docs/security.md`) |
 | `.npmrc` | Supply-chain settings: exact versions, no install scripts, 7-day release cooldown |
 | `.env.example` | Environment variable **names** only; no values |
-| `package.json` | Scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test:e2e`, `test:ci`, `screenshots`, `scan:bundle`, `scan:secrets`; exact dependency versions (lockfile `package-lock.json`) |
+| `package.json` | Scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test:e2e`, `screenshots`, `scan:bundle`, `scan:secrets`; exact dependency versions (lockfile `package-lock.json`) |
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
-| `tests/ci/` | Tests for CI and deployment scripts (`node --test`), for example the Vercel ignore rule |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
-| `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
+| `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
 | `.github/pull_request_template.md` | PR description and checklist |
 | `docs/` | Decisions, demo deviations, spec, security, architecture, database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |

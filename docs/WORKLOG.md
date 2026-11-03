@@ -14,7 +14,7 @@
   - D33–D51 and the related amendments across the documentation.
   - `CLAUDE.md`: Step 0 complete; every step needs a plan and the owner's approval; deployment protection verified before and after every Production deployment.
   - New `docs/PROJECT-MAP.md` and `.github/pull_request_template.md`.
-  - Optional, in a separate commit for the owner's approval: skip the Production build when a push to `main` changes only documentation (`scripts/vercel-ignore.sh`, tested in CI).
+  - A proposed docs-only Production-build skip was removed from this PR at the owner's request (2026-11-03): this PR is documentation only, and any deployment-behavior change needs its own PR and approval.
 
 ## 2026-11-02 — PR #1 merged; first Production deployment
 - PR #1 (Step 0) merged to `main` by the owner: merge commit `3f977fc` at 12:55 Israel time (10:55:50 UTC); parents `e70a33c` (previous `main`) and `6a05b4d` (Step 0 branch head). CI on `6a05b4d` had passed every step before the merge (run 41430037190); CI on the `main` push of `3f977fc` also passed every step (run 41432692571).
