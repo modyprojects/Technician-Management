@@ -1,6 +1,6 @@
 # Technician Management — functional specification
 
-Last updated: 2026-11-01. Precedence: `docs/decisions.md` → `docs/demo-deviations.md` → `docs/demo.html`.
+Last updated: 2026-11-03. Precedence: `docs/decisions.md` → `docs/demo-deviations.md` → `docs/demo.html`.
 
 ## Goal
 A responsive PWA that replaces the technicians' WhatsApp group: technicians document and close service visits on their phones or tablets; the office follows status, history and analytics, mainly on desktop. Every screen for every role works on phone, tablet and desktop; no role is locked to a device (D27). Office scheduling stays in Outlook. The app reads invitations from the Microsoft 365 calendar (D18). **Real use starts only after Microsoft 365 is connected (D23); until then everything is testing with fictitious data**, using the Outlook invitation simulator (D24).
@@ -13,14 +13,25 @@ A responsive PWA that replaces the technicians' WhatsApp group: technicians docu
 - GPS / vehicle tracking, customer satisfaction messages. (Tablets are in the first release, D27.)
 
 ## User roles
-- **Technician**: sees only his assigned visits. Phone- and tablet-first, also usable on desktop (D27): schedule, pickup list, customer contact and navigation, arrival, before/after media, written or spoken summary, parts replaced, signature for resolved visits, follow-up reason and next-visit notes.
-- **Customer Service**: all calls and customers; office screens; unparsed-invitations list; read-only calendar; in-app notifications; simulator in test environments (D24). Cancellation rights: OPEN (decisions.md open #5).
-- **Manager**: everything Customer Service has, plus dashboard, product/supplier analysis, Excel export, user management for standard users, product editing, audited corrections, simulator in test environments.
-- **Creator**: all rights, auditable; MFA required in production.
-- Whether the permission matrix is fixed or editable: OPEN (open #1). Enforcement is always on the server and in RLS.
+- **Technician**: sees only his assigned visits, plus the previous visits below. Phone- and tablet-first, also usable on desktop (D27): schedule, pickup list, customer contact and navigation, arrival, before/after media, written or spoken summary, parts replaced, signature for resolved visits, follow-up reason and next-visit notes. Of the responsible representative he sees only the name and authorized work phone number, through a narrow server function limited to his own visits (D40).
+  - **Previous visits (D36):** while he has a current authorized assignment on a service call (one of his visits on that call is scheduled, en route or in progress, and his profile is active with the technician role), he can view the earlier closed visits of the same call (visit number lower than his open visit), even if another Technician did them: summaries, approved transcriptions, photos, videos, parts, follow-up reason and next-visit notes, and other authorized attachments. He never accesses original audio recordings from other Technicians' visits, signatures or signer names, other Technicians' field times, or future or concurrent visits of others. He may access his own recording only to review and correct its transcription, while his visit is not yet server-closed or the transcript awaits his approval, subject to retention rules. Enforced in the database and in private-storage authorization (no direct client storage access; short-lived signed links only after a database authorization check), not only in the UI. Access ends on the server immediately when the assignment ends (re-assignment, cancellation, closure), the account is deactivated or the role changes; the device purges the read-only cached copy at the next sync (D46).
+- **Customer Service**: the office screens its matrix keys allow (D33). Defaults: `cal`, `calls` and `card` on, everything else off — read-only calendar, all calls and customers, call-card content; also the unparsed-invitations list, in-app notifications and the simulator in test environments (D24, a fixed capability). Cancellation: OPEN (open #5); if in-app cancellation is approved, the `cancel` key governs who, and it stays off for Customer Service until d08 is decided.
+- **Manager**: the office screens its matrix keys allow (D33). Defaults: `cal`, `calls`, `card`, `cancel`, `dashGen`, `dashTech`, `dashProd`, `export`, `products`, `conflicts` and `recordings` on; `settings` and `usage` off. Fixed capabilities (not matrix keys): administration of Customer Service and Technician accounts under D34; audited corrections (D14) and resolution of conflicts that change a server-closed or cancelled visit (D14, D44); simulator in test environments.
+- **Creator**: all rights, auditable; the only role that changes the permission matrix (D33), administers Manager and Creator accounts, approves Manager-initiated Customer Service account requests, sets or resets other users' passwords and changes account emails (D34); security settings; always has access to original recordings (D37). MFA required in production. The first Creator is set once in Step 2 by a protected one-time server function, run only with the owner's separate explicit approval; nothing ever promotes a user to Creator automatically (D49).
+- **Permission matrix (D33):** editable in Settings, as in the demo. Only the Creator changes it, through a Creator-only server function; changes take effect immediately and are audited. It covers the Manager and Customer Service roles; Technician and Creator capabilities are fixed. Keys: `cal`, `calls`, `card`, `cancel`, `dashGen`, `dashTech`, `dashProd`, `export`, `settings`, `usage` (from the demo) plus `products`, `conflicts` and `recordings`. Data keys (`calls`, `card`, `settings`, `products`, `conflicts`, `cancel`, `recordings`) are enforced on the data (RLS, grants, server functions); screen keys (`cal`, which shows the same rows as `calls`; `dashGen`, `dashTech`, `dashProd`, `export`, `usage`) gate screens and server functions and never bypass database and server-side authorization. Every export is authorized on the server (accepted limitation for v1: a user with `calls` can read the same rows through the API). Never matrix keys: editing the matrix; Creator/Manager account administration; D14 corrections and any conflict resolution that changes a server-closed or cancelled visit; simulator access (D24); security settings; technician field capabilities. The usage screen is not built until d13 is decided (open #10). Default values are **temporary** until the owner approves the final values on the Step 10 settings screen (D51); a key introduced later defaults to denied unless approved; pre-pilot gate: the owner approves the final matrix.
+- **Account administration (D34, D50):** no public self-registration; access only through the app's authorized invitation/account-creation workflow. Only the Creator manages Manager and Creator accounts. A Manager manages Customer Service and Technician accounts:
+  - Manager-initiated Customer Service account creation, activation, reactivation and role changes take effect only after the Creator approves. While a request is pending nothing changes (no Auth user exists before an approved creation; reactivation keeps the account inactive; a role change keeps the current role). Request statuses: pending, approved, rejected, cancelled; a rejection stores a reason; every step is audited; no automatic expiry (D25).
+  - Technician account creation, activation and reactivation by a Manager take effect immediately.
+  - A Manager deactivates a Customer Service or Technician account immediately, without approval (for example an employee leaves or a phone is lost); it is audited and the Creator is notified in the app.
+  - Routine profile or operational updates (name, work phone, invitation alias, technician colour and device) need no repeated approval.
+  - Managers never set or reset passwords for others and never change an account's email; only the Creator can (or self-service reset by email if an email provider is approved in Step 2). Until an email provider is approved (open #9), initial credentials are issued by the Creator.
+  - Every change to a Technician's Outlook email notifies the Creator in the app (no approval).
+  - Customer Service permissions need not be a subset of the Manager's; a Manager never gains extra privileges by creating, modifying or using a Customer Service account. Authorization for every account action is checked in the database under the caller's own session before any Auth admin call.
 
 ## Core data model
-Customer → service call (request number) → visits (task number, technician, time). Products are built from invitations (D19). Keep separate: call business state, visit execution status, device sync state, transcription approval state, email delivery state. Every record created by the simulator is marked as test data (D24).
+Customer → service call (request number) → visits (task number, technician, time, address). The address is stored per visit (D39). Products are built from invitations (D19). Keep separate: service-call status, visit execution status, device sync state, transcription approval state, email delivery state.
+- **Service-call status (D38):** a service call has its own status, recalculated by one server function in the same transaction as any visit change: any open visit → "פתוחה" (open); otherwise the latest closed visit by visit number → "טופלה" (resolved) or "המשך טיפול" (awaiting follow-up); otherwise, when every visit was cancelled → "ממתינה לשיבוץ" (awaiting scheduling). Cancelling a visit never erases history and never cancels the whole call automatically. A new invitation on a resolved call reopens it. Whether and how a whole service call can be cancelled: OPEN (open #5, d08).
+- **Test data (D47):** every record created for development, automated tests, demonstrations or the invitation simulator is reliably marked as test data in the database (`data_source` / `is_test` on every data table, including test users, media, related records and audit references), stays traceable to its origin, and is visibly labelled in the app ("נתוני בדיקה" / "🧪 זימון בדיקה"). Database rules prevent real records from referencing test records. No automatic deletion of test data during development. Migrations never contain fictitious data. Before real go-live: an explicitly approved cleanup or environment-separation plan and a pre-launch acceptance checklist (database records, media files, simulator data, devices and user-visible dashboards); the real app starts with no fictional content. No additional paid project or environment without explicit owner approval.
 
 ## Invitation intake
 - Source: Microsoft 365 calendar invitations (future, Graph change notifications) or the simulator (now). Both go through **one ingestion service**.
@@ -28,48 +39,62 @@ Customer → service call (request number) → visits (task number, technician, 
 - Technician = invitation attendee, matched by the technician's Outlook email in settings.
 - Date and time come from the invitation itself, not the body.
 - Body parsed by Hebrew labels (`docs/outlook-template.md`), not by line order.
-- Required fields include customer number (D17). Warranty optional (D17).
+- Required fields include customer number (D17). Warranty optional (D17); when the invitation gives an expiry date ("כן · עד MM/YYYY"), it is stored as the optional warranty expiry date (D42).
+- Task number: no uniqueness constraint within a service call yet; revisit after validating real invitation examples (D41).
 - Missing required field or unknown pickup place → not ingested; listed on the "זימונים שלא נקלטו" screen with the missing field.
 - Unknown SKU is **not** an error: product created per D19.
-- Same calendar event ID → update the existing visit (reschedule, re-assign). New event with an existing request number → new visit on the same call.
-- Event deleted → behavior OPEN (open #5).
+- Same calendar event ID → update the existing visit (reschedule, re-assign). New event with an existing request number → new visit on the same call; a new invitation on a resolved call reopens it (D38).
+- **Visit already en route or in progress (D39, amends IN-06 and SIM-03):** re-assignment, cancellation or deletion, and changes of customer, address or SKU are not applied automatically but go to review; non-critical changes (time, technician notes, arrival notes) are applied with a notification. A closed visit is never changed by an invitation.
+- **Customer contact details (D39):** updated field by field from the latest valid invitation. A field is applied only if it changed in that invitation and the invitation's change time is newer than that field's source; an empty optional field means no change. Field-level change history is kept.
+- **Changes that go to review (D39):** a different SKU or a different customer number on an existing call, and a different customer name for the same customer number. Product identity and history are never silently overwritten.
+- Event deleted → behavior OPEN (open #5); for a visit already en route or in progress the deletion goes to review (D39).
 
 ## Visit lifecycle
 שובצה (scheduled) → בדרך (Waze tapped; departure time recorded) → בטיפול (arrived; arrival time recorded) → טופל or המשך טיפול. Cancelled (בוטלה) only by the office.
 - After-work photo or video required; written or recorded summary required.
 - Parts replaced recorded with the summary.
-- **טופל**: fixed Hebrew acknowledgement text, signer name and signature.
+- **טופל**: fixed Hebrew acknowledgement text, signer name and signature. The exact approval text shown to the customer at signing is preserved with the signature and the visit: the device sends the text version identifier and hash, the server verifies them against immutable stored versions, and a mismatch goes to review; it is never replaced by the current text. Editing the text in Settings never changes past signatures (D43).
 - **המשך טיפול**: reason from the list plus required notes on what the next visit needs.
 - After server-confirmed closure the technician view is read-only (D14).
 
-## Offline (D06, D20)
-Cache only previously loaded assigned visits. Queue arrival, media, signature, summary and closure on the device; sync while the app is open, with manual retry. Show honest states: saved on device, pending, syncing, synced, failed. Never claim guaranteed background sync on iOS. Never delete unsynced data. Email only after server acceptance.
+## Offline (D06, D20, D46)
+The device keeps two separate stores (D46):
+- **Read-only cache:** own visits, minimal customer data, pickup list and previous-visit information (D36). Retention: own open visit until closed, re-assigned or cancelled; own closed visit until the end of that day; previous-visit information until the end of the scheduled day or a revocation signal at sync, whichever is first. Other Technicians' recordings are never cached. Purged at sync when access ends. Final durations are decided with open #12 before the pilot.
+- **Work queue:** reports, photos, videos, audio, signatures and time reports. Kept until the server confirms receipt and integrity; never deleted automatically because the workday ended, an assignment was cancelled or access was lost. Conflicting data and media are preserved for authorized review (D44).
+
+Sync while the app is open, with safe retries (backoff, manual retry, idempotent operation ids) and clear warnings for pending data. Show honest states: saved on device, pending, syncing, synced, failed. Never claim guaranteed background sync on iOS. Never delete unsynced data. Email only after server acceptance. A deactivated account cannot sync; its pending work stays on the device with a clear warning until a recovery path is decided in Step 4 (open #25).
+
+**Unavoidable risks** (documented; no recovery is promised for data that existed only on the device): device loss or damage, browser storage eviction, app removal or cleared browser data before sync.
 
 ## Audio summary (D12)
 Technician may record a Hebrew summary (max 180 s). Transcription is a goal; vendor and timing are open. A recording without an approved transcript is never sent as a summary. Original audio is never exported.
 
+**Original recordings (D37):** the Creator always has access; Manager and Customer Service through the matrix key `recordings` (Manager on, Customer Service off by default; only the Creator changes the matrix). Every access to an original recording is audited. Recordings are never exported (D11) and never cached on other Technicians' devices. Technician access: D36.
+
 ## Notifications (D10, D25)
-In-app only, created by events: new visit, follow-up visit scheduled, visit changed, visit cancelled. No scheduled reminders in the first release.
+In-app only, created by events: new visit, follow-up visit scheduled, visit changed, visit cancelled. For the Creator: a Manager's immediate deactivation of an account, and every change to a Technician's Outlook email (D34). No scheduled reminders in the first release.
 
 ## Completion email (D09, D22)
 For both outcomes, to Manager and the customer-service mailbox, through a transactional outbox, after server acceptance and an approved summary. Content: status, request number, task number, customer number, visit number, customer, address, product and SKU, technician, result, follow-up reason, summary, parts, signer (for טופל), link to the call card. Media in email: OPEN (open #8). Simulated visits never send real email (D24).
 
 ## Office screens
-| Screen | Content | Roles |
-|---|---|---|
-| Technician calendar | Read-only day/week/month from invitations, colored by status | CS, Manager, Creator |
-| Calls and call card | Search and filter (incl. customer number), all visits with media, summary, signature, emails | CS, Manager, Creator |
-| Customers and customer card | All calls of a customer; products that came back | CS, Manager, Creator |
-| Unparsed invitations | Invitations not ingested and the missing field | CS, Manager, Creator |
-| Back from field | Visits closed as המשך טיפול with reason; action is a new Outlook invitation | CS, Manager, Creator |
-| Dashboard | Open calls, in progress now, back from field, late, first-visit fix rate, average time to close, technician performance | Manager, Creator |
-| Products and suppliers | Issues by SKU, brand, supplier; products back within a short time. Empty brand/supplier shown as "לא הוזן" | Manager, Creator |
-| Products | Edit product name, brand, supplier (D19) | Manager, Creator |
-| Outlook invitation simulator | D24; test environments only | Manager, Creator, CS |
-| Settings | Users, technicians, pickup places, follow-up reasons, fixed text, invitation template labels | Manager (standard users), Creator |
+Roles show the permission-matrix defaults (D33) or, for fixed capabilities, the roles that hold them; the Creator always has every key. Every key is also enforced on the server and, for data keys, in the database.
+
+| Screen | Content | Matrix key (D33) | Roles (defaults) |
+|---|---|---|---|
+| Technician calendar | Read-only day/week/month from invitations, colored by status | `cal` | CS, Manager, Creator |
+| Calls and call card | Search and filter (incl. customer number), service-call status (D38), all visits with media, summary, signature, emails | `calls` (list, search, visits); `card` (summary, approved transcription, signatures, photos, videos); `recordings` (original recordings, every access audited, D37); `cancel` (only if in-app cancellation is approved, open #5) | CS, Manager, Creator; `recordings` and `cancel`: Manager, Creator |
+| Customers and customer card | All calls of a customer; products that came back | `calls` | CS, Manager, Creator |
+| Unparsed invitations | Invitations not ingested and the missing field | Open (open #15) | CS, Manager, Creator |
+| Back from field | Visits closed as המשך טיפול with reason; action is a new Outlook invitation | Open (open #15) | CS, Manager, Creator |
+| Dashboard | Open calls, in progress now, back from field, late, first-visit fix rate, average time to close, technician performance | `dashGen` (general), `dashTech` (technicians) | Manager, Creator |
+| Products and suppliers | Issues by SKU, brand, supplier; products back within a short time. Empty brand/supplier shown as "לא הוזן" | `dashProd` | Manager, Creator |
+| Products | Edit product name, brand, supplier (D19) | `products` | Manager, Creator |
+| Outlook invitation simulator | D24; test environments only | None: fixed capability (D33) | Manager, Creator, CS |
+| Settings | Operational settings (D35): pickup places, continuation reasons, call types, the fixed "טופל" approval text (versioned, D43) and invitation template labels (the D17-required labels "מספר פנייה" and "מספר לקוח" stay required). Initial continuation reasons and call types ("תיקון", "התקנה") come from the demo and are editable; they are to be validated with customer service (owner task O3, D48). Users and technicians, including Creator approval of Customer Service account requests (D34). Permission matrix (D33). Security settings | `settings` (operational settings only). Users, technicians, the matrix and security settings are fixed capabilities, not keys | Operational settings: Creator (`settings` off by default for Manager and CS). Users and technicians: Manager (Customer Service and Technicians, D34), Creator. Matrix and security settings: Creator only |
 
 ## Excel export (D11)
-Authorized filtered rows, Hebrew, text only, no media or links, formula-injection safe. Columns OPEN (open #18).
+Authorized filtered rows, Hebrew, text only, no media or links, formula-injection safe. Columns OPEN (open #18). The screen key `export` (D33; Manager on, Customer Service off by default) shows the action; every export is also authorized on the server.
 
 ## Devices and screen sizes (D27, D28)
 - Every screen for every role works at ~390 px (phone), ~820 px (tablet) and ~1440 px (desktop), following the demo's container-query breakpoints: technician layout widens from 600 px; office sidebar becomes a top bar at 900 px and below; compact tables at 520 px and below.

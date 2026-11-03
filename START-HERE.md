@@ -19,7 +19,7 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 ## 4. Your services
 - GitHub: private source, revision history and Pull Requests.
 - Vercel: development/Preview; verify Preview is access-controlled, visible only to the owner during the testing period (D29), and uses development-only config. Production is the owner's protected viewing address for approved versions (D31); its two domains, `technician-management-mody-projects.vercel.app` (the owner's fixed address) and `technician-management.vercel.app`, both stay behind Vercel Authentication. Free plans only (D30): GitHub Free, Vercel Hobby, and the existing Supabase project `Technician-Management` (about $10/month, owner-approved, d36).
-- Supabase: Auth, Postgres and private Storage, after later stage approval; separate development and production projects from go-live (D30, go-live gate); during the testing period Vercel Production uses the development project (D31).
+- Supabase: Auth, Postgres and private Storage, after later stage approval; before go-live the owner explicitly approves either separate development and production projects (recommended) or a cleanup of the existing project (D47, go-live gate in `docs/deployment.md`); during the testing period Vercel Production uses the development project (D31).
 - Microsoft 365: NOT available yet. Testing uses the Outlook invitation simulator (D24); real use starts only after Microsoft 365 is connected (D23).
 
 ## 5. Files explained
@@ -28,7 +28,7 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 - `docs/demo-deviations.md` lists where production differs from the demo, and why.
 - `docs/spec.md` describes product features and workflows.
 - `docs/demo.html` is the original Hebrew design and demo behavior; **not secure production code**.
-- `docs/database-schema.md` proposes relations, not approved migrations.
+- `docs/database-schema.md` describes the approved Step 1 database design; every migration still needs its own approval before it is applied.
 - `docs/security.md` details secrets, RLS, authorization and test requirements.
 - `docs/ROADMAP.md` explains every build step.
 - `docs/THINKING-AHEAD.md` tracks future decisions and major risks.
@@ -43,4 +43,4 @@ Never paste provider/API secrets into Claude's chat, GitHub, a PR, a screenshot 
 - `https://technician-management-mody-projects.vercel.app` (the owner's fixed Production address)
 - `https://technician-management.vercel.app`
 
-**Next: Step 1 (database and RLS)**, only after Claude's Hebrew plan and the owner's approval. Step 1 schema and live external providers remain gated by later approvals.
+**Now: Step 1 (database and permissions) is in progress**, after the owner approved its Hebrew plan (2026-11-03). Every migration is applied, and every PR merged, only with the owner's separate explicit approval; live external providers remain gated by later approvals. For the current state of the repository and features, see `docs/PROJECT-MAP.md`.

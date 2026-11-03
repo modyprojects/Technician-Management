@@ -1,5 +1,29 @@
 # Work Log (English only)
 
+## 2026-11-03 — Step 1 plan approved; PR 1.1 (documentation)
+- PR #2 (documentation) merged by Claude Code with the owner's explicit approval ("merge approved — PR #2 only"), using a merge commit: `465ffa2` at 16:24 Israel time (14:24:49 UTC), parents `3f977fc` and `2846bb2`. CI on the `main` push passed every step (run 41461711535).
+- Production deployment `dpl_FhPTRffxN2GmDFQgvjwDQXMMY7xA`: target Production, READY, built from `main` at `465ffa2`, functions in `fra1`. The three Production addresses moved to it.
+- Read-only protection checks by Claude Code before the merge and after the deployment: Vercel Authentication on All Deployments; Password Protection and Trusted IPs off; no custom firewall configuration; one team member (the owner); the same five known addresses, none new. An independent read-only re-verification confirmed every point.
+- Owner anonymous-access check after the PR #2 deployment (private window): all three Production URLs show the Vercel login screen: `technician-management-mody-projects.vercel.app`, `technician-management.vercel.app` and `technician-management-git-main-mody-projects.vercel.app`.
+- Step 1 planning (plan only, no changes):
+  - Read-only inspection of the Supabase project `Technician-Management` found it empty: no tables, migrations, buckets, policies or users. Its default privileges in `public` grant `anon` and `authenticated` full access to new tables, sequences and functions; the first migration revokes them.
+  - The plan went through six versions, each reviewed independently (security, requirements, data integrity).
+  - The owner's decisions are recorded as D33–D50 (2026-11-03), plus D51 (board ref d40): permission-matrix values stay temporary until the owner approves the final values in Step 10, while Step 1 builds and tests the full enforcement; pre-pilot gate: the owner approves the final permission matrix.
+  - The plan was approved to start with PR 1.1 (documentation) and PR 1.2 (database test infrastructure), stopping before PR 1.3. PR 1.3 waits for the owner's Supabase Auth settings change (D50) and a separate approval to apply.
+- PR 1.1 (this PR):
+  - D33–D51 and the related amendments across the documentation.
+  - `CLAUDE.md`: Step 0 complete; every step needs a plan and the owner's approval; deployment protection verified before and after every Production deployment.
+  - New `docs/PROJECT-MAP.md` and `.github/pull_request_template.md`.
+  - A proposed docs-only Production-build skip was removed from this PR at the owner's request (2026-11-03): this PR is documentation only, and any deployment-behavior change needs its own PR and approval.
+  - D52 (approval workflow, owner 2026-11-03) recorded in `docs/decisions.md`, `CLAUDE.md` and `docs/ROADMAP.md`, as a documentation-only scope extension of this PR that the owner approved:
+    - Owner approval before each new PR starts.
+    - Independent work within the approved scope.
+    - Explicit approval for every merge into `main`, with no automatic merging.
+    - Separate approval for each migration or precisely scoped migration batch.
+    - D31 protection checks preserved.
+    - Approvals never imply one another.
+  - D39 is unchanged. The owner prefers Squash and merge for this PR, without rewriting the branch history.
+
 ## 2026-11-02 — PR #1 merged; first Production deployment
 - PR #1 (Step 0) merged to `main` by the owner: merge commit `3f977fc` at 12:55 Israel time (10:55:50 UTC); parents `e70a33c` (previous `main`) and `6a05b4d` (Step 0 branch head). CI on `6a05b4d` had passed every step before the merge (run 41430037190); CI on the `main` push of `3f977fc` also passed every step (run 41432692571).
 - First Production deployment (read-only check, 2026-11-02): `dpl_5h2HN7WLr7NHtuJoqooBCgwdsUXG`, target Production, READY, built from `main` at `3f977fc`, functions in `fra1`; `vercel.json` allowed the build because it is Production from `main`. Served at both Production domains, `technician-management-mody-projects.vercel.app` and `technician-management.vercel.app`, and at Vercel's automatic addresses for `main` (`technician-management-git-main-mody-projects.vercel.app`) and for the deployment itself.
