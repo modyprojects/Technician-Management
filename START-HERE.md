@@ -28,7 +28,7 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 - `docs/demo-deviations.md` lists where production differs from the demo, and why.
 - `docs/spec.md` describes product features and workflows.
 - `docs/demo.html` is the original Hebrew design and demo behavior; **not secure production code**.
-- `docs/database-schema.md` describes the approved Step 1 database design; every migration still needs its own approval before it is applied.
+- `docs/database-schema.md` describes the approved Step 1 database design; every migration, or an explicitly approved and precisely scoped migration batch, needs the owner's separate approval before it is applied (D52); every remote Supabase operation needs the owner's approval of that operation (D53).
 - `docs/security.md` details secrets, RLS, authorization and test requirements.
 - `docs/ROADMAP.md` explains every build step.
 - `docs/THINKING-AHEAD.md` tracks future decisions and major risks.

@@ -32,6 +32,11 @@
   --seg-bg: #E4E7EB;         /* .seg track, disabled .bigbtn */
   --stat-line: #3A4A5B;      /* clickable header stat border */
   --note-line: #B7D4DE;      /* .note border */
+  --thumb-light: #B9C6D2;    /* .thumb placeholder gradient (with --soft) */
+  --prev-bg: #FFF8F2;        /* technician "↻ ביקור המשך" box background */
+  --collect-line: #F0D9A8;   /* divider between pickup places in "מה לאסוף" */
+  --collect-done: #7A6A4F;   /* collected pickup item text */
+  --scrim: rgba(15, 22, 30, .4); /* .drawer-bg overlay */
 }
 
 /* Tailwind utility names for the tokens (bg-card, text-ink, font-display, ...). */

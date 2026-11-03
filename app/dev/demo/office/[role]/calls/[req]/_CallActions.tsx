@@ -1,0 +1,182 @@
+"use client";
+
+// Header actions of the demo call card (docs/demo.html offCard() L849-850 and the askCancel /
+// noCancel / doCancel handlers L1161-1163). Every action is simulated (D53): it shows
+// "פעולה מדומה · לא נשמר" and changes nothing on screen (G-06).
+// - "חיוג לטכנאי": as in the demo (the last visit's technician).
+// - "שינוי מועד" and "הוספת הערה": not in the demo; scheduling stays in Outlook (OF-03), so the
+//   toast says where the change is really made.
+// - "ביטול ביקור" (OF-09 PENDING, D38: cancels the open visit, never the whole call): the demo's
+//   inline confirmation, only where the default matrix gives `cancel` (Manager; D33, temporary
+//   per D51). Customer Service sees why the action is missing instead of the button (G-04).
+// - "פתח זימון ב-Outlook" is not shown until Microsoft 365 is connected (OF-08).
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useSimulate } from "../../../../_components/DemoToast";
+
+type Panel = "cancel" | "note" | null;
+
+const NOTE_MAX = 500;
+const excerpt = (s: string, max = 60): string => (s.length > max ? `${s.slice(0, max)}…` : s);
+
+export function CallActions({
+  req,
+  tech,
+  openVisit,
+  canCancel,
+}: {
+  req: string;
+  /** Technician of the last visit (the demo's "חיוג לטכנאי"). */
+  tech: { name: string; phone: string };
+  /** The open visit the reschedule and cancel actions apply to, if any. */
+  openVisit: { n: number; techName: string; when: string } | null;
+  canCancel: boolean;
+}) {
+  const simulate = useSimulate();
+  const [panel, setPanel] = useState<Panel>(null);
+  const [note, setNote] = useState("");
+  const noteId = useId();
+  const cancelBtn = useRef<HTMLButtonElement>(null);
+  const noteBtn = useRef<HTMLButtonElement>(null);
+  const keepBtn = useRef<HTMLButtonElement>(null);
+  const noteField = useRef<HTMLTextAreaElement>(null);
+  const returnFocus = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (panel === "cancel") keepBtn.current?.focus();
+    else if (panel === "note") noteField.current?.focus();
+  }, [panel]);
+
+  function toggle(next: Exclude<Panel, null>) {
+    returnFocus.current = next === "cancel" ? cancelBtn.current : noteBtn.current;
+    setPanel((p) => (p === next ? null : next));
+  }
+
+  function close() {
+    setPanel(null);
+    returnFocus.current?.focus();
+  }
+
+  function onPanelKey(e: KeyboardEvent) {
+    if (e.key === "Escape") close();
+  }
+
+  function saveNote(e: FormEvent) {
+    e.preventDefault();
+    const text = note.trim();
+    if (!text) return;
+    simulate(`הערה לפנייה ${req}: ${excerpt(text)}`);
+    setNote("");
+    close();
+  }
+
+  function confirmCancel() {
+    if (!openVisit) return;
+    simulate(`ביטול ביקור ${openVisit.n} · ${openVisit.techName} · ${openVisit.when}`);
+    close();
+  }
+
+  const panelStyle = { flexBasis: "100%", width: "100%", padding: "12px 16px" } as const;
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" className="btn" onClick={() => simulate(`חיוג לטכנאי ${tech.name} · ${tech.phone}`)}>
+          חיוג לטכנאי
+        </button>
+        {openVisit && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              simulate(`שינוי מועד לביקור ${openVisit.n} (${openVisit.when}) · בפועל המועד משתנה בזימון ב-Outlook`)
+            }
+          >
+            שינוי מועד
+          </button>
+        )}
+        <button
+          ref={noteBtn}
+          type="button"
+          className="btn"
+          aria-expanded={panel === "note"}
+          onClick={() => toggle("note")}
+        >
+          הוספת הערה
+        </button>
+        {openVisit &&
+          (canCancel ? (
+            <button
+              ref={cancelBtn}
+              type="button"
+              className="btn dng"
+              aria-expanded={panel === "cancel"}
+              onClick={() => toggle("cancel")}
+            >
+              ביטול ביקור
+            </button>
+          ) : (
+            <span className="sub">ביטול ביקור: למנהל בלבד</span>
+          ))}
+      </div>
+
+      {panel === "cancel" && openVisit && (
+        <div
+          role="group"
+          aria-label="אישור ביטול ביקור"
+          className="card"
+          onKeyDown={onPanelKey}
+          style={{
+            ...panelStyle,
+            background: "var(--danger-bg)",
+            borderColor: "var(--danger-line)",
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <b style={{ flex: 1, minWidth: 200, color: "var(--danger-fg)" }}>
+            לבטל את הביקור הפתוח (ביקור {openVisit.n} · {openVisit.when})? הוא יירד מהיומן של {openVisit.techName}.
+          </b>
+          <button type="button" className="btn dng" onClick={confirmCancel}>
+            כן, לבטל
+          </button>
+          <button ref={keepBtn} type="button" className="btn" onClick={close}>
+            לא
+          </button>
+        </div>
+      )}
+
+      {panel === "note" && (
+        <form
+          className="card"
+          aria-label="הוספת הערה לקריאה"
+          onSubmit={saveNote}
+          onKeyDown={onPanelKey}
+          style={{ ...panelStyle, display: "flex", flexDirection: "column", gap: 8 }}
+        >
+          <label htmlFor={noteId} className="sub" style={{ fontWeight: 700 }}>
+            הערה לפנייה {req}
+          </label>
+          <textarea
+            ref={noteField}
+            id={noteId}
+            rows={3}
+            maxLength={NOTE_MAX}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="לדוגמה: הלקוח ביקש שיתקשרו חצי שעה לפני ההגעה"
+          />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="submit" className="btn pri" disabled={!note.trim()}>
+              שמירת הערה
+            </button>
+            <button type="button" className="btn" onClick={close}>
+              סגירה
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}

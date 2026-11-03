@@ -18,6 +18,11 @@ const eslintConfig = defineConfig([
               group: ["**/_fixtures", "**/_fixtures.*"],
               message: "Fictitious showcase data is allowed only under app/dev.",
             },
+            {
+              // UI demo (D53): fictitious data and the demo frame stay under app/dev/demo.
+              group: ["**/demo/_data", "**/demo/_data/**", "**/demo/_components", "**/demo/_components/**"],
+              message: "UI-demo data and demo components are allowed only under app/dev.",
+            },
           ],
         },
       ],
