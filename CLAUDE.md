@@ -14,7 +14,13 @@
 ## Cloud-first and approval protocol
 - Existing connections: GitHub, Vercel, Supabase. Do not reconnect without a concrete issue. The owner does not use local VS Code or Node.js.
 - At the start of each phase, present a short Hebrew plan: objective, files and tables affected, how to verify, security impact, external calls, cost and decisions needed. **Wait for explicit approval before implementing.**
-- Each session: read current decisions and the last 3 WORKLOG entries. Work on a feature branch, open a PR, provide an access-controlled Preview that only the owner can open during the testing period (D29), and never merge to `main` without approval.
+- **Approval workflow (D52):**
+  - **Start:** every new PR needs the owner's explicit approval before it starts.
+  - **Within the approved scope:** after the owner approves a PR's scope, Claude Code may independently implement, commit, push, run checks and fix issues within that approved scope. A material scope expansion needs additional approval.
+  - **Merge:** every merge into `main` needs the owner's explicit approval for that specific PR, including documentation-only and tests-only PRs. No automatic merging into `main`.
+  - **Migrations:** every database migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval.
+  - **Separate approvals:** approval to start a PR, to apply a migration or to merge a PR never implies approval of the other actions. D31 protection checks still apply before and after every Production deployment.
+- Each session: read current decisions and the last 3 WORKLOG entries. Work on a feature branch, open a PR, provide an access-controlled Preview that only the owner can open during the testing period (D29), and never merge to `main` without the owner's explicit approval of that specific PR (D52).
 - Free plans only (D30): GitHub Free, Vercel Hobby, and the existing Supabase project `Technician-Management` (about $10/month, owner-approved, d36). No new projects, accounts or services and nothing that can create a charge; if something needs a paid plan, stop and tell the owner. Commits are authored with the owner's GitHub account and end with `Co-Authored-By: Claude <noreply@anthropic.com>`; PR descriptions state that Claude Code wrote the code under the owner's direction. If a deployment is blocked, stop and report.
 - Production (D31) is the owner's fixed, protected viewing address for approved versions. It changes only by merging to `main` after the owner approves that specific merge (Hebrew summary of changes and test results first). Never push directly to `main`. Verify deployment protection before and after every Production deployment, on both Production domains (`technician-management-mody-projects.vercel.app` and `technician-management.vercel.app`).
 - High-risk stop gates: production access, migrations, RLS/auth changes, credentials, access grants, real emails, paid services, transcription, destructive operations, third-party integrations, real customer data, production deployment.
@@ -73,4 +79,4 @@
 6. PR with test instructions; no unapproved production or external side effects.
 
 ## Work plan
-See `docs/ROADMAP.md` and `docs/THINKING-AHEAD.md`. Step 0 is complete (merged and deployed 2026-11-02). Every new step requires a Hebrew plan and the owner's explicit approval before implementation.
+See `docs/ROADMAP.md` and `docs/THINKING-AHEAD.md`. Step 0 is complete (merged and deployed 2026-11-02). Every new step requires a Hebrew plan and the owner's explicit approval before implementation, and every new PR requires the owner's explicit approval before it starts (D52).
