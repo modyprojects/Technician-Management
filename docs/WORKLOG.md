@@ -1,7 +1,13 @@
 # Work Log (English only)
 
 ## 2026-11-03 — PR 1.2 (database test infrastructure)
-- Stacked on PR 1.1 (branch `claude/step1-db-tests`); no migration, no change to the remote Supabase project.
+- Branch `claude/step1-db-tests`; no migration, no change to the remote Supabase project.
+- Synchronized with `main` after PR #3 was squash-merged (`1c6926e`, 2026-11-03), without force-push or history rewrite:
+  - Merged the PR 1.1 branch head `6f71be5` first (it contains the revert `ed01d82` of the withdrawn docs-only Production-build skip), then `main`.
+  - The skip is gone: no `scripts/vercel-ignore.sh`, no `tests/ci/vercel-ignore.test.mjs`, and `vercel.json` is identical to `main`.
+  - `test:ci` and its CI step now run only the migration-guard tests.
+  - Retargeted to `main`.
+- The inaccurate `supabase/seed.sql` reference in `docs/database-schema.md` and `docs/PROJECT-MAP.md` is corrected: seeding is disabled in `supabase/config.toml` and there is no seed file.
 - Supabase CLI 2.122.0 (released 2026-10-23, past the 7-day cooldown; 3.0.0 was one day old) is pinned with the SHA-256 from the release's `checksums.txt` (`scripts/install-supabase-cli.sh`).
 - `supabase/config.toml` comes from `supabase init` of the pinned version, with three changes: `project_id`, seed disabled, and sign-ups off (invitation-only, D50). It is used only for local tests.
 - New `Database tests` workflow (`.github/workflows/db.yml`): runs only when database files change.

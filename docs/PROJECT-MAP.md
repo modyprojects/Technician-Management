@@ -39,7 +39,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
 | `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
 | `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no privileges, every table has RLS and a test-data marker (D47) |
-| `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled. Not used for the remote project |
+| `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
 | `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
@@ -91,7 +91,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Database schema | `supabase/migrations/` (migrations only; never fictitious data, D47) |
 | Database tests | `tests/db/` (the Supabase CLI accepts this path, so no deviation from `CLAUDE.md`; decided in PR 1.2) |
 | End-to-end tests | `tests/e2e/` |
-| Test data | Marked and labelled per D47 (`data_source` / `is_test`, "נתוני בדיקה" / "🧪 זימון בדיקה"); fixtures for screens only under `app/dev` (G-05); local CI database fixtures (`automated_test`) planned in `supabase/seed.sql`, never in migrations (`docs/database-schema.md` §2) |
+| Test data | Marked and labelled per D47 (`data_source` / `is_test`, "נתוני בדיקה" / "🧪 זימון בדיקה"); fixtures for screens only under `app/dev` (G-05); no local seed file (seeding disabled in `supabase/config.toml`; `supabase/seed.sql` does not exist); any future local CI fixtures are marked `automated_test`, never in migrations (`docs/database-schema.md` §2) |
 | Review screenshots | `docs/review/<step>/` |
 
 ## 5. Keeping it current
