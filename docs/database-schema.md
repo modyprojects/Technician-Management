@@ -578,7 +578,7 @@ No ONE-related table, column, status, flag, export or adapter.
 2. Primary and foreign keys, `ON DELETE RESTRICT` everywhere, unique constraints, `CHECK` value sets and indexes.
 3. Test marker: `data_source` / `is_test`, composite foreign keys, one-way rule, immutability triggers, census coverage (or a justified exemption).
 4. Grants, RLS by role and matrix key (data vs screen), SECURITY DEFINER review against section 9, append-only and truncate triggers.
-5. Positive and negative tests: cross-technician isolation, role escalation, `calls` without `card` leakage (including through `review_items` and `entity_changes`), `service_role` against append-only tables, test user against real targets. Tests live in `tests/db/` unless the Supabase CLI requires `supabase/tests` (a documented deviation, decided in PR 1.2).
+5. Positive and negative tests: cross-technician isolation, role escalation, `calls` without `card` leakage (including through `review_items` and `entity_changes`), `service_role` against append-only tables, test user against real targets. Tests live in `tests/db/` (the Supabase CLI accepts this path, so there is no deviation; decided in PR 1.2).
 6. CI: local Supabase, the "no test rows in migrations" check, census = 0 on a fresh database built from migrations, and the rollback (down) script tested.
 7. Rollout risks and rollback plan.
 8. Applied through MCP only with the owner's approval for that application, immediately before the merge; every merge needs its own approval.

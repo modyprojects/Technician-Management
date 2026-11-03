@@ -37,7 +37,7 @@ Every new step starts with a Hebrew plan and the owner's explicit approval. Step
 | PR | Content | Owner approvals |
 |---|---|---|
 | 1.1 Documentation | Decisions D33–D51 across the docs (D52 approval workflow added 2026-11-03 as an owner-approved scope extension), `CLAUDE.md`, `docs/PROJECT-MAP.md`, PR template, WORKLOG | Content → merge |
-| 1.2 Database test infrastructure | Pinned Supabase CLI, CI `db` job, smoke test, check that migrations contain no test rows, test-data census coverage; database tests under `tests/db` (the CLI accepts this path; no deviation) | CI → merge |
+| 1.2 Database test infrastructure | Pinned Supabase CLI, `Database tests` CI workflow, smoke test, check that migrations contain no test rows, test-data census coverage; database tests under `tests/db` (the CLI accepts this path; no deviation) | CI → merge |
 | 1.3 Migration 1: access and permissions | Hardening, profiles, technicians, permission matrix (D33), account requests (D34), audit, test-data rules and census; the first-Creator function is created but not run (D49) | Review → **owner's Auth settings change (D50)** → apply → merge |
 | 1.4 Migration 2: reference data, customers and products | Brands, suppliers, products, customers, call types and continuation reasons (D48), pickup places | Review → apply → merge |
 | 1.5 Migration 3: service calls and visits | Service calls and call status (D38), visits, reports, signatures, time reports (D45), change history, previous-visit (D36) and representative-contact (D40) functions | Review → apply → merge |

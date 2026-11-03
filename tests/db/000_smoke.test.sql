@@ -3,7 +3,7 @@
 -- object that later migrations add (D33, D47, docs/security.md §5).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(7);
 
 select ok(
   current_setting('server_version_num')::int >= 170000,
@@ -15,6 +15,18 @@ select is(
     where grantee in ('anon', 'PUBLIC') and table_schema in ('public', 'private')),
   0::bigint,
   'anon and PUBLIC have no table privileges in public or private'
+);
+
+-- Sequences are not in information_schema.role_table_grants, and Supabase's default privileges
+-- grant anon access to new sequences, so they are checked separately (grantee 0 = PUBLIC).
+select is(
+  (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname in ('public', 'private') and c.relkind = 'S'
+      and exists (
+        select 1 from aclexplode(coalesce(c.relacl, acldefault('s', c.relowner))) a
+        where a.grantee = 0 or a.grantee = (select oid from pg_roles where rolname = 'anon'))),
+  0::bigint,
+  'anon and PUBLIC have no sequence privileges in public or private'
 );
 
 select is(

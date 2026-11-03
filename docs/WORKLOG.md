@@ -8,6 +8,10 @@
   - `test:ci` and its CI step now run only the migration-guard tests.
   - Retargeted to `main`.
 - The inaccurate `supabase/seed.sql` reference in `docs/database-schema.md` and `docs/PROJECT-MAP.md` is corrected: seeding is disabled in `supabase/config.toml` and there is no seed file.
+- Independent review of the synchronized PR found that the smoke tests did not check sequence privileges, although the docs said they did. A seventh test now checks that `anon` and `PUBLIC` have no sequence privileges in `public` or `private` (`aclexplode`, because `information_schema.role_table_grants` does not list sequences).
+  - Local run: 7/7 pass.
+  - Negative control: a probe sequence created in `public` received Supabase's default `anon` grants (SELECT, UPDATE, USAGE) and made that test fail. After it was dropped, 7/7 pass.
+  - Documentation wording aligned: PROJECT-MAP (`tests/db` row, header) and `testing.md` (workflow name). The location sentence in `database-schema.md` is also aligned: `tests/db`, no deviation.
 - Supabase CLI 2.122.0 (released 2026-10-23, past the 7-day cooldown; 3.0.0 was one day old) is pinned with the SHA-256 from the release's `checksums.txt` (`scripts/install-supabase-cli.sh`).
 - `supabase/config.toml` comes from `supabase init` of the pinned version, with three changes: `project_id`, seed disabled, and sign-ups off (invitation-only, D50). It is used only for local tests.
 - New `Database tests` workflow (`.github/workflows/db.yml`): runs only when database files change.

@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-03 (Step 1, PR 1.1).
+Last updated: 2026-11-03 (Step 1, PR 1.2).
 
 ## 1. Purpose and how to read it
 
@@ -38,7 +38,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
 | `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
-| `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no privileges, every table has RLS and a test-data marker (D47) |
+| `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no table, sequence or function privileges in `public` or `private`, `anon` has no usage on `private`, and every table has RLS and a test-data marker (D47) |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
 | `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
