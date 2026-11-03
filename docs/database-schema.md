@@ -1,52 +1,584 @@
-# Proposed Database Schema — NOT Approved for Execution
+# Database Schema — Approved Step 1 Design
 
-**Status:** architectural proposal, updated 2026-10-26. Columns, ownership, delete behavior, permissions and RLS require approval **before any migration** (Step 1).
+**Status:** Approved design for Step 1 (owner, 2026-11-03). Exact columns, types and constraints are finalised and reviewed in each migration PR; no migration without explicit approval.
 
-## Conventions
-UUID primary keys. Business identifiers (`request_number`, `task_number`, `customer_number`, `sku`) stored separately. `created_at` / `updated_at` on business tables; `timestamptz` in UTC, displayed in `Asia/Jerusalem`. Explicit foreign keys, checks and indexes.
+**Sources:** D33–D51 in `docs/decisions.md` (they win on any difference) and the approved Step 1 plan (version 6). Security rules: `docs/security.md`. Step 1 creates nothing in Supabase Storage.
 
-**Test-data marker (D24):** `customers`, `service_calls`, `visits`, `products` and `external_calendar_events` carry `data_source` (`simulator` | `microsoft_graph`) or an equivalent `is_test` flag. In test environments KPIs and exports include test data (labeled "נתוני בדיקה" in the UI and files); in production, KPI and export queries ignore test-marked records. Real email delivery always skips test data. The marker also drives the visit source label.
+## 1. Conventions
+- **Keys:** `uuid` primary keys; `bigint` identity keys for the high-volume history tables (`audit_logs`, `entity_changes`, `visit_time_reports`, `visit_events`); `offline_operations` is keyed by the device's operation UUID. Business identifiers (`request_number`, `task_number`, `customer_number`, `sku_normalized`, `visit_number`) are stored separately from keys.
+- **Time:** `timestamptz` in UTC, displayed in `Asia/Jerusalem`. Server times are authoritative for receipt, sync and audit; device times are reported values (D45, section 7).
+- **Value sets:** `text` columns with explicit `CHECK` constraints (roles, statuses, kinds, sources, request and review types). No Postgres enums. The codes are English; their Hebrew display labels belong to the UI.
+- **Concurrency:** `version` (`int`) on every editable row, raised by trigger. Edit RPCs take `expected_version` and per-field `{base, new}` changes (D44): same version → applied; different version but every `base` equals the current value → automatic merge, recorded as `merge`; otherwise → conflict, both versions are returned and the rejected submission is stored as a `review_items` row (`edit_conflict`). Nothing is lost.
+- **`visits.field_version`:** raised by trigger only by the changes that matter to a device: status, assignment, cancellation and the critical fields of D39 (customer, address, SKU). Non-critical changes do not raise it (tested). Offline operations carry the `expected_field_version` they were based on.
+- **Foreign keys:** every foreign key is `ON DELETE RESTRICT`, including `profiles.id` → `auth.users.id`. No cascades anywhere.
+- **No DELETE of business or history records** (customers, products, service calls, visits, reports, signatures, time reports, events, corrections, review items, offline operations, account requests, audit). No DELETE grant exists for them. Accounts are deactivated (`profiles.is_active`), never deleted.
+- **Reference data** (`brands`, `suppliers`, `call_types`, `followup_reasons`, `collection_locations`) is deactivated with `is_active`. The only deletes are those SE-06 and SE-07 in `docs/demo-deviations.md` allow: a pickup place that nothing references, and an unused follow-up reason (as in the demo, only a user-added one, `is_user_added`). `ON DELETE RESTRICT` makes any delete of a referenced row fail.
+- **Append-only tables:** `audit_logs`, `entity_changes`, `visit_time_reports`, `visit_events`, `visit_corrections` (and `ack_text_versions` from Step 4). Row-level triggers reject UPDATE and DELETE, `TRUNCATE` is revoked and a statement-level trigger rejects it. Triggers apply to every role, **including `service_role`**, which bypasses RLS but not triggers. `visit_signatures` rows are immutable after insert.
+- **Immutability boundary:** these protections hold against the app, the secret key and `service_role`, not against owner-level access (SQL editor, migrations, any member of the Supabase organization with SQL access). The `audit_logs` hash chain makes such a change detectable. Organization membership is the department's responsibility (D50, a planning assumption, not a verified control).
+- **Validation:** allowed values and outcome-specific required fields are enforced in the database where practical, plus Zod on the server.
 
-| Table | Responsibility | Key relationships / notes |
+## 2. Test data (D47)
+Every data table carries a test marker that the server sets and nobody can change. Test data is labelled in the app ("🧪 זימון בדיקה" per visit, SIM-14; 🧪 badges, SIM-15 to SIM-19; "נתוני בדיקה" on dashboards, reports and Excel files) and can never be confused with real data.
+
+**`data_source` on root tables** (`customers`, `products`, `service_calls`):
+
+| Value | When | `is_test` |
 |---|---|---|
-| `profiles` | Account details and assigned role | `id` → `auth.users.id` |
-| `roles`, `permissions`, `role_permissions` | Role/permission matrix | Fixed vs. editable matrix is OPEN (decisions.md open #1). Enforced in RLS either way |
-| `technicians` | Technician contact, color, Outlook email, active state | `profile_id` → `profiles.id`; unique Outlook email (used to match invitation attendees) |
-| `customers` | Customer registry | **`customer_number` required and unique** (D17) |
-| `products` | Built from invitations (D19) | **`sku_normalized` unique** (trimmed, upper-case); `sku_display`; `name` (first seen, never overwritten by ingestion); `brand_id` and `supplier_id` **nullable** |
-| `brands`, `suppliers` | Optional reference data for analysis | Filled by authorized users later |
-| `service_calls` | A business service request | `customer_id`, `product_id`, unique `request_number`; `warranty` nullable (D17) |
-| `visits` | One technician appointment | `service_call_id`, `technician_id`, `task_number`, scheduled and actual timestamps (departed, arrived, ended), status, `version`, `next_visit_notes` (required when status = follow-up) |
-| `visit_media` | Photos, video, audio, signatures | `visit_id`, private bucket path, type, before/after, metadata |
-| `visit_transcripts` | Audio processing and approved summary text | `visit_id`, processing state, reviewed text, reviewer, version |
-| `visit_parts` | Parts replaced | `visit_id`, free text and optional `product_id` |
-| `visit_corrections` | Audited corrections | original values or immutable change-set, actor, reason, timestamp |
-| `offline_operations` | Server-side idempotency for device sync | unique operation UUID, visit, actor, version, result |
-| `followup_reasons` | Follow-up reason catalog | Deactivate instead of delete |
-| `collection_locations` | Pickup places | Deactivate when referenced |
-| `visit_collections` | Visit pickup items | `visit_id`, location, collected flag + collected_by/at |
-| `notifications` | In-app notifications | `recipient_profile_id`, optional `visit_id`; created by events only (D25) |
-| `email_outbox` | Logical outgoing email events | unique `(visit_id, event_type)`; recipients resolved server-side; never delivered for test data |
-| `email_delivery_attempts` | Attempts, provider status, errors | `outbox_id` |
-| `external_calendar_events` | Event identity for simulator and Graph | `source`, calendar ID, event ID, `visit_id`, composite unique (`source`, `calendar_id`, `event_id`) |
-| `calendar_ingestion_errors` | Invitations not ingested | missing/invalid fields, sanitized details, resolved flag; feeds the "זימונים שלא נקלטו" screen |
-| `audit_logs` | Sensitive administrative actions | actor, action, target, timestamp, minimal metadata |
+| `simulator` | All development and demonstration data in the remote project. It is created only through the Outlook invitation simulator, that is, through the single ingestion path (D24) | true |
+| `automated_test` | Local CI only | true |
+| `microsoft_graph` | Real data. **Not allowed yet:** the `CHECK` accepts only `simulator` and `automated_test` (fail closed) until an approved Step 11 migration adds `microsoft_graph`, so no "real" record can exist before Microsoft 365 is connected (D23) | false |
 
-## Relationships
-`customers 1—n service_calls 1—n visits 1—n visit_media`; `technicians 1—n visits`; `products 1—n service_calls`; `visits 1—n visit_parts`; `visits 1—n email_outbox` (distinct event types only); `external_calendar_events n—1 visits`.
+There is no `seed` value: it would contradict D19, SIM-14 and the single ingestion path.
 
-## Integrity and performance
-- Allowed statuses and outcome-specific required fields enforced in the database where practical, plus Zod on the server.
-- Product upsert by `sku_normalized` uses `INSERT … ON CONFLICT DO NOTHING` (or equivalent) so concurrent or repeated invitations cannot create duplicates; existing `name` is never updated by ingestion.
-- Unique event IDs and offline operation IDs make replays idempotent.
-- Concurrent edits: row locks in transactions or optimistic `version` checks.
-- Candidate indexes: `visits(technician_id, scheduled_start)`, `visits(service_call_id)`, `service_calls(request_number)`, `customers(customer_number)`, `products(sku_normalized)`, `email_outbox(status, next_attempt_at)`, `audit_logs(created_at)`.
-- Never cascade-delete historical media or completed visits. Deactivate reference data and accounts. Retention rules OPEN.
-- RLS on every exposed table and private Storage policies. No views or definer functions that bypass authorization.
-- Visit completion and its outbox event are written in one transaction.
+**`is_test` on every data table:**
+
+| Table kind | How `is_test` is set |
+|---|---|
+| Root tables | Generated from `data_source` |
+| Child tables (`visits`, every `visit_*` table, `review_items`, `offline_operations`) | Composite foreign key `(parent_id, is_test)` to an explicit `UNIQUE (id, is_test)` on the parent. `visits.is_test` is copied from the service call by trigger; the client never sends it |
+| Polymorphic tables (`entity_changes`, `audit_logs.target_is_test`) | Derived from the target row by trigger |
+| `technicians` | Equals its profile |
+| `account_requests` | Set by the server (until go-live every new user is a test user) |
+| `profiles` (users) | Set by the server: `true` for every new user until go-live, except the first Creator (D49). A test user's Outlook email must be in the `example.test` domain |
+| Reference data (`brands`, `suppliers`, `followup_reasons`, `collection_locations`) | `is_test` column plus the one-way rule below |
+
+**Rules:**
+- **Immutable markers:** `data_source` and `is_test` never change after insert (trigger, every role).
+- **One-way rule** (trigger) for people and reference data (technician, handling representative, actor, pickup place, brand, supplier, follow-up reason): a test record may reference a real record; a real record never references a test record.
+- **Test users** manage only test targets. There is no test Creator in the remote project.
+- **Traceability:** `source_ref` (simulator event id or test-run id) and `created_by` on root rows; ingestion passes `source_ref` to child rows (for example `visits.source_ref`). The census groups by source.
+- **Census:** `test_data_census()` counts test-marked rows per table and source and returns the list of tables and buckets it covers. It is callable by the Creator through the API, or by the owner's database role without a JWT (MCP or SQL editor, only with the owner's approval). A CI check reads the catalogue: every table has `is_test` (or `target_is_test`) or appears on a justified exemption list, so a forgotten table cannot pass silently. The configuration tables drawn without `is_test` (`permissions`, `role_permissions`, `call_types`) must be on that list with a reason or gain `is_test`; this is settled in their migration PR.
+- **Migrations never contain fictitious data:** only schema and real reference values the owner approved (D48: call types and follow-up reasons). Local CI fixtures live in `supabase/seed.sql`; remote development data is created only through the simulator; pickup places get real values before go-live and until then are added only through the development path, never in migrations. CI fails if a migration inserts test rows, and a fresh database built from migrations alone must return a census of 0.
+- **No automatic deletion** of test data during development.
+- **Storage (Step 4):** `test/` and `live/` prefixes in every bucket, including quarantine; the census also checks prefixes and orphaned files.
+- **Before go-live:** an explicitly approved cleanup or environment-separation plan and the pre-launch acceptance checklist (go-live gate in `docs/deployment.md`). The real app starts with no fictional content.
+
+## 3. ER diagram (Step 1)
+`entity_changes` and `audit_logs` are polymorphic (target table and id, no foreign key to the target). Tables reserved for later steps (section 5) are not drawn.
+
+```mermaid
+erDiagram
+  profiles ||--o| technicians : "technician"
+  permissions ||--o{ role_permissions : "matrix"
+  profiles |o--o{ audit_logs : "actor"
+  profiles ||--o{ account_requests : "requested by"
+  profiles |o--o{ account_requests : "target"
+  profiles |o--o{ entity_changes : "actor"
+  customers ||--o{ service_calls : "calls"
+  products ||--o{ service_calls : "product"
+  brands |o--o{ products : "brand"
+  suppliers |o--o{ products : "supplier"
+  call_types ||--o{ service_calls : "type"
+  profiles |o--o{ service_calls : "handling rep"
+  service_calls ||--|{ visits : "visits"
+  technicians ||--o{ visits : "assigned"
+  collection_locations |o--o{ visits : "pickup"
+  followup_reasons |o--o{ visits : "follow-up reason"
+  visits ||--o| visit_reports : "summary (card)"
+  visits ||--o| visit_signatures : "signature (card)"
+  visits ||--o{ visit_time_reports : "field times"
+  profiles ||--o{ visit_time_reports : "reporter"
+  visits ||--o{ visit_events : "status history"
+  visits ||--o{ visit_corrections : "corrections"
+  service_calls ||--o{ review_items : "review"
+  visits |o--o{ review_items : "review"
+  profiles |o--o{ review_items : "submitted by"
+  visits |o--o{ offline_operations : "operations"
+  profiles ||--o{ offline_operations : "actor"
+
+  profiles {
+    uuid id PK "FK auth.users, RESTRICT"
+    text role "CHECK"
+    text full_name
+    text work_phone "D40"
+    text invitation_rep_name UK
+    bool is_active "access and sign-in"
+    bool is_test "immutable"
+    int version
+  }
+  technicians {
+    uuid id PK
+    uuid profile_id FK "UK"
+    text display_name
+    text color
+    text outlook_email UK "test users: example.test"
+    text device_label
+    bool accepts_invitations "SE-05"
+    bool is_test "equals the profile"
+    int version
+  }
+  permissions {
+    text key PK
+    text label_he
+    text enforcement "data or screen"
+  }
+  role_permissions {
+    text role PK "CHECK manager or customer_service"
+    text permission_key PK
+    bool allowed
+    text value_status "temporary or approved D51"
+    uuid approved_by FK
+    timestamptz approved_at
+    uuid updated_by FK
+    int version
+  }
+  account_requests {
+    uuid id PK
+    text request_type "create, activate, reactivate, role change"
+    uuid target_profile_id FK "empty on create"
+    text requested_role
+    text email "create only"
+    text full_name "create only"
+    uuid requested_by FK
+    timestamptz created_at
+    text status "pending, approved, rejected, cancelled"
+    uuid decided_by FK "Creator"
+    timestamptz decided_at
+    text rejection_reason
+    bool is_test
+  }
+  audit_logs {
+    bigint id PK
+    timestamptz occurred_at
+    uuid actor_profile_id FK
+    text action
+    text target_table
+    uuid target_id
+    bool target_is_test "trigger"
+    jsonb details
+    text prev_hash
+    text row_hash "hash chain"
+  }
+  entity_changes {
+    bigint id PK "append-only"
+    text entity_table "customers, products, service_calls, visits"
+    uuid entity_id
+    text field
+    jsonb old_value
+    jsonb new_value
+    text source "invitation, edit, correction, system, merge, rejected_submission"
+    text source_ref
+    uuid actor_profile_id FK
+    timestamptz changed_at
+    bool is_test "trigger"
+  }
+  customers {
+    uuid id PK
+    text customer_number UK "D17"
+    text name
+    text phone
+    text phone_alt
+    text data_source "immutable"
+    text source_ref "event or test run"
+    uuid created_by FK
+    bool is_test "generated"
+    int version
+  }
+  products {
+    uuid id PK
+    text sku_display
+    text sku_normalized UK
+    text name "RPC only"
+    uuid brand_id FK
+    uuid supplier_id FK
+    text data_source
+    text source_ref
+    bool is_test "generated"
+    int version
+  }
+  brands {
+    uuid id PK
+    text name UK
+    bool is_active
+    bool is_test
+  }
+  suppliers {
+    uuid id PK
+    text name UK
+    bool is_active
+    bool is_test
+  }
+  call_types {
+    uuid id PK
+    text label_he UK
+    bool is_active
+  }
+  followup_reasons {
+    uuid id PK
+    text label_he UK
+    int sort_order
+    bool is_user_added
+    bool is_active
+    bool is_test
+  }
+  collection_locations {
+    uuid id PK
+    text name UK
+    text address
+    text phone
+    text opening_hours
+    bool is_active
+    bool is_test
+  }
+  service_calls {
+    uuid id PK
+    text request_number UK
+    uuid customer_id FK "(id, is_test)"
+    uuid product_id FK "(id, is_test)"
+    uuid call_type_id FK
+    text fault_description
+    text warranty_status
+    date warranty_until "D42"
+    text warranty_raw
+    text handling_rep_name
+    uuid handling_rep_profile_id FK
+    text status "D38"
+    int next_visit_number
+    timestamptz opened_at
+    timestamptz resolved_at
+    text data_source
+    text source_ref
+    bool is_test "generated"
+    int version
+  }
+  visits {
+    uuid id PK
+    uuid service_call_id FK "(id, is_test)"
+    uuid technician_id FK
+    int visit_number "UK with the call"
+    text task_number "D41, not unique"
+    timestamptz scheduled_start
+    timestamptz scheduled_end
+    text status
+    text city "address per visit"
+    text street
+    text building
+    text floor
+    text apartment
+    text arrival_notes
+    text tech_notes
+    text pickup_item
+    uuid pickup_location_id FK
+    uuid followup_reason_id FK "not card"
+    text next_visit_notes "not card"
+    timestamptz assigned_at "server"
+    timestamptz closed_at "server"
+    timestamptz cancelled_at
+    uuid cancelled_by FK
+    text source_ref "invitation event"
+    bool is_test "from the call"
+    int field_version
+    int version
+  }
+  visit_reports {
+    uuid visit_id PK "card"
+    text summary_text
+    text summary_source
+    bool is_test
+    int version
+  }
+  visit_signatures {
+    uuid visit_id PK "card, immutable"
+    text signer_name
+    text signed_ack_text "D43"
+    uuid ack_text_version_id "FK from Step 4"
+    text ack_text_sha256 "NFC UTF-8"
+    uuid signature_media_id "Step 4"
+    uuid operation_id
+    bool is_test
+  }
+  visit_time_reports {
+    bigint id PK "append-only"
+    uuid visit_id FK
+    uuid reported_by_profile_id FK
+    uuid technician_id FK
+    text kind "departed, arrived, ended, signed"
+    timestamptz reported_at "device"
+    text device_tz "IANA"
+    int device_utc_offset_min
+    timestamptz device_sent_at
+    timestamptz received_at "server"
+    bigint clock_skew_ms
+    text source "device or correction"
+    uuid operation_id
+    uuid correction_id FK
+    uuid accepted_review_id FK
+    text[] row_flags "row level"
+    bool is_test
+  }
+  visit_events {
+    bigint id PK
+    uuid visit_id FK
+    int version_after
+    text event_type
+    text from_status
+    text to_status
+    timestamptz recorded_at
+    uuid actor_profile_id FK
+    uuid operation_id
+    bool is_test
+  }
+  visit_corrections {
+    uuid id PK
+    uuid visit_id FK
+    uuid corrected_by FK
+    text reason
+    jsonb changes
+    int version_before
+    int version_after
+    bool is_test
+  }
+  review_items {
+    uuid id PK
+    text review_type
+    text dedupe_key UK
+    uuid service_call_id FK
+    uuid visit_id FK "(id, service_call_id)"
+    uuid submitted_by_profile_id FK
+    uuid operation_id
+    jsonb submitted_version "version A"
+    jsonb current_version "version B"
+    text status
+    timestamptz created_at
+    timestamptz resolved_at
+    uuid resolved_by FK
+    text resolution
+    bool is_test
+  }
+  offline_operations {
+    uuid operation_id PK
+    uuid actor_profile_id FK
+    uuid visit_id FK
+    text op_type
+    text payload_sha256
+    int expected_field_version
+    timestamptz device_sent_at
+    text device_tz
+    int device_utc_offset_min
+    timestamptz received_at
+    text result
+    int resulting_field_version
+    bool is_test
+  }
+```
+
+## 4. Tables in Step 1
+Every table has RLS enabled, explicit grants and the test marker of section 2 (or a justified census exemption). Who reads and writes what: section 8.
+
+**Migration 1 — access and permissions (PR 1.3)**
+
+| Table | Responsibility | Key constraints and rules |
+|---|---|---|
+| `profiles` | Account: role, name, work phone (D40), invitation alias, active state | `id` = `auth.users.id` (FK, RESTRICT). `role` `CHECK` (Technician, Customer Service, Manager, Creator). `invitation_rep_name` unique. `is_active` controls sign-in and data access. No direct INSERT, UPDATE or DELETE for any user; changes only through RPCs. The role never comes from `user_metadata` or `app_metadata` |
+| `technicians` | Technician field profile: display name, colour, Outlook email, device, eligibility for new invitations | `profile_id` unique and linked only to a profile with the Technician role. `outlook_email` unique (matches invitation attendees; test users use `example.test`). `accepts_invitations` is the SE-05 "פעיל" toggle (new invitations only), never access. Every `outlook_email` change notifies the Creator in the app (D34 f). No direct writes |
+| `permissions` | Closed catalogue of matrix keys and how each is enforced (data or screen) | `key` primary key; exactly the 13 keys of D33. No direct writes |
+| `role_permissions` | Editable matrix values (D33) | Primary key `(role, permission_key)`. `role` `CHECK`: `manager` or `customer_service` only; the Creator is never in the matrix. Written only by `admin_set_role_permission` (Creator), effective immediately, audited in the same transaction. Every value carries `value_status`: `temporary` for the seeded defaults until the owner approves the final values in Step 10 (D51), then `approved` with `approved_by` and `approved_at`; a key introduced later is seeded denied unless approved; temporary values never override hard restrictions |
+| `account_requests` | Manager-initiated Customer Service creation, activation, reactivation and role changes awaiting the Creator (D34 a) | `status` `CHECK`: `pending`, `approved`, `rejected`, `cancelled`. While pending nothing changes: no Auth user on creation, reactivation keeps the account inactive, a role change keeps the current role. Decision by the Creator only (RPC); the requester may cancel a pending request; rejection stores a reason; every step is audited; no automatic expiry (D25) |
+| `audit_logs` | Sensitive and administrative actions | Append-only, hash chain (`prev_hash` → `row_hash`), written in the same transaction as the action. `target_is_test` by trigger. Minimal metadata, no raw customer data |
+
+**Migration 2 — reference data, customers and products (PR 1.4)**
+
+| Table | Responsibility | Key constraints and rules |
+|---|---|---|
+| `brands`, `suppliers` | Optional product reference data (D19) | `name` unique; `is_active`; written through RPC with `products` |
+| `products` | Built from invitations (D19) | `sku_normalized` unique (trimmed, upper-case); `sku_display`. Ingestion inserts with `ON CONFLICT DO NOTHING` and never updates `name`; `name` changes only through `update_product` (matrix key `products`), which writes `entity_changes` and `audit_logs` in the same transaction. `brand_id` and `supplier_id` nullable |
+| `customers` | Customer registry and current contact details | **`customer_number` required and unique** (D17). Contact fields are updated field by field from the latest valid invitation (D39), with history in `entity_changes`; a different customer name for the same customer number goes to review |
+| `call_types` | Call types; initial values "תיקון" and "התקנה" (D48) | `label_he` unique; `is_active`; written with `settings` (D35). Test marker or justified census exemption: settled in this PR (section 2) |
+| `followup_reasons` | Continuation reasons; the demo's five are the initial values (D48) | `label_he` unique; `sort_order`; `is_user_added`; `is_active`. Deactivate when used; delete only per SE-07. Written with `settings` (D35) |
+| `collection_locations` | Pickup places | `name` unique; `is_active`. Deactivate when referenced; delete only per SE-06. Written with `settings` (D35). Real values before go-live; not in migrations until then |
+
+**Migration 3 — service calls and visits (PR 1.5)**
+
+| Table | Responsibility | Key constraints and rules |
+|---|---|---|
+| `service_calls` | A business service request; one call has many visits | `request_number` unique. Composite FKs `(customer_id, is_test)` and `(product_id, is_test)`. `status` written only by `recalc_call_status` (D38, section 6). Warranty optional (D17); `warranty_until` stored when the invitation provides it (D42), with the raw text. `handling_rep_name` from the invitation, optional link to the representative's profile. `next_visit_number` allocates visit numbers |
+| `visits` | One technician appointment | Unique `(service_call_id, visit_number)`. `task_number` has a plain index, **no uniqueness** (D41). `status` `CHECK` over the demo's six visit statuses ("שובצה", "בדרך", "בטיפול", "טופל", "המשך טיפול", "בוטלה"); open = scheduled, en route or in progress (D36). **Address per visit** (D39). Pickup item and pickup place. Follow-up reason and next-visit notes live on the visit, not under `card`; `next_visit_notes` is required when the outcome is follow-up. `assigned_at` and `closed_at` are server times. `is_test` from the call; `field_version` and `version` |
+| `visit_reports` | Treatment summary (`card` content) | One row per visit; `summary_source` (written or approved transcription) |
+| `visit_signatures` | Customer signature and the exact approval text shown at signing (D43) | One row per visit, immutable. The server copies `signed_ack_text` from the stored version after checking the version id and `ack_text_sha256` (NFC, UTF-8) sent by the device; an unknown version or a hash mismatch goes to review and is never replaced by the current text. `ack_text_version_id` becomes a foreign key and `signature_media_id` is used from Step 4 |
+| `visit_time_reports` | Device-reported field times and their corrections (D45, section 7) | Append-only. At most one device report per visit and kind (partial unique index); corrections are new rows. `correction_id` and `accepted_review_id` reference tables created in PR 1.6 |
+| `visit_events` | Visit status history | Append-only; `version_after`, `operation_id` |
+| `entity_changes` | Field-level history of `customers`, `products`, `service_calls` and `visits` | Append-only. `source` `CHECK`: `invitation`, `edit`, `correction`, `system`, `merge`, `rejected_submission`. `is_test` from the target by trigger |
+
+**Migration 4 — integrity and offline (PR 1.6)**
+
+| Table | Responsibility | Key constraints and rules |
+|---|---|---|
+| `offline_operations` | Server-side idempotency record for device sync | Primary key = the device's operation UUID; `payload_sha256`; `expected_field_version` and `resulting_field_version`; device and server times (D45). A replay of the same id returns the stored result |
+| `review_items` | Everything that needs review; both versions preserved (D44) | `dedupe_key` unique. Composite FK `(visit_id, service_call_id)` so the visit belongs to the call. `review_type` includes `sku_change`, `customer_change` and `edit_conflict`, plus the other review cases of D39, D43, D44 and D45; the exact value set is fixed in this PR. Who resolves: section 8 |
+| `visit_corrections` | Audited Manager/Creator corrections of server-closed visits (D14) | Append-only. Reason, change set, `version_before` and `version_after`; original values are never overwritten |
+
+**Not in the Step 1 design:** the TE-03 "נאסף" state (persisted per technician per day, `docs/demo-deviations.md`). Where it is stored is settled with the Step 3 plan.
+
+## 5. Tables reserved for later steps
+All of them carry `is_test` (section 2) and follow the same conventions.
+
+| Table | Step | Notes |
+|---|---|---|
+| `visit_media` | 4 | `kind` (photo, video, audio, signature), `created_by`, processing `state` (including quarantine), sha256, capture time with the D45 time columns. Private buckets and a separate `visit-audio` bucket for original recordings, with **no direct client Storage policies**: short-lived signed links only after `authorize_media_read` / `authorize_media_upload` succeed in the database under the user's session. Every access to an original recording is audited (D37). Quarantined files are never deleted automatically |
+| `visit_transcripts` | 4 | Processing state, draft and approved text, reviewer, version (D12) |
+| `visit_parts` | 4 | Free text and optional `product_id` |
+| `ack_text_versions` | 4 | Append-only, immutable versions of the "טופל" approval text (D43); target of `visit_signatures.ack_text_version_id` |
+| `app_settings` | 4 / 10 | Operational settings such as invitation template labels (D35); the D17-required labels stay required |
+| `notifications` | 3 / 7 | In-app notifications created by events only (D10, D25) |
+| `email_outbox` | 7 | Unique `(visit_id, event_type)`; recipients resolved on the server; never delivered for test data; written in the same transaction as the visit completion |
+| `email_delivery_attempts` | 7 | Delivery attempts, provider status and errors per outbox row (`outbox_id`) |
+| `external_calendar_events` | 6 | Event identity, unique `(source, calendar_id, event_id)`; a snapshot per invitation and the source of each contact field (D39) |
+| `calendar_ingestion_errors` | 6 | Invitations not ingested: missing or invalid fields, sanitized details, resolved flag; feeds the "זימונים שלא נקלטו" screen |
+
+## 6. Service-call status (D38)
+One function, `recalc_call_status`, is the only writer of `service_calls.status`. It locks the call (`FOR UPDATE`) and runs in the same transaction as every path that changes a visit: closure, cancellation, ingestion, conflict resolution, correction and re-assignment.
+
+| # | Condition | Status | Label |
+|---|---|---|---|
+| 1 | Any visit is open (scheduled, en route or in progress) | `open` | "פתוחה" |
+| 2 | Otherwise, the latest closed visit **by visit number** (not by sync time) decides | `resolved` or `awaiting_followup` | "טופלה" / "המשך טיפול" |
+| 3 | Otherwise (every visit was cancelled) | `awaiting_scheduling` | "ממתינה לשיבוץ" |
+
+- Cancelling a visit never erases history and never cancels the call automatically. There is no cancelled call status: whether and how a whole call can be cancelled is open decision 5 (d08).
+- A new invitation on a resolved call reopens it: `resolved_at` is cleared and the history stays in `entity_changes`.
+- Call status, visit status and device sync state stay separate; the office display is OF-17 in `docs/demo-deviations.md`.
+
+## 7. Timestamps (D45)
+- **Server times are authoritative** for receipt, sync and audit: `assigned_at`, `closed_at`, `cancelled_at`, `received_at`, `recorded_at`, `occurred_at`. `assigned_at` is the server's assignment time, not the time the device learned of it.
+- **Device-reported times** live in `visit_time_reports` (kinds `departed`, `arrived`, `ended`, `signed`; media capture times use the same columns in `visit_media` from Step 4). Each row stores `reported_at` (device), `device_tz` (IANA), `device_utc_offset_min`, `device_sent_at`, `received_at` (server), `clock_skew_ms` (`bigint`), `operation_id`, `reported_by_profile_id` and `technician_id`, so after a re-assignment each report stays credited to the technician who made it.
+- **Current value:** the latest correction; otherwise the single device report. A second device report (double tap or a second device) goes to review; a late device report never overrides a correction.
+- **Flags, never rejection:** row-level `row_flags` (`future_time`, `large_skew`, `before_assignment`, the last computed on the skew-corrected time against the reporter's assignment window). Impossible sequences are computed in a view, not stored, so a correction clears them.
+- **Originals are never overwritten;** a correction adds an audited new row (`source` = `correction`, `correction_id`).
+- **KPIs** distinguish reported work time (`reported_at`) from sync time (`received_at`). KPI definitions: open decision 20. Test data at the Production address during the testing period: open decision 21.
+
+## 8. Roles, permission matrix and RLS (D33–D37)
+
+### 8.1 Fixed capabilities (never matrix keys)
+- Editing the matrix: Creator only (D33).
+- Creator and Manager account administration: Creator only (D34).
+- Customer Service and Technician account administration: Manager and Creator, under the D34 rules (Creator approval for Manager-initiated Customer Service creation, activation, reactivation and role changes; immediate deactivation; no passwords or emails for Managers).
+- D14 audited corrections and any conflict resolution that changes a server-closed or cancelled visit (status, report, signature, times, media): Manager and Creator only; `conflicts` alone is not enough.
+- Simulator access (D24): Manager, Creator and Customer Service, test environments only.
+- Security settings: Creator.
+- Technician field capabilities.
+- The D17-required template labels (request number, customer number) stay required whatever `settings` allows (D35).
+
+### 8.2 Matrix keys
+The Creator always has every capability and is not in the matrix. Defaults follow the demo (D33, D37) and are **temporary** until the owner approves the final values in Step 10 (D51; `role_permissions.value_status`).
+
+| Key | Opens | Enforced on | Manager | Customer Service |
+|---|---|---|---|---|
+| `cal` | Technician calendar | Screen (same rows as `calls`) | ✓ | ✓ |
+| `calls` | Calls, search, customers | Data (rows readable with `cal` or `calls`) | ✓ | ✓ |
+| `card` | Summary, approved transcription, signatures, photos and videos; not original recordings | Data | ✓ | ✓ |
+| `cancel` | In-app cancellation, if d08 approves it | Data (RPC) | ✓ | ✗ until d08 |
+| `dashGen`, `dashTech`, `dashProd` | Dashboard tabs | Screen | ✓ | ✗ |
+| `export` | Excel export | Screen; every export is authorized on the server | ✓ | ✗ |
+| `settings` | Operational settings (D35): continuation reasons, pickup places, call types, "טופל" text, template labels | Data | ✗ | ✗ |
+| `usage` | Usage metrics; not built until d13 (open decision 10) | Screen | ✗ | ✗ |
+| `products` | Product, brand and supplier editing | Data (RPC) | ✓ | ✗ |
+| `conflicts` | Resolving review items that are not D14 cases (SKU or customer change, edit conflict) | Data (RPC) | ✓ | ✗ |
+| `recordings` | Original recordings (D37) | Data (database and Storage authorization; every access audited) | ✓ | ✗ |
+
+**Accepted limitation (D33):** screen keys hide screens, not data. A user with `calls` can read the same rows through the API with his own account, so turning off `export` is not a data-exfiltration control. Screen keys never bypass database and server-side authorization.
+
+### 8.3 Who reads and writes what
+Base rules: every policy requires an active profile (`profiles.is_active`). `hp(x)` = `has_permission(x)`, always true for the Creator. Writes go through RPCs unless stated otherwise.
+
+| Table | Technician | Office (Manager, Customer Service by matrix key; Creator always) |
+|---|---|---|
+| `service_calls`, `customers`, `products`, `brands`, `suppliers` | Calls on which he has a visit, and their customer and product | Read with `hp(cal)` or `hp(calls)`. Product, brand and supplier writes: `hp(products)` |
+| `visits` | His own, plus the **earlier closed visits** of the same call while he has an open assignment on it (D36) | Read with `hp(cal)` or `hp(calls)` |
+| `visit_reports` | His own, plus the earlier closed visits (D36) | Read with `hp(card)` |
+| `visit_signatures` | **His own only** (D36) | Read with `hp(card)` |
+| `visit_time_reports` | Only rows he reported himself; whether he sees his own times at all is open decision 2 (d05, Step 3) | Read with `hp(cal)` or `hp(calls)` |
+| `visit_events` | Not directly; through a function if needed | Read with `hp(calls)` |
+| `entity_changes` | — | Read with `hp(calls)`; changes to `card` content only with `hp(card)` |
+| `visit_corrections` | — | Read with `hp(card)` (technical recommendation). Write: Manager and Creator (D14) |
+| `review_items` | Only through a function: the status and what he submitted himself, never the current server version | Read with `hp(card)`. Resolution: D14 cases Manager and Creator only; others `hp(conflicts)` |
+| `offline_operations` | His own | Read with `hp(conflicts)` |
+| `followup_reasons`, `collection_locations`, `call_types` | Active rows | Read. Write: `hp(settings)` (D35) |
+| `technicians` | His own | Read for Manager and Creator, or with `hp(cal)` or `hp(calls)`. Write: Manager and Creator |
+| `profiles` | His own | Creator: all. Manager: Customer Service, Technicians and himself. Customer Service: a narrow function |
+| `permissions`, `role_permissions` | — | Write: Creator only, through `admin_set_role_permission`. `has_permission()` reads them for every policy; the direct read policy is fixed in PR 1.3 |
+| `account_requests` | — | Manager: his own requests. Creator: all. Decision: Creator only |
+| `audit_logs` | — | Creator: all. Manager: the accounts he manages and operational actions. No direct writes for anyone |
+| `visit_media` photos and videos (Step 4) | His own, plus the earlier closed visits (D36) | Read with `hp(card)` |
+| `visit_media` original recordings (Step 4) | **Only a recording he created**, only to review and correct its transcription, while his visit is not server-closed or the transcript awaits his approval (D36) | Creator always; Manager and Customer Service with `hp(recordings)` (D37). **Every access audited.** Never exported (D11) |
+| `visit_transcripts` (Step 4) | Approved transcription: his own and the earlier closed visits. Draft: his own only | Read with `hp(card)` |
+
+- **Names and labels of others** (the technician of a previous visit, the label of a deactivated reason) come from functions limited by `can_read_visit`; the underlying tables stay closed.
+- **Representative contact (D40):** the Technician sees only the handling representative's name and authorized work phone, through a narrow function limited to his own visits.
+- **Open decision 2 (d05, Step 3):** the Technician will see `closed_at` of his own visits; if d05 decides otherwise, a column-limited function replaces direct reads.
+- **Earlier visits of other Technicians (D36):** whether their server times (`assigned_at`, `closed_at`, `cancelled_at`) count as field times is settled in PR 1.5; if they do, those rows are served through a column-limited function instead of direct reads.
+- **Revocation (D36):** access ends immediately on the server when the assignment ends (re-assignment, cancellation, closure), the account is deactivated or the role changes. Signed links already issued expire after their short lifetime and uploads are re-authorized on completion (Step 4). The device purges its read-only cache at the next sync (`docs/architecture.md`).
+
+### 8.4 Escalation controls
+1. No direct INSERT, UPDATE or DELETE on `profiles`, `technicians`, `permissions`, `role_permissions` and `audit_logs` for any user; every change goes through an RPC. Roles never come from `user_metadata` or `app_metadata`.
+2. No matrix key for any fixed capability; closed key catalogue; `CHECK` on `role_permissions.role`; the Creator is not in the matrix.
+3. `admin_set_role_permission(role, key, allowed, expected_version, reason)` checks `is_creator()` from `profiles` (never from the matrix), takes effect immediately and writes the audit row in the same transaction. When MFA is enforced it requires `aal2`.
+4. A Manager never touches Managers, Creators or his own account, and never grants `manager` or `creator`. The last Creator is protected by a lock.
+5. `technicians.profile_id` links only to a Technician profile.
+6. No escalation through a Customer Service account (D34): Manager-initiated Customer Service creation, activation, reactivation and role changes wait for the Creator; Managers never set or reset passwords for others or change emails; Customer Service permissions need not be a subset of the Manager's.
+7. Conflict resolution that changes a server-closed or cancelled visit: Manager and Creator only (D14).
+8. MFA (Step 2, open decision 19), technical recommendation: once enforced, a restrictive policy requires `aal2` for all data access by Creator and Manager, not only for admin actions.
+9. Test users: `is_test` set by the server and immutable; a test user manages only test targets; no test Creator in the remote project.
+
+### 8.5 Account functions (D34, D49)
+- `request_account_change`, `decide_account_request` (Creator only), `cancel_account_request`.
+- `assert_can_manage(target_role)`, `admin_create_profile(uid, role)`, `admin_set_user_role`, `admin_set_user_active` (immediate deactivation, audited, Creator notified). Like `update_product`, they write `entity_changes` and `audit_logs` in the same transaction.
+- `assert_can_change_credentials` (Creator only) runs before any Auth Admin API call that sets a password or changes an email.
+- **User creation (Step 2) is always two-phase:** first an authorization RPC under the caller's own JWT (D34 rules, approval workflow, audit); only then the Auth Admin API call with the secret key. A profile is never inserted through `service_role`.
+- **First Creator (D49):** `private.bootstrap_first_creator(uid)` is created in PR 1.3 but not run. It runs once in Step 2, only with the owner's separate explicit approval and only by the owner's database role; it fails if a Creator exists or the user does not exist, and writes an audit row. MFA follows immediately. A future production project repeats this with its own approval.
+- The Creator's in-app notices required by D34 (approval inbox, immediate deactivations, Technician Outlook-email changes) are built in Step 2. The plan derives the approval inbox and deactivation feed from `account_requests` and `audit_logs`; the general `notifications` table comes later (section 5).
+
+## 9. Grants, SECURITY DEFINER and helper functions
+- **Default deny:** the four DML privileges are revoked and Supabase's permissive default privileges in `public` are revoked globally; every grant is explicit per table and command. RLS on every exposed table. `TRUNCATE` revoked.
+- **Schemas:** `private` is never exposed through the Data API (exposed schemas: `public` and the default `graphql_public` only, D50).
+- **SECURITY DEFINER helpers only when** they return a boolean or the caller's own id, use no dynamic SQL, set `search_path = ''`, live in `private` and are reached through a SECURITY INVOKER wrapper in `public` (`docs/security.md` §5). Admin RPC bodies live in `private` behind thin SECURITY INVOKER wrappers; their exact privilege model is reviewed in PR 1.3 against `docs/security.md` §5. Constraint-trigger functions: next bullet.
+- **Deferred constraint triggers** (for example "טופל" requires a signature) use SECURITY DEFINER functions owned by a dedicated role that cannot log in, attached to every table the rule involves. They run at commit with the caller's privileges, so without this a Manager with `card` off would fail by mistake. Tested as a Technician, as a Manager with `card` off and as `service_role`.
+- **No views or functions that bypass authorization;** views run with the caller's rights.
+- **Helpers:** `has_permission(key)`, `is_creator()` (from `profiles`), `my_technician_id()` (from `profiles.is_active` and the Technician role, never from `accepts_invitations`), `can_read_visit(visit_id)`, `test_data_census()`. From Step 4: `authorize_media_read`, `authorize_media_upload`.
+- The secret key is used only for Auth Admin API calls after a database authorization check, never for ordinary CRUD. Details in `docs/security.md` §5.
+
+## 10. Integrity and performance
+- Product upsert by `sku_normalized` uses `INSERT … ON CONFLICT DO NOTHING`, so concurrent or repeated invitations cannot create duplicates; an existing `name` is never updated by ingestion (D19).
+- Unique event identifiers (Step 6) and offline operation ids make replays idempotent.
+- Concurrent edits: row locks in transactions (`recalc_call_status` locks the call) and `version` / `field_version` checks.
+- Candidate indexes: `visits(technician_id, scheduled_start)`, unique `visits(service_call_id, visit_number)`, `visits(task_number)` (not unique, D41), unique `service_calls(request_number)`, unique `customers(customer_number)`, unique `products(sku_normalized)`, unique `review_items(dedupe_key)`, `audit_logs(occurred_at)`; from Step 7 `email_outbox(status, next_attempt_at)`.
+- Retention of database records, media, transcripts, signatures and device cache: open decision 12. No automatic purge until approved.
+- The Step 1 schema stores the raw data any dashboard KPI needs (open decision 20).
+- From Step 7, visit completion and its outbox event are written in one transaction.
+
+## 11. Changes from the previous proposal (2026-10-26)
+
+| Previous proposal | Approved Step 1 design | Reason |
+|---|---|---|
+| `roles` table | `profiles.role` (`CHECK`) plus the `permissions` and `role_permissions` matrix tables | Editable matrix for Manager and Customer Service only; Technician and Creator are fixed (D33) |
+| `visit_collections` (item, place, collected flag) | `pickup_item` and `pickup_location_id` on `visits` | The demo has one pickup item and place per visit. The TE-03 "נאסף" state: section 4 |
+| Departed, arrived and ended timestamps on `visits` | `visit_time_reports` | Device and server times, reporter, corrections without overwriting (D45) |
+| No address location defined | Address per visit (`visits.city` … `apartment`) | D39 |
+| `technicians` active flag | `accepts_invitations`; access by `profiles.is_active` | SE-05 "פעיל" means new invitations only |
+| Test marker on five tables (`data_source` with `microsoft_graph`, or `is_test`) | `data_source` failing closed, `is_test` on every data table, composite foreign keys, one-way rule, census | D47 |
+| `visit_media`, `visit_transcripts`, `visit_parts`, `notifications`, `email_outbox`, `email_delivery_attempts`, `external_calendar_events`, `calendar_ingestion_errors` in the first schema | Reserved for the steps that build them (section 5) | Built with the feature that uses them (Step 1 plan, version 6) |
+| — | New: `account_requests`, `visit_reports`, `visit_signatures`, `visit_time_reports`, `visit_events`, `review_items`, `entity_changes`, `call_types` | D34, D36, D38, D39, D43, D44, D45, D48 |
+| `audit_logs` with basic fields | Append-only with a hash chain | Evidence of tampering even with owner-level access |
+| Permission matrix fixed or editable: OPEN | Editable, Creator only | D33 |
 
 ## Explicitly prohibited
 No ONE-related table, column, status, flag, export or adapter.
 
-## Approval checklist for any migration
-ER diagram, columns and types, PK/FK, `ON DELETE` behavior, constraints, indexes, RLS by role, positive and negative permission tests, rollout risks, rollback plan. Ask for approval **before executing**.
+## Migration order and approval checklist
+| PR | Content |
+|---|---|
+| 1.3 | Hardening, `private` schema, shared triggers (`version`, `is_test`, `data_source`, append-only, truncate), `profiles`, `technicians`, matrix and its RPC, `account_requests` and its RPCs, user RPCs, `audit_logs` with hash chain, helpers, census, `bootstrap_first_creator` (not run) |
+| 1.4 | `brands`, `suppliers`, `products` and RPC, `customers`, `call_types`, `followup_reasons` (initial values per D48), `collection_locations` |
+| 1.5 | `service_calls` and `recalc_call_status`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports` and its view, `visit_events`, `entity_changes`, constraint triggers, D36 and D40 functions |
+| 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` |
+
+**Before PR 1.3 is applied:** the owner sets the invitation-only Supabase Auth settings himself (D50: "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, exposed schemas `public` and `graphql_public` only) and gives a separate explicit approval to apply.
+
+**Checklist for every migration PR** — ask for approval **before executing**:
+1. ER diagram and the tables, columns and types it adds or changes.
+2. Primary and foreign keys, `ON DELETE RESTRICT` everywhere, unique constraints, `CHECK` value sets and indexes.
+3. Test marker: `data_source` / `is_test`, composite foreign keys, one-way rule, immutability triggers, census coverage (or a justified exemption).
+4. Grants, RLS by role and matrix key (data vs screen), SECURITY DEFINER review against section 9, append-only and truncate triggers.
+5. Positive and negative tests: cross-technician isolation, role escalation, `calls` without `card` leakage (including through `review_items` and `entity_changes`), `service_role` against append-only tables, test user against real targets. Tests live in `tests/db/` unless the Supabase CLI requires `supabase/tests` (a documented deviation, decided in PR 1.2).
+6. CI: local Supabase, the "no test rows in migrations" check, census = 0 on a fresh database built from migrations, and the rollback (down) script tested.
+7. Rollout risks and rollback plan.
+8. Applied through MCP only with the owner's approval for that application, immediately before the merge; every merge needs its own approval.

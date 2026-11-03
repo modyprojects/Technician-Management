@@ -25,11 +25,11 @@
 | `קומה:` | No | |
 | `דירה:` | No | |
 | `הערות הגעה:` | No | |
-| `סוג קריאה:` | Yes | Value from a fixed list |
+| `סוג קריאה:` | Yes | Value from the call types list in Settings (initial "תיקון", "התקנה"; editable under `settings`, D35, D48) |
 | `מוצר:` | Yes | Product name; used only when the SKU is new (D19) |
 | `מק"ט:` | Yes | Normalized (trim, upper-case) before matching (D19) |
 | `תיאור התקלה:` | Yes | |
-| `באחריות:` | **No** (D17) | כן / לא. "לא" marks a paid visit |
+| `באחריות:` | **No** (D17) | כן / לא. "לא" marks a paid visit. "כן · עד MM/YYYY" stores the optional warranty expiry date (D42) |
 | `לאסוף לפני הביקור:` | No | Goes to the technician's pickup list |
 | `לאסוף מ:` | No | Must match a pickup place in settings |
 | `הערות לטכנאי:` | No | Shown on the technician card |

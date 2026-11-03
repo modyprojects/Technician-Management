@@ -1,6 +1,8 @@
 # Technician Management — secure English starter pack v3
 
-**Status: Step 0 deployed (2026-11-02).** The Step 0 foundation (Next.js base, demo design tokens, responsive shells and a `/dev` showcase with fictitious data) is merged to `main` and deployed to the protected Vercel Production, which only the owner can open (D29, D31). No schema migrated yet; no Supabase connection, app login or real data. Next: Step 1 (database and RLS), only after the owner approves its plan.
+**Status: Step 0 deployed (2026-11-02); Step 1 (database and permissions) in progress per the owner-approved plan (2026-11-03).** The Step 0 foundation (Next.js base, demo design tokens, responsive shells and a `/dev` showcase with fictitious data) is merged to `main` and deployed to the protected Vercel Production, which only the owner can open (D29, D31). No schema migrated yet; no Supabase connection, app login or real data.
+
+**Current state of the repository and features: [`docs/PROJECT-MAP.md`](docs/PROJECT-MAP.md).** History: `docs/WORKLOG.md`.
 
 Production domains (both behind Vercel Authentication; see `docs/deployment.md`):
 - `https://technician-management-mody-projects.vercel.app` (the owner's fixed Production address)
