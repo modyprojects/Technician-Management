@@ -1,0 +1,56 @@
+name: Database tests
+
+# Runs only when database files change (and on main for the same paths), to save Actions minutes.
+on:
+  pull_request:
+    paths:
+      - "supabase/**"
+      - "tests/db/**"
+      - "scripts/install-supabase-cli.sh"
+      - "scripts/check-migrations.mjs"
+      - ".github/workflows/db.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - "tests/db/**"
+      - "scripts/install-supabase-cli.sh"
+      - "scripts/check-migrations.mjs"
+      - ".github/workflows/db.yml"
+
+# Read-only token; no secrets. The local database uses the CLI's built-in development keys,
+# which are never written to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: db-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgtap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Migration guard (D47, no test data in migrations)
+        run: node scripts/check-migrations.mjs
+
+      - name: Install Supabase CLI 2.122.0 (checksum-verified)
+        run: |
+          bash scripts/install-supabase-cli.sh "$RUNNER_TEMP/supabase-cli"
+          echo "$RUNNER_TEMP/supabase-cli" >> "$GITHUB_PATH"
+
+      - name: Start the local database only (Postgres 17, migrations applied)
+        timeout-minutes: 8
+        run: supabase db start
+
+      - name: pgTAP tests (tests/db)
+        run: supabase test db tests/db
+
+      - name: Stop the local database
+        if: always()
+        run: supabase stop --no-backup || true

@@ -14,8 +14,17 @@
 ## Step 1 database tests (approved Step 1 plan, 2026-11-03)
 - **Where they run:** pgTAP tests against a local Supabase database started by the pinned Supabase CLI in a CI job (`db`). No secrets and no connection to the remote project. Local fixtures are marked `automated_test` and exist only in local CI, never in migrations (D47). Down migrations are tested in CI.
 - **Remote project:** migrations are applied to the existing development project only with the owner's explicit approval for each apply. After each approved apply, only read-only verification (for example the applied migration list and the test-data census). Tests never write to the remote project.
-- **Location:** `tests/db/` (preferred, `CLAUDE.md`: tests in `tests/`). If the Supabase CLI requires `supabase/tests/`, that is recorded as a documented deviation for the owner's approval. Decided in PR 1.2.
-- **PR 1.2 (infrastructure):** pinned Supabase CLI, the `db` job, a smoke test, a check that no migration inserts test rows, and the census-coverage framework.
+- **Location:** `tests/db/` (`CLAUDE.md`: tests in `tests/`). The Supabase CLI runs it with `supabase test db tests/db`, so there is no deviation (decided in PR 1.2).
+- **PR 1.2 (infrastructure, implemented):**
+  - Supabase CLI 2.122.0, pinned and checksum-verified (`scripts/install-supabase-cli.sh`).
+  - The `Database tests` workflow (`.github/workflows/db.yml`): it runs only when database files change, starts only the local database (`supabase db start`) and runs `supabase test db tests/db`.
+  - Smoke tests (`tests/db/000_smoke.test.sql`), catalog-wide so they also guard every object added later:
+    - Postgres 17.
+    - No table, sequence or function privileges for `anon` or `PUBLIC` in `public` or `private`.
+    - RLS on every table.
+    - A test-data marker on every table (D47 census-coverage framework; exemptions must be listed in the test).
+  - Negative control: a probe table without RLS made three tests fail. This also shows Supabase's default grants to `anon` that Migration 1 revokes.
+  - The migration guard (`scripts/check-migrations.mjs`, tests in `tests/ci/check-migrations.test.mjs`) runs in both workflows.
 - **Roles in every category:** anonymous, signed in without a profile, deactivated, Technician A, Technician B, Customer Service, Manager, Creator and `service_role`, with permission-matrix variations where a key matters (D33).
 - Each category is covered as soon as the tables it needs exist (PRs 1.3–1.6); tables planned for later steps (for example media, transcripts and signature text versions in Step 4) get their tests in that step.
 

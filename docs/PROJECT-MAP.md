@@ -33,14 +33,19 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `next.config.ts` | Baseline security headers for every route (`docs/security.md`) |
 | `.npmrc` | Supply-chain settings: exact versions, no install scripts, 7-day release cooldown |
 | `.env.example` | Environment variable **names** only; no values |
-| `package.json` | Scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test:e2e`, `test:ci`, `screenshots`, `scan:bundle`, `scan:secrets`; exact dependency versions (lockfile `package-lock.json`) |
+| `package.json` | Scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test:e2e`, `test:ci`, `test:db` (needs the Supabase CLI and Docker), `check:migrations`, `screenshots`, `scan:bundle`, `scan:secrets`; exact dependency versions (lockfile `package-lock.json`) |
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
-| `tests/ci/` | Tests for CI and deployment scripts (`node --test`), for example the Vercel ignore rule |
+| `tests/ci/` | Tests for CI and deployment scripts (`node --test`): the Vercel ignore rule and the migration guard |
+| `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no privileges, every table has RLS and a test-data marker (D47) |
+| `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled. Not used for the remote project |
+| `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
+| `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
-| `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
+| `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, migration guard, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
+| `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`); no secrets |
 | `.github/pull_request_template.md` | PR description and checklist |
 | `docs/` | Decisions, demo deviations, spec, security, architecture, database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
@@ -50,7 +55,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `prompts/` | Claude Code prompts (`STEP-0-PLAN.md`) |
 | `START-HERE.md` | Beginner guide for the owner |
 
-Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `features/`, `lib/`, `supabase/migrations/`, database tests.
+Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `features/`, `lib/`, `supabase/migrations/`.
 
 ## 3. Status
 
@@ -60,7 +65,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | `/dev` showcase with fixtures (fictitious data) | Mock or demo (dev only) | Step 0 |
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
 | Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified before and after every Production deployment) | Step 0 |
-| Database test infrastructure | Planned | Step 1, PR 1.2 |
+| Database test infrastructure | Implemented | Step 1, PR 1.2 |
 | Database schema, RLS, grants, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), test-data marking (D47) | Planned | Step 1, PRs 1.3–1.6 |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
 | Authentication and user administration | Planned | Step 2 |
@@ -84,7 +89,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Feature logic | `features/visits`, `features/customers`, `features/calendar` (single service in `features/calendar/ingestion`, adapters in `features/calendar/adapters/simulator` and, later, `features/calendar/adapters/graph`), `features/products`, `features/notifications`, `features/exports`, `features/transcription` |
 | Server-only code | `lib/`, with server-only module checks |
 | Database schema | `supabase/migrations/` (migrations only; never fictitious data, D47) |
-| Database tests | `tests/db/` preferred; `supabase/tests/` only if the Supabase CLI requires it, recorded as a documented deviation (decided in PR 1.2) |
+| Database tests | `tests/db/` (the Supabase CLI accepts this path, so no deviation from `CLAUDE.md`; decided in PR 1.2) |
 | End-to-end tests | `tests/e2e/` |
 | Test data | Marked and labelled per D47 (`data_source` / `is_test`, "נתוני בדיקה" / "🧪 זימון בדיקה"); fixtures for screens only under `app/dev` (G-05); local CI database fixtures (`automated_test`) planned in `supabase/seed.sql`, never in migrations (`docs/database-schema.md` §2) |
 | Review screenshots | `docs/review/<step>/` |

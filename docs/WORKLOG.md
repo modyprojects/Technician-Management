@@ -1,5 +1,15 @@
 # Work Log (English only)
 
+## 2026-11-03 — PR 1.2 (database test infrastructure)
+- Stacked on PR 1.1 (branch `claude/step1-db-tests`); no migration, no change to the remote Supabase project.
+- Supabase CLI 2.122.0 (released 2026-10-23, past the 7-day cooldown; 3.0.0 was one day old) is pinned with the SHA-256 from the release's `checksums.txt` (`scripts/install-supabase-cli.sh`).
+- `supabase/config.toml` comes from `supabase init` of the pinned version, with three changes: `project_id`, seed disabled, and sign-ups off (invitation-only, D50). It is used only for local tests.
+- New `Database tests` workflow (`.github/workflows/db.yml`): runs only when database files change.
+- Smoke tests: `tests/db/000_smoke.test.sql`.
+- Migration guard: `scripts/check-migrations.mjs`, with 8 tests; also runs in the main CI.
+- `tests/db` works with the CLI, so there is no deviation from `CLAUDE.md`.
+- Local run (Docker in the Claude Code environment): `supabase db start` and `supabase test db tests/db` passed 6/6. A probe table without RLS made three tests fail, as expected; after it was dropped, everything passed again. The local database is temporary and holds no data.
+
 ## 2026-11-03 — Step 1 plan approved; PR 1.1 (documentation)
 - PR #2 (documentation) merged by Claude Code with the owner's explicit approval ("merge approved — PR #2 only"), using a merge commit: `465ffa2` at 16:24 Israel time (14:24:49 UTC), parents `3f977fc` and `2846bb2`. CI on the `main` push passed every step (run 41461711535).
 - Production deployment `dpl_FhPTRffxN2GmDFQgvjwDQXMMY7xA`: target Production, READY, built from `main` at `465ffa2`, functions in `fra1`. The three Production addresses moved to it.
