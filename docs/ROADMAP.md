@@ -1,8 +1,15 @@
 # Step-by-Step Build Plan
 
-Technical writing and prompts in English. **Consultation, questions, explanations and approval requests in Hebrew.** Every step: PLAN (Hebrew) → APPROVE → IMPLEMENT → TEST → PREVIEW → OWNER REVIEW → PR → LOG. No step starts automatically, and no PR starts without the owner's explicit approval (D52).
+Technical writing and prompts in English. **Consultation, questions, explanations and approval requests in Hebrew.** Every step: IMPLEMENT → TEST → PREVIEW → PR → MERGE → LOG, with a Hebrew explanation of what was built.
 
-**The owner sees the screens throughout.** Every step that touches UI ends with a Preview link (owner-only, D29), screenshots at 390/820/1440 px and a Hebrew list of what to check. Every screen works for every role at all three widths (D27). During development the owner reviews in a desktop browser (D28). Approved versions reach the protected Production address only by an owner-approved merge to `main`; deployment protection is verified before and after every Production deployment, on both Production domains (D31). Screens are shown with fake data and approved **before** real logic is connected. Large screens are shown in parts.
+**Autonomous development (D53, owner, 2026-11-03; supersedes D52's approvals to start and to merge a PR).** Within the approved scope Claude Code creates branches, commits and PRs, builds features and UI, runs tests, fixes issues and reviews code (parallel agents allowed), and continues to the next task without routine approvals or a separate planning approval. It squash-merges a PR only when every mandatory check has passed on the exact approved merge candidate (the exact reviewed head); never with failing, pending, skipped, missing or inconclusive checks, and never by pushing or force-pushing to `main`. The owner's approval is still required for:
+- merging any change that weakens protections in `CLAUDE.md`, `docs/security.md`, `.github/workflows/**`, `vercel.json`, `proxy.ts`, `app/dev/_gate.ts` or `config/release.json`;
+- every remote Supabase operation, read-only included, approved per operation (only project `ooxozvvrljjkyfduuiks`); D52's migration rule still applies: every migration, or a precisely scoped migration batch, is approved before it is applied;
+- open owner-level decisions; meanwhile clearly labelled, reversible, deny-by-default temporary behaviour, and independent work continues.
+
+Changes to authentication, authorization, proxy/gate, environment handling or deployment configuration get an independent review by an agent that did not write the code, recorded in the PR (D53).
+
+**The owner sees the screens throughout.** Every step that touches UI ends with a Preview link (owner-only, D29), screenshots at 390/820/1440 px and a Hebrew list of what to check. Every screen works for every role at all three widths (D27). During development the owner reviews in a desktop browser (D28). Versions reach the protected Production address only by a merge to `main` through the protected Vercel workflow (D31, D53). Claude Code verifies deployment protection (read-only) before each merge and after each Production deployment and reports any check it cannot perform; the owner's anonymous-access and dashboard checks are periodic; a failed or inconclusive check stops further merges until the owner confirms (D31, D53). Screens are built and shown with fake data first; visual review is not a gate, and the owner's feedback becomes new tasks (D53). Large screens are shown in parts.
 
 Real use starts only after Microsoft 365 is connected (D23). Steps 0–10 run with fictitious data.
 
@@ -31,26 +38,48 @@ Real use starts only after Microsoft 365 is connected (D23). Steps 0–10 run wi
 7. Build/lint/typecheck pass; WORKLOG updated; PR opened.
 8. Move to Step 1 only after approving the ERD, schema and RLS.
 
+## Current priority (owner, 2026-11-03)
+- **Interactive UI demo with fictional data** under `/dev/demo` (behind the `/dev` gate and Vercel Authentication), before PRs 1.3–1.7 (D53 (9)). Screens:
+  - calls list, search and filters;
+  - call detail;
+  - customer, product and problem;
+  - technician and visits;
+  - technician visit detail;
+  - history;
+  - photos, audio and summary;
+  - signature;
+  - office, manager and customer-service dashboards.
+- **Architecture rule (owner).** Screens read data only through the typed data-access layer (`features/*/data` ports). A fixture adapter implements it now; a Supabase adapter implements the same ports later. See `docs/architecture-data-access.md`.
+- Every record in the demo is fictional test data, labelled "נתוני בדיקה" (D47); every action is simulated ("פעולה מדומה · לא נשמר"); nothing is saved or sent.
+
 ## Step 1: PR sequence (plan version 6, approved 2026-11-03)
-Every new step starts with a Hebrew plan and the owner's explicit approval. Step 1 runs as separate PRs; each PR starts only after the owner explicitly approves it (D52):
+Step 1 runs as separate PRs. Since D53 (2026-11-03) a PR starts and is squash-merged without an individual owner approval, under the D53 merge rule; every migration still needs the owner's approval before it is applied (D52 rule 4):
 
-| PR | Content | Owner approvals |
+| PR | Content | Approvals |
 |---|---|---|
-| 1.1 Documentation | Decisions D33–D51 across the docs (D52 approval workflow added 2026-11-03 as an owner-approved scope extension), `CLAUDE.md`, `docs/PROJECT-MAP.md`, PR template, WORKLOG | Content → merge |
-| 1.2 Database test infrastructure | Pinned Supabase CLI, `Database tests` CI workflow, smoke test, check that migrations contain no test rows, test-data census coverage; database tests under `tests/db` (the CLI accepts this path; no deviation) | CI → merge |
-| 1.3 Migration 1: access and permissions | Hardening, profiles, technicians, permission matrix (D33), account requests (D34), audit, test-data rules and census; the first-Creator function is created but not run (D49) | Review → **owner's Auth settings change (D50)** → apply → merge |
-| 1.4 Migration 2: reference data, customers and products | Brands, suppliers, products, customers, call types and continuation reasons (D48), pickup places | Review → apply → merge |
-| 1.5 Migration 3: service calls and visits | Service calls and call status (D38), visits, reports, signatures, time reports (D45), change history, previous-visit (D36) and representative-contact (D40) functions | Review → apply → merge |
-| 1.6 Migration 4: integrity and offline | Offline operations, review items (D44), corrections, field versions | Review → apply → merge |
-| 1.7 Report and close | Hebrew who-can-see-what and test report, ERD, census, PROJECT-MAP, WORKLOG | Merge; end of Step 1 |
+| 1.1 Documentation | Decisions D33–D51 across the docs (D52 approval workflow added 2026-11-03 as an owner-approved scope extension), `CLAUDE.md`, `docs/PROJECT-MAP.md`, PR template, WORKLOG | Done: PR #3, merge approved by the owner (D52), merged and deployed 2026-11-03 |
+| 1.2 Database test infrastructure | Pinned Supabase CLI, `Database tests` CI workflow, smoke test, check that migrations contain no test rows, test-data census coverage; database tests under `tests/db` (the CLI accepts this path; no deviation) | Done: PR #4, merge approved by the owner (D52), merged and deployed 2026-11-03 |
+| 1.3 Migration 1: access and permissions | Hardening (mandatory security requirement below), profiles, technicians, permission matrix (D33), account requests (D34), audit, test-data rules and census; the first-Creator function is created but not run (D49) | D53 → review → **owner's Auth settings change (D50)** → apply (D52 migration approval) → merge (D53) |
+| 1.4 Migration 2: reference data, customers and products | Brands, suppliers, products, customers, call types and continuation reasons (D48), pickup places | D53 → review → apply (D52 migration approval) → merge (D53) |
+| 1.5 Migration 3: service calls and visits | Service calls and call status (D38), visits, reports, signatures, time reports (D45), change history, previous-visit (D36) and representative-contact (D40) functions | D53 → review → apply (D52 migration approval) → merge (D53) |
+| 1.6 Migration 4: integrity and offline | Offline operations, review items (D44), corrections, field versions | D53 → review → apply (D52 migration approval) → merge (D53) |
+| 1.7 Report and close | Hebrew who-can-see-what and test report, ERD, census, PROJECT-MAP, WORKLOG | D53 merge; end of Step 1 |
 
-- **Approvals (D52).** Approval to start a PR, to apply a migration and to merge a PR are separate; none implies another.
-  - **Within an approved scope:** after the owner approves a PR's scope, Claude Code may independently implement, commit, push, run checks and fix issues within that scope. A material scope expansion needs additional approval.
-  - **Migrations:** every migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations; a material change needs renewed approval.
-  - **Merges:** every merge into `main` needs the owner's explicit approval for that specific PR, documentation-only and tests-only PRs included. No automatic merging into `main`.
-  - A migration is applied immediately before its merge.
+- **Approvals (D53; D52's start and merge approvals superseded on 2026-11-03).**
+  - **Autonomous within the approved scope:** Claude Code starts, implements, tests, reviews and squash-merges each PR under the D53 merge rule (every mandatory check passed on the exact approved merge candidate).
+  - **Migrations (D52 rule 4, still in force):** every migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations; a material change needs renewed approval. A migration is applied immediately before its merge.
+  - **Remote Supabase operations (D53):** every one, read-only included, needs the owner's approval of that specific operation; only project `ooxozvvrljjkyfduuiks`. Preparing migrations and isolated local database tests that never contact the real project need no approval.
+  - **Owner approval before merging (D53):** any change that weakens protections in `CLAUDE.md`, `docs/security.md`, `.github/workflows/**`, `vercel.json`, `proxy.ts`, `app/dev/_gate.ts` or `config/release.json`.
 - **Before PR 1.3** the owner changes the Supabase Auth settings himself (D50): "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, Data API exposed schemas limited to `public` (and the default `graphql_public`). Claude never changes Supabase, Vercel or GitHub settings.
-- Deployment protection is verified before and after every Production deployment (D31).
+- **PR 1.3 mandatory security requirement (owner, 2026-11-03).**
+  - Harden privileges on tables, sequences and functions in all application schemas (`public` and `private`).
+  - Revoke unintended `PUBLIC`, `anon` and `authenticated` grants, including default privileges.
+  - Grant explicitly and minimally; RLS is default-deny.
+  - Negative tests for tables, sequences and functions.
+  - Preserve the permissions that Supabase-managed components need.
+  - No apply without the owner's approval (D52 rule 4, D53).
+  - Known finding: Supabase's default privileges grant `anon` SELECT, UPDATE and USAGE on new sequences (observed locally in PR 1.2 with a probe sequence in `public`). Smoke test 7 (`tests/db/000_smoke.test.sql`) guards it; Migration 1 must revoke these default privileges.
+- Deployment protection: Claude Code verifies it (read-only) before each merge and after each Production deployment; a failed or inconclusive check stops further merges until the owner confirms (D31, D53).
 
 ## Stop immediately if
 Claude asks for API keys in chat, touches production data or migrations, creates public endpoints, exposes data in Preview, changes the demo style without authorization, enables the simulator in production, or claims an email was sent during mock testing.

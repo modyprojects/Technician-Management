@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-03 (Step 1, PR 1.2).
+Last updated: 2026-11-04 (UI demo with fictional data, branch `claude/ui-demo-1`).
 
 ## 1. Purpose and how to read it
 
@@ -23,11 +23,16 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `app/not-found.tsx` | Hebrew 404 page |
 | `app/globals.css` | Demo design tokens (`:root` values copied from `docs/demo.html`) and base styles; Tailwind without preflight |
 | `styles/ui.css` | Component and shell styles copied from `docs/demo.html` (only the classes in use; no demo chrome) |
-| `app/dev/` | Restricted developer area: `_gate.ts` (gate logic), `layout.tsx`, `showcase/` (token swatches, technician and office shells, 390 / 820 / 1440 size view) with fictitious data in `showcase/_fixtures.ts` (G-05). Served only when the `/dev` gate allows it |
+| `app/dev/` | Restricted developer area: `_gate.ts` (gate logic), `layout.tsx`, `showcase/` (token swatches, technician and office shells, 390 / 820 / 1440 size view) with fictitious data in `showcase/_fixtures.ts` (G-05), and `demo/` (below). Served only when the `/dev` gate allows it |
+| `app/dev/demo/` | UI demo with fictional data (D53): landing (`/dev/demo`), office homes `office/[role]` (manager "לוח בקרה", customer service "בית"), calls list `office/[role]/calls` (search and filters in the URL, server paging), call card `office/[role]/calls/[req]`, manager dashboards `office/[role]/analytics` (customer service gets "אין הרשאה"), technician home `tech`, visit card `tech/visit/[req]/[n]`, work and close screens (`.../work`, `.../close`); `tech/layout.tsx` keeps the simulated visit statuses across the technician screens. Every page renders the fixture sentinel and the "נתוני בדיקה" strip (`_components/DemoPage.tsx`) |
+| `app/dev/demo/_data/` | Fixtures and the fixture adapter (G-05): `adapter.ts` exports `demoDataAccess` (the `DataAccess` ports, `server-only`); `seed.ts`, `reference.ts`, `queries.ts` (also `server-only`), `mappers.ts`, `aggregations.ts` feed it; `routes.ts`, `roles.ts`, `dates.ts`, `params.ts` are the only other modules pages may import (ESLint) |
+| `app/dev/demo/_components/` | `DemoPage` / `DemoFrames` (sentinel, test-data strip, shells), `DemoToast` ("פעולה מדומה · לא נשמר"), `SimulatedCommands` (the demo's `Commands`: validates input, returns `{ok, simulated: true}`, saves nothing) |
+| `features/data-access/` | Shared data-access types: `DataAccess` and `Commands` aggregates, `Page<T>`, `CommandResult` (with `simulated`), list bounds, `CommandsProvider` / `useCommands()` (`docs/architecture-data-access.md`) |
+| `features/*/data/` | Typed ports, DTOs and input validators per feature: `calls`, `visits`, `dashboards`, `reference` (technicians, products, reasons, places, permission values, approval text), `notifications`, `customers`. No fixture data; a Supabase adapter implements the same ports later |
 | `proxy.ts` | `/dev` gate: runs before rendering; a closed gate returns the Hebrew 404 with no showcase content |
-| `components/ui/` | Shared UI components (buttons, chips, segmented control, tabs, toggle, status pill, KPI, list item, icons) |
-| `components/tech/` | Technician shell, home header, bottom navigation |
-| `components/office/` | Office shell and sidebar |
+| `components/ui/` | Shared UI components (buttons, chips, segmented control, tabs, toggle, visit and call status pills, test-data badge, KPI, bars, pager, list item, icons) |
+| `components/tech/` | Technician shell, home header, bottom navigation, next-visit card, pickups, schedule, visit header / info / history, work screen (media tiles, summary and simulated recording, parts), close screen (outcome, signature pad, follow-up reason and next-visit note) |
+| `components/office/` | Office shell and sidebar, calls filters and table, call card and visit timeline, dashboard parts (KPI grid, sections, status bar, technician lanes, work queues, test-data note), manager analytics (general, technicians, drill-down, products, no access) |
 | `config/release.json` | `testingPeriod` switch (D31): `/dev` in Vercel Production and the bundle fixture check; set to `false` at the go-live gate (`docs/deployment.md`) |
 | `vercel.json` | Production build guard: `npm ci`; builds only Preview deployments and Production from `main` (D31); anything else is skipped (fails closed) |
 | `next.config.ts` | Baseline security headers for every route (`docs/security.md`) |
@@ -36,7 +41,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `package.json` | Scripts: `dev`, `build`, `start`, `lint`, `typecheck`, `test:e2e`, `test:ci`, `test:db` (needs the Supabase CLI and Docker), `check:migrations`, `screenshots`, `scan:bundle`, `scan:secrets`; exact dependency versions (lockfile `package-lock.json`) |
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
-| `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative), owner review rules; `screenshots.spec.ts` runs on demand only |
+| `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative, showcase and every UI-demo route, RSC and prefetch variants), owner review rules, UI demo (`demo.spec.ts`: every demo route at 390 / 820 / 1440, search and filters, call card, access by role, simulated actions, signature); `screenshots.spec.ts` runs on demand only |
 | `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
 | `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no table, sequence or function privileges in `public` or `private`, `anon` has no usage on `private`, and every table has RLS and a test-data marker (D47) |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
@@ -47,15 +52,16 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, migration guard, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
 | `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`); no secrets |
 | `.github/pull_request_template.md` | PR description and checklist |
-| `docs/` | Decisions, demo deviations, spec, security, architecture, database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
+| `docs/` | Decisions, demo deviations, spec, security, architecture, data-access architecture (`architecture-data-access.md`), database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
+| `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
-| `docs/review/` | Review screenshots per step (`docs/review/step-0/`), fictitious data only |
+| `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/` with the matching `demo-` shots from `docs/demo.html`), fictitious data only |
 | `docs/user-guides/` | Hebrew user guides (D15): placeholders until features are tested |
 | `docs/history/` | Superseded context; not authoritative |
 | `prompts/` | Claude Code prompts (`STEP-0-PLAN.md`) |
 | `START-HERE.md` | Beginner guide for the owner |
 
-Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `features/`, `lib/`, `supabase/migrations/`.
+Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `lib/`, `supabase/migrations/`, and the feature logic folders (`features/calendar`, `features/products`, `features/exports`, `features/transcription`; `features/` holds only data-access ports so far).
 
 ## 3. Status
 
@@ -63,6 +69,8 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 |---|---|---|
 | Design tokens, technician and office shells, temporary home and 404 pages | Implemented | Step 0 |
 | `/dev` showcase with fixtures (fictitious data) | Mock or demo (dev only) | Step 0 |
+| UI demo with fictional data (`/dev/demo`: office homes, calls list, call card, manager dashboards, technician home, visit, work and close; every action simulated) | Mock or demo (dev only) | D53, before the remaining Step 1 work |
+| Data-access layer (typed ports in `features/*/data`, `useCommands()`) | Implemented (fixture adapter `demoDataAccess`); Supabase adapter Planned | D53; Supabase adapter after Step 1 |
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
 | Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified before and after every Production deployment) | Step 0 |
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
@@ -86,6 +94,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 |---|---|
 | UI routes | `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`; route handlers in `app/api/` |
 | Components | `components/ui`, `components/tech`, `components/office` |
+| Data access | Ports, DTOs and validators in `features/<feature>/data`; screens read only through them and run actions only through `useCommands()` (`docs/architecture-data-access.md`); fixture adapter only under `app/dev` |
 | Feature logic | `features/visits`, `features/customers`, `features/calendar` (single service in `features/calendar/ingestion`, adapters in `features/calendar/adapters/simulator` and, later, `features/calendar/adapters/graph`), `features/products`, `features/notifications`, `features/exports`, `features/transcription` |
 | Server-only code | `lib/`, with server-only module checks |
 | Database schema | `supabase/migrations/` (migrations only; never fictitious data, D47) |

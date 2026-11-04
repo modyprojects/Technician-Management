@@ -20,6 +20,17 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - If a secret leaks: stop deployment, revoke/rotate at source, invalidate sessions as needed, audit logs, repair exposure, report to the owner without echoing the value.
 - Pin and review CI actions and dependencies.
 
+## 3a. Supabase access and secret values (D53, 2026-11-03)
+- **Only one project:** Technician-Management (ref `ooxozvvrljjkyfduuiks`). Never access, list, read, query, inspect or modify any other Supabase project or organization resource, through any tool, CLI, API, script or subagent.
+- **Banned calls:** never call `list_projects` or `get_organization`.
+- **Unexpected output:** if a tool unexpectedly returns information about another project or an unrelated resource, it is not used or repeated; Claude Code tells the owner without disclosing it.
+- **Per-operation approval:** every remote operation on Technician-Management, read-only included, needs the owner's prior approval of that specific operation. Migrations also need approval before they are applied (D52 rule 4).
+- **Allowed without approval:** preparing migrations and running isolated local database tests that never contact the real project.
+- **Secret values:** never read, request, list, copy, print or expose credentials, tokens, API keys, passwords or environment-variable values.
+  - Only variable **names** (and existing source references) are inspected.
+  - If a value is needed, Claude Code tells the owner the variable name, and the owner configures the value himself in the provider's settings.
+  - The owner is never asked to paste a secret.
+
 ## 4. Authentication and session
 - Supabase Auth email/password; admin-controlled invitations; no public sign-up and no anonymous sign-ins (D50, §4a). Admin create/invite APIs run only server-side with the secret key, and only after the caller's authorization was checked in the database under the caller's own session (D34, §5).
 - MFA for Creator/Manager before production; tested recovery and reset flows; time-limited reset links; no open redirects; brute-force protection; generic errors.
@@ -132,7 +143,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - The `/dev` gate runs in `proxy.ts` before rendering; a closed gate returns 404 without showcase content.
 
 ## 11. Approval gates
-Do not connect production Supabase or a live provider, send customer email, process real customer voice, import customer identities, run elevated SQL, loosen RLS, change permissions, enable the simulator in production, activate automatic deletion, or change cloud secret settings without explicit approval. The same applies to applying any migration, running the first-Creator function (D49), and cleaning test data or creating a production project (D47). Supabase Auth settings (§4a) are changed by the owner himself.
+Do not perform any remote Supabase operation, read-only included, without the owner's approval of that operation (§3a, D53). Do not connect production Supabase or a live provider, send customer email, process real customer voice, import customer identities, run elevated SQL, loosen RLS, change permissions, enable the simulator in production, activate automatic deletion, or change cloud secret settings without explicit approval. The same applies to applying any migration, running the first-Creator function (D49), and cleaning test data or creating a production project (D47). Supabase Auth settings (§4a) are changed by the owner himself.
 
 ## References
 - https://supabase.com/docs/guides/getting-started/api-keys

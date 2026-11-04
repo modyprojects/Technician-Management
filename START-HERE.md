@@ -28,7 +28,7 @@ Claude Code is connected to GitHub, Vercel and Supabase. Use cloud development; 
 - `docs/demo-deviations.md` lists where production differs from the demo, and why.
 - `docs/spec.md` describes product features and workflows.
 - `docs/demo.html` is the original Hebrew design and demo behavior; **not secure production code**.
-- `docs/database-schema.md` describes the approved Step 1 database design; every migration still needs its own approval before it is applied.
+- `docs/database-schema.md` describes the approved Step 1 database design; every migration, or an explicitly approved and precisely scoped migration batch, needs the owner's separate approval before it is applied (D52); every remote Supabase operation needs the owner's approval of that operation (D53).
 - `docs/security.md` details secrets, RLS, authorization and test requirements.
 - `docs/ROADMAP.md` explains every build step.
 - `docs/THINKING-AHEAD.md` tracks future decisions and major risks.
@@ -43,4 +43,4 @@ Never paste provider/API secrets into Claude's chat, GitHub, a PR, a screenshot 
 - `https://technician-management-mody-projects.vercel.app` (the owner's fixed Production address)
 - `https://technician-management.vercel.app`
 
-**Now: Step 1 (database and permissions) is in progress**, after the owner approved its Hebrew plan (2026-11-03). Every migration is applied, and every PR merged, only with the owner's separate explicit approval; live external providers remain gated by later approvals. For the current state of the repository and features, see `docs/PROJECT-MAP.md`.
+**Now:** Step 1 PRs 1.1 (documentation) and 1.2 (database test infrastructure) were merged and deployed on 2026-11-03. Since D53 (2026-11-03) Claude Code develops autonomously within the approved scope and squash-merges a PR only when every mandatory check has passed on it. The current priority is the interactive UI demo with fictional data (`/dev/demo`, protected behind the `/dev` gate and Vercel Authentication), then the remaining Step 1 database work. Every migration, and every remote Supabase operation (read-only included), needs the owner's approval of that operation; live external providers remain gated by later approvals. For the current state of the repository and features, see `docs/PROJECT-MAP.md`.

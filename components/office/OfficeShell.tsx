@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import { OfficeSidebar, type OfficeNavItem } from "./OfficeSidebar";
 
 // Office shell (demo renderOffice()): dark sidebar on the right, work area beside it.
-// At <=900px the sidebar becomes a wrapping top bar (styles/ui.css).
+// At <=900px the sidebar becomes a wrapping top bar (styles/ui.css). Nav items with an
+// `href` render as links; items without one render as buttons (Step 0 showcase).
+export type { OfficeNavItem };
+
 export function OfficeShell({
   nav,
   activeKey,
