@@ -11,9 +11,10 @@ export default defineConfig({
   // GitHub's runner for this private repository has 2 vCPUs, where Playwright's default (half the
   // cores) is a single worker; the suite (~1,400 tests at three widths) then needs about 15 minutes.
   // Two workers halve that. The global timeout only guards against a hung run, so it is sized well
-  // above the expected duration rather than at it.
+  // above the expected duration rather than at it, and below the CI job's own timeout
+  // (.github/workflows/ci.yml, 25 minutes) so a hung run still reports and uploads its report.
   workers: process.env.CI ? 2 : undefined,
-  globalTimeout: process.env.CI ? 30 * 60_000 : undefined,
+  globalTimeout: process.env.CI ? 20 * 60_000 : undefined,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: OPEN_URL,
