@@ -5,16 +5,17 @@
 // - "פעילה": useCommands().settings.setReasonActive. An inactive reason disappears from the close
 //   screen at once.
 // - "+ הוספת סיבה": settings.addReason (appended at the end of the order).
-// - "מחיקה" only for a reason that was never used (`inUse` false): settings.deleteReason. A used
-//   reason can only be deactivated (SE-07; the database restricts the delete).
+// - "מחיקה" only for a user-added reason that was never used (reasonDeletable(): docs/demo.html
+//   `r.added && !used`, docs/database-schema.md `is_user_added`): settings.deleteReason. An initial
+//   (D48) or used reason can only be deactivated (SE-07; the database restricts the delete).
 // The initial reasons are the demo's five, to validate with customer service (owner task O3, D48).
 // Editing is governed by the matrix key `settings` (D35), checked on the server (G-04). Changes show
-// on this screen only; in the UI demo every command is simulated (toast). The "טופל" text card is
-// SettingsReasonsFixedText.
+// on this screen only; a row from a simulated command is marked as not saved. The "טופל" text card
+// is SettingsReasonsFixedText.
 import { useId, useRef, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { Bounded } from "@/features/data-access/common";
-import type { ReasonSetting } from "@/features/settings/data/types";
+import { reasonDeletable, type ReasonSetting } from "@/features/settings/data/types";
 import { SETTING_NAME_MAX, settingNameError } from "@/features/settings/data/validate";
 import { SettingsMore, SettingsNotSaved } from "./SettingsShell";
 import { SettingsShellToggle } from "./SettingsShellToggle";
@@ -51,31 +52,33 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
     setBusy(true);
     setError(null);
     let failure: string | null = null;
-    let newId: string | null = null;
+    let createdRef: { id: string; isTest: boolean } | null = null;
     let simulated = false;
     try {
       const result = await settings.addReason(trimmed);
-      if (result.ok) {
-        newId = result.data?.id ?? `new-reason-${rows.length + 1}`;
+      if (result.ok && result.data) {
+        createdRef = result.data;
         simulated = result.simulated;
-      } else failure = result.error;
+      } else failure = result.ok ? ADD_FAILED : result.error;
     } catch {
       failure = ADD_FAILED;
     } finally {
       setBusy(false);
     }
-    if (failure || !newId) {
+    if (failure || !createdRef) {
       setError(failure ?? ADD_FAILED);
       return;
     }
+    // The id and test marker come from the command (as stored, D47); a new reason is user-added.
     const created: ReasonSetting = {
-      id: newId,
+      id: createdRef.id,
       name: trimmed,
       active: true,
       order: rows.reduce((max, r) => Math.max(max, r.order), 0) + 1,
       inUse: false,
+      userAdded: true,
       usedThisMonth: 0,
-      isTest: true,
+      isTest: createdRef.isTest,
     };
     setRows((r) => [...r, created]);
     if (simulated) setUnsaved((u) => [...u, created.id]);
@@ -137,7 +140,7 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
                 <td className="col-fit">
                   <div className="set-cell-actions">
                     <SettingsShellToggle action={{ kind: "reasonActive", id: r.id }} initial={r.active} label={`${r.name} פעילה`} />
-                    {!r.inUse && (
+                    {reasonDeletable(r) && (
                       <button
                         type="button"
                         className="chip set-del"
@@ -178,8 +181,8 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
         )}
       </form>
       <div id={hintId} className="sub set-foot">
-        סיבה חדשה מופיעה מיד לטכנאי במסך הסגירה, בדשבורד ובסינון. אפשר למחוק רק סיבה שעוד לא השתמשו בה, וסיבה שכבר בשימוש אפשר רק
-        לכבות. הסיבות הראשונות הן ערכים התחלתיים, לאימות עם שירות הלקוחות.
+        סיבה חדשה מופיעה מיד לטכנאי במסך הסגירה, בדשבורד ובסינון. אפשר למחוק רק סיבה שנוספה כאן ועוד לא השתמשו בה, וסיבה שכבר בשימוש
+        אפשר רק לכבות. הסיבות הראשונות הן ערכים התחלתיים, לאימות עם שירות הלקוחות, ואפשר רק לכבות אותן.
       </div>
     </section>
   );

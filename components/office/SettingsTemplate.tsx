@@ -60,7 +60,7 @@ export function SettingsTemplate({ template }: { template: TemplateSettings }) {
                   </td>
                   <td className="col-fit">
                     {l.locked ? (
-                      <span className="set-tog">
+                      <span className="set-tog set-tog-locked">
                         <button
                           type="button"
                           className="tog on"

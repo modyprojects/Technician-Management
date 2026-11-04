@@ -8,13 +8,15 @@
 // - mode "own" (the Manager, "ניהול משתמשים", section "הבקשות שלי"): cancel a pending request
 //   (accounts.cancelAccountRequest).
 // Nothing changes while a request is pending; every step is audited; no automatic expiry (D25).
-// In the UI demo the commands are simulated: the row shows the outcome locally, marked "לא נשמר ·
-// פעולה מדומה", and offers no further action. Display only (G-04): the server decides who may act.
+// The screen reads each result: a SIMULATED one (the UI demo) shows the outcome on its row, marked
+// "לא נשמר · פעולה מדומה", with no further action, and says "בהדגמה … לא נשמר"; a stored one says
+// what was done (TE-23). Display only (G-04): the server decides who may act.
 import { useEffect, useId, useRef, useState } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
 import type { AccountRef, AccountRequest } from "@/features/accounts/data/types";
 import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
+import type { CommandResult } from "@/features/data-access/common";
 import {
   ActionMessage,
   RequestStatusPill,
@@ -28,6 +30,9 @@ import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShel
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 const SMALL_BTN = { padding: "5px 12px", fontSize: 13 } as const;
+
+/** The result line: what a simulated command would have done, or what a stored one did. */
+const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
 
 export function AccountAdminRequests({
   mode,
@@ -68,25 +73,26 @@ export function AccountAdminRequests({
   const pendingCount = entries.filter((e) => e.request.status === "pending" && !e.local).length;
   const title = mode === "decide" ? "בקשות לאישור" : "הבקשות שלי";
 
-  function done(entry: AccountRequestEntry, patch: Partial<AccountRequest>) {
+  /** The request after a successful action; `local` (no further action) when it was simulated. */
+  function done(entry: AccountRequestEntry, patch: Partial<AccountRequest>, simulated: boolean) {
     setFocusRow(entry.request.id);
     onUpdate({
       ...entry,
       request: { ...entry.request, ...patch, decidedBy: self, decidedAt: new Date().toISOString() },
       decidedLabel: "עכשיו",
-      local: true,
+      local: simulated,
     });
   }
 
   /** Runs one command for one request; ignores taps while another action runs. */
-  async function act(key: string, run: () => Promise<{ ok: true } | { ok: false; error: string }>, onOk: () => void) {
+  async function act(key: string, run: () => Promise<CommandResult>, onOk: (simulated: boolean) => void) {
     if (running.current) return;
     running.current = true;
     setBusy(key);
     setMessage(null);
     try {
       const r = await run();
-      if (r.ok) onOk();
+      if (r.ok) onOk(r.simulated);
       else setMessage({ kind: "error", text: r.error });
     } catch {
       setMessage({ kind: "error", text: FAILED });
@@ -100,9 +106,13 @@ export function AccountAdminRequests({
     void act(
       `approve-${entry.request.id}`,
       () => accounts.decideAccountRequest(entry.request.id, { outcome: "approve" }),
-      () => {
-        done(entry, { status: "approved" });
-        setMessage({ kind: "ok", text: `בהדגמה: הבקשה "${requestTitle(entry.request)}" הייתה מאושרת ונכנסת לתוקף. לא נשמר.` });
+      (simulated) => {
+        done(entry, { status: "approved" }, simulated);
+        const title = requestTitle(entry.request);
+        setMessage({
+          kind: "ok",
+          text: said(simulated, `הבקשה "${title}" הייתה מאושרת ונכנסת לתוקף.`, `הבקשה "${title}" אושרה ונכנסה לתוקף.`),
+        });
       },
     );
   }
@@ -118,12 +128,16 @@ export function AccountAdminRequests({
     void act(
       `reject-${entry.request.id}`,
       () => accounts.decideAccountRequest(entry.request.id, { outcome: "reject", reason: text }),
-      () => {
-        done(entry, { status: "rejected", reason: text });
+      (simulated) => {
+        done(entry, { status: "rejected", reason: text }, simulated);
         setRejecting(null);
         setReason("");
         setReasonError(null);
-        setMessage({ kind: "ok", text: `בהדגמה: הבקשה "${requestTitle(entry.request)}" הייתה נדחית, והסיבה נשמרת איתה. לא נשמר.` });
+        const title = requestTitle(entry.request);
+        setMessage({
+          kind: "ok",
+          text: said(simulated, `הבקשה "${title}" הייתה נדחית, והסיבה נשמרת איתה.`, `הבקשה "${title}" נדחתה, והסיבה נשמרה איתה.`),
+        });
       },
     );
   }
@@ -132,9 +146,10 @@ export function AccountAdminRequests({
     void act(
       `cancel-${entry.request.id}`,
       () => accounts.cancelAccountRequest(entry.request.id),
-      () => {
-        done(entry, { status: "cancelled" });
-        setMessage({ kind: "ok", text: `בהדגמה: הבקשה "${requestTitle(entry.request)}" הייתה מבוטלת. לא נשמר.` });
+      (simulated) => {
+        done(entry, { status: "cancelled" }, simulated);
+        const title = requestTitle(entry.request);
+        setMessage({ kind: "ok", text: said(simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
       },
     );
   }
@@ -195,7 +210,7 @@ export function AccountAdminRequests({
                     <span dir="ltr">{r.target.email}</span> · {requestRoleText(r)}
                   </div>
                   <div className="sub">
-                    {entry.local ? "נשלחה עכשיו" : `נשלחה ${entry.requestedLabel}`}
+                    {`נשלחה ${entry.requestedLabel}`}
                     {mode === "decide" && r.requestedBy.name ? ` · על ידי ${r.requestedBy.name}` : ""}
                   </div>
                   {outcome && <div className="sub">{outcome}</div>}

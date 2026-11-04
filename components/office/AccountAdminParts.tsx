@@ -24,8 +24,8 @@ export type AccountAdminScope = "all" | "cs-tech";
 
 /**
  * One account request with its times already formatted by the page (Asia/Jerusalem, G-01). `local`
- * marks a request the viewer just made in the demo: simulated, never stored, so it offers no
- * further action.
+ * marks a request the viewer just made or changed with a SIMULATED command: never stored, so it
+ * offers no further action and shows "לא נשמר · פעולה מדומה".
  */
 export type AccountRequestEntry = {
   request: AccountRequest;

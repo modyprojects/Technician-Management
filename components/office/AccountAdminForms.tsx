@@ -1,51 +1,60 @@
 "use client";
 
-// Account forms of account administration (SE-01, D34), opened inline under the accounts card's
-// "+" button (the demo's "+ הוספת משתמש" toast, L943, becomes a real form). Same look as the other
-// Settings add forms (styles/ui.css "settings-ops": .set-form, colour swatches as in SettingsTechs).
+// Account forms of account administration (SE-01, D34), opened inline under a card's "+" button
+// (the demo's "+ הוספת משתמש" and "+ הוספת טכנאי" toasts, L943 and L948, become real forms). Same
+// look as the other Settings add forms (styles/ui.css "settings-ops": .set-form, colour swatches).
 // - "account": the Creator's "+ הוספת משתמש" (Customer Service, Manager or Creator), immediate.
-//   Technicians are added on Settings › "טכנאים" (the demo's setTechs() "+ הוספת טכנאי").
+//   Technicians are added with the "tech" form (Settings › "טכנאים", the Manager's screen).
 // - "cs-request": the Manager's "+ בקשת חשבון שירות לקוחות": a request that waits for the Creator;
 //   nothing is created until the Creator approves (D34 a).
-// - "tech": the Manager's "+ הוספת טכנאי", immediate (D34 c).
+// - "tech": "+ הוספת טכנאי" (Settings › "טכנאים" and the Manager's "ניהול משתמשים"), immediate
+//   (D34 c): one form for both screens.
 // No password field and no public sign-up (D50): until an email provider is approved the Creator
 // hands out the first sign-in details. Each submit runs one command from useCommands().accounts;
-// the inputs are checked first with the same validators the commands use (no toast for a typo).
-// In the UI demo every command is simulated (the provider's toast says nothing was saved); the
-// caller shows the new row or request locally, marked as not saved.
+// the fields are checked first with the same validators the commands use (no toast for a typo):
+// the first invalid field gets focus and aria-invalid. The command returns the created record as
+// stored (ids, test marker), and whether it was simulated; the caller shows it.
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   ACCOUNT_ROLE_LABELS,
-  type AccountRef,
+  DEFAULT_TECHNICIAN_DEVICE,
   type AccountRequest,
   type AccountRole,
   type UserAccount,
 } from "@/features/accounts/data/types";
 import {
+  accountNameError,
   accountRequestError,
   ACCOUNT_NAME_MAX,
   DEVICE_MAX,
+  deviceError,
   EMAIL_MAX,
+  emailError,
   newAccountError,
   newTechnicianError,
   PHONE_MAX,
+  phoneError,
 } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
-import { TECHNICIAN_COLOR_TOKENS, type TechnicianColorToken } from "@/features/reference/data/types";
+import {
+  TECHNICIAN_COLOR_NAMES,
+  TECHNICIAN_COLOR_TOKENS,
+  technicianColorCss,
+  type TechnicianColorToken,
+} from "@/features/reference/data/types";
+import type { TechnicianSetting } from "@/features/settings/data/types";
 
 export type AccountFormKind = "account" | "cs-request" | "tech";
 
+/** What a submit created, as the command returned it; `simulated` when nothing was stored. */
 export type AccountFormResult =
-  | { kind: "account" | "tech"; account: UserAccount }
-  | { kind: "cs-request"; request: AccountRequest };
+  | { kind: "account"; simulated: boolean; account: UserAccount }
+  | { kind: "tech"; simulated: boolean; account: UserAccount; technician: TechnicianSetting }
+  | { kind: "cs-request"; simulated: boolean; request: AccountRequest };
 
-/** Roles of "+ הוספת משתמש" (technicians: Settings › טכנאים, with colour and device). */
+/** Roles of "+ הוספת משתמש" (technicians: the "tech" form, with colour and device). */
 const OFFICE_ACCOUNT_ROLES: readonly AccountRole[] = ["cs", "mgr", "creator"];
 
-/** Hebrew names of the allowlisted technician colours (inputs name a token, never CSS). */
-const COLOR_NAMES: Readonly<Record<TechnicianColorToken, string>> = { "t-y": "ירוק", "t-e": "אדום", "t-s": "כחול" };
-
-const DEFAULT_DEVICE = "סמארטפון";
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 
 const LABELS: Readonly<Record<AccountFormKind, string>> = {
@@ -66,107 +75,111 @@ const SUBMIT: Readonly<Record<AccountFormKind, { idle: string; busy: string }>> 
   tech: { idle: "הוספה", busy: "מוסיף…" },
 };
 
+type Field = "name" | "email" | "phone" | "device";
+
 export function AccountForm({
   formId,
   kind,
-  self,
   onDone,
   onCancel,
 }: {
   /** The form element's id (the opener button's aria-controls). */
   formId: string;
   kind: AccountFormKind;
-  /** The signed-in account (the requester of a Customer Service request). */
-  self: AccountRef | null;
   onDone: (result: AccountFormResult) => void;
   onCancel: () => void;
 }) {
   const { accounts } = useCommands();
   const id = useId();
   const errorId = `${id}-error`;
-  const firstRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const deviceRef = useRef<HTMLInputElement>(null);
+  const refs: Readonly<Record<Field, typeof nameRef>> = { name: nameRef, email: emailRef, phone: phoneRef, device: deviceRef };
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState<AccountRole>("cs");
   const [color, setColor] = useState<TechnicianColorToken>(TECHNICIAN_COLOR_TOKENS[0]);
-  const [device, setDevice] = useState(DEFAULT_DEVICE);
+  const [device, setDevice] = useState(DEFAULT_TECHNICIAN_DEVICE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The field the error is about (aria-invalid, focus); null for an error of the whole form. */
+  const [invalid, setInvalid] = useState<Field | null>(null);
 
+  // Focus the first field when the form opens.
   useEffect(() => {
-    firstRef.current?.focus();
+    nameRef.current?.focus();
   }, []);
+
+  /** The first invalid field, in form order, with its message (the same checks as the command). */
+  function firstInvalid(values: { name: string; email: string; phone: string; device: string }): { field: Field | null; message: string } | null {
+    const fields: [Field, string | null][] = [
+      ["name", accountNameError(values.name)],
+      ["email", emailError(values.email)],
+      ["phone", phoneError(values.phone)],
+    ];
+    if (kind === "tech") fields.push(["device", deviceError(values.device)]);
+    const hit = fields.find(([, message]) => message !== null);
+    if (hit) return { field: hit[0], message: hit[1] as string };
+    // Whole-input checks (role, colour), as the command runs them.
+    const base = { name: values.name, email: values.email, phone: values.phone };
+    const rest =
+      kind === "account"
+        ? newAccountError({ ...base, role })
+        : kind === "tech"
+          ? newTechnicianError({ ...base, color, device: values.device })
+          : accountRequestError({ kind: "create", ...base });
+    return rest ? { field: null, message: rest } : null;
+  }
+
+  function fail(message: string, field: Field | null) {
+    setError(message);
+    setInvalid(field);
+    if (field) refs[field].current?.focus();
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
-    const base = { name: name.trim(), email: email.trim(), phone: phone.trim() };
-    const invalid =
-      kind === "account"
-        ? newAccountError({ ...base, role })
-        : kind === "tech"
-          ? newTechnicianError({ ...base, color, device: device.trim() })
-          : accountRequestError({ kind: "create", ...base });
-    if (invalid) {
-      setError(invalid);
+    const values = { name: name.trim(), email: email.trim(), phone: phone.trim(), device: device.trim() };
+    const check = firstInvalid(values);
+    if (check) {
+      fail(check.message, check.field);
       return;
     }
+    const base = { name: values.name, email: values.email, phone: values.phone };
     setBusy(true);
     setError(null);
+    setInvalid(null);
     try {
       if (kind === "cs-request") {
         const r = await accounts.requestAccount({ kind: "create", ...base });
-        if (!r.ok || !r.data) {
-          setError(r.ok ? FAILED : r.error);
-          return;
-        }
-        onDone({
-          kind,
-          request: {
-            id: r.data.requestId,
-            kind: "create",
-            account: null,
-            target: { name: base.name, email: base.email, role: "cs" },
-            newRole: null,
-            requestedBy: self ?? { id: "", name: "" },
-            requestedAt: new Date().toISOString(),
-            status: "pending",
-            reason: null,
-            decidedBy: null,
-            decidedAt: null,
-            isTest: true,
-          },
-        });
-        return;
+        if (!r.ok || !r.data) return fail(r.ok ? FAILED : r.error, null);
+        onDone({ kind, simulated: r.simulated, request: r.data.request });
+      } else if (kind === "tech") {
+        const r = await accounts.createTechnician({ ...base, color, device: values.device });
+        if (!r.ok || !r.data) return fail(r.ok ? FAILED : r.error, null);
+        onDone({ kind, simulated: r.simulated, account: r.data.account, technician: r.data.technician });
+      } else {
+        const r = await accounts.createAccount({ ...base, role });
+        if (!r.ok || !r.data) return fail(r.ok ? FAILED : r.error, null);
+        onDone({ kind, simulated: r.simulated, account: r.data.account });
       }
-      const accountRole: AccountRole = kind === "tech" ? "tech" : role;
-      const r =
-        kind === "tech"
-          ? await accounts.createTechnician({ ...base, color, device: device.trim() })
-          : await accounts.createAccount({ ...base, role: accountRole });
-      if (!r.ok || !r.data) {
-        setError(r.ok ? FAILED : r.error);
-        return;
-      }
-      onDone({
-        kind,
-        account: {
-          id: r.data.accountId,
-          ...base,
-          role: accountRole,
-          active: true,
-          lastSignInAt: null,
-          technicianId: null,
-          isTest: true,
-        },
-      });
     } catch {
-      setError(FAILED);
+      fail(FAILED, null);
     } finally {
       setBusy(false);
     }
   }
+
+  /** Props of a validated field: aria-invalid and the error reference while the error is about it. */
+  const fieldProps = (field: Field) =>
+    invalid === field ? { "aria-invalid": true as const, "aria-describedby": errorId } : {};
+  const edited = (field: Field) => {
+    if (invalid === field) setInvalid(null);
+  };
 
   return (
     <form
@@ -175,28 +188,57 @@ export function AccountForm({
       noValidate
       onSubmit={(e) => void submit(e)}
       aria-label={LABELS[kind]}
-      aria-describedby={error ? errorId : undefined}
+      aria-describedby={error && !invalid ? errorId : undefined}
     >
       <label>
         שם
-        <input ref={firstRef} value={name} onChange={(e) => setName(e.target.value)} required maxLength={ACCOUNT_NAME_MAX} autoComplete="off" />
+        <input
+          ref={nameRef}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            edited("name");
+          }}
+          required
+          maxLength={ACCOUNT_NAME_MAX}
+          autoComplete="off"
+          {...fieldProps("name")}
+        />
       </label>
       <label>
         {kind === "tech" ? "מייל ב-Outlook" : "מייל"}
         <input
+          ref={emailRef}
           type="email"
           dir="ltr"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            edited("email");
+          }}
           required
           maxLength={EMAIL_MAX}
           placeholder="name@example.test"
           autoComplete="off"
+          {...fieldProps("email")}
         />
       </label>
       <label>
         טלפון
-        <input type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={PHONE_MAX} autoComplete="off" />
+        <input
+          ref={phoneRef}
+          type="tel"
+          dir="ltr"
+          value={phone}
+          onChange={(e) => {
+            setPhone(e.target.value);
+            edited("phone");
+          }}
+          required
+          maxLength={PHONE_MAX}
+          autoComplete="off"
+          {...fieldProps("phone")}
+        />
       </label>
       {kind === "account" && (
         <label>
@@ -214,16 +256,27 @@ export function AccountForm({
         <>
           <label>
             מכשיר
-            <input value={device} onChange={(e) => setDevice(e.target.value)} required maxLength={DEVICE_MAX} autoComplete="off" />
+            <input
+              ref={deviceRef}
+              value={device}
+              onChange={(e) => {
+                setDevice(e.target.value);
+                edited("device");
+              }}
+              required
+              maxLength={DEVICE_MAX}
+              autoComplete="off"
+              {...fieldProps("device")}
+            />
           </label>
           <fieldset className="set-swatches">
             <legend>צבע ביומן</legend>
             {TECHNICIAN_COLOR_TOKENS.map((token) => (
               <label key={token} className="set-swatch-opt">
                 <input type="radio" name={`${id}-color`} value={token} checked={color === token} onChange={() => setColor(token)} />
-                {/* An allowlisted token, mapped to its CSS variable here (never CSS from input). */}
-                <span className="set-swatch" style={{ background: `var(--${token})` }} aria-hidden="true" />
-                {COLOR_NAMES[token]}
+                {/* An allowlisted token, mapped to its CSS variable (never CSS from input). */}
+                <span className="set-swatch" style={{ background: technicianColorCss(token) }} aria-hidden="true" />
+                {TECHNICIAN_COLOR_NAMES[token]}
               </label>
             ))}
           </fieldset>

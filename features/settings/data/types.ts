@@ -85,6 +85,15 @@ export const PENDING_MATRIX_CELLS: Readonly<Record<MatrixRole, Partial<Record<Pe
 export const pendingMatrixDecision = (role: MatrixRole, key: PermissionKey): OpenDecisionId | null =>
   PENDING_MATRIX_CELLS[role]?.[key] ?? null;
 
+/**
+ * Creator capabilities that wait for an open decision: `usage` until d13 (OF-15). The Creator's
+ * capabilities are fixed (D33), but a pending one is not shown as granted and stays off (deny by
+ * default) until the owner decides.
+ */
+export const PENDING_CREATOR_CAPABILITIES: Readonly<Partial<Record<PermissionKey, OpenDecisionId>>> = { usage: "d13" };
+
+export const pendingCreatorDecision = (key: PermissionKey): OpenDecisionId | null => PENDING_CREATOR_CAPABILITIES[key] ?? null;
+
 /** One matrix value: display only (G-04); `status` is "temporary" until the owner approves it (D51). */
 export type PermissionCell = {
   value: boolean;
@@ -93,12 +102,14 @@ export type PermissionCell = {
   pending: OpenDecisionId | null;
 };
 
-/** One matrix row (a key). The Creator column is fixed (✓ 🔒, D33) and is not part of the row. */
+/** One matrix row (a key). The Creator column is fixed (✓ 🔒, D33) and is not a matrix cell. */
 export type PermissionMatrixRow = {
   key: PermissionKey;
   label: string;
   hint: string | null;
   cells: Readonly<Record<MatrixRole, PermissionCell>>;
+  /** The Creator's fixed capability; `pending` names the open decision it waits for (never editable). */
+  creator: { pending: OpenDecisionId | null };
 };
 
 /** The editable matrix (Creator only, D33), in PERMISSION_KEYS order. */
@@ -121,21 +132,34 @@ export type TechnicianSetting = Technician & {
 
 export type SettingId = string;
 
+/** What an add command returns: the new record's id and its test marker, as stored (D47). */
+export type CreatedSetting = TestMarker & { id: SettingId };
+
+/** Place types (the demo's PLACES values; "+ הוספת מקום"). */
+export const PLACE_TYPES = ["מרכז לוגיסטי", "סניף"] as const;
+
 /** Pickup place (SE-06). A place that is referenced (`inUse`) can only be deactivated, never deleted. */
 export type PlaceSetting = Place & { id: SettingId; inUse: boolean };
 
 /**
- * Follow-up reason (SE-07). An inactive reason disappears from the close screen at once. A reason
- * that was ever used (`inUse`) can only be deactivated; only an unused one can be deleted.
+ * Follow-up reason (SE-07). An inactive reason disappears from the close screen at once. Only a
+ * user-added reason that was never used can be deleted (docs/demo.html `r.added && !used`,
+ * docs/database-schema.md `is_user_added`); an initial (D48) or used reason can only be
+ * deactivated.
  */
 export type ReasonSetting = Reason & {
   id: SettingId;
   /** 1-based position (the close screen's order). */
   order: number;
   inUse: boolean;
+  /** Added in Settings (not one of the initial values). */
+  userAdded: boolean;
   /** "שימוש החודש": closed visits of the current month with this reason. */
   usedThisMonth: number;
 };
+
+/** Whether Settings offers "מחיקה" for a reason (SE-07). */
+export const reasonDeletable = (reason: Pick<ReasonSetting, "inUse" | "userAdded">): boolean => reason.userAdded && !reason.inUse;
 
 /** Call type (SE-16, new): initial values "תיקון" and "התקנה" (D48). Used types can only be deactivated. */
 export type CallTypeSetting = TestMarker & { id: SettingId; name: string; active: boolean; inUse: boolean };

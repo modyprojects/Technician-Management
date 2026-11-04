@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   COMPLETION_OUTCOME_LABELS,
   TECH_NOTIFICATION_LABELS,
@@ -18,6 +19,7 @@ import { SettingsShellToggle } from "./SettingsShellToggle";
 // - Technician notifications (SE-11, D10): in-app only, "זימון חדש או שינוי ביומן" and "ביטול
 //   ביקור" through useCommands().settings.setTechNotification. No morning pickup reminder (TE-28).
 // The demo's "נסה: שליחת זימון מ-Outlook" hint points at the demo bar (X-02) and is not shown.
+// The page passes the data-source line as `note` (the UI demo: no mail is sent).
 
 /** Card accent per outcome (the demo's border-top colours). */
 const OUTCOME_COLOR: Readonly<Record<CompletionMailRule["outcome"], string>> = {
@@ -55,7 +57,8 @@ function CompletionCard({ rule }: { rule: CompletionMailRule }) {
         sub={
           <>
             {pendingHint(rule.attachMedia.decision)}
-            <span style={{ display: "block" }}>אחרת – רק קישור לכרטיס הקריאה</span>
+            {/* d11 is open: the recommendation is shown as such, never as the current behaviour. */}
+            <span style={{ display: "block" }}>ההמלצה (לא הוחלט): רק קישור לכרטיס הקריאה</span>
           </>
         }
         subId={`${base}-media-hint`}
@@ -65,7 +68,7 @@ function CompletionCard({ rule }: { rule: CompletionMailRule }) {
   );
 }
 
-export function SettingsMail({ mail }: { mail: MailSettings }) {
+export function SettingsMail({ mail, note }: { mail: MailSettings; note?: ReactNode }) {
   return (
     <>
       <div className="cols2">
@@ -74,8 +77,8 @@ export function SettingsMail({ mail }: { mail: MailSettings }) {
         ))}
       </div>
       <div className="note">
-        מייל סיום ביקור נשלח תמיד למנהל ולתיבת שירות הלקוחות, גם בביקור שטופל וגם בביקור שעבר להמשך טיפול. בהדגמה לא נשלחים
-        מיילים.
+        מייל סיום ביקור נשלח תמיד למנהל ולתיבת שירות הלקוחות, גם בביקור שטופל וגם בביקור שעבר להמשך טיפול.
+        {note && <> {note}</>}
       </div>
       <div className="cols2">
         <section className="card sec" aria-labelledby="set-mail-tech-title">

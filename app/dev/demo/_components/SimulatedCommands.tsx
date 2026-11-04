@@ -6,25 +6,40 @@
 // artificial delay, and the demo toast shows "פעולה מדומה · לא נשמר" with what would have happened.
 // Screens call useCommands() and never this module directly.
 import { useMemo, type ReactNode } from "react";
-import { ACCOUNT_REQUEST_KIND_LABELS, ACCOUNT_ROLE_LABELS } from "@/features/accounts/data/types";
+import {
+  ACCOUNT_REQUEST_KIND_LABELS,
+  ACCOUNT_ROLE_LABELS,
+  type AccountRef,
+  type AccountRequest,
+  type AccountRequestStatus,
+  type AccountRole,
+  type UserAccount,
+} from "@/features/accounts/data/types";
 import {
   accountDecisionError,
   accountIdError,
   accountRequestError,
+  accountRequestTargetError,
+  accountStateError,
   newAccountError,
   newTechnicianError,
+  pendingRequestError,
   requestIdError,
+  testAccountEmailError,
 } from "@/features/accounts/data/validate";
 import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
-import { PERMISSION_LABELS, TECH_NOTIFICATION_LABELS } from "@/features/settings/data/types";
+import { technicianColorCss } from "@/features/reference/data/types";
+import { PERMISSION_LABELS, TECH_NOTIFICATION_LABELS, type TechnicianSetting } from "@/features/settings/data/types";
 import {
   activeFlagError,
   fixedTextError,
   newPlaceError,
+  placeDeleteError,
+  reasonDeleteError,
   setPermissionError,
   settingIdError,
   settingNameError,
@@ -62,29 +77,46 @@ const recLabel = (sec: number): string => `${Math.floor(sec / 60)}:${String(sec 
 
 const onOff = (on: boolean): string => (on ? "פועל" : "כבוי");
 
+let simSeq = 0;
+
 /** A simulated id for something a command would have created (nothing is stored). */
-const simId = (prefix: string): string => `sim-${prefix}-${Date.now()}`;
+const simId = (prefix: string): string => `sim-${prefix}-${Date.now()}-${++simSeq}`;
+
+const NO_ACCOUNT: AccountRef = { id: "", name: "" };
 
 /**
- * What the server would check against stored data, for the demo's fixtures (read through the
- * data-access layer by app/dev/demo/layout.tsx): references that forbid a delete, request and
- * account states. The real server checks these itself, under the caller's session.
+ * What the server would check against stored data, for one screen's scope (read through the
+ * data-access layer by the route that offers the actions: app/dev/demo/office/[role]/_simulatedState.ts).
+ * Only the Settings and account screens receive it, and only what they act on; every other screen
+ * gets the empty state, where these checks fail (deny by default). The real server checks these
+ * itself, in the database, under the caller's session.
  */
 export type SimulatedServerState = {
-  /** Pickup places that are referenced (deactivate only, SE-06). */
-  placesInUse: readonly string[];
-  /** Follow-up reasons that were used (deactivate only, SE-07). */
-  reasonsInUse: readonly string[];
-  /** Account requests that can still be decided or cancelled (D34). */
-  pendingRequestIds: readonly string[];
-  activeAccountIds: readonly string[];
-  inactiveAccountIds: readonly string[];
+  /** Pickup places by id: whether each is referenced (delete only when unreferenced, SE-06). */
+  places?: Readonly<Record<string, { inUse: boolean }>>;
+  /** Follow-up reasons by id (delete only a user-added, never-used reason, SE-07). */
+  reasons?: Readonly<Record<string, { inUse: boolean; userAdded: boolean }>>;
+  /** Account requests in the viewer's scope by id: the stored status (decide or cancel only while pending, D34). */
+  requests?: Readonly<Record<string, AccountRequestStatus>>;
+  /** Accounts in the viewer's scope by id (D34). */
+  accounts?: Readonly<Record<string, { name: string; email: string; role: AccountRole; active: boolean }>>;
+  /** The signed-in account (production: from the session, G-03). */
+  self?: AccountRef | null;
 };
 
-export function SimulatedCommandsProvider({ state, children }: { state: SimulatedServerState; children: ReactNode }) {
+const EMPTY_STATE: SimulatedServerState = {};
+
+export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { state?: SimulatedServerState; children: ReactNode }) {
   const simulate = useSimulate();
 
   const commands = useMemo<Commands>(() => {
+    /** Records this provider "created" (simulated): unknown to the stored state, deletable. */
+    const created = new Set<string>();
+    const remember = (id: string): string => {
+      created.add(id);
+      return id;
+    };
+
     /**
      * Validates, waits, shows the demo toast and returns the simulated result. Validation, the
      * toast text and the data are built lazily, in that order, so malformed or missing input
@@ -220,7 +252,7 @@ export function SimulatedCommandsProvider({ state, children }: { state: Simulate
           run(
             () => [newPlaceError(input)],
             () => `הוספת מקום איסוף · ${excerpt(input.name, 40)}`,
-            () => ({ id: simId("place") }),
+            () => ({ id: remember(simId("place")), isTest: true }),
           ),
         setPlaceActive: (id, active) =>
           run(
@@ -229,14 +261,15 @@ export function SimulatedCommandsProvider({ state, children }: { state: Simulate
           ),
         deletePlace: (id) =>
           run(
-            () => [settingIdError(id), state.placesInUse.includes(id) ? "המקום בשימוש: אפשר רק לכבות אותו" : null],
+            () => [settingIdError(id), created.has(id) ? null : placeDeleteError(state.places?.[id])],
             () => "מחיקת מקום איסוף",
+            () => void created.delete(id),
           ),
         addReason: (name) =>
           run(
             () => [settingNameError(name, "שם הסיבה")],
             () => `הוספת סיבת המשך טיפול · ${excerpt(name, 40)}`,
-            () => ({ id: simId("reason") }),
+            () => ({ id: remember(simId("reason")), isTest: true }),
           ),
         setReasonActive: (id, active) =>
           run(
@@ -245,8 +278,10 @@ export function SimulatedCommandsProvider({ state, children }: { state: Simulate
           ),
         deleteReason: (id) =>
           run(
-            () => [settingIdError(id), state.reasonsInUse.includes(id) ? "הסיבה בשימוש: אפשר רק לכבות אותה" : null],
+            // A reason created here is user-added and unused; a stored one is checked as the server would.
+            () => [settingIdError(id), created.has(id) ? null : reasonDeleteError(state.reasons?.[id])],
             () => "מחיקת סיבת המשך טיפול",
+            () => void created.delete(id),
           ),
         setFixedText: (text) =>
           run(
@@ -258,7 +293,7 @@ export function SimulatedCommandsProvider({ state, children }: { state: Simulate
           run(
             () => [settingNameError(name, "שם סוג הקריאה")],
             () => `הוספת סוג קריאה · ${excerpt(name, 40)}`,
-            () => ({ id: simId("type") }),
+            () => ({ id: remember(simId("type")), isTest: true }),
           ),
         setCallTypeActive: (id, active) =>
           run(
@@ -279,62 +314,118 @@ export function SimulatedCommandsProvider({ state, children }: { state: Simulate
       accounts: {
         createAccount: (input) =>
           run(
-            () => [newAccountError(input)],
+            () => [newAccountError(input), testAccountEmailError(input.email)],
             () => `יצירת חשבון ${ACCOUNT_ROLE_LABELS[input.role]} · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
-            () => ({ accountId: simId("account") }),
+            (): { account: UserAccount } => ({
+              account: {
+                id: remember(simId("account")),
+                name: input.name.trim(),
+                role: input.role,
+                email: input.email.trim(),
+                phone: input.phone.trim(),
+                active: true,
+                deactivatedAt: null,
+                technicianId: null,
+                isTest: true,
+              },
+            }),
           ),
         requestAccount: (input) =>
           run(
-            () => [accountRequestError(input)],
-            () => `בקשה לאישור היוצר · ${ACCOUNT_REQUEST_KIND_LABELS[input.kind]} · שום דבר לא משתנה עד האישור`,
-            () => ({ requestId: simId("request") }),
+            () => [
+              accountRequestError(input),
+              state.self ? null : "אין משתמש מחובר",
+              input.kind === "create"
+                ? testAccountEmailError(input.email)
+                : accountRequestTargetError(input.kind, state.accounts?.[input.accountId]),
+            ],
+            () =>
+              `בקשה לאישור היוצר · ${ACCOUNT_REQUEST_KIND_LABELS[input.kind]} · ${excerpt(
+                input.kind === "create" ? input.name : (state.accounts?.[input.accountId]?.name ?? ""),
+                40,
+              )} · שום דבר לא משתנה עד האישור`,
+            (): { request: AccountRequest } => {
+              const existing = input.kind === "create" ? null : state.accounts?.[input.accountId];
+              const target =
+                input.kind === "create"
+                  ? { name: input.name.trim(), email: input.email.trim(), role: "cs" as const }
+                  : { name: existing?.name ?? "", email: existing?.email ?? "", role: existing?.role ?? "cs" };
+              return {
+                request: {
+                  id: remember(simId("request")),
+                  kind: input.kind,
+                  account: input.kind === "create" ? null : { id: input.accountId, name: target.name },
+                  target,
+                  newRole: input.kind === "role-change" ? input.newRole : null,
+                  requestedBy: state.self ?? NO_ACCOUNT,
+                  requestedAt: new Date().toISOString(),
+                  status: "pending",
+                  reason: null,
+                  decidedBy: null,
+                  decidedAt: null,
+                  isTest: true,
+                },
+              };
+            },
           ),
         decideAccountRequest: (requestId, decision) =>
           run(
-            () => [
-              requestIdError(requestId),
-              accountDecisionError(decision),
-              state.pendingRequestIds.includes(requestId) ? null : "הבקשה כבר לא ממתינה להחלטה",
-            ],
+            () => [requestIdError(requestId), accountDecisionError(decision), pendingRequestError(state.requests?.[requestId])],
             () =>
               decision.outcome === "approve"
-                ? "אישור הבקשה · החשבון לא השתנה"
+                ? "אישור הבקשה · נכנסת לתוקף"
                 : `דחיית הבקשה · סיבה: ${excerpt(decision.reason)}`,
           ),
         cancelAccountRequest: (requestId) =>
           run(
-            () => [requestIdError(requestId), state.pendingRequestIds.includes(requestId) ? null : "הבקשה כבר לא ממתינה להחלטה"],
+            () => [requestIdError(requestId), pendingRequestError(state.requests?.[requestId])],
             () => "ביטול הבקשה",
           ),
         deactivateAccount: (accountId) =>
           run(
             () => [
               accountIdError(accountId),
-              state.activeAccountIds.includes(accountId)
-                ? null
-                : state.inactiveAccountIds.includes(accountId)
-                  ? "החשבון כבר לא פעיל"
-                  : "החשבון לא נמצא",
+              state.self && state.self.id === accountId ? "אי אפשר להשבית את החשבון שלך" : null,
+              accountStateError("deactivate", state.accounts?.[accountId]?.active),
             ],
-            () => "השבתת חשבון · מיידית · היוצר מקבל התראה באפליקציה",
+            // The Creator is notified only of a Manager's deactivation (D34 b); the screen says so.
+            () => `השבתת חשבון · ${excerpt(state.accounts?.[accountId]?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
           ),
         activateAccount: (accountId) =>
           run(
-            () => [
-              accountIdError(accountId),
-              state.inactiveAccountIds.includes(accountId)
-                ? null
-                : state.activeAccountIds.includes(accountId)
-                  ? "החשבון כבר פעיל"
-                  : "החשבון לא נמצא",
-            ],
-            () => "הפעלת חשבון",
+            () => [accountIdError(accountId), accountStateError("activate", state.accounts?.[accountId]?.active)],
+            () => `הפעלת חשבון · ${excerpt(state.accounts?.[accountId]?.name ?? "", 40)} · מיידית`,
           ),
         createTechnician: (input) =>
           run(
-            () => [newTechnicianError(input)],
+            () => [newTechnicianError(input), testAccountEmailError(input.email)],
             () => `הוספת טכנאי · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
-            () => ({ accountId: simId("account") }),
+            (): { account: UserAccount; technician: TechnicianSetting } => {
+              const technician: TechnicianSetting = {
+                id: remember(simId("tech")),
+                name: input.name.trim(),
+                color: technicianColorCss(input.color),
+                phone: input.phone.trim(),
+                email: input.email.trim(),
+                active: true,
+                device: input.device.trim(),
+                isTest: true,
+              };
+              return {
+                technician,
+                account: {
+                  id: remember(simId("account")),
+                  name: technician.name,
+                  role: "tech",
+                  email: technician.email,
+                  phone: technician.phone,
+                  active: true,
+                  deactivatedAt: null,
+                  technicianId: technician.id,
+                  isTest: true,
+                },
+              };
+            },
           ),
       },
     };

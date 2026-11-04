@@ -13,6 +13,7 @@ import type { MatrixRole, PermissionKey, TechnicianId } from "@/features/referen
 import type {
   Bounded,
   CallTypeSetting,
+  CreatedSetting,
   MailSettings,
   NewPlaceInput,
   PermissionMatrix,
@@ -29,7 +30,8 @@ export interface SettingsQueries {
   /**
    * The editable matrix (SE-02): one row per key with the Manager and Customer Service values,
    * each with its status (temporary until Step 10, D51) and any open decision it waits for. The
-   * Creator column is fixed (D33) and not part of the rows.
+   * Creator column is fixed (D33): each row says only whether the Creator's capability waits for
+   * an open decision (`usage`, d13).
    */
   permissionMatrix(): Promise<PermissionMatrix>;
   /** Settings › טכנאים, in Settings order (active and inactive). */
@@ -56,14 +58,17 @@ export interface SettingsCommands {
   /** "פעיל" of a technician: eligibility for new invitations (SE-05), not sign-in. */
   setTechnicianActive(techId: TechnicianId, active: boolean): Promise<CommandResult>;
   /** "+ הוספת מקום" (SE-06). */
-  addPlace(input: NewPlaceInput): Promise<CommandResult<{ id: SettingId }>>;
+  addPlace(input: NewPlaceInput): Promise<CommandResult<CreatedSetting>>;
   setPlaceActive(id: SettingId, active: boolean): Promise<CommandResult>;
   /** Deletes an unused place only; a referenced place can only be deactivated (SE-06). */
   deletePlace(id: SettingId): Promise<CommandResult>;
-  /** "+ הוספת סיבה" (SE-07): appended at the end of the order. */
-  addReason(name: string): Promise<CommandResult<{ id: SettingId }>>;
+  /** "+ הוספת סיבה" (SE-07): appended at the end of the order, user-added. */
+  addReason(name: string): Promise<CommandResult<CreatedSetting>>;
   setReasonActive(id: SettingId, active: boolean): Promise<CommandResult>;
-  /** Deletes an unused reason only; a used reason can only be deactivated (SE-07). */
+  /**
+   * Deletes a user-added, never-used reason only; an initial (D48) or used reason can only be
+   * deactivated (SE-07).
+   */
   deleteReason(id: SettingId): Promise<CommandResult>;
   /**
    * Saves a new version of the "טופל" text (SE-07). Past signatures keep the exact text shown at
@@ -71,7 +76,7 @@ export interface SettingsCommands {
    */
   setFixedText(text: string): Promise<CommandResult<{ versionId: string }>>;
   /** "+ הוספת סוג קריאה" (SE-16). */
-  addCallType(name: string): Promise<CommandResult<{ id: SettingId }>>;
+  addCallType(name: string): Promise<CommandResult<CreatedSetting>>;
   setCallTypeActive(id: SettingId, active: boolean): Promise<CommandResult>;
   /** Technician in-app notifications (SE-11). */
   setTechNotification(key: TechNotificationKey, on: boolean): Promise<CommandResult>;

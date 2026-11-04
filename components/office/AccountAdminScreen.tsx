@@ -12,11 +12,23 @@
 //   Service or Technician account is immediate, audited, and the Creator is notified in the app
 //   (D34 b); activating a Customer Service account is a request. "הבקשות שלי" lists the Manager's
 //   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e).
-// Every action runs one command from useCommands().accounts. In the UI demo the commands are
-// simulated: the changed row shows the result locally, marked "לא נשמר · פעולה מדומה", and offers no
-// further action (nothing was stored, so a second action would act on stale data).
+// Every action runs one command from useCommands().accounts, and the screen reads the result: a
+// SIMULATED result (the UI demo) shows the change on its row, marked "לא נשמר · פעולה מדומה", with
+// no further action (nothing was stored, so a second action would act on stale data), and says
+// "בהדגמה … לא נשמר"; a stored result says what was done (TE-23: never claim a save that did not
+// happen). Created rows come from the command (ids and test markers as stored, D47). After an
+// action the changed row takes focus (its button is gone).
+// - An inactive account with a pending request: the Creator decides it in "בקשות לאישור" (no direct
+//   activation beside a pending request); approving an activation or a role change updates the row.
+// - At narrow widths the email and the role pill move under the name (styles/ui.css
+//   .set-col-wide), so status and actions stay in view.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ACCOUNT_REQUEST_KIND_LABELS, type AccountRequestKind, type UserAccount } from "@/features/accounts/data/types";
+import {
+  ACCOUNT_REQUEST_KIND_LABELS,
+  activationKind,
+  type AccountRequestKind,
+  type UserAccount,
+} from "@/features/accounts/data/types";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import { AccountForm, type AccountFormKind, type AccountFormResult } from "./AccountAdminForms";
@@ -46,6 +58,9 @@ const OPENERS: Readonly<Record<AccountAdminData["scope"], readonly { kind: Accou
   ],
 };
 
+/** The result line: what a simulated command would have done, or what a stored one did. */
+const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
+
 export function AccountAdminScreen({ scope, accounts, requests, self }: AccountAdminData) {
   const { accounts: commands } = useCommands();
   const id = useId();
@@ -59,6 +74,8 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   const [message, setMessage] = useState<ActionMessageValue>(null);
   const running = useRef(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  /** The row whose action just finished: it takes focus, since its button is gone. */
+  const [focusRow, setFocusRow] = useState<string | null>(null);
 
   useEffect(() => {
     if (confirm) confirmRef.current?.focus();
@@ -67,18 +84,24 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   const focus = (elementId: string) => document.getElementById(elementId)?.focus();
   const openerId = (kind: AccountFormKind) => `${id}-open-${kind}`;
   const deactivateId = (accountId: string) => `${id}-deact-${accountId}`;
+  const rowId = (accountId: string) => `${id}-row-${accountId}`;
+
+  useEffect(() => {
+    if (focusRow) document.getElementById(`${id}-row-${focusRow}`)?.focus();
+  }, [focusRow, id]);
 
   const added = rows.length - accounts.items.length;
   const addedRequests = reqs.length - requests.items.length;
   const pendingFor = (accountId: string) =>
     reqs.find((e) => e.request.status === "pending" && e.request.account?.id === accountId) ?? null;
 
-  function markChanged(accountId: string) {
-    setChanged((prev) => new Set(prev).add(accountId));
+  /** A simulated change: shown on its row as not saved, with no further action. */
+  function markChanged(accountId: string, simulated: boolean) {
+    if (simulated) setChanged((prev) => new Set(prev).add(accountId));
   }
 
   /** Runs one command; ignores taps while another action runs. */
-  async function act(key: string, run: () => Promise<CommandResult<unknown>>, onOk: (r: CommandResult<unknown>) => void) {
+  async function act<T>(key: string, run: () => Promise<CommandResult<T>>, onOk: (r: Extract<CommandResult<T>, { ok: true }>) => void) {
     if (running.current) return;
     running.current = true;
     setBusy(key);
@@ -98,21 +121,26 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   function onFormDone(result: AccountFormResult) {
     setOpenForm(null);
     if (result.kind === "cs-request") {
-      setReqs((prev) => [{ request: result.request, requestedLabel: "עכשיו", decidedLabel: null, local: true }, ...prev]);
+      const r = result.request;
+      setReqs((prev) => [{ request: r, requestedLabel: "עכשיו", decidedLabel: null, local: result.simulated }, ...prev]);
       setMessage({
         kind: "ok",
-        text: `בהדגמה: הבקשה לחשבון של ${result.request.target.name} הייתה נשלחת ליוצר, וממתינה לאישור היוצר. עד האישור לא נוצר חשבון. לא נשמר.`,
+        text: said(
+          result.simulated,
+          `הבקשה לחשבון של ${r.target.name} הייתה נשלחת ליוצר, וממתינה לאישור היוצר. עד האישור לא נוצר חשבון.`,
+          `הבקשה לחשבון של ${r.target.name} נשלחה ליוצר וממתינה לאישורו. עד האישור לא נוצר חשבון.`,
+        ),
       });
     } else {
       const a = result.account;
       setRows((prev) => [a, ...prev]);
-      markChanged(a.id);
+      markChanged(a.id, result.simulated);
       setMessage({
         kind: "ok",
         text:
           result.kind === "tech"
-            ? `בהדגמה: הטכנאי ${a.name} היה נוסף מיד. לא נשמר.`
-            : `בהדגמה: החשבון של ${a.name} היה נוצר מיד. לא נשמר.`,
+            ? said(result.simulated, `הטכנאי ${a.name} היה נוסף מיד.`, `הטכנאי ${a.name} נוסף.`)
+            : said(result.simulated, `החשבון של ${a.name} היה נוצר מיד.`, `החשבון של ${a.name} נוצר.`),
       });
     }
     focus(openerId(result.kind));
@@ -122,16 +150,19 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
     void act(
       `deactivate-${a.id}`,
       () => commands.deactivateAccount(a.id),
-      () => {
+      (r) => {
         setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: false } : x)));
-        markChanged(a.id);
+        markChanged(a.id, r.simulated);
         setConfirm(null);
+        setFocusRow(a.id);
+        const notify = scope === "cs-tech";
         setMessage({
           kind: "ok",
-          text:
-            scope === "cs-tech"
-              ? `בהדגמה: החשבון של ${a.name} היה מושבת מיד ונרשם ביומן הביקורת, והיוצר היה מקבל התראה באפליקציה. לא נשמר.`
-              : `בהדגמה: החשבון של ${a.name} היה מושבת מיד ונרשם ביומן הביקורת. לא נשמר.`,
+          text: said(
+            r.simulated,
+            `החשבון של ${a.name} היה מושבת מיד ונרשם ביומן הביקורת${notify ? ", והיוצר היה מקבל התראה באפליקציה" : ""}.`,
+            `החשבון של ${a.name} הושבת ונרשם ביומן הביקורת${notify ? ", והיוצר קיבל התראה באפליקציה" : ""}.`,
+          ),
         });
       },
     );
@@ -141,56 +172,62 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
     void act(
       `activate-${a.id}`,
       () => commands.activateAccount(a.id),
-      () => {
-        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: true } : x)));
-        markChanged(a.id);
-        setMessage({ kind: "ok", text: `בהדגמה: החשבון של ${a.name} היה מופעל מיד. לא נשמר.` });
+      (r) => {
+        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: true, deactivatedAt: null } : x)));
+        markChanged(a.id, r.simulated);
+        setFocusRow(a.id);
+        setMessage({ kind: "ok", text: said(r.simulated, `החשבון של ${a.name} היה מופעל מיד.`, `החשבון של ${a.name} הופעל.`) });
       },
     );
   }
 
   /** A Manager's activation of a Customer Service account: a request for the Creator (D34 a). */
   function requestActivation(a: UserAccount) {
-    const kind: AccountRequestKind = a.lastSignInAt ? "reactivate" : "activate";
+    const kind: AccountRequestKind = activationKind(a);
     void act(
       `request-${a.id}`,
       () => commands.requestAccount({ kind, accountId: a.id }),
       (r) => {
-        const data = r.ok ? (r.data as { requestId?: string } | undefined) : undefined;
-        setReqs((prev) => [
-          {
-            request: {
-              id: data?.requestId ?? `local-${a.id}`,
-              kind,
-              account: { id: a.id, name: a.name },
-              target: { name: a.name, email: a.email, role: a.role },
-              newRole: null,
-              requestedBy: self ?? { id: "", name: "" },
-              requestedAt: new Date().toISOString(),
-              status: "pending",
-              reason: null,
-              decidedBy: null,
-              decidedAt: null,
-              isTest: true,
-            },
-            requestedLabel: "עכשיו",
-            decidedLabel: null,
-            local: true,
-          },
-          ...prev,
-        ]);
+        if (r.data) {
+          const request = r.data.request;
+          setReqs((prev) => [{ request, requestedLabel: "עכשיו", decidedLabel: null, local: r.simulated }, ...prev]);
+        }
+        setFocusRow(a.id);
+        const label = ACCOUNT_REQUEST_KIND_LABELS[kind];
         setMessage({
           kind: "ok",
-          text: `בהדגמה: בקשת ${ACCOUNT_REQUEST_KIND_LABELS[kind]} של ${a.name} הייתה נשלחת ליוצר. החשבון נשאר לא פעיל עד האישור. לא נשמר.`,
+          text: said(
+            r.simulated,
+            `בקשת ${label} של ${a.name} הייתה נשלחת ליוצר. החשבון נשאר לא פעיל עד האישור.`,
+            `בקשת ${label} של ${a.name} נשלחה ליוצר. החשבון נשאר לא פעיל עד האישור.`,
+          ),
         });
       },
     );
+  }
+
+  /** A request changed in "בקשות לאישור" / "הבקשות שלי": an approved activation or role change updates its account row. */
+  function onRequestUpdate(entry: AccountRequestEntry) {
+    setReqs((prev) => prev.map((e) => (e.request.id === entry.request.id ? entry : e)));
+    const r = entry.request;
+    const accountId = r.account?.id;
+    if (r.status !== "approved" || !accountId) return;
+    if (r.kind === "activate" || r.kind === "reactivate") {
+      setRows((prev) => prev.map((x) => (x.id === accountId ? { ...x, active: true, deactivatedAt: null } : x)));
+    } else if (r.kind === "role-change" && r.newRole) {
+      const role = r.newRole;
+      setRows((prev) => prev.map((x) => (x.id === accountId ? { ...x, role } : x)));
+    } else {
+      return;
+    }
+    markChanged(accountId, entry.local === true);
   }
 
   function rowActions(a: UserAccount): ReactNode {
     if (changed.has(a.id)) return <SettingsNotSaved />;
     if (self && a.id === self.id) return null;
     if (scope === "cs-tech" && a.role !== "cs" && a.role !== "tech") return null;
+    const pending = pendingFor(a.id);
     if (a.active) {
       return (
         <button
@@ -209,6 +246,14 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
         </button>
       );
     }
+    // The Creator decides a pending request in "בקשות לאישור" (a direct activation would leave it pending).
+    if (scope === "all" && pending) {
+      return (
+        <span className="sub" style={{ fontSize: 12 }}>
+          להחלטה בבקשות
+        </span>
+      );
+    }
     if (scope === "all" || a.role === "tech") {
       return (
         <button
@@ -223,8 +268,8 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
         </button>
       );
     }
-    if (pendingFor(a.id)) return <RequestStatusPill status="pending" />;
-    const kind: AccountRequestKind = a.lastSignInAt ? "reactivate" : "activate";
+    if (pending) return <RequestStatusPill status="pending" />;
+    const kind: AccountRequestKind = activationKind(a);
     return (
       <button
         type="button"
@@ -274,7 +319,6 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
             key={openForm}
             formId={formId}
             kind={openForm}
-            self={self}
             onDone={onFormDone}
             onCancel={() => {
               const kind = openForm;
@@ -292,8 +336,10 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
               <thead>
                 <tr>
                   <th scope="col">שם</th>
-                  <th scope="col">מייל</th>
-                  <th scope="col" className={SHORT}>
+                  <th scope="col" className="set-col-wide">
+                    מייל
+                  </th>
+                  <th scope="col" className={`${SHORT} set-col-wide`}>
                     הרשאה
                   </th>
                   <th scope="col" className={SHORT}>
@@ -308,14 +354,23 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
                 {rows.map((a) => {
                   const pending = scope === "all" ? pendingFor(a.id) : null;
                   return (
-                    <tr key={a.id}>
+                    <tr key={a.id} id={rowId(a.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
                       <td>
                         <AccountName name={a.name} isTest={a.isTest} note={self && a.id === self.id ? "החשבון שלך" : undefined} />
+                        {/* Narrow widths: email and role under the name (their columns are hidden). */}
+                        <span className="set-inline-narrow">
+                          <span className="sub" dir="ltr" style={{ display: "block", textAlign: "right", fontSize: 12, overflowWrap: "anywhere" }}>
+                            {a.email}
+                          </span>
+                          <span style={{ display: "block", marginTop: 4 }}>
+                            <RolePill role={a.role} />
+                          </span>
+                        </span>
                       </td>
-                      <td dir="ltr" style={{ textAlign: "right", color: "var(--muted)" }}>
+                      <td className="set-col-wide" dir="ltr" style={{ textAlign: "right", color: "var(--muted)" }}>
                         {a.email}
                       </td>
-                      <td className={SHORT}>
+                      <td className={`${SHORT} set-col-wide`}>
                         <RolePill role={a.role} />
                       </td>
                       <td className={SHORT}>
@@ -382,12 +437,12 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
         entries={reqs}
         total={requests.total + addedRequests}
         self={self}
-        onUpdate={(entry) => setReqs((prev) => prev.map((e) => (e.request.id === entry.request.id ? entry : e)))}
+        onUpdate={onRequestUpdate}
       />
 
       <div className="note">
         {scope === "all"
-          ? "רק היוצר מנהל חשבונות מנהל ויוצר ומחליט על הבקשות של המנהל. אין הרשמה עצמית: חשבונות נוצרים רק כאן. חשבון שיש לו היסטוריה מושבת ולא נמחק."
+          ? "רק היוצר מנהל חשבונות מנהל ויוצר ומחליט על הבקשות של המנהל. אין הרשמה עצמית: חשבונות נוצרים רק כאן. חשבונות מושבתים ולא נמחקים."
           : "ניהול החשבונות הוא יכולת קבועה של המנהל ואינו תלוי במטריצת ההרשאות. המנהל מנהל חשבונות שירות לקוחות וטכנאים בלבד; חשבונות מנהל ויוצר מנוהלים על ידי היוצר. המנהל לא קובע ולא מאפס סיסמאות, ולא משנה מייל של חשבון."}
       </div>
     </>

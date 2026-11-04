@@ -11,7 +11,7 @@ import { normalizeCalendarFilter, isYearMonth } from "@/features/calendar/data/v
 import type { YearMonth } from "@/features/calendar/data/types";
 import { normalizeCallFilter } from "@/features/calls/data/validate";
 import type { CallsPage, CallStatus } from "@/features/calls/data/types";
-import { boundedOf, isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
+import { boundedOf, filterListValues, isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
 import type { DataAccess } from "@/features/data-access/types";
 import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
 import {
@@ -36,6 +36,7 @@ import {
 import {
   isLockedTemplateField,
   PERMISSION_LABELS,
+  pendingCreatorDecision,
   pendingMatrixDecision,
   TECH_NOTIFICATION_KEYS,
   type CompletionMailRule,
@@ -120,11 +121,14 @@ const PRODUCTS_BY_SKU = [...PRODUCTS].sort((a, b) => a.sku.localeCompare(b.sku))
 /** Notifications newest first. */
 const NOTIFICATIONS_NEWEST_FIRST = [...NOTIFICATIONS].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 
-/** The Creator's capabilities: fixed (D33), every key, never matrix values. */
+/**
+ * The Creator's capabilities: fixed (D33), never matrix values. Every key except one that waits for
+ * an open decision (`usage`, d13), which stays off until the owner decides (deny by default).
+ */
 const CREATOR_PERMISSIONS: RolePermissions = {
   role: "creator",
   status: "fixed",
-  values: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true])) as Record<PermissionKey, true>,
+  values: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, pendingCreatorDecision(key) === null])) as Record<PermissionKey, boolean>,
 };
 
 function matrixCell(role: MatrixRole, key: PermissionKey): PermissionCell {
@@ -144,8 +148,10 @@ const completionRule = (outcome: CompletionMailRule["outcome"]): CompletionMailR
 
 const ROLE_ORDER = new Map(ACCOUNT_ROLE_VALUES.map((role, i) => [role, i]));
 
-/** Accounts by role (creator, mgr, cs, tech), fixture order within a role (a stable sort). */
-const ACCOUNTS_BY_ROLE = [...ACCOUNTS].sort((a, b) => (ROLE_ORDER.get(a.role) ?? 0) - (ROLE_ORDER.get(b.role) ?? 0));
+/** Accounts by role (creator, mgr, cs, tech), then by name (Hebrew collation), as the port documents. */
+const ACCOUNTS_BY_ROLE = [...ACCOUNTS].sort(
+  (a, b) => (ROLE_ORDER.get(a.role) ?? 0) - (ROLE_ORDER.get(b.role) ?? 0) || a.name.localeCompare(b.name, "he"),
+);
 
 /** Requests newest first. */
 const REQUESTS_NEWEST_FIRST = [...ACCOUNT_REQUESTS].sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
@@ -172,11 +178,6 @@ const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   isTest: TEST,
 });
 
-/** Only the known values of a filter list (unknown values dropped; none or all means no filter). */
-function filterValues<T extends string>(values: unknown, isValid: (v: unknown) => v is T, all: readonly T[]): T[] {
-  const kept = Array.isArray(values) ? [...new Set(values.filter(isValid))] : [];
-  return kept.length === all.length ? [] : kept;
-}
 
 export const demoDataAccess: DataAccess = {
   calls: {
@@ -373,6 +374,7 @@ export const demoDataAccess: DataAccess = {
           label: PERMISSION_LABELS[key].label,
           hint: PERMISSION_LABELS[key].hint,
           cells: Object.fromEntries(MATRIX_ROLE_VALUES.map((role) => [role, matrixCell(role, key)])) as Record<MatrixRole, PermissionCell>,
+          creator: { pending: pendingCreatorDecision(key) },
         })),
       };
     },
@@ -406,6 +408,8 @@ export const demoDataAccess: DataAccess = {
           name: r.name,
           active: r.on,
           inUse: reasonInUse(r.name),
+          // The seeded reasons are the initial values (D48), not user-added: deactivate only.
+          userAdded: false,
           usedThisMonth: reasonUsesThisMonth(r.name),
           isTest: TEST,
         })),
@@ -443,14 +447,15 @@ export const demoDataAccess: DataAccess = {
 
   accounts: {
     async list(query) {
-      const roles = filterValues(query?.roles, isAccountRole, ACCOUNT_ROLE_VALUES);
-      const matches = roles.length ? ACCOUNTS_BY_ROLE.filter((a) => roles.includes(a.role)) : ACCOUNTS_BY_ROLE;
+      // An unknown role never widens the list: a filter with no known role matches nothing.
+      const roles = filterListValues(query?.roles, isAccountRole, ACCOUNT_ROLE_VALUES);
+      const matches = roles ? ACCOUNTS_BY_ROLE.filter((a) => roles.includes(a.role)) : ACCOUNTS_BY_ROLE;
       const page = pageOf(matches, query?.page, query?.limit);
       return { ...page, items: page.items.map(userAccount) };
     },
     async requests(query) {
-      const statuses = filterValues(query?.statuses, isAccountRequestStatus, ACCOUNT_REQUEST_STATUSES);
-      const matches = statuses.length ? REQUESTS_NEWEST_FIRST.filter((r) => statuses.includes(r.status)) : REQUESTS_NEWEST_FIRST;
+      const statuses = filterListValues(query?.statuses, isAccountRequestStatus, ACCOUNT_REQUEST_STATUSES);
+      const matches = statuses ? REQUESTS_NEWEST_FIRST.filter((r) => statuses.includes(r.status)) : REQUESTS_NEWEST_FIRST;
       const page = pageOf(matches, query?.page, query?.limit);
       return { ...page, items: page.items.map(accountRequest) };
     },

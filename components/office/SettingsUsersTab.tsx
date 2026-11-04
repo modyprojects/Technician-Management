@@ -20,13 +20,15 @@ export type SettingsUsersTabProps = {
   matrix: PermissionMatrix;
   /** Only the Creator edits the matrix (D33). */
   matrixEditable: boolean;
+  /** A line about the data source under the matrix (the UI demo: values only drive the demo, nothing is saved). */
+  matrixNote?: string;
 };
 
-export function SettingsUsersTab({ admin, matrix, matrixEditable }: SettingsUsersTabProps) {
+export function SettingsUsersTab({ admin, matrix, matrixEditable, matrixNote }: SettingsUsersTabProps) {
   return (
     <>
       {admin && <AccountAdminScreen {...admin} />}
-      <SettingsMatrix matrix={matrix} editable={matrixEditable} />
+      <SettingsMatrix matrix={matrix} editable={matrixEditable} note={matrixNote} />
     </>
   );
 }

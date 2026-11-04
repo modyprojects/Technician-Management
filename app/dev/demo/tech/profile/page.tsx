@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ProfileHeader } from "@/components/tech/ProfileHeader";
 import { ProfilePreferences } from "@/components/tech/ProfilePreferences";
 import { ProfileHelp, ProfileWeek } from "@/components/tech/ProfileSections";
+import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { DemoTechFrame } from "../../_components/DemoFrames";
 import { demoDataAccess } from "../../_data/adapter";
 import { TODAY } from "../../_data/dates";
@@ -35,7 +36,7 @@ export default async function TechProfilePage() {
       <ProfilePreferences initial={preferences} />
       <ProfileHelp
         officePhone={office}
-        reportPendingHint="ממתין להחלטת בעלים (d26)"
+        reportPendingHint={pendingDecisionHint("d26")}
         officeDial={
           office && (
             <button

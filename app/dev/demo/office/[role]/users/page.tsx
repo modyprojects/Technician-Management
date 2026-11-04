@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AccountAdminScreen } from "@/components/office/AccountAdminScreen";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
+import { SimulatedCommandsProvider } from "../../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../../_data/adapter";
 import { officeRoleParams } from "../../../_data/params";
 import { accountAdminScope, isOfficeRole, officeHomeLabel, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
+import { accountAdminState } from "../_simulatedState";
 import { loadAccountAdmin } from "./_accounts";
 
 // Every office role is built: customer service gets "אין הרשאה", the Creator a link to Settings.
@@ -48,7 +50,10 @@ export default async function OfficeUsersPage({ params }: PageProps<"/dev/demo/o
         </div>
       </div>
       {admin ? (
-        <AccountAdminScreen {...admin} />
+        // The simulated commands check the accounts and requests in the Manager's scope only.
+        <SimulatedCommandsProvider state={accountAdminState(admin)}>
+          <AccountAdminScreen {...admin} />
+        </SimulatedCommandsProvider>
       ) : scope === "all" ? (
         <NoAccessPlaceholder
           id="users-creator"

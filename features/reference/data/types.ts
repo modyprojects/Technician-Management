@@ -31,6 +31,12 @@ export type TechnicianColorToken = (typeof TECHNICIAN_COLOR_TOKENS)[number];
 export const isTechnicianColorToken = (value: unknown): value is TechnicianColorToken =>
   typeof value === "string" && (TECHNICIAN_COLOR_TOKENS as readonly string[]).includes(value);
 
+/** Hebrew names of the allowlisted colours (form labels). */
+export const TECHNICIAN_COLOR_NAMES: Readonly<Record<TechnicianColorToken, string>> = { "t-y": "ירוק", "t-e": "אדום", "t-s": "כחול" };
+
+/** The CSS of an allowlisted colour token: `var(--t-…)`. Never CSS from input or storage. */
+export const technicianColorCss = (token: TechnicianColorToken): string => `var(--${token})`;
+
 /** What other DTOs carry about a technician. */
 export type TechnicianRef = Pick<Technician, "id" | "name" | "color" | "phone">;
 
@@ -120,8 +126,9 @@ export type PermissionValueStatus = MatrixValueStatus | "fixed";
 /**
  * A role's capabilities as the screens see them. Display only: what a screen offers. Enforcement
  * is always on the server and in the database (RLS, grants, server functions); never use this as
- * access control. Matrix roles carry matrix values (temporary per D51); the Creator carries every
- * key true with the status "fixed".
+ * access control. Matrix roles carry matrix values (temporary per D51); the Creator carries its
+ * fixed capabilities with the status "fixed": every key true except a capability that waits for
+ * an open owner decision (`usage` until d13), which stays false (deny by default).
  */
 export type RolePermissions =
   | {
@@ -132,5 +139,5 @@ export type RolePermissions =
   | {
       role: "creator";
       status: "fixed";
-      values: Readonly<Record<PermissionKey, true>>;
+      values: Readonly<Record<PermissionKey, boolean>>;
     };

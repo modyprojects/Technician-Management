@@ -12,35 +12,50 @@ import type {
   AccountRequestId,
   AccountRequestInput,
   AccountRequestQuery,
+  CreatedAccount,
+  CreatedAccountRequest,
+  CreatedTechnician,
   NewAccountInput,
   NewTechnicianInput,
   UserAccount,
 } from "./types";
 
 export interface AccountsQueries {
-  /** Accounts by role (creator, mgr, cs, tech) then name, optionally filtered by role; paged. */
+  /**
+   * Accounts by role (creator, mgr, cs, tech) then name (Hebrew collation), optionally filtered by
+   * role; paged. A role filter with no known role matches nothing (never every account).
+   */
   list(query?: AccountListQuery): Promise<Page<UserAccount>>;
-  /** Account requests, newest first, optionally filtered by status; paged. */
+  /**
+   * Account requests, newest first, optionally filtered by status; paged. A status filter with no
+   * known status matches nothing.
+   */
   requests(query?: AccountRequestQuery): Promise<Page<AccountRequest>>;
 }
 
-/** Account actions. Results say whether they were simulated (UI demo: always). */
+/**
+ * Account actions. Results say whether they were simulated (UI demo: always); a create returns
+ * the record as stored, so a screen never builds ids or test markers itself.
+ */
 export interface AccountCommands {
   /** Creator only: creates an account of any role, immediately (D34). */
-  createAccount(input: NewAccountInput): Promise<CommandResult<{ accountId: AccountId }>>;
+  createAccount(input: NewAccountInput): Promise<CommandResult<CreatedAccount>>;
   /**
    * Manager: a Customer Service create / activate / reactivate / role-change request. Nothing
-   * changes until the Creator approves (D34 a); the result carries the new request's id.
+   * changes until the Creator approves (D34 a); the result carries the new request. The
+   * implementation checks the target account's current role against stored data (the input
+   * validator checks only the shape): a Manager must never gain extra privileges (D34).
    */
-  requestAccount(input: AccountRequestInput): Promise<CommandResult<{ requestId: AccountRequestId }>>;
+  requestAccount(input: AccountRequestInput): Promise<CommandResult<CreatedAccountRequest>>;
   /** Creator only: approves or rejects a pending request; a rejection needs a reason. */
   decideAccountRequest(requestId: AccountRequestId, decision: AccountDecision): Promise<CommandResult>;
   /** Cancels a pending request (its Manager, or the Creator). */
   cancelAccountRequest(requestId: AccountRequestId): Promise<CommandResult>;
   /**
    * Deactivates an account immediately, without approval (D34 b): the Manager for Customer Service
-   * and Technician accounts, the Creator for any. Audited; the Creator is notified in the app.
-   * Deactivation, never deletion, for an account that history references (SE-06 principle).
+   * and Technician accounts, the Creator for any but its own. Audited; a Manager's deactivation
+   * notifies the Creator in the app. Accounts are deactivated, never deleted
+   * (docs/database-schema.md).
    */
   deactivateAccount(accountId: AccountId): Promise<CommandResult>;
   /**
@@ -49,5 +64,5 @@ export interface AccountCommands {
    */
   activateAccount(accountId: AccountId): Promise<CommandResult>;
   /** Manager or Creator: a technician account with its Settings row, immediately (D34 c). */
-  createTechnician(input: NewTechnicianInput): Promise<CommandResult<{ accountId: AccountId }>>;
+  createTechnician(input: NewTechnicianInput): Promise<CommandResult<CreatedTechnician>>;
 }

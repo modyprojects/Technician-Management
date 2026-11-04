@@ -39,8 +39,8 @@ export function setPermissionError(role: unknown, key: unknown, value: unknown):
   if (!isMatrixRole(role)) return "תפקיד לא תקין";
   if (!isPermissionKey(key)) return "הרשאה לא תקינה";
   if (typeof value !== "boolean") return "ערך לא תקין";
-  const pending = pendingMatrixDecision(role, key);
-  return pending ? `ממתין להחלטה (${pending})` : null;
+  // User-facing text names no decision code; the screen shows the pending hint next to the cell.
+  return pendingMatrixDecision(role, key) ? "הערך ממתין להחלטת בעלים ולא ניתן לשינוי" : null;
 }
 
 export function newPlaceError(input: NewPlaceInput): string | null {
@@ -69,5 +69,21 @@ export function techNotificationError(key: unknown, on: unknown): string | null 
 export function templateLabelRequiredError(key: unknown, required: unknown): string | null {
   if (!isTemplateFieldKey(key)) return "תווית לא תקינה";
   if (typeof required !== "boolean") return "ערך לא תקין";
-  return isLockedTemplateField(key) ? "שדה חובה קבוע (D17): אי אפשר לשנות" : null;
+  return isLockedTemplateField(key) ? "שדה חובה קבוע: אי אפשר לשנות" : null;
+}
+
+/** Only an unreferenced place can be deleted (SE-06). `place` is the stored place, undefined when missing. */
+export function placeDeleteError(place: { inUse: boolean } | undefined): string | null {
+  if (!place) return "המקום לא נמצא";
+  return place.inUse ? "המקום בשימוש: אפשר רק לכבות אותו" : null;
+}
+
+/**
+ * Only a user-added reason that was never used can be deleted (SE-07; docs/database-schema.md
+ * `is_user_added`). `reason` is the stored reason, undefined when missing.
+ */
+export function reasonDeleteError(reason: { inUse: boolean; userAdded: boolean } | undefined): string | null {
+  if (!reason) return "הסיבה לא נמצאה";
+  if (reason.inUse) return "הסיבה בשימוש: אפשר רק לכבות אותה";
+  return reason.userAdded ? null : "סיבה התחלתית: אפשר רק לכבות אותה";
 }

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, openPage } from "./helpers";
+import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage } from "./helpers";
 
 // UI demo with fictional data (D53, /dev/demo). Runs in the phone (390), tablet (820) and desktop
 // (1440) projects unless a block says otherwise. Every action in the demo is simulated: the tests
@@ -772,9 +772,22 @@ test.describe("settings access (display only, G-04)", () => {
       await openPage(page, `/dev/demo/office/${role}/settings/users`);
       if (role === "mgr") {
         await expect(usersLink).toHaveAttribute("href", "/dev/demo/office/mgr/users");
+        await expect(page.getByText(/מנוהלים במסך "משתמשים"/)).toBeVisible();
       } else {
         await expect(usersLink).toHaveCount(0);
+        // Account administration and the matrix are fixed Creator capabilities: no matrix wording.
+        await expect(page.getByText(/זמין ליוצר בלבד/)).toBeVisible();
       }
+      // "טכנאים" and "מיילים והתראות" are Creator-only for now (temporary, open owner question).
+      for (const tab of ["techs", "mail"] as const) {
+        await openPage(page, `/dev/demo/office/${role}/settings/${tab}`);
+        await expect(page.getByText(/פתוחה ליוצר בלבד, עד החלטת הבעלים/)).toBeVisible();
+        // Not the matrix wording: the matrix cannot grant these tabs.
+        await expect(page.getByText(/קובע היוצר במטריצת ההרשאות/)).toHaveCount(0);
+      }
+      // The operational tabs follow the matrix key "הגדרות" (D35).
+      await openPage(page, `/dev/demo/office/${role}/settings/places`);
+      await expect(page.getByText(/את ההרשאה "הגדרות" קובע היוצר במטריצת ההרשאות/)).toBeVisible();
     });
   }
 
@@ -808,8 +821,12 @@ test.describe("permission matrix (SE-02, D33, D51)", () => {
     await expect(matrix.getByRole("button", { name: "ביטול קריאה לשירות לקוחות" })).toBeDisabled();
     await expect(matrix.getByRole("button", { name: "מדדי שימוש למנהל" })).toBeDisabled();
     await expect(matrix.getByRole("button", { name: "מדדי שימוש לשירות לקוחות" })).toBeDisabled();
-    await expect(matrix.getByText("ממתין להחלטה (d08)")).toBeVisible();
-    await expect(matrix.getByText("ממתין להחלטה (d13)")).toHaveCount(2);
+    await expect(matrix.getByText("ממתין להחלטת בעלים (d08)")).toBeVisible();
+    // d13 (usage) is pending for every column, the Creator's included: never shown as granted.
+    await expect(matrix.getByText("ממתין להחלטת בעלים (d13)")).toHaveCount(3);
+    const usage = matrix.locator("tbody tr").filter({ hasText: "מדדי שימוש" });
+    await expect(usage).not.toContainText("✓");
+    await expect(matrix.locator("tbody tr").filter({ hasText: "יומן טכנאים" })).toContainText("✓ 🔒");
     await expect(matrix.getByRole("button", { name: "ביטול קריאה למנהל" })).toBeEnabled();
   });
 
@@ -829,8 +846,8 @@ test.describe("account administration (SE-01, D34)", () => {
   test("Creator: every account with 🧪, own row without actions, no password or email editing", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const users = page.getByRole("table", { name: "משתמשים", exact: true });
-    await expect(users.locator("tbody tr")).toHaveCount(8);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(8);
+    await expect(users.locator("tbody tr")).toHaveCount(10);
+    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(10);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
     await expect(own.getByRole("button")).toHaveCount(0);
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
@@ -870,10 +887,20 @@ test.describe("account administration (SE-01, D34)", () => {
   test("Creator: approving a pending request is simulated", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    const orit = page.getByRole("table", { name: "משתמשים", exact: true }).locator("tbody tr").filter({ hasText: "אורית" });
+    // A pending request is decided here, not by a direct activation on the account row (F12).
+    await expect(orit.getByRole("button")).toHaveCount(0);
+    await expect(orit).toContainText("להחלטה בבקשות");
     await requests.getByRole("button", { name: "אישור: הפעלה מחדש · אורית" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
     await expect(toast(page)).toContainText("אישור הבקשה");
-    await expect(requests.getByRole("listitem").filter({ hasText: "הפעלה מחדש · אורית" })).toContainText("אושרה");
+    const row = requests.getByRole("listitem").filter({ hasText: "הפעלה מחדש · אורית" });
+    await expect(row).toContainText("אושרה");
+    await expect(row).toBeFocused();
+    // The approved reactivation shows on the account row, as not saved.
+    await expect(orit).toContainText("פעיל");
+    await expect(orit).not.toContainText("לא פעיל");
+    await expect(orit).toContainText("לא נשמר · פעולה מדומה");
   });
 
   test("Manager: CS and technician accounts only; \"+ בקשת חשבון שירות לקוחות\" makes a pending request (simulated)", async ({
@@ -881,7 +908,7 @@ test.describe("account administration (SE-01, D34)", () => {
   }) => {
     await openPage(page, "/dev/demo/office/mgr/users");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
-    await expect(accounts.locator("tbody tr")).toHaveCount(6);
+    await expect(accounts.locator("tbody tr")).toHaveCount(8);
     await expect(accounts.getByText("מנהל", { exact: true })).toHaveCount(0);
     await expect(accounts.getByText("יוצר", { exact: true })).toHaveCount(0);
     // אורית (inactive Customer Service) already has a pending reactivation request.
@@ -895,9 +922,16 @@ test.describe("account administration (SE-01, D34)", () => {
     // An empty form is checked before the command runs (no toast).
     await form.getByRole("button", { name: "שליחה לאישור היוצר" }).click();
     await expect(form.getByRole("alert")).toBeVisible();
+    await expect(form.getByLabel("שם", { exact: true })).toBeFocused();
+    await expect(form.getByLabel("שם", { exact: true })).toHaveAttribute("aria-invalid", "true");
     await expect(toast(page)).toHaveCount(0);
-
+    // A later field: the first invalid one gets focus.
     await form.getByLabel("שם", { exact: true }).fill("נציגה 4");
+    await form.getByRole("button", { name: "שליחה לאישור היוצר" }).click();
+    await expect(form.getByLabel("מייל", { exact: true })).toBeFocused();
+    await expect(form.getByLabel("מייל", { exact: true })).toHaveAttribute("aria-invalid", "true");
+    await expect(form.getByLabel("שם", { exact: true })).not.toHaveAttribute("aria-invalid", "true");
+
     await form.getByLabel("מייל", { exact: true }).fill("rep4@example.test");
     await form.getByLabel("טלפון", { exact: true }).fill("050-000-0199");
     await form.getByRole("button", { name: "שליחה לאישור היוצר" }).click();
@@ -925,6 +959,8 @@ test.describe("account administration (SE-01, D34)", () => {
     const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "שיראל" });
     await expect(row).toContainText("לא פעיל");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    // The confirm panel closed: focus moves to the changed row, never to <body> (F4).
+    await expect(row).toBeFocused();
 
     const mine = page.getByRole("list", { name: "הבקשות שלי" });
     await mine.getByRole("button", { name: "ביטול הבקשה: יצירת חשבון · נציגה 3" }).click();
@@ -948,16 +984,41 @@ test.describe("operational settings (SE-05 to SE-16)", () => {
     expect(await horizontalOverflow(page)).toEqual([]);
   });
 
-  test("places: delete is offered only for a place nothing references (SE-06)", async ({ page }) => {
+  test("places: the seeded places are in use (no delete); a new place can be added and deleted (SE-06)", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/places");
     const rows = page.locator("main table tbody tr");
-    const count = await rows.count();
-    expect(count).toBeGreaterThan(0);
-    const deletable = await page.getByRole("button", { name: /^מחיקת / }).count();
-    expect(deletable).toBeLessThan(count);
+    const seeded = await rows.count();
+    expect(seeded).toBeGreaterThan(0);
+    // Every seeded place is referenced by a visit: deactivate only.
+    await expect(page.getByRole("button", { name: /^מחיקת / })).toHaveCount(0);
+
     await page.getByRole("button", { name: "+ הוספת מקום" }).click();
-    await expect(page.getByRole("form", { name: "הוספת מקום איסוף" })).toBeVisible();
+    const form = page.getByRole("form", { name: "הוספת מקום איסוף" });
+    await expect(form.getByLabel("שם", { exact: true })).toBeFocused();
     expect(await horizontalOverflow(page)).toEqual([]);
+    // Invalid input: the invalid field gets focus and aria-invalid, the error is inside the form.
+    await form.getByRole("button", { name: "הוספה" }).click();
+    await expect(form.getByRole("alert")).toContainText("חסר שם המקום");
+    await expect(form.getByLabel("שם", { exact: true })).toBeFocused();
+    await expect(form.getByLabel("שם", { exact: true })).toHaveAttribute("aria-invalid", "true");
+    await form.getByLabel("שם", { exact: true }).fill("סניף בדיקה");
+    await form.getByRole("button", { name: "הוספה" }).click();
+    await expect(form.getByRole("alert")).toContainText("חסרה כתובת");
+    await expect(form.getByLabel("כתובת (ל-Waze)")).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+
+    await form.getByLabel("כתובת (ל-Waze)").fill("רחוב הבדיקה 1, עיר לדוגמה");
+    await form.getByRole("button", { name: "הוספה" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("הוספת מקום איסוף");
+    await expect(form).toHaveCount(0);
+    const added = rows.filter({ hasText: "סניף בדיקה" });
+    await expect(added).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByRole("button", { name: /^מחיקת / })).toHaveCount(1);
+    await page.getByRole("button", { name: "מחיקת סניף בדיקה" }).click();
+    await expect(toast(page).filter({ hasText: "מחיקת מקום איסוף" })).toBeVisible();
+    await expect(added).toHaveCount(0);
+    await expect(rows).toHaveCount(seeded);
   });
 
   test("reasons: delete only for unused rows; a new reason can be deleted (simulated); the \"טופל\" text keeps past signatures", async ({
@@ -998,9 +1059,11 @@ test.describe("operational settings (SE-05 to SE-16)", () => {
       for (const t of await toggles.all()) await expect(t).toBeDisabled();
     }
     await expect(page.getByRole("button", { name: "מייל לנציגה על זימון שלא נקלט" })).toBeDisabled();
-    await expect(page.getByText(/ממתין להחלטה \(d10\)/).first()).toBeVisible();
-    await expect(page.getByText(/ממתין להחלטה \(d11\)/).first()).toBeVisible();
-    await expect(page.getByText(/ממתין להחלטה \(d09\)/)).toBeVisible();
+    await expect(page.getByText(/ממתין להחלטת בעלים \(d10\)/).first()).toBeVisible();
+    await expect(page.getByText(/ממתין להחלטת בעלים \(d11\)/).first()).toBeVisible();
+    await expect(page.getByText(/ממתין להחלטת בעלים \(d09\)/)).toBeVisible();
+    // d11's recommendation is shown as a recommendation, never as the current behaviour.
+    await expect(page.getByText("ההמלצה (לא הוחלט): רק קישור לכרטיס הקריאה")).toHaveCount(2);
     // SE-11: in-app notifications, no morning pickup toggle.
     await expect(page.getByText(/מה לאסוף|תזכורת בוקר/)).toHaveCount(0);
     const tech = page.getByRole("button", { name: "התראה לטכנאי: ביטול ביקור" });
@@ -1029,5 +1092,159 @@ test.describe("operational settings (SE-05 to SE-16)", () => {
     await warranty.click();
     await expect(warranty).toHaveAttribute("aria-pressed", "true");
     await expect(toast(page)).toContainText(SIMULATED);
+  });
+});
+
+// Phase E fix pass: every D34 activation path, the submit flows of every add form, and what the
+// browser receives (no sign-in times; account and request ids only on the account screens).
+test.describe("account activation paths (D34 a, c)", () => {
+  test("Manager: an inactive Customer Service account without a request offers \"בקשת הפעלת חשבון\" (pending, simulated)", async ({
+    page,
+  }) => {
+    await openPage(page, "/dev/demo/office/mgr/users");
+    const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
+    const ronit = accounts.locator("tbody tr").filter({ hasText: "רונית" });
+    await expect(ronit).toContainText("לא פעיל");
+    await ronit.getByRole("button", { name: "בקשת הפעלת חשבון לחשבון של רונית" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("בקשה לאישור היוצר");
+    // Nothing changes until the Creator approves: still inactive, now with a pending request.
+    await expect(ronit).toContainText("לא פעיל");
+    await expect(ronit).toContainText("ממתינה לאישור היוצר");
+    await expect(ronit).toBeFocused();
+    const mine = page.getByRole("list", { name: "הבקשות שלי" });
+    const created = mine.getByRole("listitem").filter({ hasText: "הפעלת חשבון · רונית" });
+    await expect(created).toContainText("ממתינה לאישור היוצר");
+    await expect(created).toContainText("לא נשמר · פעולה מדומה");
+  });
+
+  test("Manager: a deactivated technician account is activated at once (simulated)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/users");
+    const beni = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "בני" });
+    await expect(beni).toContainText("לא פעיל");
+    await beni.getByRole("button", { name: "הפעלת החשבון של בני" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("הפעלת חשבון");
+    await expect(beni).not.toContainText("לא פעיל");
+    await expect(beni).toContainText("לא נשמר · פעולה מדומה");
+    await expect(beni).toBeFocused();
+    await expect(page.getByText(/בהדגמה: החשבון של בני היה מופעל מיד/)).toBeVisible();
+  });
+});
+
+test.describe("add forms (simulated submit flows)", () => {
+  test("Creator \"+ הוספת משתמש\": an example.test address only; the new row has 🧪 and is not saved", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const users = page.getByRole("table", { name: "משתמשים", exact: true });
+    await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
+    const form = page.getByRole("form", { name: "הוספת משתמש" });
+    await expect(form.getByLabel("שם", { exact: true })).toBeFocused();
+    await form.getByLabel("שם", { exact: true }).fill("מנהלת בדיקה");
+    await form.getByLabel("מייל", { exact: true }).fill("manager@example.com");
+    await form.getByLabel("טלפון", { exact: true }).fill("050-000-0190");
+    await form.getByLabel("הרשאה").selectOption("mgr");
+    // Test users get example.test addresses only (D47): the simulated command refuses others.
+    await form.getByRole("button", { name: "יצירת חשבון" }).click();
+    await expect(form.getByRole("alert")).toContainText("רק כתובות @example.test");
+    await expect(users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" })).toHaveCount(0);
+
+    await form.getByLabel("מייל", { exact: true }).fill("manager2@example.test");
+    await form.getByRole("button", { name: "יצירת חשבון" }).click();
+    await expect(toast(page).filter({ hasText: "יצירת חשבון מנהל" })).toContainText(SIMULATED);
+    await expect(form).toHaveCount(0);
+    const row = users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" });
+    await expect(row).toContainText("🧪");
+    await expect(row).toContainText("מנהל");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText(/בהדגמה: החשבון של מנהלת בדיקה היה נוצר מיד/)).toBeVisible();
+  });
+
+  test("Settings › טכנאים \"+ הוספת טכנאי\": the new row is the command's, and its \"פעיל\" switch works", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/techs");
+    await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
+    const form = page.getByRole("form", { name: "הוספת טכנאי" });
+    await expect(form.getByLabel("שם", { exact: true })).toBeFocused();
+    await form.getByLabel("שם", { exact: true }).fill("טכנאי בדיקה");
+    await form.getByLabel("מייל ב-Outlook").fill("tech-test@example.test");
+    await form.getByLabel("טלפון", { exact: true }).fill("050-000-0191");
+    await form.getByLabel("כחול").check();
+    await form.getByRole("button", { name: "הוספה" }).click();
+    await expect(toast(page)).toContainText("הוספת טכנאי");
+    await expect(form).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "+ הוספת טכנאי" })).toBeFocused();
+    const row = page.locator("main table tbody tr").filter({ hasText: "טכנאי בדיקה" });
+    await expect(row).toContainText("🧪");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    // The command returned a technician id (not the account id): the switch validates and runs.
+    const active = row.getByRole("button", { name: "טכנאי בדיקה פעיל – מקבל זימונים חדשים" });
+    await active.click();
+    await expect(active).toHaveAttribute("aria-pressed", "false");
+    await expect(toast(page).filter({ hasText: "טכנאי לא פעיל" })).toContainText(SIMULATED);
+  });
+
+  test("Manager \"+ הוספת טכנאי\": immediate, a technician row with 🧪, not saved", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/users");
+    await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
+    const form = page.getByRole("form", { name: "הוספת טכנאי" });
+    await form.getByLabel("שם", { exact: true }).fill("טכנאי חדש");
+    await form.getByLabel("מייל ב-Outlook").fill("new-tech@example.test");
+    await form.getByLabel("טלפון", { exact: true }).fill("050-000-0192");
+    await form.getByRole("button", { name: "הוספה" }).click();
+    await expect(toast(page)).toContainText("הוספת טכנאי");
+    const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי חדש" });
+    await expect(row).toContainText("🧪");
+    await expect(row).toContainText("טכנאי");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText(/בהדגמה: הטכנאי טכנאי חדש היה נוסף מיד/)).toBeVisible();
+  });
+
+  test("\"שמירת נוסח\": an empty text is blocked inline; a new text is a simulated new version", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/reasons");
+    const text = page.getByLabel('הנוסח שהלקוח חותם עליו כשהטכנאי בוחר "טופל"');
+    const save = page.getByRole("button", { name: "שמירת נוסח" });
+    await text.fill("");
+    await save.click();
+    await expect(page.getByRole("alert").filter({ hasText: "הנוסח לא יכול להיות ריק" })).toBeVisible();
+    await expect(text).toHaveAttribute("aria-invalid", "true");
+    await expect(toast(page)).toHaveCount(0);
+    await text.fill("הטיפול הסתיים לשביעות רצוני");
+    await save.click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("חתימות קודמות שומרות את הנוסח שנחתם");
+    await expect(page.getByRole("status").filter({ hasText: "גרסה חדשה בהדגמה · פעולה מדומה, לא נשמרה" })).toBeVisible();
+    await expect(save).toBeDisabled();
+  });
+
+  test("call types: a duplicate name is blocked; a new type is added, not saved (SE-16)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/types");
+    const input = page.getByLabel("סוג קריאה חדש");
+    await input.fill("תיקון");
+    await page.getByRole("button", { name: "+ הוספת סוג קריאה" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "סוג קריאה בשם הזה כבר קיים" })).toBeVisible();
+    await expect(toast(page)).toHaveCount(0);
+    await input.fill("בדיקה תקופתית");
+    await page.getByRole("button", { name: "+ הוספת סוג קריאה" }).click();
+    await expect(toast(page)).toContainText("הוספת סוג קריאה");
+    const row = page.locator("main table tbody tr").filter({ hasText: "בדיקה תקופתית" });
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.locator("main table tbody tr")).toHaveCount(3);
+    await expect(input).toHaveValue("");
+  });
+});
+
+test.describe("what the browser receives (P1, P9)", () => {
+  onlyInProject("desktop");
+
+  test("no sign-in times anywhere; account and request ids only on the account screens", async ({ page }) => {
+    const html = async (path: string) => (await page.request.get(path)).text();
+    const managerUsers = await html("/dev/demo/office/mgr/users");
+    expect(managerUsers).not.toContain("lastSignIn");
+    expect(managerUsers).toContain("acc-shirel");
+    for (const path of ["/dev/demo/tech", "/dev/demo/tech/profile", "/dev/demo/office/mgr", "/dev/demo/office/creator/settings/techs"]) {
+      const body = await html(path);
+      expect(body, path).not.toContain("acc-creator");
+      expect(body, path).not.toContain("acc-shirel");
+      expect(body, path).not.toContain("areq-");
+    }
   });
 });

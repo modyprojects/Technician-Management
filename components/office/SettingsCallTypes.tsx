@@ -9,7 +9,7 @@
 //   deletes are an unreferenced pickup place and an unused follow-up reason), and SettingsCommands
 //   has no delete for them.
 // Editing is governed by the matrix key `settings` (D35), checked on the server (G-04). Changes show
-// on this screen only; in the UI demo every command is simulated (toast).
+// on this screen only; a row from a simulated command is marked as not saved.
 import { useId, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { Bounded } from "@/features/data-access/common";
@@ -48,24 +48,25 @@ export function SettingsCallTypes({ types }: { types: Bounded<CallTypeSetting> }
     setBusy(true);
     setError(null);
     let failure: string | null = null;
-    let newId: string | null = null;
+    let createdRef: { id: string; isTest: boolean } | null = null;
     let simulated = false;
     try {
       const result = await settings.addCallType(trimmed);
-      if (result.ok) {
-        newId = result.data?.id ?? `new-type-${rows.length + 1}`;
+      if (result.ok && result.data) {
+        createdRef = result.data;
         simulated = result.simulated;
-      } else failure = result.error;
+      } else failure = result.ok ? ADD_FAILED : result.error;
     } catch {
       failure = ADD_FAILED;
     } finally {
       setBusy(false);
     }
-    if (failure || !newId) {
+    if (failure || !createdRef) {
       setError(failure ?? ADD_FAILED);
       return;
     }
-    const created: CallTypeSetting = { id: newId, name: trimmed, active: true, inUse: false, isTest: true };
+    // The id and test marker come from the command (as stored, D47).
+    const created: CallTypeSetting = { id: createdRef.id, name: trimmed, active: true, inUse: false, isTest: createdRef.isTest };
     setRows((r) => [...r, created]);
     if (simulated) setUnsaved((u) => [...u, created.id]);
     setName("");

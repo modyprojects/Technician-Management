@@ -16,18 +16,10 @@ export type DemoAccount = {
   email: string;
   phone: string;
   active: boolean;
-  lastSignInAt: string | null;
+  /** When the account was last deactivated (null: active, or never activated). */
+  deactivatedAt: string | null;
+  /** The technician record; null for office accounts and for the former technician below. */
   technicianId: TechId | null;
-};
-
-const LAST_SIGN_IN: Record<string, string> = {
-  "משתמש יוצר": "2026-10-21T08:15:00+03:00",
-  דורון: "2026-10-20T17:20:00+03:00",
-  שיראל: "2026-10-21T10:02:00+03:00",
-  "נציגה 2": "2026-10-18T09:30:00+03:00",
-  יורם: "2026-10-21T09:07:00+03:00",
-  אדי: "2026-10-21T09:40:00+03:00",
-  שמואל: "2026-10-21T09:52:00+03:00",
 };
 
 const ACCOUNT_ID: Record<string, string> = {
@@ -37,7 +29,15 @@ const ACCOUNT_ID: Record<string, string> = {
   "נציגה 2": "acc-rep2",
 };
 
-/** The office users (USERS), the technicians' accounts (TECHS) and one deactivated account. */
+/**
+ * The office users (USERS), the technicians' accounts (TECHS) and three inactive accounts that
+ * show every D34 activation path in the Manager's scope:
+ * - אורית: a deactivated Customer Service account whose reactivation request waits (areq-2);
+ * - רונית: a Customer Service account created inactive and never activated, with no request: the
+ *   Manager offers "בקשת הפעלת חשבון" (D34 a);
+ * - בני: a deactivated Technician account: the Manager reactivates it at once (D34 c). The demo's
+ *   three technicians are all active, so this former technician has no technician record here.
+ */
 export const ACCOUNTS: readonly DemoAccount[] = [
   ...USERS.map((u) => ({
     id: ACCOUNT_ID[u.name] ?? `acc-${u.email.split("@")[0]}`,
@@ -46,7 +46,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     email: u.email,
     phone: u.phone,
     active: true,
-    lastSignInAt: LAST_SIGN_IN[u.name] ?? null,
+    deactivatedAt: null,
     technicianId: null,
   })),
   ...TECHS.map((t) => ({
@@ -56,7 +56,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     email: t.email,
     phone: t.phone,
     active: true,
-    lastSignInAt: LAST_SIGN_IN[t.name] ?? null,
+    deactivatedAt: null,
     technicianId: t.id,
   })),
   // Deactivated by the Manager (D34 b); a reactivation request waits for the Creator (below).
@@ -67,7 +67,29 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     email: "orit@example.test",
     phone: "050-000-0104",
     active: false,
-    lastSignInAt: "2026-08-30T16:10:00+03:00",
+    deactivatedAt: "2026-09-01T09:00:00+03:00",
+    technicianId: null,
+  },
+  // Created inactive ahead of a start date, not activated yet; no request.
+  {
+    id: "acc-ronit",
+    name: "רונית",
+    role: "cs",
+    email: "ronit@example.test",
+    phone: "050-000-0105",
+    active: false,
+    deactivatedAt: null,
+    technicianId: null,
+  },
+  // A former technician, deactivated by the Manager.
+  {
+    id: "acc-beni",
+    name: "בני",
+    role: "tech",
+    email: "beni@example.test",
+    phone: "050-000-0106",
+    active: false,
+    deactivatedAt: "2026-08-14T16:30:00+03:00",
     technicianId: null,
   },
 ];

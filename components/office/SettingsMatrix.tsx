@@ -7,15 +7,17 @@
 // - the TEMPORARY marker (D51): values stay temporary until the owner approves the final matrix in
 //   Step 10. When every value is temporary the section says so once; when some are approved, each
 //   temporary cell is marked;
-// - cells that wait for an open decision are disabled with "ממתין להחלטה": Customer Service
-//   `cancel` (d08, SE-04) and `usage` for both roles (d13, OF-15);
+// - cells that wait for an open decision are disabled with the pending hint: Customer Service
+//   `cancel` (d08, SE-04) and `usage` for both roles (d13, OF-15); the Creator's `usage` shows the
+//   same hint instead of "✓ 🔒" (a pending capability is never shown as granted);
 // - the demo's "נסה לכבות משהו למנהל, ואז לעבור למעלה לתפקיד 'מנהל'" hint is dropped (no role
 //   switcher, X-02; nothing is saved in the demo).
 // Each toggle runs useCommands().settings.setPermission. The switch moves at once and moves back,
 // with an inline error, when the command fails. DISPLAY ONLY in the demo (G-04): the values decide
-// what the demo shows; nothing is saved. In the app the matrix is changed only through a
-// Creator-only server function and enforced on the server and in the database (D33).
-import { useId, useRef, useState } from "react";
+// what the demo shows; nothing is saved (the page passes that line as `note`). In the app the
+// matrix is changed only through a Creator-only server function and enforced on the server and in
+// the database (D33).
+import { useId, useRef, useState, type ReactNode } from "react";
 import { ACCOUNT_ROLE_LABELS } from "@/features/accounts/data/types";
 import { useCommands } from "@/features/data-access/commands-context";
 import { MATRIX_ROLE_VALUES, type MatrixRole, type PermissionKey } from "@/features/reference/data/types";
@@ -33,7 +35,16 @@ const cellKey = (role: MatrixRole, key: PermissionKey): CellKey => `${role}:${ke
 /** "ל" + role: "למנהל", "לשירות לקוחות" (the demo's aria-label, L946). */
 const forRole = (role: MatrixRole): string => `ל${ACCOUNT_ROLE_LABELS[role]}`;
 
-export function SettingsMatrix({ matrix, editable }: { matrix: PermissionMatrix; editable: boolean }) {
+export function SettingsMatrix({
+  matrix,
+  editable,
+  note,
+}: {
+  matrix: PermissionMatrix;
+  editable: boolean;
+  /** A line about the data source, before the enforcement footer (the UI demo: nothing is saved). */
+  note?: ReactNode;
+}) {
   const { settings } = useCommands();
   const id = useId();
   const [values, setValues] = useState<Readonly<Partial<Record<CellKey, boolean>>>>({});
@@ -124,10 +135,21 @@ export function SettingsMatrix({ matrix, editable }: { matrix: PermissionMatrix;
                     </span>
                   )}
                 </td>
-                <td className="col-fit" style={{ ...CENTER, color: "var(--s-done)", fontWeight: 700 }}>
-                  <span aria-hidden="true">✓ 🔒</span>
-                  <span className="sr-only">קבוע</span>
-                </td>
+                {row.creator.pending ? (
+                  <td className="col-fit" style={CENTER}>
+                    <span aria-hidden="true" style={{ fontWeight: 700, color: "var(--muted)" }}>
+                      —
+                    </span>
+                    <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
+                      {pendingHint(row.creator.pending)}
+                    </span>
+                  </td>
+                ) : (
+                  <td className="col-fit" style={{ ...CENTER, color: "var(--s-done)", fontWeight: 700 }}>
+                    <span aria-hidden="true">✓ 🔒</span>
+                    <span className="sr-only">קבוע</span>
+                  </td>
+                )}
                 {MATRIX_ROLE_VALUES.map((role) => {
                   const cell = row.cells[role];
                   const on = valueOf(role, row.key, cell);
@@ -175,8 +197,8 @@ export function SettingsMatrix({ matrix, editable }: { matrix: PermissionMatrix;
       </div>
       <ActionMessage message={message} style={{ padding: message ? "10px 18px 0" : 0 }} />
       <div className="sub" style={{ padding: "10px 18px 14px", lineHeight: 1.5 }}>
-        בהדגמה הערכים קובעים רק מה מוצג במסכי ההדגמה, ושינוי כאן לא נשמר. באפליקציה המטריצה משתנה רק דרך פעולת שרת של היוצר, כל שינוי
-        נרשם ביומן הביקורת, וההרשאות נאכפות בשרת ובמסד הנתונים.
+        {note && <>{note} </>}
+        המטריצה משתנה רק דרך פעולת שרת של היוצר, כל שינוי נרשם ביומן הביקורת, וההרשאות נאכפות בשרת ובמסד הנתונים.
       </div>
     </section>
   );

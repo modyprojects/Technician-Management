@@ -14,5 +14,10 @@ import { loadAccountAdmin } from "../../users/_accounts";
 export async function loadSettingsUsers(role: OfficeRole): Promise<SettingsUsersTabProps> {
   const creator = role === "creator";
   const [admin, matrix] = await Promise.all([creator ? loadAccountAdmin(role) : null, demoDataAccess.settings.permissionMatrix()]);
-  return { admin, matrix, matrixEditable: creator };
+  return {
+    admin,
+    matrix,
+    matrixEditable: creator,
+    matrixNote: "בהדגמה הערכים קובעים רק מה מוצג במסכי ההדגמה, ושינוי כאן לא נשמר.",
+  };
 }
