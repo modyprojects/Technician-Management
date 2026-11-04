@@ -226,3 +226,108 @@ test.describe("ui-demo-1 review screenshots", () => {
     });
   }
 });
+
+// UI demo, phase D (D53): calendars, closed visits, notifications and profile, next to docs/demo.html.
+const OUT_DEMO_2 = path.resolve("docs/review/ui-demo-2");
+
+/** Full page only when the screen scrolls (same rule as the ui-demo-1 block: TE-32 footer stays put). */
+async function appShot(page: Page, file: string, fullPage = true) {
+  const scrolls = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-fixtures]>div:last-child, .ph-main, .work")].some(
+      (el) => el.scrollHeight > el.clientHeight + 1,
+    ),
+  );
+  const full = fullPage && scrolls;
+  if (full) await page.addStyleTag({ content: UNCLIP_APP });
+  await page.screenshot({ path: file, fullPage: full });
+}
+
+test.describe("ui-demo-2 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`phase D screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize(size);
+      const shot = (name: string, fullPage = true) => appShot(page, path.join(OUT_DEMO_2, `${size.width}-${name}.png`), fullPage);
+
+      for (const [name, url] of [
+        ["office-calendar", "/dev/demo/office/mgr/calendar"],
+        ["office-calendar-week", "/dev/demo/office/mgr/calendar?view=week"],
+        ["office-calendar-month", "/dev/demo/office/mgr/calendar?view=month"],
+        ["office-calendar-cs-filtered", "/dev/demo/office/cs/calendar?tech=y"],
+        ["tech-calendar-day", "/dev/demo/tech/calendar"],
+        ["tech-calendar-week", "/dev/demo/tech/calendar?view=week"],
+        ["tech-calendar-month", "/dev/demo/tech/calendar?view=month"],
+        ["tech-done-list", "/dev/demo/tech/done"],
+        ["tech-done-view", "/dev/demo/tech/done/47800/1"],
+        ["tech-notifications", "/dev/demo/tech/notifications"],
+        ["tech-profile", "/dev/demo/tech/profile"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name);
+      }
+
+      // The drawer is a fixed overlay: a viewport shot, opened from a block as the user would.
+      await openPage(page, "/dev/demo/office/mgr/calendar");
+      await page.locator('a.ocal-ev[data-cal-visit]').first().click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.mouse.move(0, 0);
+      await shot("office-calendar-drawer", false);
+
+      // docs/demo.html, the equivalent screens.
+      const demoShot = async (name: string, fullPage = true) => {
+        await page.addStyleTag({ content: fullPage ? UNCLIP_DEMO_HTML : "#toast{display:none!important}" });
+        await page.screenshot({ path: path.join(OUT_DEMO_2, `${size.width}-demo-${name}.png`), fullPage });
+      };
+
+      await demoAs(page, "mgr");
+      await page.locator('.side .nav button[data-v="cal"]').click();
+      await demoShot("office-calendar");
+      await page.locator('[data-act="calView"][data-v="week"]').click();
+      await demoShot("office-calendar-week");
+      await page.locator('[data-act="calView"][data-v="month"]').click();
+      await demoShot("office-calendar-month");
+      await page.locator('[data-act="calView"][data-v="day"]').click();
+      await page.locator('[data-act="drawer"]').first().click();
+      await demoShot("office-calendar-drawer", false);
+
+      await demoAs(page, "tech");
+      await page.locator('.ph-nav [data-act="techTab"][data-v="cal"]').click();
+      await demoShot("tech-calendar-day");
+      await page.locator('[data-act="techCalView"][data-v="week"]').click();
+      await demoShot("tech-calendar-week");
+      await page.locator('[data-act="techCalView"][data-v="month"]').click();
+      await demoShot("tech-calendar-month");
+
+      await demoAs(page, "tech");
+      await page.locator('[data-act="openNotifs"]').first().click();
+      await demoShot("tech-notifications");
+
+      await demoAs(page, "tech");
+      await page.locator('.ph-nav [data-act="techTab"][data-v="prof"]').click();
+      await demoShot("tech-profile");
+
+      // "הושלמו היום" is empty until a visit is closed (as in the app's fixtures); close one in the
+      // demo to show the list with a row and the read-only view.
+      await demoAs(page, "tech");
+      await page.locator('[data-act="techGo"][data-v="doneList"]').first().click();
+      await demoShot("tech-done-list");
+      await demoAs(page, "tech");
+      await page.locator('[data-act="openVisit"][data-req="48205"][data-n="2"]').first().click();
+      await page.locator('[data-act="arrived"]').click();
+      await page.locator('[data-act="sampleMedia"][data-when="after"]').first().click();
+      await page.locator('[data-in="summary"]').fill("הוחלף אטם בברז, נבדק ותקין.");
+      await page.locator("#finishBtn").click();
+      await page.locator('[data-act="closeChoice"][data-v="done"]').click();
+      await page.locator('[data-in="signer"]').fill("אבי כהן");
+      await sign(page, "#sig");
+      await page.locator("#sendBtn").click();
+      await page.locator('[data-act="techGo"][data-v="doneList"]').first().click();
+      await demoShot("tech-done-list-after-close");
+      await page.locator('[data-act="openDone"]').first().click();
+      await page.mouse.move(0, 0);
+      await demoShot("tech-done-view");
+    });
+  }
+});
