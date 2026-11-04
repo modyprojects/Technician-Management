@@ -1,5 +1,16 @@
 # Work Log (English only)
 
+## 2026-11-04 — PR #5 merged (013fd2f); policy alignment PR (owner-approved to prepare)
+- **PR #5** (UI demo with fictional data, typed data-access layer, D53) squash-merged as `013fd2f` after the owner's explicit approval of head `ed07e3f`.
+- **Policy alignment PR** (branch `claude/policy-d53-alignment`, documentation only). The owner approved preparing it as a dedicated PR (2026-11-04); its merge needs the owner's separate approval. Wording aligned with D53 and D52 rule 4; no relaxation beyond D53; every other rule (go-live gate, D50, D51, Supabase restrictions) unchanged. Until it merges, `docs/decisions.md` takes precedence (`CLAUDE.md` priority order) and D53 is recorded there.
+  - `docs/decisions.md`: D31 row only. Merges follow D53 instead of the owner's approval of each merge; the owner still approves merges that weaken the protected files D53 lists. Verification follows D53 instead of "before and after every Production deployment": Claude Code's read-only checks before each merge and after each Production deployment; the owner's checks are periodic; a failed or inconclusive check stops merges. The required protection state is unchanged. Status: "D53 practice recorded 2026-11-04".
+  - `docs/security.md`: §3 `main` process protection follows D53 merges. §10a keeps the full required protection state and says who checks what and when (D53).
+  - `docs/deployment.md`: workflow line, Production line (the first-deployment approval is marked as historical) and the protection-check line follow D53. Go-live gate, D50 settings, D51 gate, cleanup comparison and pre-launch checklist unchanged.
+  - `.github/pull_request_template.md`: D53 merge line, D53 protection-check line, and a new independent-review line.
+  - `docs/database-schema.md`: migration checklist item 8 follows D52 rule 4 (per migration or precisely scoped batch) and D53 (other remote operations approved per operation; the PR merge follows D53).
+  - `docs/PROJECT-MAP.md`: protected Preview and Production status says who checks and when (D53).
+  - `START-HERE.md`: the database-schema line adds D52 rule 4's batch-coverage and renewed-approval clauses.
+
 ## 2026-11-03/04 — PR #3 and PR #4 merged; D53; UI demo
 - **PR #3 (Step 1 / PR 1.1, documentation)** squash-merged as `1c6926e` after the owner's explicit approval ("merge approved — PR #3 only"). CI run 41632343961 green. Production deployment `dpl_5NYYw1JugbbVYt2nEY7q4wTPfkpN` READY, built from `1c6926e`.
 - **PR #4 (Step 1 / PR 1.2, database test infrastructure)** squash-merged as `76fed5f` after the owner's explicit approval ("merge approved — PR #4 only"). CI run 41639878074 green; `Database tests` run 41639878057 on `main`: 7/7 pass. Production deployment `dpl_6oeCxzJ91Fa1ErogtZgikcmjvFAM` READY, built from `76fed5f`.
