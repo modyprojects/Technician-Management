@@ -24,14 +24,18 @@ Domains:
 - `reference`, with `permissions.ts` display helpers;
 - `notifications`;
 - `profile` (technician profile);
+- `settings` (Settings tabs: permission matrix, technicians, pickup places, follow-up reasons, call types, mail and notifications, invitation template; SE-02 to SE-16);
+- `accounts` (user accounts and the Manager's account requests that the Creator decides; SE-01, D34);
 - `customers` (types only).
 
 ## Aggregates
 ```ts
 type DataAccess = { calls: CallsQueries; visits: VisitsQueries; calendar: CalendarQueries;
                     dashboards: DashboardQueries; reference: ReferenceQueries;
-                    notifications: NotificationsQueries; profile: ProfileQueries };
-type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands };
+                    notifications: NotificationsQueries; profile: ProfileQueries;
+                    settings: SettingsQueries; accounts: AccountsQueries };
+type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands;
+                    settings: SettingsCommands; accounts: AccountCommands };
 ```
 
 ### `DataAccess` (read side)
@@ -40,7 +44,9 @@ Server Components and server functions call it.
 - `visits`: `techDay(techId, date)`, `get(ref)`, `history(ref)`, `doneVisits(techId, date, page?)` ("הושלמו היום", paged), `doneVisit(techId, ref)` (the technician's own closed visit, read-only; null for an open visit or another technician's visit, D14). For a technician, `history` returns only earlier closed visits of the same call (D36).
 - `calendar` (read-only, OF-03, TE-27; matrix key `cal` for the office): `officeDay(date, filter?)` (one lane per technician, visits placed in overlap lanes), `officeWeek(weekOf, filter?)` (Sunday to Thursday), `officeMonth(month, filter?)` (counts per day), `visit(ref)` (the drawer), `techWeek(techId, weekOf)` (day and week views), `techMonth(techId, month)`. Cancelled visits are never on a calendar. A malformed date or month is a `RangeError`.
 - `dashboards`: `officeOverview(date)`, `managerAnalytics(period)`, `technicianDetail(techId, period, query?)`, `csQueue(date)`.
-- `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04).
+- `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04). Office roles are `mgr`, `cs` and `creator`; only `MatrixRole` (`mgr`, `cs`) has matrix values. `permissions("creator")` returns every key true with the status `fixed` (D33: Creator capabilities are fixed, never matrix values).
+- `settings` (Bounded lists, at most 100): `permissionMatrix()` (rows per key with the `mgr` and `cs` cells: value, status, pending decision), `technicians()`, `places()` and `reasons()` (with `inUse`; reasons also `usedThisMonth`), `callTypes()`, `mail()` (D09 fixed recipients; d09, d10, d11 items as `PendingSetting`), `template()` (subject prefix, event-driven sync, labels with `required` and `locked`). The "טופל" text is `reference.approvalText()`.
+- `accounts` (paged): `list({ roles?, page?, limit? })`, `requests({ statuses?, page?, limit? })` (newest first).
 - `notifications`: `list(userId, page?)`, `unreadCount(userId)`, `preferences(userId)` (profile toggles, TE-29).
 - `profile`: `technician(techId, date)`: name, phone, the figures of the week containing `date` and the office phone. Display only.
 
@@ -51,6 +57,8 @@ Client components get it from `useCommands()`.
 - `calls`: `cancelVisit`. OF-09 and SE-04 are PENDING (open decision d08), so no screen calls it yet: the call card shows a disabled placeholder. There is no reschedule or office-note command: neither is in the demo, the spec or `demo-deviations.md`, and scheduling stays in Outlook (OF-03).
 - `visits`: `depart`, `arrive`, `setPickupCollected` (TE-03 "נאסף"), `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
 - `notifications`: `markRead(ids)`, `markAllRead()`, `setPreferences(prefs)` (TE-28, TE-29; the signed-in user's own notifications only).
+- `settings`: `setPermission(role, key, value)` (Creator only; a `creator` role or a pending cell is rejected), `setTechnicianActive`, `addPlace`, `setPlaceActive`, `deletePlace` (unused only), `addReason`, `setReasonActive`, `deleteReason` (unused only), `setFixedText` (a new version, D43), `addCallType`, `setCallTypeActive`, `setTechNotification`, `setTemplateLabelRequired` (a locked D17 label is rejected).
+- `accounts`: `createAccount` (Creator), `requestAccount` (Manager's Customer Service request, pending until the Creator decides), `decideAccountRequest` (approve, or reject with a required reason; pending requests only), `cancelAccountRequest`, `deactivateAccount` (immediate, D34 b), `activateAccount`, `createTechnician` (immediate, D34 c). No password or email-change command (D34 e).
 
 ## `CommandResult`
 ```ts
@@ -71,7 +79,7 @@ type CommandResult<T = void> =
   - It checks input with the same validators and waits 250 ms.
   - Invalid input returns `{ok:false, simulated:true, error}`.
   - Valid input returns `{ok:true, simulated:true, message:"פעולה מדומה · לא נשמר"}` and shows the demo toast.
-  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`.
+  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`. The layout reads, through the layer, what a server would check against stored data (`SimulatedServerState`: places and reasons in use, pending request ids, active and inactive account ids), so a simulated delete of a used reason or a decision on a request that is no longer pending fails as it would on the server.
 - **Page frames.** Every demo page renders through `DemoPage`, `DemoTechFrame` or `DemoOfficeFrame`, which carry the fixture sentinel and the "נתוני בדיקה" strip.
 
 ```tsx
@@ -103,5 +111,5 @@ if (!r.ok) setError(r.error);
 - **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits` and the visit rows of `technicianDetail`.
 - **Calendar lists (`Bounded<T>`):** `CALENDAR_LANE_LIMIT` (30) visits per technician per day, `CALENDAR_WEEK_DAY_LIMIT` (100) per office week column; month views carry counts only; at most one lane per technician (100).
 - **Aggregate lists (`Bounded<T>`)** use fixed caps: `DASHBOARD_LIST_LIMIT` (20) and `OLDEST_FOLLOWUPS_LIMIT` (6). `total` gives the full count, so a screen can say "ועוד X".
-- **Settings lists** (technicians, reasons, places) are capped at 100.
+- **Settings lists** (technicians, reasons, places, call types, template labels) are capped at 100.
 - **Other bounds:** search text is cut to 100 characters, and an analytics period may cover at most 366 days.
