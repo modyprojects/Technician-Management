@@ -4,11 +4,39 @@ import { test, type Page } from "@playwright/test";
 export const OPEN_URL = "http://127.0.0.1:3100";
 export const CLOSED_URL = "http://127.0.0.1:3101";
 
+/** UI demo with fictional data (D53): one address per screen and role, plus the closed-visit card. */
+export const DEMO_PAGES = [
+  "/dev/demo",
+  "/dev/demo/office/mgr",
+  "/dev/demo/office/cs",
+  "/dev/demo/office/mgr/calls",
+  "/dev/demo/office/cs/calls",
+  "/dev/demo/office/mgr/calls/48213",
+  "/dev/demo/office/mgr/calls/48205",
+  "/dev/demo/office/mgr/calls/48140",
+  "/dev/demo/office/mgr/calls/48230",
+  "/dev/demo/office/cs/calls/48205",
+  "/dev/demo/office/mgr/analytics",
+  "/dev/demo/office/cs/analytics",
+  "/dev/demo/tech",
+  "/dev/demo/tech/visit/48213/1",
+  "/dev/demo/tech/visit/48205/2",
+  "/dev/demo/tech/visit/47800/1",
+  "/dev/demo/tech/visit/48213/1/work",
+  "/dev/demo/tech/visit/48205/2/work",
+  "/dev/demo/tech/visit/48213/1/close",
+  "/dev/demo/tech/visit/48205/2/close",
+] as const;
+
+/** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */
+export const FIXTURE_SENTINEL = "FIXTURE-SENTINEL-TM-STEP0";
+
 export const DEV_PAGES = [
   "/dev/showcase",
   "/dev/showcase/tech",
   "/dev/showcase/office",
   "/dev/showcase/sizes",
+  ...DEMO_PAGES,
 ] as const;
 
 export const ALL_PAGES = ["/", "/no-such-page", ...DEV_PAGES] as const;
@@ -53,7 +81,15 @@ export async function horizontalOverflow(page: Page): Promise<string[]> {
       if (el.matches(".scrollx, [data-size-strip]") && !/auto|scroll/.test(style.overflowX)) {
         problems.push(`<${el.tagName.toLowerCase()} class="${el.className}"> should scroll sideways but does not`);
       }
-      if (!insideScroller && /hidden|clip/.test(style.overflowX) && style.textOverflow !== "ellipsis" && el.scrollWidth > el.clientWidth + 1) {
+      // Visually hidden text for screen readers (.sr-only: a 1px clipped box) clips on purpose.
+      const visuallyHidden = el.clientWidth <= 1 && el.clientHeight <= 1 && style.position === "absolute";
+      if (
+        !insideScroller &&
+        !visuallyHidden &&
+        /hidden|clip/.test(style.overflowX) &&
+        style.textOverflow !== "ellipsis" &&
+        el.scrollWidth > el.clientWidth + 1
+      ) {
         problems.push(`<${el.tagName.toLowerCase()} class="${el.className}"> clips ${el.scrollWidth - el.clientWidth}px of content`);
       }
       if (insideScroller) continue;

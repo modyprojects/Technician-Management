@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { CLOSED_URL, DEV_PAGES, OPEN_URL, onlyInProject } from "./helpers";
+import { CLOSED_URL, DEMO_PAGES, DEV_PAGES, OPEN_URL, onlyInProject } from "./helpers";
 
 // One build, two servers: /dev open (local flag) and /dev closed (no flag).
 // Each page has a marker that proves its own content is (or is not) in the response.
+// Every UI-demo page carries the fixture sentinel (DemoPage).
 const MARKERS: Record<(typeof DEV_PAGES)[number], string> = {
   "/dev/showcase": "FIXTURE-SENTINEL",
   "/dev/showcase/tech": "FIXTURE-SENTINEL",
   "/dev/showcase/office": "FIXTURE-SENTINEL",
   "/dev/showcase/sizes": "השוואת גדלים",
+  ...(Object.fromEntries(DEMO_PAGES.map((p) => [p, "FIXTURE-SENTINEL"])) as Record<(typeof DEMO_PAGES)[number], string>),
 };
 
 // Document, RSC navigation, prefetch and prerendered segment requests.
@@ -49,6 +51,21 @@ test.describe("/dev gate", () => {
       });
     }
   }
+
+  test("demo views behind query strings: 404 without content when the gate is closed", async ({ request }) => {
+    for (const path of [
+      "/dev/demo/office/mgr/calls?q=%D7%9B&status=followup&tech=e&page=2",
+      "/dev/demo/office/mgr/analytics?tab=tech&tech=y&filter=cont",
+      "/dev/demo/office/cs/analytics?tab=tech",
+    ]) {
+      const variants: Record<string, string>[] = [{}, { RSC: "1" }, { RSC: "1", "Next-Router-Prefetch": "1" }];
+      for (const headers of variants) {
+        const res = await request.get(`${CLOSED_URL}${path}`, { headers, maxRedirects: 0 });
+        expect(res.status(), path).toBe(404);
+        expect(await res.text(), path).not.toContain("FIXTURE-SENTINEL");
+      }
+    }
+  });
 
   test("trailing slash redirects, then the closed gate still returns 404", async ({ request }) => {
     const res = await request.get(`${CLOSED_URL}/dev/showcase/`, { maxRedirects: 0 });

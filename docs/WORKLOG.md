@@ -28,8 +28,13 @@
 - **UI demo** on branch `claude/ui-demo-1` (fictional data only, `/dev/demo`):
   - done: foundation, calls list and call detail;
   - done: typed data-access layer (Phase A). Its independent review found no must-fix items; the five should-fix findings were addressed in checkpoint `39876b2`;
-  - in progress: the remaining screens.
+  - done: the remaining screens (Phase B, checkpoint `8e6f52d`): office homes, manager dashboards, technician home, visit card, work and close screens.
   - The demo has no Supabase connection, real data or real email; every action is simulated.
+- **UI demo integration** (`claude/ui-demo-1`, 2026-11-04):
+  - Fixes: the "ממתינה לשיבוץ" call is listed first on the manager home (it was capped out of the table); technician names on the manager home link to the dashboard drill-down when the matrix offers it; `TechLanes` takes an id prefix; `closeVisitError` requires "מה צריך בביקור הבא" for "המשך טיפול" (TE-21); simulated commands return `{ok: false, simulated: true, error}` on missing or malformed input instead of throwing; the technician home's bell and "הושלמו ›" say the screen is not in the demo; `README.md` "Start" follows D53.
+  - Tests: every demo route added to the `/dev` gate tests (document, RSC, prefetch and segment variants, plus query-string views); new `tests/e2e/demo.spec.ts` (each route at 390 / 820 / 1440 without page overflow or console errors, sentinel and "נתוני בדיקה" strip, search and filters in the URL, call card, customer service denied dashboards and cancel, simulated depart / arrive / note / cancel / photo / recording / close, signature drawn with pointer events, follow-up note required). The overflow helper now skips visually hidden (`.sr-only`) text.
+  - Results: `eslint` 0 problems; `typecheck` passed; `build` passed (483 pages); `test:ci` 8/8; `scan:bundle` passed (2903 files); local Gitleaks: no leaks; Playwright 550 passed, 0 failed, 674 skipped (tests that run in one screen-size project only, by design).
+  - Screenshots: 63 images in `docs/review/ui-demo-1/` (11 app screens and 10 matching `docs/demo.html` screens at 390 / 820 / 1440), from a local production build; on demand only (`SCREENSHOTS=1`).
 
 ## 2026-11-03 — PR 1.2 (database test infrastructure)
 - Branch `claude/step1-db-tests`; no migration, no change to the remote Supabase project.
