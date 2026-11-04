@@ -445,3 +445,58 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .set-add input { min-width: 0; flex-basis: 100%; }
 }
 /* end settings-ops */
+
+/* intake-backfield */
+/* "זימונים שלא נקלטו" and "חזרו מהשטח" (OF-16, UI demo D53; docs/demo.html has no such screens, so
+   they are built from its language: .kpis, chips, card + .sec head, .note, .pill, .sub, .btn).
+   Work-item lists: one row per invitation or call. A row stacks at phone width and splits into two
+   columns in a wide list (container query on the list), so neither screen scrolls sideways at 390px. */
+/* KPI-like counters: a short row (two or three tiles wide), not stretched across the page. */
+.ib-kpis { max-width: 540px; }
+.ib-kpis > .kpis { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.ib-filter { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ib-filter-label { font-weight: 700; }
+.ib-note { margin: 0 18px 12px; }
+.ib-note > p { margin: 0; }
+.ib-note > p + p { margin-top: 4px; }
+.ib-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); container-type: inline-size; container-name: ib-list; }
+.ib-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px 24px; padding: 14px 18px; border-bottom: 1px solid var(--line2); }
+.ib-item:last-child { border-bottom: 0; }
+.ib-main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ib-head { display: flex; gap: 4px 10px; align-items: center; flex-wrap: wrap; }
+.ib-title { font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.ib-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.ib-mail { overflow-wrap: anywhere; }
+.ib-text { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.ib-text.sub { font-size: 13px; }
+/* The follow-up reason in the "המשך טיפול" colours (the demo's pill('cont', …)). */
+.pill.ib-reason { background: var(--s-cont-bg); color: var(--s-cont-fg); }
+.ib-side { display: flex; gap: 8px 10px; flex-wrap: wrap; align-items: center; }
+.ib-wait { font-size: 13px; font-weight: 700; color: var(--muted); margin-inline-end: auto; }
+/* Red after 7 days, as the demo's "המשך טיפול – הכי ותיקים" table (L889). */
+.ib-wait.ib-late { color: var(--danger); }
+/* What to fix in an unparsed invitation: kind pill, Settings label, the value as read. */
+.ib-problems { min-width: 0; align-self: start; background: var(--tint); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; }
+.ib-ptitle { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ib-plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.6; }
+.pill.ib-kind { background: var(--danger-bg); color: var(--danger-fg); }
+.ib-val { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; font-weight: 700; overflow-wrap: anywhere; }
+.ib-exp { display: block; }
+.ib-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+@container ib-list (min-width: 640px) {
+  .ib-item.ib-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ib-item.ib-act { grid-template-columns: minmax(0, 1fr) auto; }
+  .ib-act .ib-side { flex-direction: column; flex-wrap: nowrap; align-items: stretch; align-self: start; min-width: 200px; }
+  .ib-act .ib-wait { margin-inline-end: 0; text-align: center; }
+}
+/* end intake-backfield */
+
+/* customer-card */
+/* The customer card's five status counters (OF-16): one row from about 700px (the demo's 150px
+   minimum wraps them 4+1 at 820px), three plus two compact tiles at phone width. */
+.cu-kpis > .kpis { grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); }
+@container stage (max-width: 520px) {
+  .cu-kpis > .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cu-kpis .kpi { padding: 10px 12px; }
+}
+/* end customer-card */

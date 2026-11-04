@@ -83,9 +83,16 @@ export async function CsHome({ role }: { role: OfficeRole }) {
           label="קריאות בהמשך טיפול שצריכות ביקור חדש"
           emptyText="אין קריאות בהמשך טיפול שמחכות לביקור"
           footer={
-            <Link className="lnk" href={links.callsWith("followup")}>
-              לרשימה המלאה ›
-            </Link>
+            <>
+              {links.backFromField && (
+                <Link className="lnk" href={links.backFromField}>
+                  למסך חזרו מהשטח ›
+                </Link>
+              )}
+              <Link className="lnk" href={links.callsWith("followup")}>
+                לרשימה המלאה ›
+              </Link>
+            </>
           }
         />
       </DashboardSection>
@@ -105,6 +112,13 @@ export async function CsHome({ role }: { role: OfficeRole }) {
           callHref={links.call}
           label="ביקורים שנסגרו לאחרונה"
           emptyText="לא נסגרו ביקורים היום וביום העבודה הקודם"
+          footer={
+            links.backFromField ? (
+              <Link className="lnk" href={links.backFromField}>
+                המשך טיפול · למסך חזרו מהשטח ›
+              </Link>
+            ) : undefined
+          }
         />
       </DashboardSection>
     </>

@@ -9,7 +9,7 @@
 ## Layout
 | Path | Content |
 |---|---|
-| `features/data-access/common.ts` | Shared building blocks. Pure, no data or I/O, safe on server and client.<br>Types: `IsoDate`, `HourMinute`, `IsoTimestamp`, `TestMarker`, `Bounded<T>`, `Page<T>`, `PageRequest`, `CommandResult<T>`.<br>Limits: `MAX_PAGE_LIMIT` (100), `DEFAULT_PAGE_LIMIT` (40), `MAX_QUERY_LENGTH` (100).<br>Helpers: clamp and validation helpers, `boundedOf`, `pageOf`, `filterListValues` (an optional list filter: none or every value means no filter; a filter with no known value matches nothing, never every record) |
+| `features/data-access/common.ts` | Shared building blocks. Pure, no data or I/O, safe on server and client.<br>Types: `IsoDate`, `HourMinute`, `IsoTimestamp`, `TestMarker`, `Bounded<T>`, `Page<T>`, `PageRequest`, `CommandResult<T>`.<br>Limits: `MAX_PAGE_LIMIT` (100), `DEFAULT_PAGE_LIMIT` (40), `MAX_QUERY_LENGTH` (100).<br>Helpers: clamp and validation helpers, `boundedOf`, `pageOf`, `filterListValues` (an optional list filter: none or every value means no filter; a filter with no known value matches nothing, never every record), `ownValue` (an in-memory record by key, own keys only: "constructor" or "toString" read as not found) |
 | `features/data-access/types.ts` | The `DataAccess` and `Commands` aggregates |
 | `features/data-access/commands-context.tsx` | `"use client"`. `CommandsProvider` and `useCommands()`, which throws when no provider wraps the component. Generic: no demo or fixture knowledge |
 | `features/<domain>/data/types.ts` | DTOs and enums of the domain |
@@ -19,28 +19,33 @@
 Domains:
 - `calls`, with `search-params.ts` mapping the URL `?q&status&tech&page` to and from a filter;
 - `visits`;
-- `calendar` (read models of the office and technician calendars; separate from the intake service in `features/calendar/ingestion`), with `search-params.ts` mapping `?view&date&tech&req&n` (office) and `?view&date` (technician);
+- `calendar` (read models of the office and technician calendars, and the intake read model "זימונים שלא נקלטו"; separate from the intake service in `features/calendar/ingestion`), with `search-params.ts` mapping `?view&date&tech&req&n` (office) and `?view&date` (technician);
 - `dashboards`;
 - `reference`, with `permissions.ts` display helpers;
 - `notifications`;
 - `profile` (technician profile);
 - `settings` (Settings tabs: permission matrix, technicians, pickup places, follow-up reasons, call types, mail and notifications, invitation template; SE-02 to SE-16);
 - `accounts` (user accounts and the Manager's account requests that the Creator decides; SE-01, D34);
-- `customers` (types only).
+- `customers` ("לקוחות" and the customer card, OF-16), with `search-params.ts` mapping `?q&page`;
+- `products` ("מוצרים", PR-01 to PR-07, D19), with `search-params.ts` mapping `?q&page`.
 
 ## Aggregates
 ```ts
 type DataAccess = { calls: CallsQueries; visits: VisitsQueries; calendar: CalendarQueries;
                     dashboards: DashboardQueries; reference: ReferenceQueries;
                     notifications: NotificationsQueries; profile: ProfileQueries;
-                    settings: SettingsQueries; accounts: AccountsQueries };
+                    settings: SettingsQueries; accounts: AccountsQueries;
+                    customers: CustomersQueries; products: ProductsQueries; intake: IntakeQueries };
 type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands;
-                    settings: SettingsCommands; accounts: AccountCommands };
+                    settings: SettingsCommands; accounts: AccountCommands; products: ProductCommands };
 ```
 
 ### `DataAccess` (read side)
 Server Components and server functions call it.
-- `calls`: `list(filter)` (paged, plus status counts), `get(req)`, `customerHistory(req, page?)`.
+- `calls`: `list(filter)` (paged, plus status counts), `get(req)` (the customer carries its card id), `customerHistory(req, page?)`, `backFromField({ asOf, technicianId?, page?, limit? })` ("חזרו מהשטח", OF-16: one row per call in "המשך טיפול" (D38: no open visit, latest closed visit "המשך טיפול"), that visit with reason, next-visit note, a summary excerpt of at most 140 characters, technician, customer with id, city, product, days waiting and cancelled later visits; oldest first; a next visit takes the call off the list, a cancelled one does not; `outlookConnected` is false until Microsoft 365 is connected (D23), so the "new Outlook invitation" action stays disabled with a hint, OF-08 pattern).
+- `customers` (matrix key `calls`): `list({ q?, page?, limit? })` (name, customer number, phone with or without dashes, city; by `latestVisitDate`, the newest call's latest or next visit, newest first, as the calls list orders calls ("ביקור אחרון / הבא"); paged), `get(id)` (details from the latest invitation, the latest visit's address (D39), status counts, the calls (at most 40, newest first; more → the calls list searched by customer number) and the products (at most 20; returned products first) with `cameBack` and the returns, and `returnWindowDays`, the window the server used, which the card shows). A customer id is never the customer number. A product "came back" when the customer's next call for the same SKU opened at most `PRODUCT_RETURN_WINDOW_DAYS` (30, TEMPORARY, owner to confirm, pending d31) after the earlier call's latest closed visit.
+- `products`: `list({ q?, page?, limit? })` (by SKU; SKU (normalized, PR-07), name, brand, supplier), `get(sku)` (input normalized; with the customer count and the latest 20 calls), `brands()`, `suppliers()` (Bounded, active and inactive). A row carries `brandId`, `supplierId`, `firstSeen` (the creating invitation: request, visit, date, source), `callCount` and `version` (D44).
+- `intake`: `unparsedInvitations(page?)` ("זימונים שלא נקלטו", IN-03, IN-04): unresolved invitations, newest first, each with received time, source, subject, organizer, attendee (and the matched technician), the invitation's date and times, the request number and customer name when read, the problems (`missing`, `unknown-place`, `invalid` with the Settings label and the sanitized value; an unknown SKU is never a problem, IN-02) and `repMail` (pending d09, never shown as sent). Event-driven intake (D08); this layer only reads. The server gate of `intake` and of `calls.backFromField` waits for open decision #15 (d23): deny by default; the demo's fixed rule (`workQueueScreensOffered`) is not a grant.
 - `visits`: `techDay(techId, date)`, `get(ref)`, `history(ref)`, `doneVisits(techId, date, page?)` ("הושלמו היום", paged), `doneVisit(techId, ref)` (the technician's own closed visit, read-only; null for an open visit or another technician's visit, D14). For a technician, `history` returns only earlier closed visits of the same call (D36).
 - `calendar` (read-only, OF-03, TE-27; matrix key `cal` for the office): `officeDay(date, filter?)` (one lane per technician, visits placed in overlap lanes), `officeWeek(weekOf, filter?)` (Sunday to Thursday), `officeMonth(month, filter?)` (counts per day), `visit(ref)` (the drawer), `techWeek(techId, weekOf)` (day and week views), `techMonth(techId, month)`. Cancelled visits are never on a calendar. A malformed date or month is a `RangeError`.
 - `dashboards`: `officeOverview(date)`, `managerAnalytics(period)`, `technicianDetail(techId, period, query?)`, `csQueue(date)`.
@@ -58,6 +63,7 @@ Client components get it from `useCommands()`.
 - `visits`: `depart`, `arrive`, `setPickupCollected` (TE-03 "נאסף"), `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
 - `notifications`: `markRead(ids)`, `markAllRead()`, `setPreferences(prefs)` (TE-28, TE-29; the signed-in user's own notifications only).
 - `settings`: `setPermission(role, key, value)` (Creator only; a `creator` role or a pending cell is rejected), `setTechnicianActive`, `addPlace`, `setPlaceActive`, `deletePlace` (unreferenced only), `addReason`, `setReasonActive`, `deleteReason` (user-added and never used only), `setFixedText` (a new version, D43), `addCallType`, `setCallTypeActive`, `setTechNotification`, `setTemplateLabelRequired` (a locked D17 label is rejected). The add commands return `CreatedSetting` (`{ id, isTest }` as stored).
+- `products`: `update({ sku, expectedVersion, name?, brandId?, supplierId? })` (PR-06, matrix key `products`): never the SKU; `null` clears a brand or supplier; rejected for no change, an unknown product, a stale version, or an unknown or inactive option (`productEditError`, which runs `productUpdateError`, `productVersionError` and `productOptionError` in that order). Only the products page nests the simulated state that makes it pass (`productsState`); with nothing stored the edit fails ("המוצר לא נמצא", deny by default).
 - `accounts`: `createAccount` (Creator; returns `{ account }`), `requestAccount` (Manager's Customer Service request, pending until the Creator decides; returns `{ request }`; the implementation checks the target's current role against stored data, `accountRequestTargetError`), `decideAccountRequest` (approve, or reject with a required reason; pending requests only), `cancelAccountRequest`, `deactivateAccount` (immediate, D34 b; never one's own account), `activateAccount`, `createTechnician` (immediate, D34 c; returns `{ account, technician }`, two ids). No password or email-change command (D34 e).
 - **Created records come from the command.** A screen shows the record a command returns (ids, `isTest`, times as stored) and never builds ids or test markers itself, so the Supabase adapter can replace the simulated one without changing a component.
 
@@ -75,14 +81,16 @@ type CommandResult<T = void> =
   - It starts with `import "server-only"`, so a client component that imports it fails the build. Client components receive DTOs or props, never the adapter.
   - It validates and clamps inputs as a server adapter would, bounds every list, and marks every DTO as test data.
   - Dashboard figures come from `_data/aggregations.ts`, calendar read models and the profile week figures from `_data/calendar.ts`, and fixture-to-DTO mapping from `_data/mappers.ts`.
-- **`app/dev/demo/_data/params.ts`** provides the build-time `generateStaticParams` values. They are not part of `DataAccess`, because listing every key would be a full-table scan in production.
+  - Customers come from `_data/customers.ts` (one customer per customer number, id `cu-<number>`, the returns rule), the catalogue rows from `_data/products.ts` (first-seen invitation, brand and supplier ids, versions; `reference.ts` adds `AUTO_PRODUCTS`, `BRANDS` and `SUPPLIERS`), and the unparsed invitations from `_data/intake.ts` (one per problem kind, all from the simulator). `seed.ts` adds seven earlier calls of five hand-written customers, dated before the dashboards' first October week, so customers have repeat and returned products.
+- **`app/dev/demo/_data/params.ts`** provides the build-time `generateStaticParams` values (also `officeCustomerParams()`: every customer card for every office role). They are not part of `DataAccess`, because listing every key would be a full-table scan in production.
 - **`app/dev/demo/_components/SimulatedCommands.tsx`** provides `SimulatedCommandsProvider`.
   - It checks input with the same validators and waits 250 ms.
   - Invalid input returns `{ok:false, simulated:true, error}`.
   - Valid input returns `{ok:true, simulated:true, message:"פעולה מדומה · לא נשמר"}` and shows the demo toast.
-  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`, with the empty server state. The Settings tabs that delete (places, reasons) and the account screens nest a second provider with what their commands check against stored data, read through the layer and scoped to that screen (`SimulatedServerState`, built by `office/[role]/_simulatedState.ts`: places and reasons with `inUse` and `userAdded`; the accounts and requests in the viewer's scope; the signed-in account). So a simulated delete of a used or initial reason, a decision on a request that is no longer pending, or a request about an account outside the Manager's scope fails as it would on the server, and no other page carries account or request ids (deny by default: with the empty state these checks fail).
+  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`, with the empty server state. The Settings tabs that delete (places, reasons), the account screens and "מוצרים" nest a second provider with what their commands check against stored data, read through the layer and scoped to that screen (`SimulatedServerState`, built by `office/[role]/_simulatedState.ts`: places and reasons with `inUse` and `userAdded`; the accounts and requests in the viewer's scope; the signed-in account; the listed products' versions and the brands' and suppliers' active state (`productsState`)). So a simulated delete of a used or initial reason, a decision on a request that is no longer pending, or a request about an account outside the Manager's scope fails as it would on the server, and no other page carries account or request ids (deny by default: with the empty state these checks fail).
   - Records it creates are test data with `example.test` addresses only (`testAccountEmailError`, D47), and it returns them as the real commands will.
 - **Route loaders.** `office/[role]/users/_accounts.ts` (account administration) and `office/[role]/settings/[tab]/_users.ts` (Settings › "משתמשים והרשאות") read through `demoDataAccess` and return the DTO props of `components/office/AccountAdminScreen` and `SettingsUsersTab`. Two demo stand-ins, to replace in production: the signed-in account is the viewpoint's demo user (`VIEWPOINTS[role].who`), and the Manager's own requests are filtered in memory from the bounded list. The production adapter takes the user from the session (G-03) and scopes `accounts.requests` to the requester on the server, so the count is exact.
+- **Who sees which screen (display only, G-04).** `app/dev/demo/_data/roles.ts` decides the sidebar and each page's no-access card from `reference.permissions(role)`: "לקוחות" and the customer card with `calls`, "מוצרים" with `products` (customer service has no read-only products list: the spec defines the screen by its edit; product facts stay on the call and customer cards). "זימונים שלא נקלטו" and "חזרו מהשטח" have no matrix key yet (open decision #15, board ref d23): `workQueueScreensOffered()` is a TEMPORARY fixed rule for every office role, and both screens say so with `pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION)`. No matrix key is invented.
 - **Page frames.** Every demo page renders through `DemoPage`, `DemoTechFrame` or `DemoOfficeFrame`, which carry the fixture sentinel and the "נתוני בדיקה" strip.
 
 ```tsx
@@ -112,7 +120,8 @@ if (!r.ok) setError(r.error);
 - **Known gap** (Phase A review): non-normalised paths and dynamic `import()` can evade these rules. No such case occurs in the code; normalising paths is an optional hardening.
 
 ## Bounded lists (`docs/security.md`: query bounds)
-- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits`, the visit rows of `technicianDetail`, `accounts.list` and `accounts.requests`.
+- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `calls.backFromField`, `customers.list`, `products.list`, `intake.unparsedInvitations`, `reference.products`, `notifications.list`, `visits.doneVisits`, the visit rows of `technicianDetail`, `accounts.list` and `accounts.requests`.
+- **Card lists (`Bounded<T>`):** the customer card's calls (`CUSTOMER_CALLS_LIMIT`, 40) and products and returns (`CUSTOMER_PRODUCTS_LIMIT`, 20), a product's calls (`PRODUCT_CALLS_LIMIT`, 20), brands and suppliers (100).
 - **Calendar lists (`Bounded<T>`):** `CALENDAR_LANE_LIMIT` (30) visits per technician per day, `CALENDAR_WEEK_DAY_LIMIT` (100) per office week column; month views carry counts only; at most one lane per technician (100).
 - **Aggregate lists (`Bounded<T>`)** use fixed caps: `DASHBOARD_LIST_LIMIT` (20) and `OLDEST_FOLLOWUPS_LIMIT` (6). `total` gives the full count, so a screen can say "ועוד X".
 - **Settings lists** (technicians, reasons, places, call types, template labels) are capped at 100.

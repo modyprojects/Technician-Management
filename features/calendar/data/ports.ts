@@ -4,7 +4,7 @@
 // the technician from the session (G-03). The office calendar is matrix key `cal` (D33; display
 // only on screens, enforced on the server, G-04).
 // Dates are validated: a malformed date or month is a RangeError (a page passes only parsed values).
-import type { IsoDate } from "@/features/data-access/common";
+import type { IsoDate, PageRequest } from "@/features/data-access/common";
 import type { TechnicianId } from "@/features/reference/data/types";
 import type { VisitRef } from "@/features/visits/data/types";
 import type {
@@ -15,6 +15,7 @@ import type {
   OfficeCalendarWeek,
   TechMonth,
   TechWeek,
+  UnparsedInvitationsPage,
   YearMonth,
 } from "./types";
 
@@ -31,4 +32,15 @@ export interface CalendarQueries {
   techWeek(techId: TechnicianId, weekOf: IsoDate): Promise<TechWeek | null>;
   /** The technician's month view; null for an unknown technician. */
   techMonth(techId: TechnicianId, month: YearMonth): Promise<TechMonth | null>;
+}
+
+/**
+ * Intake read model (separate from the calendars and from the ingestion service, which writes the
+ * rows). Which matrix key gates "זימונים שלא נקלטו" is open decision #15 (d23); the spec lists
+ * Customer Service, Manager and Creator. Server gate pending #15: deny by default; the demo's
+ * fixed rule (app/dev/demo/_data/roles.ts workQueueScreensOffered) is not a grant.
+ */
+export interface IntakeQueries {
+  /** Unresolved invitations the ingestion service could not ingest, newest first, paged (default 40, at most 100). */
+  unparsedInvitations(page?: PageRequest): Promise<UnparsedInvitationsPage>;
 }

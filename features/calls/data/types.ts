@@ -1,9 +1,9 @@
 // Service-call DTOs: the office calls list and call card. Pure types and enums (no data).
 // See features/data-access/common.ts.
-import type { HourMinute, IsoDate, Page, TestMarker } from "@/features/data-access/common";
-import type { Customer } from "@/features/customers/data/types";
+import type { HourMinute, IsoDate, Page, PageRequest, TestMarker } from "@/features/data-access/common";
+import type { Customer, CustomerId } from "@/features/customers/data/types";
 import type { Product, TechnicianId, TechnicianRef } from "@/features/reference/data/types";
-import type { VisitRecord, VisitSource, VisitStatus } from "@/features/visits/data/types";
+import type { VisitRecord, VisitRef, VisitSource, VisitStatus } from "@/features/visits/data/types";
 
 export type { Page };
 
@@ -56,7 +56,8 @@ export type CallDetail = TestMarker & {
   /** Warranty text as received; "" when not given (TE-08: shown as "לא צוין"). */
   warranty: string;
   status: CallStatus;
-  customer: Customer;
+  /** The customer, with the id of the customer card ("לקוחות", OF-16). */
+  customer: Customer & { id: CustomerId };
   product: Product;
   /** Fault description. */
   problem: string;
@@ -90,4 +91,64 @@ export type CallsPage = Page<CallSummary> & {
   statusCounts: Record<CallStatus, number>;
   /** Every call the viewer may see ("הכל"). */
   allCount: number;
+};
+
+// ---------------------------------------------------------------------------------------------
+// "חזרו מהשטח" (back from field; spec office screens, OF-16)
+
+/** Longest summary excerpt a back-from-field row carries (the call card has the full summary). */
+export const SUMMARY_EXCERPT_MAX = 140;
+
+/**
+ * A visit that came back from the field as "המשך טיפול" and still needs a new visit. The rule
+ * (D38): the call's service-call status is "followup", that is, the call has no open visit
+ * (scheduled, en route or in progress) and its latest closed visit by visit number is "המשך
+ * טיפול"; the row is that visit. Once a next visit exists (a new invitation was ingested) the call
+ * is "open" and the row leaves the list; a later visit that was cancelled does not count as a next
+ * visit (`cancelledLaterVisits`), so the call is back on the list.
+ */
+export type BackFromFieldItem = TestMarker &
+  VisitRef & {
+    /** Task number ("מספר משימה") of the visit. */
+    task: number;
+    /** The visit's date and its end time (closed by the technician). */
+    date: IsoDate;
+    endAt: HourMinute | null;
+    /** Invitation source of the visit (SIM-14). */
+    source: VisitSource;
+    /** "סיבת המשך טיפול". */
+    reason: string;
+    /** "מה צריך בביקור הבא" (TE-21); "" when none. */
+    nextNote: string;
+    /** The visit summary cut to SUMMARY_EXCERPT_MAX characters ("…" added); "" when none. */
+    summaryExcerpt: string;
+    technician: TechnicianRef;
+    customer: Pick<Customer, "name" | "number" | "isTest"> & { id: CustomerId };
+    /** City of the visit (D39: the address is stored per visit). */
+    city: string;
+    product: Pick<Product, "sku" | "name" | "isTest">;
+    /** Handling representative's name. */
+    representative: string;
+    /** Whole days from the visit's date to `asOf`. */
+    daysWaiting: number;
+    /** Later visits of the call that were cancelled. */
+    cancelledLaterVisits: number;
+  };
+
+/** Back-from-field query: the date the waiting days count to, and optional technician and paging. */
+export type BackFromFieldQuery = PageRequest & {
+  /** "Today" in Asia/Jerusalem (G-01); a malformed date is a RangeError. */
+  asOf: IsoDate;
+  /** Technician of the visit; none = every technician. */
+  technicianId?: TechnicianId;
+};
+
+/** Oldest first (the longest wait first, as the office home's follow-up queue), paged. */
+export type BackFromFieldPage = Page<BackFromFieldItem> & {
+  /**
+   * Whether Microsoft 365 is connected (D23). The row action is a NEW Outlook invitation; until
+   * the connection exists the screen shows it disabled with a visible hint and never fakes an
+   * Outlook link (OF-08 pattern).
+   */
+  outlookConnected: boolean;
 };

@@ -55,3 +55,27 @@ export function callsListHref(pathname: string, state: CallsListState): string {
   const qs = sp.toString();
   return qs ? `${pathname}?${qs}` : pathname;
 }
+
+// ---------------------------------------------------------------------------------------------
+// "חזרו מהשטח" URL state (?tech=&page=)
+
+export type BackFromFieldState = {
+  /** "all" or a technician id. */
+  tech: string;
+  page: number;
+};
+
+export function parseBackFromFieldState(sp: SearchParamsLike | URLSearchParams): BackFromFieldState {
+  const get = (k: string) => (sp instanceof URLSearchParams ? (sp.get(k) ?? undefined) : first(sp[k]));
+  const tech = get("tech");
+  return { tech: tech && tech !== ALL && isTechnicianId(tech) ? tech : ALL, page: clampPage(get("page")) };
+}
+
+/** `pathname?tech=…&page=…` with defaults left out. */
+export function backFromFieldHref(pathname: string, state: Partial<BackFromFieldState> = {}): string {
+  const sp = new URLSearchParams();
+  if (state.tech && state.tech !== ALL && isTechnicianId(state.tech)) sp.set("tech", state.tech);
+  if (state.page !== undefined && Number.isInteger(state.page) && state.page > 1) sp.set("page", String(state.page));
+  const qs = sp.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}

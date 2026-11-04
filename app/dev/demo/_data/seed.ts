@@ -118,7 +118,7 @@ export function seedCalls(): Call[] {
         const type = rnd() < 0.85 ? "תיקון" : "התקנה";
         const desc = pick(p.issues);
         const warranty = rnd() < 0.8 ? "כן" : "לא";
-        const rep = rnd() < 0.8 ? "שיראל" : "נציגה 2";
+        const rep = rnd() < 0.8 ? "שיראל" : "הדס";
         const reason = cont ? wpick(REASONS).name : null;
         const summary = cont ? "נדרש המשך טיפול, הלקוח עודכן." : "בוצע תיקון, נבדק ותקין.";
         const rec = rnd() < 0.55 ? 20 + Math.floor(rnd() * 60) : 0;
@@ -259,8 +259,59 @@ export function seedCalls(): Call[] {
   calls.push(
     C({
       req: "48230", customer: "חיים אוחיון", phone: "052-000-6060", city: "בת ים", street: "בלפור 12", floor: "4", apt: "11",
-      sku: "KT-1800", desc: "ידית רופפת.", rep: "נציגה 2",
+      sku: "KT-1800", desc: "ידית רופפת.", rep: "הדס",
       visits: [V({ tech: "e", date: TODAY, start: "12:00", end: "13:00", status: "cancel" })],
+    }),
+  );
+
+  // ADD (OF-16 customer card "products that came back", SIM-16, SIM-17, PR-04): earlier calls of
+  // five hand-written customers (same customer number and contact details), dated before the
+  // dashboards' week of 1 October so October's figures, queues and the demo's screens stay as they
+  // were. With PRODUCT_RETURN_WINDOW_DAYS (30): משפחת לוי's KT-2041 came back (47690 on 23.09,
+  // 48213 on 21.10: 28 days; 47490 → 47690 is 34 days, not a return); אבי כהן's BT-1120 came back
+  // (47700 on 24.09, 48205 on 19.10: 25 days) and his SH-510 did not; נועה ברק's WC-300 returned
+  // only after 98 days (not a return); דוד פרץ and מוטי אזולאי show products created from an
+  // invitation (MX-410, TB-75; brand or supplier "לא הוזן").
+  const again = (of: string, o: Partial<Call> & Pick<Call, "req" | "sku" | "desc" | "visits">): Call => {
+    const b = calls.find((c) => c.req === of) as Call;
+    return C({
+      customer: b.customer, customerNo: b.customerNo, phone: b.phone, phone2: b.phone2, city: b.city, street: b.street,
+      building: b.building, floor: b.floor, apt: b.apt, arrival: b.arrival, ...o,
+    });
+  };
+  const closedDone = (tech: Visit["tech"], date: string, summary: string, signer: string, parts: string[] = []): Visit =>
+    V({
+      tech, date, start: "10:00", end: "11:30", status: "done", departAt: "09:34", arriveAt: "10:03", endAt: "10:51",
+      summary, media: [img("before"), img()], signer, parts, signedText: FIXED_TEXT,
+    });
+  calls.push(
+    again("48190", {
+      req: "47380", sku: "WC-300", desc: "ההדחה לא נעצרת.",
+      visits: [closedDone("s", "2026-07-15", "הוחלף מנגנון מילוי, נבדק ותקין.", "נועה ברק", ["מנגנון מילוי WC-300"])],
+    }),
+    again("48205", {
+      req: "47470", sku: "SH-510", desc: "המים לא מתחממים.",
+      visits: [closedDone("s", "2026-08-12", "כוונן הקרטוש, המים מתחממים.", "אבי כהן")],
+    }),
+    again("48213", {
+      req: "47490", sku: "KT-2041", desc: "טפטוף.",
+      visits: [closedDone("y", "2026-08-20", "הוחלף אטם, אין טפטוף.", "משפחת לוי")],
+    }),
+    again("48198", {
+      req: "47610", sku: "MX-410", desc: "הנשלף לא ננעל.", warranty: "",
+      visits: [closedDone("e", "2026-09-10", "הוחלף תפס הנעילה, הנשלף ננעל.", "דוד פרץ")],
+    }),
+    again("48233", {
+      req: "47680", sku: "TB-75", desc: "טפטוף מהסוללה.", warranty: "לא",
+      visits: [closedDone("e", "2026-09-22", "הוחלף אטם בסוללה, אין טפטוף.", "מוטי אזולאי")],
+    }),
+    again("48213", {
+      req: "47690", sku: "KT-2041", desc: "הנשלף לא חוזר למקום.",
+      visits: [closedDone("y", "2026-09-23", "הוחלף קפיץ הנשלף, חוזר למקום.", "משפחת לוי", ["ראש נשלף KT-2041"])],
+    }),
+    again("48205", {
+      req: "47700", sku: "BT-1120", desc: "המפצל לא מעביר.",
+      visits: [closedDone("s", "2026-09-24", "נוקה המפצל, עובר בין המקלחת לפיה.", "אבי כהן")],
     }),
   );
   return calls;

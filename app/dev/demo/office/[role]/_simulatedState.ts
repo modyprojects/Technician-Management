@@ -1,10 +1,11 @@
 // What the simulated commands of one office screen check against stored data, as the server
 // would (SimulatedServerState): read through the data-access layer, scoped to that screen. Only
-// the Settings tabs that delete (places, reasons) and the account screens (Settings › "משתמשים
-// והרשאות", "ניהול משתמשים") receive it; every other demo page gets the empty state, so no other
-// page carries account or request ids. The real server checks these itself, in the database,
-// under the caller's session.
+// the Settings tabs that delete (places, reasons), the account screens (Settings › "משתמשים
+// והרשאות", "ניהול משתמשים") and "מוצרים" (products, brands, suppliers) receive it; every other
+// demo page gets the empty state, so no other page carries account or request ids. The real
+// server checks these itself, in the database, under the caller's session.
 import type { AccountAdminData } from "@/components/office/AccountAdminParts";
+import type { ProductListItem } from "@/features/products/data/types";
 import type { SettingsSection } from "@/features/settings/data/types";
 import type { SimulatedServerState } from "../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../_data/adapter";
@@ -35,4 +36,19 @@ export async function settingsTabState(tab: SettingsSection): Promise<SimulatedS
     default:
       return {};
   }
+}
+
+/**
+ * "מוצרים" (PR-06): the products on the page (version and name) and every brand and supplier, so a
+ * simulated edit with a stale version or an unknown or inactive option fails as on the server.
+ */
+export async function productsState(products: readonly ProductListItem[]): Promise<SimulatedServerState> {
+  const [brands, suppliers] = await Promise.all([demoDataAccess.products.brands(), demoDataAccess.products.suppliers()]);
+  return {
+    products: {
+      items: Object.fromEntries(products.map((p) => [p.sku, { version: p.version, name: p.name }])),
+      brands: Object.fromEntries(brands.items.map((b) => [b.id, { active: b.active }])),
+      suppliers: Object.fromEntries(suppliers.items.map((x) => [x.id, { active: x.active }])),
+    },
+  };
 }

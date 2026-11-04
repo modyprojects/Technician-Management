@@ -8,10 +8,28 @@
 // not part of the layer: params.ts reads the fixtures for them.
 import "server-only";
 import { normalizeCalendarFilter, isYearMonth } from "@/features/calendar/data/validate";
-import type { YearMonth } from "@/features/calendar/data/types";
-import { normalizeCallFilter } from "@/features/calls/data/validate";
-import type { CallsPage, CallStatus } from "@/features/calls/data/types";
+import { UNPARSED_VALUE_MAX, type UnparsedInvitation, type UnparsedProblem, type YearMonth } from "@/features/calendar/data/types";
+import { normalizeBackFromFieldQuery, normalizeCallFilter } from "@/features/calls/data/validate";
+import { SUMMARY_EXCERPT_MAX, type BackFromFieldItem, type CallsPage, type CallStatus } from "@/features/calls/data/types";
+import {
+  CUSTOMER_CALLS_LIMIT,
+  CUSTOMER_PRODUCTS_LIMIT,
+  type CustomerDetail,
+  type CustomerProduct,
+  type CustomerSummary,
+} from "@/features/customers/data/types";
+import { isCustomerId, normalizeCustomerListQuery } from "@/features/customers/data/validate";
 import { boundedOf, filterListValues, isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
+import {
+  isNormalizedSku,
+  normalizeSku,
+  PRODUCT_CALLS_LIMIT,
+  PRODUCT_RETURN_WINDOW_DAYS,
+  type ProductDetail,
+  type ProductListItem,
+  type ProductOption,
+} from "@/features/products/data/types";
+import { normalizeProductListQuery } from "@/features/products/data/validate";
 import type { DataAccess } from "@/features/data-access/types";
 import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
 import {
@@ -47,13 +65,30 @@ import type { ClosedVisitDetail, FieldTimeKey, TechDay, VisitDetail, VisitRef } 
 import { visitRefError } from "@/features/visits/data/validate";
 import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
 import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
+import { CUSTOMERS, customerIdOf, customerProducts, findCustomer, openedOn, type DemoCustomer } from "./customers";
 import { daysBetween, TODAY } from "./dates";
-import { calendarVisitDetail, callDetail, callSummary, historyItem, techDayVisit, techRef, visitDetail } from "./mappers";
+import { UNPARSED_INVITATIONS, type DemoUnparsedInvitation, type DemoUnparsedProblem } from "./intake";
+import { calendarVisitDetail, callDetail, callSummary, historyItem, productDto, techDayVisit, techRef, visitDetail } from "./mappers";
+import { CATALOGUE_BY_SKU, findCatalogueProduct, type DemoCatalogueProduct } from "./products";
 import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
 import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
 import { ACCOUNT_REQUESTS, ACCOUNTS, accountById, type DemoAccount, type DemoAccountRequest } from "./accounts";
-import { FIXED_TEXT, ME, OFFICE_PHONE, PLACES, prod, PRODUCTS, REASONS, TECH_IDS, TECHS } from "./reference";
+import {
+  BRANDS,
+  CATALOGUE,
+  FIXED_TEXT,
+  ME,
+  OFFICE_PHONE,
+  PLACES,
+  prod,
+  REASONS,
+  SUPPLIERS,
+  TECH_IDS,
+  TECHS,
+  USERS,
+  type ProductOptionRecord,
+} from "./reference";
 import {
   CALL_TYPE_SETTINGS,
   callTypeInUse,
@@ -70,7 +105,7 @@ import {
   TEMPLATE_LABELS,
 } from "./settings";
 import { callStatus, isClosedVisit, isOpenVisit } from "./status";
-import type { Call, TechId } from "./types";
+import type { Call, TechId, Visit } from "./types";
 
 const TEST = true as const;
 
@@ -116,7 +151,7 @@ const validRef = (ref: VisitRef): boolean => visitRefError(ref) === null;
 const settingsList = <T>(xs: readonly T[]): T[] => xs.slice(0, MAX_PAGE_LIMIT);
 
 /** Products by SKU (the catalogue order of a database query). */
-const PRODUCTS_BY_SKU = [...PRODUCTS].sort((a, b) => a.sku.localeCompare(b.sku));
+const PRODUCTS_BY_SKU = [...CATALOGUE].sort((a, b) => a.sku.localeCompare(b.sku));
 
 /** Notifications newest first. */
 const NOTIFICATIONS_NEWEST_FIRST = [...NOTIFICATIONS].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -178,6 +213,185 @@ const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   isTest: TEST,
 });
 
+const emptyStatusCounts = (): Record<CallStatus, number> => ({ open: 0, awaiting: 0, followup: 0, resolved: 0 });
+
+/** The search of a free-text field list: case-insensitive; a phone typed without dashes also matches. */
+function matchesText(fields: readonly string[], phone: string, query: string): boolean {
+  const q = query.toUpperCase();
+  if (!q) return true;
+  if (fields.some((x) => x.toUpperCase().includes(q))) return true;
+  const digits = digitsOf(q);
+  return /^[\d\s-]+$/.test(q) && digits.length >= 3 && digitsOf(phone).includes(digits);
+}
+
+/** "לקוחות" search (OF-05): name, customer number, phone and city of the customer's latest call. */
+const customerMatches = (x: DemoCustomer, q: string): boolean =>
+  matchesText([x.latest.customer, x.number, x.latest.phone, x.latest.city], x.latest.phone, q);
+
+function customerSummary(x: DemoCustomer): CustomerSummary {
+  const c = x.latest;
+  return {
+    id: x.id,
+    number: x.number,
+    name: c.customer,
+    phone: c.phone,
+    city: c.city,
+    callCount: x.calls.length,
+    activeCallCount: x.calls.filter((call) => callStatus(call) !== "resolved").length,
+    latestVisitDate: x.latestVisitDate,
+    returnedProductCount: customerProducts(x).filter((p) => p.returns.length > 0).length,
+    isTest: TEST,
+  };
+}
+
+function customerDetail(x: DemoCustomer): CustomerDetail {
+  const c = x.latest;
+  const statusCounts = emptyStatusCounts();
+  for (const call of x.calls) statusCounts[callStatus(call)] += 1;
+  const products: CustomerProduct[] = customerProducts(x)
+    .map((p) => ({
+      product: productDto(p.sku),
+      callCount: p.calls.length,
+      firstDate: openedOn(p.calls[0] as Call),
+      lastDate: openedOn(p.calls[p.calls.length - 1] as Call),
+      cameBack: p.returns.length > 0,
+      returns: boundedOf(p.returns, CUSTOMER_PRODUCTS_LIMIT),
+    }))
+    // Products that came back first, then the latest call first.
+    .sort((a, b) => Number(b.cameBack) - Number(a.cameBack) || b.lastDate.localeCompare(a.lastDate) || a.product.sku.localeCompare(b.product.sku));
+  const calls = boundedOf(x.calls, CUSTOMER_CALLS_LIMIT);
+  return {
+    id: x.id,
+    number: x.number,
+    name: c.customer,
+    phone: c.phone,
+    phone2: c.phone2,
+    latestAddress: { city: c.city, street: c.street, building: c.building, floor: c.floor, apt: c.apt },
+    statusCounts,
+    calls: { ...calls, items: calls.items.map(callSummary) },
+    products: boundedOf(products, CUSTOMER_PRODUCTS_LIMIT),
+    returnWindowDays: PRODUCT_RETURN_WINDOW_DAYS,
+    isTest: TEST,
+  };
+}
+
+/** "מוצרים" search (PR-07): SKU (normalized), name, brand and supplier. */
+function productMatches(x: DemoCatalogueProduct, q: string): boolean {
+  if (!q) return true;
+  const sku = normalizeSku(q);
+  const p = x.product;
+  return p.sku.includes(sku) || [p.name, p.brand, p.sup].some((f) => f.toUpperCase().includes(q.toUpperCase()));
+}
+
+function productListItem(x: DemoCatalogueProduct): ProductListItem {
+  const p = x.product;
+  const first = x.calls[0];
+  const firstVisit = first?.visits[0];
+  return {
+    sku: p.sku,
+    name: p.name,
+    brand: p.brand,
+    supplier: p.sup,
+    brandId: x.brandId,
+    supplierId: x.supplierId,
+    firstSeen: first && firstVisit ? { req: first.req, n: firstVisit.n, date: firstVisit.date, source: firstVisit.source, isTest: TEST } : null,
+    callCount: x.calls.length,
+    version: x.version,
+    isTest: TEST,
+  };
+}
+
+const productOption = (o: ProductOptionRecord): ProductOption => ({ id: o.id, name: o.name, active: o.on, isTest: TEST });
+
+const productOptions = (list: readonly ProductOptionRecord[]) => {
+  const result = boundedOf([...list].sort((a, b) => a.name.localeCompare(b.name, "he")), MAX_PAGE_LIMIT);
+  return { ...result, items: result.items.map(productOption) };
+};
+
+/** Untrusted invitation text, cut to UNPARSED_VALUE_MAX characters. */
+const invitationText = (text: string): string => (text.length > UNPARSED_VALUE_MAX ? `${text.slice(0, UNPARSED_VALUE_MAX)}…` : text);
+
+const TEMPLATE_ORDER = new Map(TEMPLATE_LABELS.map((l, i) => [l.key, i]));
+
+const templateLabel = (field: (typeof TEMPLATE_LABELS)[number]["key"]): string => TEMPLATE_LABELS.find((l) => l.key === field)?.label ?? field;
+
+function unparsedProblem(p: DemoUnparsedProblem): UnparsedProblem {
+  switch (p.kind) {
+    case "missing":
+      return { kind: "missing", field: p.field, label: templateLabel(p.field) };
+    case "unknown-place":
+      return { kind: "unknown-place", field: "collectFrom", label: templateLabel("collectFrom"), value: invitationText(p.value) };
+    default:
+      return { kind: "invalid", field: p.field, label: templateLabel(p.field), value: invitationText(p.value), expected: p.expected };
+  }
+}
+
+function unparsedInvitation(x: DemoUnparsedInvitation): UnparsedInvitation {
+  const t = TECHS.find((tech) => tech.email === x.attendee);
+  const problems = x.problems
+    .map(unparsedProblem)
+    .sort((a, b) => (TEMPLATE_ORDER.get(a.field) ?? 0) - (TEMPLATE_ORDER.get(b.field) ?? 0));
+  return {
+    id: x.id,
+    receivedAt: x.receivedAt,
+    source: x.source,
+    subject: invitationText(x.subject),
+    organizer: { email: x.organizer, name: USERS.find((u) => u.email === x.organizer)?.name ?? null },
+    attendee: { email: x.attendee, technician: t ? { id: t.id, name: t.name, color: t.color } : null },
+    event: { date: x.date, start: x.start, end: x.end },
+    requestNumber: x.req,
+    customerName: x.customer === null ? null : invitationText(x.customer),
+    problems,
+    // IN-04 / SE-12: the email to the rep waits for open decision #6 (d09); never shown as sent.
+    repMail: pending("d09"),
+    isTest: TEST,
+  };
+}
+
+/** Unresolved unparsed invitations, newest first. */
+const UNPARSED_NEWEST_FIRST = [...UNPARSED_INVITATIONS].sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
+
+/** D23: Microsoft 365 is not connected (no live connection until the owner approves it). */
+const OUTLOOK_CONNECTED = false;
+
+const excerptOf = (text: string): string => {
+  const t = text.trim();
+  return t.length > SUMMARY_EXCERPT_MAX ? `${t.slice(0, SUMMARY_EXCERPT_MAX)}…` : t;
+};
+
+/**
+ * "חזרו מהשטח" rows (features/calls/data/types BackFromFieldItem): calls in "המשך טיפול" (D38: no
+ * open visit, latest closed visit "המשך טיפול") with that visit, oldest first.
+ */
+const BACK_FROM_FIELD: readonly { c: Call; v: Visit }[] = CALLS.filter((c) => callStatus(c) === "followup")
+  .map((c) => {
+    const closed = c.visits.filter(isClosedVisit);
+    return { c, v: closed[closed.length - 1] as Visit };
+  })
+  .sort((a, b) => (a.v.date + (a.v.endAt ?? "")).localeCompare(b.v.date + (b.v.endAt ?? "")) || a.c.req.localeCompare(b.c.req));
+
+function backFromFieldItem({ c, v }: { c: Call; v: Visit }, asOf: IsoDate): BackFromFieldItem {
+  const p = prod(c.sku);
+  return {
+    req: c.req,
+    n: v.n,
+    task: v.task,
+    date: v.date,
+    endAt: v.endAt,
+    source: v.source,
+    reason: v.reason ?? "",
+    nextNote: v.nextNote,
+    summaryExcerpt: excerptOf(v.summary),
+    technician: techRef(v.tech),
+    customer: { id: customerIdOf(c.customerNo), name: c.customer, number: c.customerNo, isTest: TEST },
+    city: c.city,
+    product: { sku: p.sku, name: p.name, isTest: TEST },
+    representative: c.rep,
+    daysWaiting: Math.max(0, daysBetween(v.date, asOf)),
+    cancelledLaterVisits: c.visits.filter((x) => x.n > v.n && x.status === "cancel").length,
+    isTest: TEST,
+  };
+}
 
 export const demoDataAccess: DataAccess = {
   calls: {
@@ -208,6 +422,12 @@ export const demoDataAccess: DataAccess = {
       const c = isRecordKey(req) ? findCall(req) : undefined;
       const result = pageOf(c ? customerCalls(c) : [], page?.page, page?.limit);
       return { ...result, items: result.items.map(callSummary) };
+    },
+    async backFromField(query) {
+      const f = normalizeBackFromFieldQuery(query);
+      const rows = f.technicianId ? BACK_FROM_FIELD.filter((x) => x.v.tech === f.technicianId) : BACK_FROM_FIELD;
+      const page = pageOf(rows, f.page, f.limit);
+      return { ...page, items: page.items.map((x) => backFromFieldItem(x, f.asOf)), outlookConnected: OUTLOOK_CONNECTED };
     },
   },
 
@@ -458,6 +678,56 @@ export const demoDataAccess: DataAccess = {
       const matches = statuses ? REQUESTS_NEWEST_FIRST.filter((r) => statuses.includes(r.status)) : REQUESTS_NEWEST_FIRST;
       const page = pageOf(matches, query?.page, query?.limit);
       return { ...page, items: page.items.map(accountRequest) };
+    },
+  },
+
+  customers: {
+    async list(query) {
+      const f = normalizeCustomerListQuery(query);
+      const page = pageOf(
+        CUSTOMERS.filter((x) => customerMatches(x, f.q)),
+        f.page,
+        f.limit,
+      );
+      return { ...page, items: page.items.map(customerSummary) };
+    },
+    async get(id) {
+      if (!isCustomerId(id)) return null;
+      const x = findCustomer(id);
+      return x ? customerDetail(x) : null;
+    },
+  },
+
+  products: {
+    async list(query) {
+      const f = normalizeProductListQuery(query);
+      const page = pageOf(
+        CATALOGUE_BY_SKU.filter((x) => productMatches(x, f.q)),
+        f.page,
+        f.limit,
+      );
+      return { ...page, items: page.items.map(productListItem) };
+    },
+    async get(sku): Promise<ProductDetail | null> {
+      const key = normalizeSku(sku);
+      if (!isNormalizedSku(key)) return null;
+      const x = findCatalogueProduct(key);
+      if (!x) return null;
+      const calls = boundedOf(sortCalls(x.calls), PRODUCT_CALLS_LIMIT);
+      return { ...productListItem(x), customerCount: x.customerCount, calls: { ...calls, items: calls.items.map(callSummary) } };
+    },
+    async brands() {
+      return productOptions(BRANDS);
+    },
+    async suppliers() {
+      return productOptions(SUPPLIERS);
+    },
+  },
+
+  intake: {
+    async unparsedInvitations(page) {
+      const result = pageOf(UNPARSED_NEWEST_FIRST, page?.page, page?.limit);
+      return { ...result, items: result.items.map(unparsedInvitation) };
     },
   },
 

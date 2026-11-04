@@ -1,7 +1,11 @@
 // Demo route builders (app/dev/demo/**). Client-safe. Use these instead of hand-written paths.
 import { officeCalendarHref, techCalendarHref, type OfficeCalendarState } from "@/features/calendar/data/search-params";
 import type { CalendarView } from "@/features/calendar/data/types";
+import { backFromFieldHref, type BackFromFieldState } from "@/features/calls/data/search-params";
+import { customersListHref, type CustomersListState } from "@/features/customers/data/search-params";
+import type { CustomerId } from "@/features/customers/data/types";
 import type { IsoDate } from "@/features/data-access/common";
+import { productsListHref, type ProductsListState } from "@/features/products/data/search-params";
 import type { SettingsSection } from "@/features/settings/data/types";
 import type { OfficeRole } from "./types";
 
@@ -34,6 +38,22 @@ export const demoHref = {
   settings: (role: OfficeRole, section: SettingsSection = "users"): string => `${DEMO_BASE}/office/${role}/settings/${section}`,
   /** "ניהול משתמשים": the Manager's account administration (D34, a fixed capability, SE-03). */
   users: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/users`,
+  /** "לקוחות" (OF-16, matrix key `calls`): `?q&page` (features/customers/data/search-params); defaults left out. */
+  customers: (role: OfficeRole, state?: Partial<CustomersListState>): string =>
+    customersListHref(`${DEMO_BASE}/office/${role}/customers`, state),
+  /** The customer card (OF-16): every call of the customer and the products that came back. */
+  customer: (role: OfficeRole, id: CustomerId): string => `${DEMO_BASE}/office/${role}/customers/${encodeURIComponent(id)}`,
+  /** "זימונים שלא נקלטו" (OF-16, IN-03, IN-04; matrix key pending open #15, d23); `?page=` from page 2. */
+  unparsed: (role: OfficeRole, page?: number): string =>
+    page !== undefined && Number.isInteger(page) && page > 1
+      ? `${DEMO_BASE}/office/${role}/unparsed?page=${page}`
+      : `${DEMO_BASE}/office/${role}/unparsed`,
+  /** "חזרו מהשטח" (OF-16; matrix key pending open #15, d23): `?tech&page` (features/calls/data/search-params). */
+  backFromField: (role: OfficeRole, state?: Partial<BackFromFieldState>): string =>
+    backFromFieldHref(`${DEMO_BASE}/office/${role}/back-from-field`, state),
+  /** "מוצרים" (PR-06, matrix key `products`): `?q&page` (features/products/data/search-params). */
+  products: (role: OfficeRole, state?: Partial<ProductsListState>): string =>
+    productsListHref(`${DEMO_BASE}/office/${role}/products`, state),
   /** Technician home (today). */
   tech: (): string => `${DEMO_BASE}/tech`,
   /** Technician visit card (details, previous visits). */

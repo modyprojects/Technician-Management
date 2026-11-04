@@ -2,7 +2,7 @@
 // (simulated now, the server later; the server always re-validates).
 import { clampLimit, clampPage, isIsoDate, isRecordKey, normalizeQuery } from "@/features/data-access/common";
 import { isTechnicianId } from "@/features/reference/data/validate";
-import { CALL_STATUS_VALUES, isCallStatus, type CallFilter } from "./types";
+import { CALL_STATUS_VALUES, isCallStatus, type BackFromFieldQuery, type CallFilter } from "./types";
 
 export const CANCEL_REASON_MAX = 300;
 
@@ -32,3 +32,15 @@ export function cancelReasonError(reason: string | undefined): string | null {
 }
 
 export const requestNumberError = (req: string): string | null => (isRecordKey(req) ? null : "מספר פנייה לא תקין");
+
+/** The back-from-field query with every field validated; a malformed `asOf` is a RangeError. */
+export function normalizeBackFromFieldQuery(query: BackFromFieldQuery): Required<Pick<BackFromFieldQuery, "asOf" | "page" | "limit">> &
+  Pick<BackFromFieldQuery, "technicianId"> {
+  if (!query || !isIsoDate(query.asOf)) throw new RangeError("Invalid date");
+  return {
+    asOf: query.asOf,
+    technicianId: isTechnicianId(query.technicianId) ? query.technicianId : undefined,
+    page: clampPage(query.page),
+    limit: clampLimit(query.limit),
+  };
+}

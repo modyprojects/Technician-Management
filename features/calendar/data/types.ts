@@ -6,10 +6,11 @@
 // Every list is bounded (docs/security.md: query bounds): visits per technician per day and per
 // day column are capped (below); month views carry counts only; lanes are at most one per
 // technician (MAX_PAGE_LIMIT).
-import type { Bounded, HourMinute, IsoDate, TestMarker } from "@/features/data-access/common";
+import type { Bounded, HourMinute, IsoDate, IsoTimestamp, Page, TestMarker } from "@/features/data-access/common";
 import type { Customer } from "@/features/customers/data/types";
 import type { Product, TechnicianId, TechnicianRef } from "@/features/reference/data/types";
 import type { VisitRef, VisitSource, VisitStatus } from "@/features/visits/data/types";
+import type { PendingSetting, TemplateFieldKey } from "@/features/settings/data/types";
 
 /** Calendar month "YYYY-MM". */
 export type YearMonth = string;
@@ -198,3 +199,68 @@ export type TechMonth = {
   days: { date: IsoDate; count: number }[];
   total: number;
 };
+
+// ---------------------------------------------------------------------------------------------
+// Intake read model: "זימונים שלא נקלטו" (unparsed invitations; spec "Invitation intake", IN-01 to
+// IN-06, OF-16). Rows come from the ingestion service's error records
+// (`calendar_ingestion_errors`, docs/database-schema.md); this layer only reads them. Intake is
+// event-driven (Graph change notifications later, the simulator now; D08, D24), never polling.
+
+/** Why an invitation was not ingested (spec: a missing required field or an unknown pickup place; an invalid value). */
+export const UNPARSED_PROBLEM_KINDS = ["missing", "unknown-place", "invalid"] as const;
+export type UnparsedProblemKind = (typeof UNPARSED_PROBLEM_KINDS)[number];
+
+/**
+ * One problem of an invitation. `label` is the template label as configured in Settings › תבנית
+ * זימון (for example "מספר לקוח"); `value` is the text read from the invitation, sanitized and cut
+ * to UNPARSED_VALUE_MAX characters. Calendar text is untrusted data: screens render it as plain
+ * text only, never as HTML or links.
+ * An unknown SKU is NEVER a problem: the product is created (IN-02, D19, PR-04).
+ */
+export type UnparsedProblem =
+  | { kind: "missing"; field: TemplateFieldKey; label: string }
+  | { kind: "unknown-place"; field: "collectFrom"; label: string; value: string }
+  | {
+      kind: "invalid";
+      field: TemplateFieldKey;
+      label: string;
+      value: string;
+      /** What the field accepts, in Hebrew (for example "כן / לא / כן · עד MM/YYYY"). */
+      expected: string;
+    };
+
+/** Longest invitation text a row carries (subject, values). */
+export const UNPARSED_VALUE_MAX = 120;
+
+/**
+ * Email to the handling representative about an unparsed invitation (IN-04, SE-12): PENDING open
+ * decision #6 (d09). A screen shows it as pending, never as sent. Later states (sent, failed) join
+ * this union when the owner decides.
+ */
+export type UnparsedRepMailState = PendingSetting;
+
+/** An invitation the ingestion service could not ingest (unresolved). */
+export type UnparsedInvitation = TestMarker & {
+  id: string;
+  /** When the invitation (or its latest change) was received. */
+  receivedAt: IsoTimestamp;
+  /** Where it came from: Microsoft 365 ("outlook", later) or the invitation simulator (SIM-14, "🧪 זימון בדיקה"). */
+  source: VisitSource;
+  /** Subject as received (starts with the "[קריאת שירות]" prefix), cut to UNPARSED_VALUE_MAX. */
+  subject: string;
+  /** The organizer: the representative who sent the invitation; `name` null when the address is not an office user. */
+  organizer: { email: string; name: string | null };
+  /** The attendee; `technician` is the technician matched by the Outlook email in Settings, null when none matches. */
+  attendee: { email: string; technician: Pick<TechnicianRef, "id" | "name" | "color"> | null };
+  /** Date and times from the invitation itself (never the body). */
+  event: { date: IsoDate; start: HourMinute; end: HourMinute };
+  /** Values that were read, to recognise the invitation; null when missing or unreadable. */
+  requestNumber: string | null;
+  customerName: string | null;
+  /** Every problem found (at least one), in template label order. */
+  problems: UnparsedProblem[];
+  repMail: UnparsedRepMailState;
+};
+
+/** Unresolved invitations, newest first, paged. A corrected invitation (same event) that ingests resolves its row. */
+export type UnparsedInvitationsPage = Page<UnparsedInvitation>;

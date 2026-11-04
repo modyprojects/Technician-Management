@@ -380,3 +380,45 @@ test.describe("ui-demo-3 review screenshots", () => {
     });
   }
 });
+
+// UI demo, phase F (D53): "לקוחות" and the customer card, "מוצרים", "זימונים שלא נקלטו" and "חזרו
+// מהשטח" as the Manager, and "לקוחות" as customer service. docs/demo.html has none of these screens
+// (OF-16 ADD), so there is no demo counterpart; the call card with its new customer link is shot
+// at 1440 px only.
+const OUT_DEMO_4 = path.resolve("docs/review/ui-demo-4");
+
+test.describe("ui-demo-4 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`phase F screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize(size);
+      const shot = (name: string, fullPage = true) => appShot(page, path.join(OUT_DEMO_4, `${size.width}-${name}.png`), fullPage);
+
+      for (const [name, url] of [
+        ["customers", "/dev/demo/office/mgr/customers"],
+        ["customer-card", "/dev/demo/office/mgr/customers/cu-298747"],
+        ["products", "/dev/demo/office/mgr/products"],
+        ["unparsed", "/dev/demo/office/mgr/unparsed"],
+        ["back-from-field", "/dev/demo/office/mgr/back-from-field"],
+        ["cs-customers", "/dev/demo/office/cs/customers"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name);
+      }
+
+      // The product edit form open (simulated command; nothing is saved).
+      await openPage(page, "/dev/demo/office/mgr/products");
+      await page.getByRole("button", { name: "עריכה · ברז מטבח נשלף (KT-2041)" }).click();
+      await expect(page.getByRole("form", { name: "עריכת המוצר KT-2041" })).toBeVisible();
+      await shot("products-edit");
+
+      if (size.width === 1440) {
+        await openPage(page, "/dev/demo/office/mgr/calls/48213");
+        await expect(page.getByRole("link", { name: "לכרטיס הלקוח · משפחת לוי" })).toBeVisible();
+        await shot("call-card-customer-link");
+      }
+    });
+  }
+});

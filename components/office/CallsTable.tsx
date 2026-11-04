@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { MouseEvent } from "react";
 import { CallStatusPill } from "@/components/ui/CallStatusPill";
-import { TestBadge, VISIT_SOURCE_LABELS } from "@/components/ui/TestBadge";
+import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { CallStatus } from "@/features/calls/data/types";
 import type { VisitSource } from "@/features/visits/data/types";
 
@@ -55,17 +55,6 @@ export type CallsTableRow = {
 
 // Short columns: centred and sized to their content (G-07).
 const SHORT = "col-center col-fit";
-
-/** The visit source as a compact icon; the full label is its accessible name and tooltip. */
-function SourceIcon({ source }: { source: VisitSource }) {
-  const [icon, ...words] = VISIT_SOURCE_LABELS[source].split(" ");
-  const label = words.join(" ");
-  return (
-    <span role="img" aria-label={label} title={label}>
-      {icon}
-    </span>
-  );
-}
 
 export function CallsTable({
   rows,
@@ -158,7 +147,7 @@ export function CallsTable({
                 </td>
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
-                  <SourceIcon source={r.source} /> {r.when}
+                  <VisitSourceIcon source={r.source} /> {r.when}
                   {r.whenCancelled && (
                     <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
                       <span className="oc-sep"> · </span>בוטל

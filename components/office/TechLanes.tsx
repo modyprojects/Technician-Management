@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { StatusPill, VISIT_STATUSES } from "@/components/ui/StatusPill";
-import { VISIT_SOURCE_LABELS } from "@/components/ui/TestBadge";
+import { VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { LaneVisit, TechnicianLane } from "@/features/dashboards/data/types";
 import type { TechnicianId } from "@/features/reference/data/types";
-import type { VisitSource } from "@/features/visits/data/types";
 
 // Technicians' day, one card per technician (docs/demo.html dashGen() "עכשיו בשטח", L882: colour
 // edge, name, current-status pill or "פנוי", current / next customer, "היום: X/Y הושלמו"), plus
@@ -18,17 +17,6 @@ const toMin = (t: string): number => {
   const [h = 0, m = 0] = t.split(":").map(Number);
   return h * 60 + m;
 };
-
-/** The visit source as a compact icon; the full label is its accessible name (SIM-14). */
-function SourceIcon({ source }: { source: VisitSource }) {
-  const [icon, ...words] = VISIT_SOURCE_LABELS[source].split(" ");
-  const label = words.join(" ");
-  return (
-    <span role="img" aria-label={label} title={label} className="od-visit-src">
-      {icon}
-    </span>
-  );
-}
 
 /** The day from 08:00 to 18:00 (wider when a visit falls outside), whole hours. */
 function dayRange(visits: readonly LaneVisit[]): { from: number; to: number } {
@@ -148,7 +136,7 @@ export function TechLanes({
                         {` · ${v.city}`}
                         {v.n > 1 && ` · ביקור ${v.n}`}
                       </span>
-                      <SourceIcon source={v.source} />
+                      <VisitSourceIcon className="od-visit-src" source={v.source} />
                       <StatusPill status={v.status} />
                     </Link>
                   </li>

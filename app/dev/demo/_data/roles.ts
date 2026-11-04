@@ -7,6 +7,7 @@
 // Real enforcement is on the server and in the database (G-04).
 import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
+import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
 import {
   isOfficeRole,
@@ -15,7 +16,7 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
-import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
+import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
 
@@ -47,7 +48,59 @@ export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: s
   creator: { name: VIEWPOINTS.creator.who, roleLabel: VIEWPOINTS.creator.short, avatarColor: VIEWPOINTS.creator.color },
 };
 
-export type OfficeNavKey = "home" | "cal" | "calls" | "analytics" | "users" | "settings";
+export type OfficeNavKey =
+  | "home"
+  | "cal"
+  | "calls"
+  | "customers"
+  | "unparsed"
+  | "back"
+  | "analytics"
+  | "products"
+  | "users"
+  | "settings";
+
+/**
+ * TEMPORARY, reversible (open decision #15, board ref d23): which matrix key gates "זימונים שלא
+ * נקלטו" and "חזרו מהשטח", and whether both are in the first release, is the owner's decision. Until
+ * then the demo offers both to the roles the spec lists (Customer Service, Manager, Creator: every
+ * office role) as a fixed rule, never a matrix key, and each screen shows WORK_QUEUE_ACCESS_HINT.
+ * The screen shows the decision's number (#15), not its board ref: "d23" next to the approved
+ * D23 (Microsoft 365) would read as the same decision. Display only (G-04): the server stays
+ * deny-by-default until #15 is decided; this rule is not a grant.
+ */
+export const WORK_QUEUE_SCREENS_DECISION = { number: 15, boardRef: "d23" } as const satisfies {
+  number: number;
+  boardRef: OpenDecisionId;
+};
+
+/** Whether the role's screens offer "זימונים שלא נקלטו" and "חזרו מהשטח" (the temporary rule above). */
+export const workQueueScreensOffered = (role: OfficeRole): boolean => OFFICE_ROLES.includes(role);
+
+/** "א", "א וב", "א, ב וג" (Hebrew list). */
+function hebrewList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} ו${items[items.length - 1] as string}`;
+}
+
+/**
+ * The visible line both work-queue screens show while #15 is open (CLAUDE.md: clearly labelled
+ * temporary behaviour). The roles come from the rule itself, so the line cannot drift from it.
+ */
+export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה זמנית: ${hebrewList(
+  OFFICE_ROLES.filter(workQueueScreensOffered).map((r) => VIEWPOINTS[r].short),
+)} · ${pendingDecisionHint(`#${WORK_QUEUE_SCREENS_DECISION.number}`)}`;
+
+/** "לקוחות" and the customer card: matrix key `calls` (spec office screens). Display only. */
+export const customersOffered = (permissions: RolePermissions): boolean => offers(permissions, "calls");
+
+/**
+ * "מוצרים" (PR-06): matrix key `products` (Manager on, Customer Service off by default; the
+ * Creator fixed). The spec defines this screen by its edit capability, so a role without
+ * `products` has no products screen (product facts stay on the call and customer cards); a
+ * read-only list for `calls` would be a new screen the spec does not list. Display only.
+ */
+export const productsOffered = (permissions: RolePermissions): boolean => offers(permissions, "products");
 
 /**
  * The Settings tabs a role's screens offer. Display only (G-04): the server checks the Creator
@@ -86,8 +139,12 @@ export const officeHomeLabel = (permissions: RolePermissions): string => (offers
 
 /**
  * Office sidebar items, from the role's values (read through
- * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730). Display only:
- * it hides menu items, it does not protect routes (G-04): each page checks what it offers itself.
+ * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730) with the spec's
+ * new screens (OF-02) in the order of the spec's office screens table: "לקוחות", "זימונים שלא
+ * נקלטו" and "חזרו מהשטח" after "קריאות", "מוצרים" after "דשבורד". Display only: it hides menu
+ * items, it does not protect routes (G-04): each page checks what it offers itself.
+ * - "לקוחות": with `calls`. "זימונים שלא נקלטו" and "חזרו מהשטח": every office role, a TEMPORARY
+ *   fixed rule (open #15, d23; workQueueScreensOffered). "מוצרים": with `products`.
  * - "משתמשים" (account administration, D34): the Manager only (a fixed capability, SE-03); the
  *   Creator administers accounts on Settings › משתמשים והרשאות.
  * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; a matrix role only
@@ -100,7 +157,13 @@ export function officeNav(role: OfficeRole, permissions: RolePermissions): (Offi
   ];
   if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים", href: demoHref.officeCalendar(role) });
   items.push({ key: "calls", label: "קריאות", href: demoHref.calls(role) });
+  if (customersOffered(permissions)) items.push({ key: "customers", label: "לקוחות", href: demoHref.customers(role) });
+  if (workQueueScreensOffered(role)) {
+    items.push({ key: "unparsed", label: "זימונים שלא נקלטו", href: demoHref.unparsed(role) });
+    items.push({ key: "back", label: "חזרו מהשטח", href: demoHref.backFromField(role) });
+  }
   if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics(role) });
+  if (productsOffered(permissions)) items.push({ key: "products", label: "מוצרים", href: demoHref.products(role) });
   if (accountAdminScope(role) === "cs-tech") items.push({ key: "users", label: "משתמשים", href: demoHref.users(role) });
   const tabs = settingsTabsOffered(role, permissions);
   if (tabs[0]) items.push({ key: "settings", label: "הגדרות", href: demoHref.settings(role, tabs[0]) });

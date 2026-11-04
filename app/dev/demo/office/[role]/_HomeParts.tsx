@@ -4,6 +4,7 @@ import type { CallStatus } from "@/features/calls/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { dayName, ddmm } from "../../_data/dates";
+import { workQueueScreensOffered } from "../../_data/roles";
 import { demoHref } from "../../_data/routes";
 
 // Shared parts of the office home screens (manager "לוח בקרה", customer service "בית").
@@ -15,6 +16,11 @@ export function homeLinks(role: OfficeRole) {
     calls: (): string => demoHref.calls(role),
     /** The calls list filtered by one service-call status (?status=…). */
     callsWith: (status: CallStatus): string => callsListHref(demoHref.calls(role), { q: "", status, tech: ALL, page: 1 }),
+    /**
+     * "חזרו מהשטח" (OF-16): every follow-up that still needs a new visit; null where the screen is
+     * not offered (the temporary #15 rule, workQueueScreensOffered; display only, G-04).
+     */
+    backFromField: workQueueScreensOffered(role) ? demoHref.backFromField(role) : null,
   };
 }
 

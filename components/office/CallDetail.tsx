@@ -92,10 +92,13 @@ export function CallDetail({
   actions,
   showReport,
   renderRecording,
+  customerHref,
 }: {
   call: CallDetailData;
   /** The calls list. */
   backHref: string;
+  /** The customer card ("לקוחות", OF-16); omitted when the role is not offered it. */
+  customerHref?: string;
   /** Header actions, rendered as direct children of the title row: an item with
    *  `flex-basis: 100%` (a confirmation or a form) wraps onto its own row below the title. */
   actions?: ReactNode;
@@ -137,10 +140,18 @@ export function CallDetail({
         <div className="ocd-cols">
           <div className="grid">
             <section className="card sec">
-              <h2 style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                לקוח וכתובת
-                {cu.isTest && <TestBadge />}
-              </h2>
+              {/* The customer-card link sits beside the heading, not inside it (a heading's name stays its title). */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 12 }}>
+                <h2 style={{ display: "flex", gap: 8, alignItems: "center", margin: 0 }}>
+                  לקוח וכתובת
+                  {cu.isTest && <TestBadge />}
+                </h2>
+                {customerHref && (
+                  <Link className="lnk" href={customerHref} prefetch={false} aria-label={`לכרטיס הלקוח · ${cu.name}`} style={{ fontSize: 14, fontWeight: 600 }}>
+                    לכרטיס הלקוח ›
+                  </Link>
+                )}
+              </div>
               <div className="kv">
                 <span>מספר לקוח</span>
                 <span className="num">{cu.number}</span>
