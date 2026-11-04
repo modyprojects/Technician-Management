@@ -13,6 +13,17 @@ const DEMO_VIEWS = [
   "/dev/demo/office/mgr/analytics?tab=prod",
   "/dev/demo/office/mgr/analytics?tab=tech&tech=y",
   "/dev/demo/office/mgr/calls?status=followup",
+  // Calendars (OF-03, TE-27): views, another date, a technician filter and the open drawer.
+  "/dev/demo/office/mgr/calendar?view=week",
+  "/dev/demo/office/mgr/calendar?view=month",
+  "/dev/demo/office/mgr/calendar?date=2026-10-11",
+  "/dev/demo/office/mgr/calendar?tech=y",
+  "/dev/demo/office/mgr/calendar?req=48213&n=1",
+  "/dev/demo/office/cs/calendar?view=week&req=48205&n=2",
+  "/dev/demo/tech/calendar?view=week",
+  "/dev/demo/tech/calendar?view=month",
+  "/dev/demo/tech/calendar?date=2026-10-19",
+  "/dev/demo/tech/done/47800/1?view=week&date=2026-10-21",
 ] as const;
 
 /** Console errors and uncaught page errors while the test runs. */
@@ -370,5 +381,253 @@ test.describe("technician", () => {
     await expect(page.getByText(/מה צריך בביקור הבא/).last()).toBeVisible();
     await expect(page.locator(".sub", { hasText: "חסר: מה צריך בביקור הבא" })).toBeVisible();
     await expect(send).toBeDisabled();
+  });
+});
+
+test.describe("office calendar", () => {
+  test("day arrows skip the weekend; \"היום\" returns; segments and technician chips change the URL", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calendar");
+    const title = page.getByRole("heading", { level: 1 });
+    await expect(title).toContainText("21.10");
+    const steps = page.getByRole("group", { name: "מעבר בין תאריכים" });
+    await steps.getByRole("link", { name: "יום העבודה הבא" }).click();
+    await expect(page).toHaveURL(/\/calendar\?date=2026-10-22$/);
+    await expect(title).toContainText("22.10");
+    // Thursday → Sunday: Friday and Saturday are skipped (the demo's calDay).
+    await steps.getByRole("link", { name: "יום העבודה הבא" }).click();
+    await expect(page).toHaveURL(/\/calendar\?date=2026-10-25$/);
+    await steps.getByRole("link", { name: "יום העבודה הקודם" }).click();
+    await expect(page).toHaveURL(/\/calendar\?date=2026-10-22$/);
+    await steps.getByRole("link", { name: "היום", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calendar$/);
+    await expect(title).toContainText("21.10");
+
+    // A technician chip filters the day to that technician's column and keeps the view.
+    const chips = page.getByRole("group", { name: "טכנאי:" });
+    const chip = chips.getByRole("link").nth(1);
+    const name = (await chip.innerText()).trim();
+    await chip.click();
+    await expect(page).toHaveURL(/\/calendar\?tech=[a-z]+$/);
+    await expect(chips.getByRole("link", { name })).toHaveAttribute("aria-current", "true");
+    await expect(page.locator(".calcol")).toHaveCount(1);
+    await expect(page.locator(".calhead")).toContainText(name);
+
+    const views = page.getByRole("group", { name: "תצוגת היומן" });
+    await views.getByRole("link", { name: "שבוע" }).click();
+    await expect(page).toHaveURL(/[?&]view=week/);
+    await expect(page).toHaveURL(/[?&]tech=[a-z]+/);
+    await expect(views.getByRole("link", { name: "שבוע" })).toHaveAttribute("aria-current", "true");
+    await expect(title).toContainText("שבוע 18.10–22.10");
+    await steps.getByRole("link", { name: "השבוע הבא" }).click();
+    await expect(page).toHaveURL(/[?&]date=2026-10-28/);
+    await expect(title).toContainText("שבוע 25.10–29.10");
+
+    await views.getByRole("link", { name: "חודש" }).click();
+    await expect(page).toHaveURL(/[?&]view=month/);
+    await expect(title).toContainText("אוקטובר 2026");
+    // A month day opens that day's day view (the filter stays).
+    await page.locator("a.ocal-mcell", { hasText: /^\s*13\b/ }).first().click();
+    await expect(page).not.toHaveURL(/view=/);
+    await expect(page).toHaveURL(/[?&]date=2026-10-13/);
+    await expect(page).toHaveURL(/[?&]tech=[a-z]+/);
+
+    await chips.getByRole("link", { name: "כולם" }).click();
+    await expect(page).not.toHaveURL(/tech=/);
+    expect(await page.locator(".calcol").count()).toBeGreaterThan(1);
+  });
+
+  test("a visit block opens the drawer; Escape, ✕ and the background close it; the drawer links to the call card", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calendar");
+    const block = page.locator("a.ocal-ev").first();
+    await block.click();
+    await expect(page).toHaveURL(/[?&]req=\d+&n=\d+$/);
+    const req = new URL(page.url()).searchParams.get("req") ?? "";
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toBeFocused();
+    await expect(dialog).toContainText(`פנייה ${req}`);
+    await expect(dialog).toContainText("מצב בשטח");
+    await expect(dialog).toContainText("🧪 זימון בדיקה");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page).not.toHaveURL(/req=/);
+    await expect(block).toBeFocused();
+
+    await block.click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("link", { name: "סגירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).not.toHaveURL(/req=/);
+
+    await block.click();
+    await expect(dialog).toBeVisible();
+    // Tab stays inside the open drawer.
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
+    expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+    await dialog.getByRole("button", { name: "חיוג לטכנאי" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    const card = dialog.getByRole("link", { name: /לכרטיס הקריאה המלא/ });
+    await expect(card).toHaveAttribute("href", `/dev/demo/office/mgr/calls/${req}`);
+    await card.click();
+    await expect(page).toHaveURL(new RegExp(`/dev/demo/office/mgr/calls/${req}$`));
+    await expect(page.getByRole("heading", { level: 1 })).not.toBeEmpty();
+  });
+
+  test("a click on the dimmed background closes the drawer; a week block opens it too", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/calendar?view=week");
+    const block = page.locator("a.ocal-wk-ev").first();
+    await block.click();
+    await expect(page).toHaveURL(/[?&]view=week&req=\d+&n=\d+$/);
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const req = new URL(page.url()).searchParams.get("req") ?? "";
+    await expect(dialog.getByRole("link", { name: /לכרטיס הקריאה המלא/ })).toHaveAttribute("href", `/dev/demo/office/cs/calls/${req}`);
+    // The background is the area outside the panel: its far side from the panel (RTL: the left edge).
+    const vp = page.viewportSize();
+    const panel = await page.locator(".drawer").boundingBox();
+    if (!vp || !panel) throw new Error("no viewport or drawer");
+    if (panel.x > 20) {
+      await page.mouse.click(Math.min(10, panel.x / 2), vp.height / 2);
+      await expect(dialog).toHaveCount(0);
+      await expect(page).toHaveURL(/\/office\/cs\/calendar\?view=week$/);
+    }
+  });
+});
+
+test.describe("technician calendar and closed visits", () => {
+  test("day / week / month segments and the arrows change the URL; \"יומן\" is the active tab", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/calendar");
+    const views = page.getByRole("navigation", { name: "תצוגת היומן" });
+    await expect(views.getByRole("link", { name: "יומי" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "ניווט ראשי" }).getByRole("link", { name: "יומן" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await page.getByRole("link", { name: "היום הבא" }).click();
+    await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-22$/);
+    await page.getByRole("link", { name: "היום הבא" }).click();
+    await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-25$/);
+
+    await views.getByRole("link", { name: "שבועי" }).click();
+    await expect(page).toHaveURL(/\/tech\/calendar\?view=week&date=2026-10-25$/);
+    await expect(views.getByRole("link", { name: "שבועי" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("region", { name: "השבוע שלי" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toHaveCount(0);
+    await page.getByRole("link", { name: "השבוע הקודם" }).click();
+    await expect(page).toHaveURL(/view=week&date=2026-10-18$/);
+
+    await views.getByRole("link", { name: "חודשי" }).click();
+    await expect(page).toHaveURL(/view=month&date=2026-10-18$/);
+    await expect(page.locator("main")).toContainText("לחיצה על יום פותחת אותו");
+
+    await views.getByRole("link", { name: "יומי" }).click();
+    await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-18$/);
+    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toBeVisible();
+  });
+
+  test("a closed visit in the week opens its read-only view; \"› חזרה\" returns to the same view", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/calendar?view=week");
+    const closed = page.getByRole("region", { name: "השבוע שלי" }).locator('a[href*="/dev/demo/tech/done/"]').first();
+    await expect(closed).toBeVisible();
+    await closed.click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/done\/\d+\/\d+\?view=week&date=2026-10-21$/);
+    await expect(page.getByText(/🔒/).first()).toBeVisible();
+    // Read-only (D14): no action, input or signature pad on the screen.
+    await expect(page.locator(".ph-main").locator("button, input, textarea, select, canvas")).toHaveCount(0);
+    await expect(page.locator(".ph-foot")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "ניווט ראשי" }).getByRole("link", { name: "יומן" })).toBeVisible();
+    await page.locator(".ph-head").getByRole("link", { name: "חזרה ליומן" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/calendar\?view=week&date=2026-10-21$/);
+  });
+
+  test("an open visit in the day view opens its visit card", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/calendar");
+    const open = page.locator('main a[href*="/dev/demo/tech/visit/"]').first();
+    await expect(open).toBeVisible();
+    await open.click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/visit\/\d+\/\d+$/);
+  });
+
+  test("done list from the home: read-only and empty today; a done view goes back to the list", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    await page.getByRole("link", { name: /הושלמו/ }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/done$/);
+    await expect(page.getByRole("heading", { level: 1, name: "הושלמו היום" })).toBeVisible();
+    await expect(page.locator(".ph-head")).toContainText("צפייה בלבד");
+    // No fixture visit of the demo technician closed today (as in docs/demo.html).
+    await expect(page.getByText("עוד לא הושלמו ביקורים היום")).toBeVisible();
+    await expect(page.locator(".ph-main").locator("button, input, textarea, select")).toHaveCount(0);
+
+    await openPage(page, "/dev/demo/tech/done/47800/1");
+    await expect(page.getByText(/🔒/).first()).toBeVisible();
+    await expect(page.getByText("הסיכום שלך")).toBeVisible();
+    await expect(page.locator(".ph-main").locator("button, input, textarea, select, canvas")).toHaveCount(0);
+    await page.locator(".ph-head").getByRole("link", { name: "חזרה לרשימת הושלמו היום" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/done$/);
+  });
+
+  test("another technician's or an open visit has no done view (404)", async ({ request }) => {
+    for (const path of ["/dev/demo/tech/done/48198/1", "/dev/demo/tech/done/48213/1", "/dev/demo/tech/done/99999/1"]) {
+      const res = await request.get(path);
+      expect(res.status(), path).toBe(404);
+      expect(await res.text(), path).not.toContain(FIXTURE_SENTINEL);
+    }
+  });
+});
+
+test.describe("technician notifications and profile", () => {
+  test("\"סמן הכל כנקרא\" is simulated and moves every item to \"קודמות\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/notifications");
+    await expect(page.getByRole("heading", { level: 1, name: "התראות" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^חדשות · \d+$/ })).toBeVisible();
+    const markAll = page.getByRole("button", { name: "סמן הכל כנקרא" });
+    await markAll.click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("סימון כל ההתראות כנקראו");
+    await expect(markAll).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^חדשות/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "קודמות" })).toBeVisible();
+    await expect(page.locator("a.tnp-item.unread")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1, name: "התראות" })).toBeFocused();
+  });
+
+  test("opening an unread notification marks it read (simulated) and opens its visit", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/notifications");
+    const item = page.locator("a.tnp-item.unread").first();
+    const href = (await item.getAttribute("href")) ?? "";
+    expect(href).toMatch(/^\/dev\/demo\/tech(\/visit\/\d+\/\d+)?$/);
+    await item.click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("סימון התראה כנקראה");
+    await expect(page).toHaveURL(new RegExp(`${href.replace(/\//g, "\\/")}$`));
+  });
+
+  test("profile: technician, week figures, simulated toggles and dial, disabled placeholders", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/profile");
+    await expect(page.getByRole("heading", { level: 1 })).not.toBeEmpty();
+    await expect(page.locator(".ph-head")).toContainText("טכנאי שירות");
+    const week = page.getByRole("region", { name: "השבוע שלי" });
+    await expect(week).toContainText("ביקורים השבוע");
+    await expect(week).toContainText("טופלו");
+    await expect(page.getByRole("navigation", { name: "ניווט ראשי" }).getByRole("link", { name: "פרופיל" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // TE-29: no morning pickup reminder toggle.
+    await expect(page.getByText(/תזכורת "מה לאסוף"/)).toHaveCount(0);
+
+    const toggle = page.getByRole("switch").first();
+    const before = await toggle.getAttribute("aria-checked");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
+    await expect(toast(page)).toContainText(SIMULATED);
+
+    await page.getByRole("button", { name: /חיוג למשרד/ }).click();
+    await expect(toast(page)).toContainText("לא מתבצעת שיחה");
+    await expect(page.getByRole("button", { name: "דיווח" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "התנתקות" })).toBeDisabled();
   });
 });
