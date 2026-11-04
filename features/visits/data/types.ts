@@ -96,13 +96,16 @@ export type VisitDetail = VisitRecord & {
   editable: boolean;
 };
 
+/** Field times: office only (TE-25 PENDING, d05). */
+export type FieldTimeKey = "departAt" | "arriveAt" | "endAt";
+
 /**
  * The technician's own closed visit, read-only ("הושלמו", TE-26, D14: closed synced visits are
  * read-only to technicians). The screen shows the approval text preserved at signing
- * (`signedText`, D43), never the current Settings text, and never the field times (TE-25 PENDING:
- * a production adapter returns them as null to a technician until d05 is decided).
+ * (`signedText`, D43), never the current Settings text. The type carries no field times (TE-25
+ * PENDING: a technician does not get them until d05 is decided), so no adapter can return them.
  */
-export type ClosedVisitDetail = VisitDetail & { editable: false };
+export type ClosedVisitDetail = Omit<VisitDetail, FieldTimeKey> & { editable: false };
 
 /** How a previous visit relates to the visit being viewed. */
 export type VisitHistoryRelation = "call" | "customer" | "product";

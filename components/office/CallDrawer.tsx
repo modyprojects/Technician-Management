@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useEffectEvent, useId, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
+import { dayName, ddmm } from "@/features/calendar/data/dates";
 import type { CalendarVisitDetail } from "@/features/calendar/data/types";
-import { calVisitKey, dayNameOf, ddmm } from "./CalendarParts";
+import { calVisitKey } from "./CalendarParts";
 
 // The office calendar's visit drawer (docs/demo.html drawerHtml() L803-815, look .drawer-bg /
 // .drawer): request and visit number, customer, status pill, when, technician, phone, address,
 // product, SKU, representative, the fault and "מצב בשטח" (field times are office-only, TE-25);
 // footer "לכרטיס הקריאה המלא ›" (where the role's matrix value offers `calls`, display only, G-04)
-// and "חיוג לטכנאי" (a dial is navigation, not a data action, so it stays a data-sim affordance
-// that shows the simulated notice). Read-only: scheduling stays in Outlook (OF-03).
+// and the caller's "חיוג לטכנאי" element (a dial is navigation, not a data action: production
+// passes a `tel:` link, the UI demo a data-sim button). Read-only: scheduling stays in Outlook
+// (OF-03).
 // Additions from docs/demo-deviations.md: the visit source line (SIM-14) and 🧪 badges on the test
 // customer and product (SIM-16, SIM-17).
 // Open state lives in the URL (`req&n`, features/calendar/data/search-params): the page renders
@@ -48,12 +50,15 @@ export function CallDrawer({
   visit,
   closeHref,
   cardHref,
+  dial,
 }: {
   visit: CalendarVisitDetail;
   /** The calendar address with the drawer closed (same view, date and technician). */
   closeHref: string;
   /** The full call card; null where the role's matrix value does not offer `calls`. */
   cardHref: string | null;
+  /** "חיוג לטכנאי" (production: a `tel:` link with the .btn look); null for none. */
+  dial: ReactNode;
 }) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -175,7 +180,7 @@ export function CallDrawer({
           <div className="kv">
             <span>מועד</span>
             <span>
-              {dayNameOf(visit.date)}{" "}
+              {dayName(visit.date)}{" "}
               <span className="num">
                 {ddmm(visit.date)} · {visit.start}–{visit.end}
               </span>
@@ -220,9 +225,7 @@ export function CallDrawer({
               לכרטיס הקריאה המלא<span aria-hidden="true"> ›</span>
             </Link>
           )}
-          <button type="button" className="btn" data-sim={`חיוג לטכנאי ${t.name} · ${t.phone}`}>
-            חיוג לטכנאי
-          </button>
+          {dial}
         </div>
       </div>
     </div>

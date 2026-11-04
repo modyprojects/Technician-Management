@@ -19,7 +19,7 @@ import { boundedOf, MAX_PAGE_LIMIT, type IsoDate } from "@/features/data-access/
 import { addDays, toMin, weekStart } from "./dates";
 import { calendarVisit, techRef } from "./mappers";
 import { ALL_VISITS, laneLayout, visitsForTechOnDate, workWeek, type CallVisit } from "./queries";
-import { tech, TECHS } from "./reference";
+import { TECHS } from "./reference";
 import type { TechId } from "./types";
 
 /** D47: every demo record is test data, so every calendar includes test data. */
@@ -111,10 +111,4 @@ export function techWeekFigures(techId: TechId, date: IsoDate): { weekStart: Iso
   const start = weekStart(date);
   const vs = workWeek(start).flatMap((d) => visitsForTechOnDate(techId, d));
   return { weekStart: start, visits: vs.length, done: vs.filter((x) => x.v.status === "done").length };
-}
-
-/** The technician's TechnicianRef plus email (profile). */
-export function techWithEmail(techId: TechId) {
-  const t = tech(techId);
-  return { ...techRef(techId), email: t.email };
 }

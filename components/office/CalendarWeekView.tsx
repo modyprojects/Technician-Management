@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
+import { TEST_DATA_LABEL } from "@/components/ui/TestBadge";
+import { dayName, ddmm, visitCountLabel } from "@/features/calendar/data/dates";
 import type { CalendarVisit, OfficeCalendarWeek } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
-import { calVisitKey, dayNameOf, ddmm } from "./CalendarParts";
+import { calVisitKey } from "./CalendarParts";
 
 // Office calendar, week view (docs/demo.html offCal() L769-774): five columns, Sunday to
 // Thursday, today tinted; each day's header opens that day's day view, and each visit is a block
@@ -11,7 +13,8 @@ import { calVisitKey, dayNameOf, ddmm } from "./CalendarParts";
 // link that opens the visit drawer (`req&n` in the URL). Sideways scrolling inside .scrollx on
 // narrow screens, as in the demo. Presentational: takes the calendar DTO and link builders.
 // Change from the demo (accessibility): the second line of a block is not faded (the demo's
-// opacity .85), so it keeps the status colours' contrast.
+// opacity .85), so it keeps the status colours' contrast. Addition: a 🧪 mark on test visits
+// (SIM-15, D47; the blocks are too narrow for the badge), read as "נתוני בדיקה".
 
 function WeekBlock({ v, href }: { v: CalendarVisit; href: string }) {
   const s = VISIT_STATUSES[v.status];
@@ -28,6 +31,12 @@ function WeekBlock({ v, href }: { v: CalendarVisit; href: string }) {
         {v.start}–{v.end}
       </b>{" "}
       · {v.customerName}
+      {v.isTest && (
+        <>
+          <span aria-hidden="true"> 🧪</span>
+          <span className="sr-only"> · {TEST_DATA_LABEL}</span>
+        </>
+      )}
       <span style={{ display: "block" }}>
         {v.city} · {v.technician.name} · {s.label}
       </span>
@@ -57,7 +66,7 @@ export function CalendarWeekView({
             return (
               <div key={d.date} className={isToday ? "ocal-wk-day today" : "ocal-wk-day"}>
                 <Link className="ocal-wk-head" href={dayHref(d.date)} prefetch={false} aria-current={isToday ? "date" : undefined}>
-                  {dayNameOf(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
+                  {dayName(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
                   <span className="sub" style={{ fontWeight: 400 }}>
                     · <span className="num">{d.visits.total}</span>
                     <span className="sr-only"> ביקורים</span>
@@ -78,7 +87,7 @@ export function CalendarWeekView({
                 )}
                 {more > 0 && (
                   <div className="sub" style={{ textAlign: "center", padding: "0 8px 10px" }}>
-                    ועוד {more} ביקורים
+                    ועוד {visitCountLabel(more)}
                   </div>
                 )}
               </div>

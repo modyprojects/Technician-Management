@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CalendarDayStrip, CalendarDayTimeline } from "@/components/tech/CalendarDay";
-import { shiftCalendarDate } from "@/components/tech/CalendarDates";
 import { CalendarHeader } from "@/components/tech/CalendarHeader";
 import { CalendarMonth } from "@/components/tech/CalendarMonth";
 import { CalendarViewSwitch } from "@/components/tech/CalendarViewSwitch";
 import { CalendarWeek } from "@/components/tech/CalendarWeek";
+import { shiftCalendarDate } from "@/features/calendar/data/dates";
 import { parseTechCalendarState, techCalendarHref } from "@/features/calendar/data/search-params";
 import type { CalendarVisit } from "@/features/calendar/data/types";
 import { isClosedVisitStatus } from "@/features/visits/data/types";

@@ -4,8 +4,8 @@ import type { TechnicianProfile } from "@/features/profile/data/types";
 
 // Header of the technician's profile (docs/demo.html techProfile() head L684 and the "› חזרה"
 // line phone() adds on the profile, L449; TE-29): back link, avatar in the technician's colour
-// with his initial, name, "טכנאי שירות · phone". Additions: the Outlook email the office invites
-// him with (TechnicianProfile.technician.email), and the 🧪 badge on a test user (SIM-18, D47).
+// with his initial, name, "טכנאי שירות · phone". Addition: the 🧪 badge on a test user (SIM-18,
+// D47).
 // Every top-level element is its own child of .ph-head, so above 900px it aligns with the 760px
 // content column (TE-31). Presentational: the caller passes the DTO and the back link.
 
@@ -44,9 +44,6 @@ export function ProfileHeader({ profile, backHref }: { profile: TechnicianProfil
           </div>
           <div className="sub" style={{ color: "var(--on-dark2)" }}>
             טכנאי שירות · <span dir="ltr">{t.phone}</span>
-          </div>
-          <div className="sub" style={{ color: "var(--on-dark2)", overflowWrap: "anywhere" }}>
-            <span dir="ltr">{t.email}</span>
           </div>
         </div>
       </div>

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
+import { TestBadge } from "@/components/ui/TestBadge";
+import { toMinutes, visitCountLabel } from "@/features/calendar/data/dates";
 import type { OfficeCalendarDay, PlacedCalendarVisit } from "@/features/calendar/data/types";
 import type { VisitRef } from "@/features/visits/data/types";
-import { calVisitKey, hourLabel, hourRange, toMinutes, visitCountLabel } from "./CalendarParts";
+import { calVisitKey, hourLabel, hourRange } from "./CalendarParts";
 
 // Office calendar, day view (docs/demo.html offCal() L760-768): one column per technician (colour
 // dot, name, visit count) beside an hour scale, each visit a block in its status colours (the
@@ -10,6 +12,7 @@ import { calVisitKey, hourLabel, hourRange, toMinutes, visitCountLabel } from ".
 // layer). A block is a link that opens the visit drawer (`req&n` in the URL); the URL keeps the
 // scroll position. Sideways scrolling inside .scrollx on narrow screens, as in the demo.
 // The grid shows 08:00-18:00 as in the demo and widens only when a visit falls outside it.
+// Addition: the 🧪 badge on test visits (SIM-15, D47), as on the technician calendar.
 // Presentational: takes the calendar DTO and a link builder.
 
 /** Pixels per hour (the demo's H). */
@@ -48,6 +51,12 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
         <b>{v.customerName}</b> <span className="num">{v.start}</span> · {v.city}
         {v.n > 1 && ` · ביקור ${v.n}`} <br />
         {s.label}
+        {v.isTest && (
+          <>
+            {" "}
+            <TestBadge />
+          </>
+        )}
         <span className="sr-only">
           {" "}
           · עד {v.end} · {v.technician.name}

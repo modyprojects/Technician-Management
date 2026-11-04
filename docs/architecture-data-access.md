@@ -42,7 +42,7 @@ Server Components and server functions call it.
 - `dashboards`: `officeOverview(date)`, `managerAnalytics(period)`, `technicianDetail(techId, period, query?)`, `csQueue(date)`.
 - `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04).
 - `notifications`: `list(userId, page?)`, `unreadCount(userId)`, `preferences(userId)` (profile toggles, TE-29).
-- `profile`: `technician(techId, date)`: name, phone, email, the figures of the week containing `date` and the office phone. Display only.
+- `profile`: `technician(techId, date)`: name, phone, the figures of the week containing `date` and the office phone. Display only.
 
 `techId` and `userId` arguments are filters, not identity. In production the identity comes from the session, and RLS rejects other users' data.
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { OfficeCalendarMonth, OfficeMonthDay } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
-import { addDaysIso, DAY_NAMES, dayNameOf, ddmm, weekdayOf } from "./CalendarParts";
+import { addDays, DAY_NAMES, dayName, ddmm, weekdayOf } from "@/features/calendar/data/dates";
 
 // Office calendar, month view (docs/demo.html offCal() L775-788): a Sunday-first grid of the
 // month, padded with the neighbouring months' days (shown greyed and inactive, as the demo's
@@ -42,11 +42,11 @@ export function CalendarMonthView({
   dayHref: (date: IsoDate) => string;
 }) {
   const first = `${month.month}-01`;
-  const start = addDaysIso(first, -weekdayOf(first));
+  const start = addDays(first, -weekdayOf(first));
   const byDate = new Map(month.days.map((d) => [d.date, d]));
   const cells: { date: IsoDate; day: OfficeMonthDay | undefined }[] = [];
   for (let i = 0; i < MAX_CELLS; i++) {
-    const date = addDaysIso(start, i);
+    const date = addDays(start, i);
     const inMonth = date.startsWith(`${month.month}-`);
     // The demo's rule: no sixth row that holds only the next month.
     if (i >= 35 && !inMonth && i % 7 === 0) break;
@@ -89,7 +89,7 @@ export function CalendarMonthView({
                       {dayNumber}
                     </b>
                     <span className="sr-only">
-                      {dayNameOf(date)} {ddmm(date)}
+                      {dayName(date)} {ddmm(date)}
                       {day.total === 0 && " · אין ביקורים"}
                     </span>
                     {day.total > 0 && (

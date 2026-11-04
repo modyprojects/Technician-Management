@@ -3,7 +3,8 @@ import { VISIT_STATUSES } from "@/components/ui/StatusPill";
 import { TEST_DATA_LABEL, TestBadge } from "@/components/ui/TestBadge";
 import type { CalendarVisit, TechWeek } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
-import { dayName, dayOfMonth, dayShort, ddmm, gridHourLabel, GRID_HOURS, gridSpan, visitsCountLabel } from "./CalendarDates";
+import { dayName, dayOfMonth, dayShort, ddmm, visitCountLabel } from "@/features/calendar/data/dates";
+import { gridHourLabel, GRID_HOURS, gridSpan } from "./CalendarDates";
 
 // Day view of the technician's "היומן שלי" (docs/demo.html techCalendar() L611-619; TE-27):
 // the Sunday-to-Thursday strip ("ד׳ / 21 / 4 ביקורים", the chosen day in the accent colour) and
@@ -43,10 +44,10 @@ export function CalendarDayStrip({
   dayHref: (date: IsoDate) => string;
 }) {
   return (
-    <nav aria-label="ימי השבוע" style={{ display: "flex", gap: 6, flex: "none" }}>
+    <div role="group" aria-label="ימי השבוע" style={{ display: "flex", gap: 6, flex: "none" }}>
       {days.map(({ date, visits }) => {
         const on = date === selected;
-        const count = visitsCountLabel(visits.total);
+        const count = visitCountLabel(visits.total);
         return (
           <Link
             key={date}
@@ -73,7 +74,7 @@ export function CalendarDayStrip({
           </Link>
         );
       })}
-    </nav>
+    </div>
   );
 }
 

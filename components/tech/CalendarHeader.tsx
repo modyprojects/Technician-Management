@@ -3,14 +3,16 @@ import type { CSSProperties } from "react";
 import { BellIcon } from "@/components/ui/Icons";
 import type { CalendarView } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
-import { calendarLabel, SHIFT_LABELS } from "./CalendarDates";
+import { CALENDAR_SHIFT_LABELS } from "@/features/calendar/data/dates";
+import { calendarLabel } from "./CalendarDates";
 
 // Header of the technician's "היומן שלי" (docs/demo.html techCalendar() head L606-608 and the
 // "› חזרה" line phone() adds on the calendar, L449; TE-27): back link, title, "‹ label ›" date
 // navigation and the bell. The arrows and the bell are links (navigation), the label says what
 // the view shows ("רביעי 21.10", "18.10–22.10", "אוקטובר 2026").
 // Changes for the app: the arrows get a 28px tap target (WCAG 2.5.8) and names that say what they
-// open ("השבוע הקודם"); the bell carries the unread count as the home header does (TE-28).
+// open ("יום העבודה הבא", "השבוע הקודם"; the same as the office calendar); the bell carries the
+// unread count as the home header does (TE-28).
 // Every top-level element is its own child of .ph-head, so above 900px it aligns with the 760px
 // content column (TE-31). Presentational: the caller passes the links.
 
@@ -77,7 +79,7 @@ export function CalendarHeader({
   unread: number;
 }) {
   const label = calendarLabel(view, date);
-  const names = SHIFT_LABELS[view];
+  const names = CALENDAR_SHIFT_LABELS[view];
   return (
     <>
       <div>

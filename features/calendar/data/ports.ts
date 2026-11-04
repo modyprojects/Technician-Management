@@ -25,7 +25,7 @@ export interface CalendarQueries {
   officeWeek(weekOf: IsoDate, filter?: OfficeCalendarFilter): Promise<OfficeCalendarWeek>;
   /** Office month view: counts per day. */
   officeMonth(month: YearMonth, filter?: OfficeCalendarFilter): Promise<OfficeCalendarMonth>;
-  /** The office calendar's visit drawer; null when not found (or not visible). */
+  /** The office calendar's visit drawer; null when not found, not visible or cancelled (a cancelled visit is never on a calendar). */
   visit(ref: VisitRef): Promise<CalendarVisitDetail | null>;
   /** The technician's week containing `weekOf` (calendar day and week views); null for an unknown technician. */
   techWeek(techId: TechnicianId, weekOf: IsoDate): Promise<TechWeek | null>;

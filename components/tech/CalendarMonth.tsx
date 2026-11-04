@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import type { TechMonth } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
-import { DAY_SHORT, dayName, dayOfMonth, ddmm, monthCells, monthName, visitsCountLabel, weekdayOf } from "./CalendarDates";
+import { DAY_SHORT, dayName, dayOfMonth, ddmm, monthName, visitCountLabel, weekdayOf } from "@/features/calendar/data/dates";
+import { monthCells } from "./CalendarDates";
 
 // Month view of the technician's "היומן שלי" (docs/demo.html techCalendar() L627-640; TE-27):
 // a Sunday-first grid of whole weeks, each day of the month with its visit count ("4 ביק׳"),
@@ -83,7 +84,7 @@ export function CalendarMonth({
                 key={date}
                 href={dayHref(date)}
                 aria-current={on ? "date" : undefined}
-                aria-label={`${dayOfMonth(date)} · ${dayName(date)} ${ddmm(date)} · ${n ? visitsCountLabel(n) : "אין ביקורים"}`}
+                aria-label={`${dayOfMonth(date)} · ${dayName(date)} ${ddmm(date)} · ${n ? visitCountLabel(n) : "אין ביקורים"}`}
                 style={{ ...CELL, ...look }}
               >
                 {number}
@@ -96,7 +97,7 @@ export function CalendarMonth({
         </div>
       </section>
       <div className="sub" style={{ textAlign: "center" }}>
-        {visitsCountLabel(month.total)} ב{monthName(month.month)} · לחיצה על יום פותחת אותו
+        {visitCountLabel(month.total)} ב{monthName(month.month)} · לחיצה על יום פותחת אותו
       </div>
     </>
   );

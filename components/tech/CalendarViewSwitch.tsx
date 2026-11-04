@@ -5,7 +5,8 @@ import { CALENDAR_VIEW_VALUES, type CalendarView } from "@/features/calendar/dat
 // "יומי / שבועי / חודשי" segments of the technician calendar (docs/demo.html techCalendar() L609;
 // TE-27). Each segment opens its view, so it is a link (navigation) with the look of the demo's
 // ".seg button" (styles/ui.css L89-91, repeated inline because those rules target buttons);
-// the selected view carries aria-current="page".
+// the selected view carries aria-current="page". A labelled group, not a navigation landmark (as
+// in the office calendar): the page keeps one navigation landmark, the bottom tabs.
 
 const LABELS: Record<CalendarView, string> = { day: "יומי", week: "שבועי", month: "חודשי" };
 
@@ -26,12 +27,12 @@ const SEGMENT_ON: CSSProperties = { ...SEGMENT, background: "var(--card)", color
 
 export function CalendarViewSwitch({ view, hrefOf }: { view: CalendarView; hrefOf: (view: CalendarView) => string }) {
   return (
-    <nav className="seg" aria-label="תצוגת היומן" style={{ flex: "none" }}>
+    <div role="group" className="seg" aria-label="תצוגת היומן" style={{ flex: "none" }}>
       {CALENDAR_VIEW_VALUES.map((v) => (
         <Link key={v} href={hrefOf(v)} aria-current={v === view ? "page" : undefined} style={v === view ? SEGMENT_ON : SEGMENT}>
           {LABELS[v]}
         </Link>
       ))}
-    </nav>
+    </div>
   );
 }

@@ -3,7 +3,8 @@ import { VISIT_STATUSES } from "@/components/ui/StatusPill";
 import type { CalendarVisit, TechWeek } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import { hiddenLabel, visitBlockName } from "./CalendarDay";
-import { dayName, dayOfMonth, dayShort, ddmm, GRID_HOURS, gridSpan } from "./CalendarDates";
+import { dayName, dayOfMonth, dayShort, ddmm } from "@/features/calendar/data/dates";
+import { GRID_HOURS, gridSpan } from "./CalendarDates";
 
 // Week view of the technician's "היומן שלי" (docs/demo.html techCalendar() L620-626; TE-27):
 // Sunday to Thursday as columns on the 08:00-18:00 grid (hour marks every two hours), today's

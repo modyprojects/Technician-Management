@@ -15,12 +15,12 @@ import { isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/
 import type { DataAccess } from "@/features/data-access/types";
 import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
 import { isOfficeRole, type OfficeRole } from "@/features/reference/data/types";
-import type { ClosedVisitDetail, TechDay, VisitRef } from "@/features/visits/data/types";
+import type { ClosedVisitDetail, FieldTimeKey, TechDay, VisitDetail, VisitRef } from "@/features/visits/data/types";
 import { visitRefError } from "@/features/visits/data/validate";
 import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
-import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures, techWithEmail } from "./calendar";
+import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
 import { daysBetween, TODAY } from "./dates";
-import { calendarVisitDetail, callDetail, callSummary, historyItem, techDayVisit, visitDetail } from "./mappers";
+import { calendarVisitDetail, callDetail, callSummary, historyItem, techDayVisit, techRef, visitDetail } from "./mappers";
 import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
 import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
@@ -161,7 +161,12 @@ export const demoDataAccess: DataAccess = {
       if (!isTechId(techId) || !validRef(ref)) return null;
       const found = findVisit(ref.req, ref.n);
       if (!found || found.v.tech !== techId || !isClosedVisit(found.v)) return null;
-      return { ...visitDetail(found.c, found.v), editable: false };
+      // No field times for the technician (TE-25 PENDING): left out of the DTO, not hidden by the screen.
+      const detail: Omit<VisitDetail, FieldTimeKey> & Partial<Pick<VisitDetail, FieldTimeKey>> = visitDetail(found.c, found.v);
+      delete detail.departAt;
+      delete detail.arriveAt;
+      delete detail.endAt;
+      return { ...detail, editable: false };
     },
   },
 
@@ -178,7 +183,8 @@ export const demoDataAccess: DataAccess = {
     async visit(ref) {
       if (!validRef(ref)) return null;
       const found = findVisit(ref.req, ref.n);
-      return found ? calendarVisitDetail(found.c, found.v) : null;
+      // Cancelled visits are never on a calendar, so they have no drawer either (the port: null when not visible).
+      return found && found.v.status !== "cancel" ? calendarVisitDetail(found.c, found.v) : null;
     },
     async techWeek(techId, weekOf) {
       return isTechId(techId) ? techWeek(techId, assertDate(weekOf)) : null;
@@ -260,7 +266,7 @@ export const demoDataAccess: DataAccess = {
     async technician(techId, date) {
       if (!isTechId(techId)) return null;
       return {
-        technician: techWithEmail(techId),
+        technician: techRef(techId),
         week: techWeekFigures(techId, assertDate(date)),
         officePhone: OFFICE_PHONE,
         isTest: TEST,

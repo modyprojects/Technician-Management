@@ -13,6 +13,7 @@ import {
   parseOfficeCalendarState,
   type OfficeCalendarState,
 } from "@/features/calendar/data/search-params";
+import { addDays, CALENDAR_SHIFT_LABELS, ddmm, monthLabel, shiftCalendarDate, weekStartOf } from "@/features/calendar/data/dates";
 import type { CalendarView } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import { offers } from "@/features/reference/data/permissions";
@@ -20,7 +21,7 @@ import type { OfficeRole } from "@/features/reference/data/types";
 import type { VisitRef } from "@/features/visits/data/types";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
-import { addDays, dayAndDate, ddmm, MONTHS, pad, shiftWorkDay, TODAY, weekStart } from "../../../_data/dates";
+import { dayAndDate, TODAY } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
 import { isOfficeRole, officeHomeLabel, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
@@ -43,26 +44,6 @@ const VIEWS: readonly { view: CalendarView; label: string }[] = [
   { view: "month", label: "חודש" },
 ];
 
-/** Accessible names of the previous / next arrows. */
-const STEP_LABELS: Record<CalendarView, { prev: string; next: string }> = {
-  day: { prev: "יום העבודה הקודם", next: "יום העבודה הבא" },
-  week: { prev: "השבוע הקודם", next: "השבוע הבא" },
-  month: { prev: "החודש הקודם", next: "החודש הבא" },
-};
-
-/** The first day of the month `dir` months after the month of `date` (the demo's calDay for months). */
-function shiftMonth(date: IsoDate, dir: 1 | -1): IsoDate {
-  const months = Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1 + dir;
-  return `${Math.floor(months / 12)}-${pad((months % 12) + 1)}-01`;
-}
-
-/** The demo's calDay: a work day back or forward (Friday and Saturday skipped), a week, or a month. */
-function shiftDate(view: CalendarView, date: IsoDate, dir: 1 | -1): IsoDate {
-  if (view === "week") return addDays(date, 7 * dir);
-  if (view === "month") return shiftMonth(date, dir);
-  return shiftWorkDay(date, dir);
-}
-
 /** The calendar address of a state; today's date is left out (the default). */
 function calendarHref(role: OfficeRole, state: OfficeCalendarState): string {
   return demoHref.officeCalendar(role, { ...state, date: state.date === TODAY ? undefined : state.date });
@@ -71,10 +52,10 @@ function calendarHref(role: OfficeRole, state: OfficeCalendarState): string {
 /** The demo's title: "רביעי 21.10", "שבוע 18.10–22.10" or "אוקטובר 2026". */
 function periodTitle(view: CalendarView, date: IsoDate): string {
   if (view === "week") {
-    const start = weekStart(date);
+    const start = weekStartOf(date);
     return `שבוע ${ddmm(start)}–${ddmm(addDays(start, 4))}`;
   }
-  if (view === "month") return `${MONTHS[Number(date.slice(5, 7)) - 1] ?? ""} ${date.slice(0, 4)}`;
+  if (view === "month") return monthLabel(date.slice(0, 7));
   return dayAndDate(date);
 }
 
@@ -87,7 +68,8 @@ function periodTitle(view: CalendarView, date: IsoDate): string {
 // officeMonth with the technician filter, calendar.visit for the drawer), technicians come from
 // reference.technicians() and what the role sees follows its matrix values (`cal` for the
 // screen, `calls` for the card link; reference.permissions, display only, G-04).
-// No data actions: the drawer's dial is a simulated navigation affordance (data-sim).
+// No data actions: the drawer's "חיוג לטכנאי" is navigation; the demo passes a data-sim button that
+// says no call is made (production: a `tel:` link).
 export default async function OfficeCalendarPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/calendar">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -140,9 +122,11 @@ export default async function OfficeCalendarPage({ params, searchParams }: PageP
     { key: ALL, label: "כולם", href: href({ tech: ALL }), on: state.tech === ALL },
     ...technicians.map((t) => ({ key: t.id, label: t.name, color: t.color, href: href({ tech: t.id }), on: state.tech === t.id })),
   ];
-  const steps = STEP_LABELS[state.view];
-  const prev: CalendarStep = { href: href({ date: shiftDate(state.view, state.date, -1) }), label: steps.prev };
-  const next: CalendarStep = { href: href({ date: shiftDate(state.view, state.date, 1) }), label: steps.next };
+  // The same arrows as the technician calendar: a work day, a week, or a month (to today or the
+  // month's first work day, so the day view never opens on a weekend).
+  const steps = CALENDAR_SHIFT_LABELS[state.view];
+  const prev: CalendarStep = { href: href({ date: shiftCalendarDate(state.view, state.date, -1, TODAY) }), label: steps.prev };
+  const next: CalendarStep = { href: href({ date: shiftCalendarDate(state.view, state.date, 1, TODAY) }), label: steps.next };
 
   return (
     <DemoOfficeFrame role={role} active="cal">
@@ -161,6 +145,15 @@ export default async function OfficeCalendarPage({ params, searchParams }: PageP
           visit={drawer}
           closeHref={href({})}
           cardHref={offers(permissions, "calls") ? demoHref.call(role, drawer.req) : null}
+          dial={
+            <button
+              type="button"
+              className="btn"
+              data-sim={`חיוג לטכנאי ${drawer.technician.name} · ${drawer.technician.phone} · לא מתבצעת שיחה בהדגמה`}
+            >
+              חיוג לטכנאי
+            </button>
+          }
         />
       )}
     </DemoOfficeFrame>

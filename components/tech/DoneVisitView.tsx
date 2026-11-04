@@ -14,24 +14,16 @@ import { VisitHeader } from "./VisitHeader";
 //   demo's "▶ הקלטה" playback button becomes a plain line with the recording's length; the
 //   approved transcription is shown when it differs from the summary. The signature image the
 //   demo showed is not part of the DTO (signer and text only).
-// - Added: the visit's scheduled date and time window ("מועד"); never the field times
-//   (departure, arrival, end: TE-25 PENDING, office only); parts replaced (TE-17); "מה צריך בביקור
-//   הבא" (TE-21); the visit source (SIM-14); 🧪 badges on a test call, product, recording and on
-//   each test photo or video (SIM-15, SIM-17, SIM-19).
+// - Added: parts replaced (TE-17); "מה צריך בביקור הבא" (TE-21); the visit source (SIM-14); 🧪
+//   badges on a test call, product, recording and on each test photo or video (SIM-15, SIM-17,
+//   SIM-19). Never the field times (departure, arrival, end: TE-25 PENDING, office only; the DTO
+//   has none). The demo shows no visit date here, so neither does this view.
 // Presentational: a ClosedVisitDetail DTO and the back link; no actions at all.
 
 const PHASES: readonly [MediaPhase, string][] = [
   ["before", "לפני הטיפול"],
   ["after", "אחרי הטיפול"],
 ];
-
-const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"] as const;
-
-/** "רביעי 21.10.2026". */
-function dateLabel(iso: string): string {
-  const day = DAY_NAMES[new Date(`${iso}T12:00:00Z`).getUTCDay()] ?? "";
-  return `${day} ${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
-}
 
 /** Recording length in seconds → "1:05". */
 const recordingLabel = (sec: number): string => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
@@ -118,15 +110,6 @@ export function DoneVisitView({ visit }: { visit: ClosedVisitDetail }) {
       )}
 
       <section className="card" aria-label="פרטי הביקור" style={{ padding: "4px 14px" }}>
-        <div className="row">
-          <span className="k">מועד</span>
-          <span className="num">
-            {dateLabel(visit.date)} ·{" "}
-            <span dir="ltr">
-              {visit.start}–{visit.end}
-            </span>
-          </span>
-        </div>
         <div className="row">
           <span className="k">כתובת</span>
           <b>

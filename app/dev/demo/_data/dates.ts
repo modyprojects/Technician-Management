@@ -1,64 +1,32 @@
 // FICTITIOUS DATA ONLY: demo calendar helpers. Allowed only under app/dev (G-05).
-// Ported from docs/demo.html "helpers" (L238-252). The demo's date is fixed (G-01: production
-// uses dynamic dates in Asia/Jerusalem). Dates are "YYYY-MM-DD" strings, times "HH:MM".
-// Calculations use UTC noon, so the result never depends on the server or browser time zone.
+// The demo's fixed date and the demo-only labels. The pure date helpers are the shared set in
+// features/calendar/data/dates.ts (ported from docs/demo.html "helpers", L238-252), re-exported here
+// under the demo's names. The demo's date is fixed (G-01: production uses dynamic dates in
+// Asia/Jerusalem). Dates are "YYYY-MM-DD" strings, times "HH:MM".
+
+import {
+  addDays,
+  dayName,
+  ddmm,
+  fromMinutes,
+  isWorkDay,
+  MONTH_NAMES,
+  pad,
+  shiftWorkDay,
+  toMinutes,
+  weekStartOf,
+} from "@/features/calendar/data/dates";
 
 /** The demo's "today" (Wednesday 21.10.2026). */
 export const TODAY = "2026-10-21";
 
-export const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"] as const;
-export const DAYS_S = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"] as const;
-export const MONTHS = [
-  "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
-  "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
-] as const;
-
-/** Two-digit zero padding. */
-export const pad = (n: number): string => String(n).padStart(2, "0");
-
-/** "HH:MM" → minutes since midnight. */
-export function toMin(t: string): number {
-  const [h = 0, m = 0] = t.split(":").map(Number);
-  return h * 60 + m;
-}
-
-/** Minutes since midnight → "HH:MM". */
-export const fromMin = (m: number): string => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
-
-const D = (s: string): Date => new Date(s + "T12:00:00Z");
-const iso = (d: Date): string => d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate());
-
-/** Date string plus `n` days (negative goes back). */
-export function addDays(s: string, n: number): string {
-  const d = D(s);
-  d.setUTCDate(d.getUTCDate() + n);
-  return iso(d);
-}
-
-/** Day of week, 0 = Sunday. */
-export const weekday = (s: string): number => D(s).getUTCDay();
-
-/** "21.10" (the demo's day.month). */
-export const ddmm = (s: string): string => s.slice(8) + "." + s.slice(5, 7);
-
-/** "רביעי". */
-export const dayName = (s: string): string => DAYS[weekday(s)] ?? "";
-
-/** "ד׳". */
-export const dayShort = (s: string): string => DAYS_S[weekday(s)] ?? "";
-
-/** Work day: Sunday to Thursday (the demo's isWork). */
-export const isWork = (s: string): boolean => weekday(s) <= 4;
-
-/** Sunday of the week of `s` (the demo's weekStart). */
-export const weekStart = (s: string): string => addDays(s, -weekday(s));
-
-/** Next (`dir` 1) or previous (`dir` -1) work day, skipping Friday and Saturday. */
-export function shiftWorkDay(s: string, dir: 1 | -1): string {
-  let d = addDays(s, dir);
-  while (!isWork(d)) d = addDays(d, dir);
-  return d;
-}
+// The shared helpers under the names the fixtures and demo screens use (the demo's own names).
+export { addDays, dayName, ddmm, pad, shiftWorkDay };
+export const MONTHS = MONTH_NAMES;
+export const isWork = isWorkDay;
+export const weekStart = weekStartOf;
+export const toMin = toMinutes;
+export const fromMin = fromMinutes;
 
 /** "היום" for TODAY, otherwise "21.10" (calls list, call card). */
 export const dayLabel = (s: string): string => (s === TODAY ? "היום" : ddmm(s));
@@ -67,7 +35,8 @@ export const dayLabel = (s: string): string => (s === TODAY ? "היום" : ddmm(
 export const dayAndDate = (s: string): string => `${dayName(s)} ${ddmm(s)}`;
 
 /** Whole days from `a` to `b` (b - a). */
-export const daysBetween = (a: string, b: string): number => Math.round((D(b).getTime() - D(a).getTime()) / 864e5);
+export const daysBetween = (a: string, b: string): number =>
+  Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
 
 /** Recording length in seconds → "1:05". */
 export const recLabel = (sec: number): string => `${Math.floor(sec / 60)}:${pad(sec % 60)}`;
