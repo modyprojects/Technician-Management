@@ -325,6 +325,10 @@ a.ma-stat:hover { border-color: var(--line); }
 .ocal-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ocal-legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 12px; font-size: 12px; flex-wrap: wrap; }
 a.ocal-ev { text-decoration: none; }
+/* Screen-reader text (.sr-only, position: absolute) in the week headers and month days stays
+   inside its link; otherwise its containing block is <body> and it escapes the .scrollx scroller,
+   so the whole page scrolls sideways on a phone. */
+a.ocal-wk-head, a.ocal-mcell { position: relative; }
 /* Week view (L771-773). */
 .cal.ocal-wk { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); min-width: 760px; }
 .ocal-wk-day { border-right: 1px solid var(--line2); min-height: 420px; }
