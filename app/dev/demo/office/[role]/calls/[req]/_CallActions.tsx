@@ -12,6 +12,8 @@
 //   scheduling stays in Outlook (OF-03). Adding them needs an owner decision first.
 // No hooks: rendered from the Server Component page.
 
+import { pendingDecisionHint } from "@/components/ui/pending-hint";
+
 const CANCEL_HINT_ID = "call-cancel-pending";
 
 export function CallActions({
@@ -40,7 +42,7 @@ export function CallActions({
               ביטול ביקור
             </button>
             <span id={CANCEL_HINT_ID} className="sub">
-              ממתין להחלטת בעלים (d08)
+              {pendingDecisionHint("d08")}
             </span>
           </>
         ) : (

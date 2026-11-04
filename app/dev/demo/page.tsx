@@ -47,7 +47,8 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: `כרטיס קריאה · ${callName("48140")}`, sub: "פנייה 48140 · שלושה ביקורים", href: demoHref.call("mgr", "48140") },
       { label: `קריאה שטופלה · ${callName("47969")}`, sub: "פנייה 47969 · סיכום, תמונות וחתימת לקוח", href: demoHref.call("mgr", "47969") },
       { label: `ממתינה לשיבוץ · ${callName("48230")}`, sub: "פנייה 48230 · הביקור בוטל", href: demoHref.call("mgr", "48230") },
-      { label: "דשבורד", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics() },
+      { label: "דשבורד", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics("mgr") },
+      { label: "משתמשים", sub: "חשבונות שירות לקוחות וטכנאים · בקשות לאישור היוצר", href: demoHref.users("mgr") },
     ],
   },
   cs: {
@@ -57,12 +58,25 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "יומן טכנאים", sub: "תצוגה שבועית", href: demoHref.officeCalendar("cs", { view: "week" }) },
       { label: "קריאות", sub: "חיפוש וסינון לפי סטטוס וטכנאי", href: demoHref.calls("cs") },
       { label: `כרטיס קריאה · ${callName("48205")}`, sub: "פנייה 48205 · ביקור המשך", href: demoHref.call("cs", "48205") },
-      { label: "דשבורד", sub: "אין הרשאה לתפקיד הזה", href: demoHref.officeAnalytics("cs") },
+      { label: "דשבורד", sub: "אין הרשאה לתפקיד הזה", href: demoHref.analytics("cs") },
+    ],
+  },
+  creator: {
+    intro: "היוצר רואה הכל: הגדרות, מטריצת ההרשאות ואישור בקשות של המנהל.",
+    links: [
+      { label: "לוח בקרה", sub: "מסך הבית של היוצר", href: demoHref.officeHome("creator") },
+      { label: "הגדרות · משתמשים והרשאות", sub: "משתמשים, בקשות לאישור ומטריצת ההרשאות", href: demoHref.settings("creator", "users") },
+      { label: "הגדרות · טכנאים", sub: "צבע, טלפון, מייל ב-Outlook, פעיל", href: demoHref.settings("creator", "techs") },
+      { label: "הגדרות · מקומות איסוף", sub: "הוספה, כיבוי ומחיקה של מקום שלא בשימוש", href: demoHref.settings("creator", "places") },
+      { label: "הגדרות · סיבות המשך טיפול", sub: "סיבות ונוסח אישור \"טופל\"", href: demoHref.settings("creator", "reasons") },
+      { label: "הגדרות · סוגי קריאה", sub: "תיקון, התקנה", href: demoHref.settings("creator", "types") },
+      { label: "הגדרות · מיילים והתראות", sub: "מייל סיום והתראות לטכנאי", href: demoHref.settings("creator", "mail") },
+      { label: "הגדרות · תבנית זימון", sub: "זיהוי זימון ותוויות חובה", href: demoHref.settings("creator", "template") },
     ],
   },
 });
 
-const ORDER: Viewpoint[] = ["tech", "mgr", "cs"];
+const ORDER: Viewpoint[] = ["tech", "mgr", "cs", "creator"];
 
 export default async function DemoLandingPage() {
   const SCREENS = screens(await callNames(["48213", "48205", "48140", "47800", "47969", "48230"]));

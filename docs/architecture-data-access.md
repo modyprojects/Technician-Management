@@ -9,7 +9,7 @@
 ## Layout
 | Path | Content |
 |---|---|
-| `features/data-access/common.ts` | Shared building blocks. Pure, no data or I/O, safe on server and client.<br>Types: `IsoDate`, `HourMinute`, `IsoTimestamp`, `TestMarker`, `Bounded<T>`, `Page<T>`, `PageRequest`, `CommandResult<T>`.<br>Limits: `MAX_PAGE_LIMIT` (100), `DEFAULT_PAGE_LIMIT` (40), `MAX_QUERY_LENGTH` (100).<br>Helpers: clamp and validation helpers, `boundedOf`, `pageOf` |
+| `features/data-access/common.ts` | Shared building blocks. Pure, no data or I/O, safe on server and client.<br>Types: `IsoDate`, `HourMinute`, `IsoTimestamp`, `TestMarker`, `Bounded<T>`, `Page<T>`, `PageRequest`, `CommandResult<T>`.<br>Limits: `MAX_PAGE_LIMIT` (100), `DEFAULT_PAGE_LIMIT` (40), `MAX_QUERY_LENGTH` (100).<br>Helpers: clamp and validation helpers, `boundedOf`, `pageOf`, `filterListValues` (an optional list filter: none or every value means no filter; a filter with no known value matches nothing, never every record) |
 | `features/data-access/types.ts` | The `DataAccess` and `Commands` aggregates |
 | `features/data-access/commands-context.tsx` | `"use client"`. `CommandsProvider` and `useCommands()`, which throws when no provider wraps the component. Generic: no demo or fixture knowledge |
 | `features/<domain>/data/types.ts` | DTOs and enums of the domain |
@@ -24,14 +24,18 @@ Domains:
 - `reference`, with `permissions.ts` display helpers;
 - `notifications`;
 - `profile` (technician profile);
+- `settings` (Settings tabs: permission matrix, technicians, pickup places, follow-up reasons, call types, mail and notifications, invitation template; SE-02 to SE-16);
+- `accounts` (user accounts and the Manager's account requests that the Creator decides; SE-01, D34);
 - `customers` (types only).
 
 ## Aggregates
 ```ts
 type DataAccess = { calls: CallsQueries; visits: VisitsQueries; calendar: CalendarQueries;
                     dashboards: DashboardQueries; reference: ReferenceQueries;
-                    notifications: NotificationsQueries; profile: ProfileQueries };
-type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands };
+                    notifications: NotificationsQueries; profile: ProfileQueries;
+                    settings: SettingsQueries; accounts: AccountsQueries };
+type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands;
+                    settings: SettingsCommands; accounts: AccountCommands };
 ```
 
 ### `DataAccess` (read side)
@@ -40,7 +44,9 @@ Server Components and server functions call it.
 - `visits`: `techDay(techId, date)`, `get(ref)`, `history(ref)`, `doneVisits(techId, date, page?)` ("הושלמו היום", paged), `doneVisit(techId, ref)` (the technician's own closed visit, read-only; null for an open visit or another technician's visit, D14). For a technician, `history` returns only earlier closed visits of the same call (D36).
 - `calendar` (read-only, OF-03, TE-27; matrix key `cal` for the office): `officeDay(date, filter?)` (one lane per technician, visits placed in overlap lanes), `officeWeek(weekOf, filter?)` (Sunday to Thursday), `officeMonth(month, filter?)` (counts per day), `visit(ref)` (the drawer), `techWeek(techId, weekOf)` (day and week views), `techMonth(techId, month)`. Cancelled visits are never on a calendar. A malformed date or month is a `RangeError`.
 - `dashboards`: `officeOverview(date)`, `managerAnalytics(period)`, `technicianDetail(techId, period, query?)`, `csQueue(date)`.
-- `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04).
+- `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04). Office roles are `mgr`, `cs` and `creator`; only `MatrixRole` (`mgr`, `cs`) has matrix values. `permissions("creator")` returns the status `fixed` (D33: Creator capabilities are fixed, never matrix values) with every key true except `usage`, which waits for open decision d13 and stays false (deny by default; `PENDING_CREATOR_CAPABILITIES`).
+- `settings` (Bounded lists, at most 100): `permissionMatrix()` (rows per key with the `mgr` and `cs` cells: value, status, pending decision; and `creator.pending` for a Creator capability that waits for a decision), `technicians()`, `places()` and `reasons()` (with `inUse`; reasons also `userAdded` and `usedThisMonth`; only a user-added, never-used reason can be deleted, `reasonDeletable()`), `callTypes()`, `mail()` (D09 fixed recipients; d09, d10, d11 items as `PendingSetting`), `template()` (subject prefix, event-driven sync, labels with `required` and `locked`). The "טופל" text is `reference.approvalText()`.
+- `accounts` (paged): `list({ roles?, page?, limit? })` (by role, then name in Hebrew collation), `requests({ statuses?, page?, limit? })` (newest first). A role or status filter with no known value matches nothing. `UserAccount` carries no sign-in activity (last sign-in times belong with the usage screen, pending d13); `deactivatedAt` decides "הפעלה" vs "הפעלה מחדש" (`activationKind()`).
 - `notifications`: `list(userId, page?)`, `unreadCount(userId)`, `preferences(userId)` (profile toggles, TE-29).
 - `profile`: `technician(techId, date)`: name, phone, the figures of the week containing `date` and the office phone. Display only.
 
@@ -51,6 +57,9 @@ Client components get it from `useCommands()`.
 - `calls`: `cancelVisit`. OF-09 and SE-04 are PENDING (open decision d08), so no screen calls it yet: the call card shows a disabled placeholder. There is no reschedule or office-note command: neither is in the demo, the spec or `demo-deviations.md`, and scheduling stays in Outlook (OF-03).
 - `visits`: `depart`, `arrive`, `setPickupCollected` (TE-03 "נאסף"), `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
 - `notifications`: `markRead(ids)`, `markAllRead()`, `setPreferences(prefs)` (TE-28, TE-29; the signed-in user's own notifications only).
+- `settings`: `setPermission(role, key, value)` (Creator only; a `creator` role or a pending cell is rejected), `setTechnicianActive`, `addPlace`, `setPlaceActive`, `deletePlace` (unreferenced only), `addReason`, `setReasonActive`, `deleteReason` (user-added and never used only), `setFixedText` (a new version, D43), `addCallType`, `setCallTypeActive`, `setTechNotification`, `setTemplateLabelRequired` (a locked D17 label is rejected). The add commands return `CreatedSetting` (`{ id, isTest }` as stored).
+- `accounts`: `createAccount` (Creator; returns `{ account }`), `requestAccount` (Manager's Customer Service request, pending until the Creator decides; returns `{ request }`; the implementation checks the target's current role against stored data, `accountRequestTargetError`), `decideAccountRequest` (approve, or reject with a required reason; pending requests only), `cancelAccountRequest`, `deactivateAccount` (immediate, D34 b; never one's own account), `activateAccount`, `createTechnician` (immediate, D34 c; returns `{ account, technician }`, two ids). No password or email-change command (D34 e).
+- **Created records come from the command.** A screen shows the record a command returns (ids, `isTest`, times as stored) and never builds ids or test markers itself, so the Supabase adapter can replace the simulated one without changing a component.
 
 ## `CommandResult`
 ```ts
@@ -58,7 +67,7 @@ type CommandResult<T = void> =
   | { ok: true;  simulated: boolean; message?: string; data?: T }
   | { ok: false; simulated: boolean; error: string };
 ```
-- **`simulated`** is `true` when nothing was saved, uploaded or sent. A screen never claims a real save, upload or email that did not happen (TE-23).
+- **`simulated`** is `true` when nothing was saved, uploaded or sent. A screen never claims a real save, upload or email that did not happen (TE-23), and branches on it: a simulated result shows "בהדגמה … לא נשמר" and marks the changed row "לא נשמר · פעולה מדומה"; a stored result says what was done. Demo-only lines that do not depend on a result (for example "בהדגמה לא נשלחים מיילים") are passed by the demo page as a `note` prop, never written into a component.
 - **`error`** is a short Hebrew message for the user, never a stack trace or server detail.
 
 ## Demo implementation (fictional data, `app/dev/demo`, G-05)
@@ -71,7 +80,9 @@ type CommandResult<T = void> =
   - It checks input with the same validators and waits 250 ms.
   - Invalid input returns `{ok:false, simulated:true, error}`.
   - Valid input returns `{ok:true, simulated:true, message:"פעולה מדומה · לא נשמר"}` and shows the demo toast.
-  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`.
+  - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`, with the empty server state. The Settings tabs that delete (places, reasons) and the account screens nest a second provider with what their commands check against stored data, read through the layer and scoped to that screen (`SimulatedServerState`, built by `office/[role]/_simulatedState.ts`: places and reasons with `inUse` and `userAdded`; the accounts and requests in the viewer's scope; the signed-in account). So a simulated delete of a used or initial reason, a decision on a request that is no longer pending, or a request about an account outside the Manager's scope fails as it would on the server, and no other page carries account or request ids (deny by default: with the empty state these checks fail).
+  - Records it creates are test data with `example.test` addresses only (`testAccountEmailError`, D47), and it returns them as the real commands will.
+- **Route loaders.** `office/[role]/users/_accounts.ts` (account administration) and `office/[role]/settings/[tab]/_users.ts` (Settings › "משתמשים והרשאות") read through `demoDataAccess` and return the DTO props of `components/office/AccountAdminScreen` and `SettingsUsersTab`. Two demo stand-ins, to replace in production: the signed-in account is the viewpoint's demo user (`VIEWPOINTS[role].who`), and the Manager's own requests are filtered in memory from the bounded list. The production adapter takes the user from the session (G-03) and scopes `accounts.requests` to the requester on the server, so the count is exact.
 - **Page frames.** Every demo page renders through `DemoPage`, `DemoTechFrame` or `DemoOfficeFrame`, which carry the fixture sentinel and the "נתוני בדיקה" strip.
 
 ```tsx
@@ -91,7 +102,8 @@ if (!r.ok) setError(r.error);
 3. **Commands.** Commands become server actions that validate input again on the server (`CLAUDE.md`: Zod for inputs) and return `CommandResult` with `simulated: false`. A `CommandsProvider` built on them replaces `SimulatedCommandsProvider`.
 4. **Test data.** In production, dashboards never count test-marked records (SIM-08); in test environments they include them, with the label.
 5. **Colours from the database.** Components put DTO colours such as `Technician.color` into inline styles. The production adapter accepts only an allowlisted colour token (for example `t-y`) and maps it to `var(--t-…)`; it never passes stored CSS through, so a stored value such as `url(…)` cannot make the browser fetch an outside address (TODO before the Supabase adapter).
-6. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
+6. **Account administration.** `AccountCommands` become server functions that check the caller's role in the database under the caller's own session before any Auth admin call (D34); the secret key never reaches a client. The matrix (`settings.setPermission`) is changed only through a Creator-only server function (D33), audited.
+7. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
 
 ## ESLint enforcement (`eslint.config.mjs`; never weakened)
 - **Shared code.** In `components/**`, `features/**` and `lib/**`, importing `@/app/*` or a relative `../…/app/*` is an error.
@@ -100,8 +112,8 @@ if (!r.ok) setError(r.error);
 - **Known gap** (Phase A review): non-normalised paths and dynamic `import()` can evade these rules. No such case occurs in the code; normalising paths is an optional hardening.
 
 ## Bounded lists (`docs/security.md`: query bounds)
-- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits` and the visit rows of `technicianDetail`.
+- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits`, the visit rows of `technicianDetail`, `accounts.list` and `accounts.requests`.
 - **Calendar lists (`Bounded<T>`):** `CALENDAR_LANE_LIMIT` (30) visits per technician per day, `CALENDAR_WEEK_DAY_LIMIT` (100) per office week column; month views carry counts only; at most one lane per technician (100).
 - **Aggregate lists (`Bounded<T>`)** use fixed caps: `DASHBOARD_LIST_LIMIT` (20) and `OLDEST_FOLLOWUPS_LIMIT` (6). `total` gives the full count, so a screen can say "ועוד X".
-- **Settings lists** (technicians, reasons, places) are capped at 100.
+- **Settings lists** (technicians, reasons, places, call types, template labels) are capped at 100.
 - **Other bounds:** search text is cut to 100 characters, and an analytics period may cover at most 366 days.

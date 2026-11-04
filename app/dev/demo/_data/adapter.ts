@@ -11,10 +11,38 @@ import { normalizeCalendarFilter, isYearMonth } from "@/features/calendar/data/v
 import type { YearMonth } from "@/features/calendar/data/types";
 import { normalizeCallFilter } from "@/features/calls/data/validate";
 import type { CallsPage, CallStatus } from "@/features/calls/data/types";
-import { isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
+import { boundedOf, filterListValues, isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
 import type { DataAccess } from "@/features/data-access/types";
 import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
-import { isOfficeRole, type OfficeRole } from "@/features/reference/data/types";
+import {
+  ACCOUNT_REQUEST_STATUSES,
+  ACCOUNT_ROLE_VALUES,
+  isAccountRequestStatus,
+  isAccountRole,
+  type AccountRef,
+  type AccountRequest,
+  type UserAccount,
+} from "@/features/accounts/data/types";
+import {
+  isMatrixRole,
+  isOfficeRole,
+  MATRIX_ROLE_VALUES,
+  PERMISSION_KEYS,
+  type MatrixRole,
+  type OfficeRole,
+  type PermissionKey,
+  type RolePermissions,
+} from "@/features/reference/data/types";
+import {
+  isLockedTemplateField,
+  PERMISSION_LABELS,
+  pendingCreatorDecision,
+  pendingMatrixDecision,
+  TECH_NOTIFICATION_KEYS,
+  type CompletionMailRule,
+  type PermissionCell,
+  type PendingSetting,
+} from "@/features/settings/data/types";
 import type { ClosedVisitDetail, FieldTimeKey, TechDay, VisitDetail, VisitRef } from "@/features/visits/data/types";
 import { visitRefError } from "@/features/visits/data/validate";
 import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
@@ -24,7 +52,23 @@ import { calendarVisitDetail, callDetail, callSummary, historyItem, techDayVisit
 import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
 import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
+import { ACCOUNT_REQUESTS, ACCOUNTS, accountById, type DemoAccount, type DemoAccountRequest } from "./accounts";
 import { FIXED_TEXT, ME, OFFICE_PHONE, PLACES, prod, PRODUCTS, REASONS, TECH_IDS, TECHS } from "./reference";
+import {
+  CALL_TYPE_SETTINGS,
+  callTypeInUse,
+  COMPLETION_MAILBOX,
+  PLACE_IDS,
+  placeInUse,
+  REASON_IDS,
+  reasonInUse,
+  reasonUsesThisMonth,
+  SUBJECT_PREFIX,
+  TECH_ACTIVE,
+  TECH_DEVICE,
+  TECH_NOTIFICATIONS,
+  TEMPLATE_LABELS,
+} from "./settings";
 import { callStatus, isClosedVisit, isOpenVisit } from "./status";
 import type { Call, TechId } from "./types";
 
@@ -76,6 +120,64 @@ const PRODUCTS_BY_SKU = [...PRODUCTS].sort((a, b) => a.sku.localeCompare(b.sku))
 
 /** Notifications newest first. */
 const NOTIFICATIONS_NEWEST_FIRST = [...NOTIFICATIONS].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+
+/**
+ * The Creator's capabilities: fixed (D33), never matrix values. Every key except one that waits for
+ * an open decision (`usage`, d13), which stays off until the owner decides (deny by default).
+ */
+const CREATOR_PERMISSIONS: RolePermissions = {
+  role: "creator",
+  status: "fixed",
+  values: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, pendingCreatorDecision(key) === null])) as Record<PermissionKey, boolean>,
+};
+
+function matrixCell(role: MatrixRole, key: PermissionKey): PermissionCell {
+  return { value: PERMISSIONS[role][key], status: PERMISSION_STATUS, pending: pendingMatrixDecision(role, key) };
+}
+
+const pending = (decision: PendingSetting["decision"]): PendingSetting => ({ status: "pending", decision });
+
+/** SE-08 to SE-10: fixed recipients (D09) and the items that wait for d10 / d11. */
+const completionRule = (outcome: CompletionMailRule["outcome"]): CompletionMailRule => ({
+  outcome,
+  fixedRecipients: { manager: true, serviceMailbox: COMPLETION_MAILBOX },
+  managerScope: pending("d10"),
+  handlingRep: pending("d10"),
+  attachMedia: pending("d11"),
+});
+
+const ROLE_ORDER = new Map(ACCOUNT_ROLE_VALUES.map((role, i) => [role, i]));
+
+/** Accounts by role (creator, mgr, cs, tech), then by name (Hebrew collation), as the port documents. */
+const ACCOUNTS_BY_ROLE = [...ACCOUNTS].sort(
+  (a, b) => (ROLE_ORDER.get(a.role) ?? 0) - (ROLE_ORDER.get(b.role) ?? 0) || a.name.localeCompare(b.name, "he"),
+);
+
+/** Requests newest first. */
+const REQUESTS_NEWEST_FIRST = [...ACCOUNT_REQUESTS].sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
+
+function accountRef(id: string): AccountRef {
+  const a = accountById(id);
+  return { id, name: a?.name ?? "" };
+}
+
+const userAccount = (a: DemoAccount): UserAccount => ({ ...a, isTest: TEST });
+
+const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
+  id: r.id,
+  kind: r.kind,
+  account: r.accountId ? accountRef(r.accountId) : null,
+  target: { ...r.target },
+  newRole: r.newRole,
+  requestedBy: accountRef(r.requestedBy),
+  requestedAt: r.requestedAt,
+  status: r.status,
+  reason: r.reason,
+  decidedBy: r.decidedBy ? accountRef(r.decidedBy) : null,
+  decidedAt: r.decidedAt,
+  isTest: TEST,
+});
+
 
 export const demoDataAccess: DataAccess = {
   calls: {
@@ -229,8 +331,10 @@ export const demoDataAccess: DataAccess = {
       // The demo has one version of the "טופל" text (Settings editing is not part of the demo).
       return { versionId: "demo-approval-text-v1", text: FIXED_TEXT, isTest: TEST };
     },
-    async permissions(role: OfficeRole) {
+    async permissions(role: OfficeRole): Promise<RolePermissions> {
       if (!isOfficeRole(role)) throw new RangeError("Unknown office role");
+      if (role === "creator") return { ...CREATOR_PERMISSIONS, values: { ...CREATOR_PERMISSIONS.values } };
+      if (!isMatrixRole(role)) throw new RangeError("Unknown office role");
       return { role, status: PERMISSION_STATUS, values: { ...PERMISSIONS[role] } };
     },
   },
@@ -259,6 +363,101 @@ export const demoDataAccess: DataAccess = {
     async preferences() {
       // Nothing is ever saved in the demo (simulated commands): every user has the defaults.
       return { ...NOTIFICATION_PREFERENCES };
+    },
+  },
+
+  settings: {
+    async permissionMatrix() {
+      return {
+        rows: PERMISSION_KEYS.map((key) => ({
+          key,
+          label: PERMISSION_LABELS[key].label,
+          hint: PERMISSION_LABELS[key].hint,
+          cells: Object.fromEntries(MATRIX_ROLE_VALUES.map((role) => [role, matrixCell(role, key)])) as Record<MatrixRole, PermissionCell>,
+          creator: { pending: pendingCreatorDecision(key) },
+        })),
+      };
+    },
+    async technicians() {
+      return boundedOf(
+        TECHS.map((t) => ({ id: t.id, name: t.name, color: t.color, phone: t.phone, email: t.email, active: TECH_ACTIVE, device: TECH_DEVICE, isTest: TEST })),
+        MAX_PAGE_LIMIT,
+      );
+    },
+    async places() {
+      return boundedOf(
+        PLACES.map((p, i) => ({
+          id: PLACE_IDS[i] as string,
+          name: p.name,
+          type: p.type,
+          address: p.addr,
+          phone: p.phone,
+          hours: p.hours,
+          active: p.on,
+          inUse: placeInUse(p.name),
+          isTest: TEST,
+        })),
+        MAX_PAGE_LIMIT,
+      );
+    },
+    async reasons() {
+      return boundedOf(
+        REASONS.map((r, i) => ({
+          id: REASON_IDS[i] as string,
+          order: i + 1,
+          name: r.name,
+          active: r.on,
+          inUse: reasonInUse(r.name),
+          // The seeded reasons are the initial values (D48), not user-added: deactivate only.
+          userAdded: false,
+          usedThisMonth: reasonUsesThisMonth(r.name),
+          isTest: TEST,
+        })),
+        MAX_PAGE_LIMIT,
+      );
+    },
+    async callTypes() {
+      return boundedOf(
+        CALL_TYPE_SETTINGS.map((t) => ({ ...t, inUse: callTypeInUse(t.name), isTest: TEST })),
+        MAX_PAGE_LIMIT,
+      );
+    },
+    async mail() {
+      return {
+        completion: [completionRule("done"), completionRule("cont")],
+        technicianNotifications: TECH_NOTIFICATION_KEYS.map((key) => ({ key, on: TECH_NOTIFICATIONS[key] })),
+        unparsedInvitationMail: pending("d09"),
+      };
+    },
+    async template() {
+      return {
+        subjectPrefix: SUBJECT_PREFIX,
+        syncMode: "event-driven",
+        existingRequest: "add-visit",
+        labels: boundedOf(
+          TEMPLATE_LABELS.map((l) => {
+            const locked = isLockedTemplateField(l.key);
+            return { key: l.key, label: l.label, required: locked || l.required, locked };
+          }),
+          MAX_PAGE_LIMIT,
+        ),
+      };
+    },
+  },
+
+  accounts: {
+    async list(query) {
+      // An unknown role never widens the list: a filter with no known role matches nothing.
+      const roles = filterListValues(query?.roles, isAccountRole, ACCOUNT_ROLE_VALUES);
+      const matches = roles ? ACCOUNTS_BY_ROLE.filter((a) => roles.includes(a.role)) : ACCOUNTS_BY_ROLE;
+      const page = pageOf(matches, query?.page, query?.limit);
+      return { ...page, items: page.items.map(userAccount) };
+    },
+    async requests(query) {
+      const statuses = filterListValues(query?.statuses, isAccountRequestStatus, ACCOUNT_REQUEST_STATUSES);
+      const matches = statuses ? REQUESTS_NEWEST_FIRST.filter((r) => statuses.includes(r.status)) : REQUESTS_NEWEST_FIRST;
+      const page = pageOf(matches, query?.page, query?.limit);
+      return { ...page, items: page.items.map(accountRequest) };
     },
   },
 

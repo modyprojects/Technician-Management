@@ -77,7 +77,7 @@ export async function ManagerHome({ role }: { role: OfficeRole }) {
               לכל הקריאות ›
             </Link>
             {offersAnyDashboard(permissions) && (
-              <Link className="btn pri" href={demoHref.analytics()}>
+              <Link className="btn pri" href={demoHref.analytics(role)}>
                 לדשבורד ›
               </Link>
             )}
@@ -95,7 +95,7 @@ export async function ManagerHome({ role }: { role: OfficeRole }) {
           callHref={links.call}
           // The technician drill-down, only when the matrix offers it (display only, G-04).
           technicianHref={
-            offers(permissions, "dashTech") ? (id) => analyticsHref(demoHref.analytics(), { tab: "tech", tech: id }) : undefined
+            offers(permissions, "dashTech") ? (id) => analyticsHref(demoHref.analytics(role), { tab: "tech", tech: id }) : undefined
           }
         />
       </DashboardSection>

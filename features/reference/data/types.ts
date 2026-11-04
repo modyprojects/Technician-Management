@@ -20,6 +20,23 @@ export type Technician = TestMarker & {
   active: boolean;
 };
 
+/**
+ * Allowlisted technician colour tokens (app/globals.css `--t-*`). Inputs name a token, never CSS;
+ * the adapter maps a token to `var(--t-…)` (docs/architecture-data-access.md, "Colours from the
+ * database").
+ */
+export const TECHNICIAN_COLOR_TOKENS = ["t-y", "t-e", "t-s"] as const;
+export type TechnicianColorToken = (typeof TECHNICIAN_COLOR_TOKENS)[number];
+
+export const isTechnicianColorToken = (value: unknown): value is TechnicianColorToken =>
+  typeof value === "string" && (TECHNICIAN_COLOR_TOKENS as readonly string[]).includes(value);
+
+/** Hebrew names of the allowlisted colours (form labels). */
+export const TECHNICIAN_COLOR_NAMES: Readonly<Record<TechnicianColorToken, string>> = { "t-y": "ירוק", "t-e": "אדום", "t-s": "כחול" };
+
+/** The CSS of an allowlisted colour token: `var(--t-…)`. Never CSS from input or storage. */
+export const technicianColorCss = (token: TechnicianColorToken): string => `var(--${token})`;
+
 /** What other DTOs carry about a technician. */
 export type TechnicianRef = Pick<Technician, "id" | "name" | "color" | "phone">;
 
@@ -57,11 +74,24 @@ export type ApprovalText = TestMarker & {
   text: string;
 };
 
-/** Office roles governed by the permission matrix (D33). Creator and Technician are fixed. */
-export const OFFICE_ROLE_VALUES = ["mgr", "cs"] as const;
+/**
+ * Office roles (the office viewpoints): Manager, Customer Service and the Creator. The Creator's
+ * capabilities are FIXED (D33): it is never a matrix role and has every capability.
+ */
+export const OFFICE_ROLE_VALUES = ["mgr", "cs", "creator"] as const;
 export type OfficeRole = (typeof OFFICE_ROLE_VALUES)[number];
 
-export const isOfficeRole = (value: unknown): value is OfficeRole => value === "mgr" || value === "cs";
+export const isOfficeRole = (value: unknown): value is OfficeRole =>
+  typeof value === "string" && (OFFICE_ROLE_VALUES as readonly string[]).includes(value);
+
+/**
+ * Roles governed by the editable permission matrix (D33): Manager and Customer Service only.
+ * Technician and Creator capabilities are fixed, never matrix values.
+ */
+export const MATRIX_ROLE_VALUES = ["mgr", "cs"] as const;
+export type MatrixRole = (typeof MATRIX_ROLE_VALUES)[number];
+
+export const isMatrixRole = (value: unknown): value is MatrixRole => value === "mgr" || value === "cs";
 
 /** Permission-matrix keys (D33, demo-deviations SE-02). */
 export const PERMISSION_KEYS = [
@@ -81,15 +111,33 @@ export const PERMISSION_KEYS = [
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
-/** D51: values stay "temporary" until the owner approves the final matrix in Step 10. */
-export type PermissionValueStatus = "temporary" | "approved";
+export const isPermissionKey = (value: unknown): value is PermissionKey =>
+  typeof value === "string" && (PERMISSION_KEYS as readonly string[]).includes(value);
+
+/** D51: a matrix value stays "temporary" until the owner approves the final matrix in Step 10. */
+export type MatrixValueStatus = "temporary" | "approved";
 
 /**
- * A role's matrix values. Display only: what a screen offers. Enforcement is always on the
- * server and in the database (RLS, grants, server functions); never use this as access control.
+ * Status of a role's values: a matrix value's status (D51), or "fixed" for the Creator, whose
+ * capabilities are never matrix values (D33) and are not temporary.
  */
-export type RolePermissions = {
-  role: OfficeRole;
-  status: PermissionValueStatus;
-  values: Readonly<Record<PermissionKey, boolean>>;
-};
+export type PermissionValueStatus = MatrixValueStatus | "fixed";
+
+/**
+ * A role's capabilities as the screens see them. Display only: what a screen offers. Enforcement
+ * is always on the server and in the database (RLS, grants, server functions); never use this as
+ * access control. Matrix roles carry matrix values (temporary per D51); the Creator carries its
+ * fixed capabilities with the status "fixed": every key true except a capability that waits for
+ * an open owner decision (`usage` until d13), which stays false (deny by default).
+ */
+export type RolePermissions =
+  | {
+      role: MatrixRole;
+      status: MatrixValueStatus;
+      values: Readonly<Record<PermissionKey, boolean>>;
+    }
+  | {
+      role: "creator";
+      status: "fixed";
+      values: Readonly<Record<PermissionKey, boolean>>;
+    };

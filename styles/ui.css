@@ -377,3 +377,71 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   a.tnp-item { padding-block: 14px; }
 }
 /* end tech-notifs-profile */
+
+/* settings-ops */
+/* Settings shell and operational tabs (UI demo, D53; demo offSettings() L938-942 and setTechs()
+   to setTemplate() L948-973; the demo's inline styles as classes). The tab column is real links
+   beside the body; at 900px and below (office top bar) it becomes a horizontal scroller above it. */
+.set-layout { display: flex; gap: 20px; align-items: flex-start; }
+.set-tabs { width: 200px; flex: none; display: flex; flex-direction: column; gap: 4px; }
+.set-tabs a { display: block; text-align: right; padding: 10px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; border: 1px solid transparent; color: var(--ink2); text-decoration: none; }
+.set-tabs a.on { background: var(--card); border-color: var(--line); color: var(--accent); }
+/* The nav is also .scrollx (it scrolls sideways at 900px and below), which clips outside outlines. */
+.set-tabs a:focus-visible { outline-offset: -3px; }
+.set-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+/* Card title row: h2 (and sub-line) with the "+ הוספה" button (L944, L948). */
+.sec.set-head { padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sec.set-head h2 { margin: 0; }
+/* The title block takes the free width, so a long sub-line wraps beside the action instead of
+   pushing the action (a pill or button) onto its own line. */
+.set-head > :first-child { flex: 1 1 280px; min-width: 0; }
+.set-head .sub { margin-top: 4px; }
+.set-head h2:focus { outline: none; }
+/* Add row under a table (L962) and the line under it. */
+.set-add { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; align-items: center; }
+.set-add input { flex: 1; min-width: 200px; }
+.set-foot { padding: 0 18px 12px; }
+.set-more { padding: 8px 18px; }
+/* Add forms (places, technicians): labelled fields in a grid. */
+.set-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 12px; padding: 12px 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--tint); }
+.set-form > label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
+.set-form input, .set-form select { width: 100%; min-width: 0; }
+.set-form-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.set-swatches { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; border: 0; padding: 0; margin: 0; min-width: 0; }
+.set-swatches legend { font-size: 13px; font-weight: 700; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.set-swatch-opt { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+/* Technician colour (L950: .dot 14px, radius 4px). */
+.set-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: middle; flex: none; }
+.set-name { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Switch with its inline error; switch and "מחיקה" in one cell (L960). */
+.set-tog { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* A locked switch with its "🔒 תמיד חובה" marker stays on one line (no double-height row). */
+.set-tog.set-tog-locked { flex-wrap: nowrap; white-space: nowrap; }
+.set-cell-actions { display: flex; gap: 10px; align-items: center; }
+.chip.set-del { padding: 3px 10px; font-size: 12px; color: var(--danger); }
+.set-err { color: var(--danger); font-size: 12px; font-weight: 700; }
+.set-err-row { padding: 8px 18px 0; }
+/* Mail-settings row (setMail() line(), L966). */
+.set-line { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--line2); }
+.set-line > span:first-child { min-width: 0; }
+.set-line-sub { display: block; }
+/* The fixed "תמיד" marker (D09 recipients, D17 labels). */
+.pill.set-always { background: var(--accent-l); color: var(--accent-d); }
+/* Template detection key-value list (L971: 220px label column). */
+.kv.set-kv { grid-template-columns: 220px minmax(0, 1fr); }
+@container stage (max-width: 900px) {
+  .set-layout { flex-direction: column; align-items: stretch; gap: 12px; }
+  .set-tabs { width: auto; flex-direction: row; overflow-x: auto; padding: 2px; scrollbar-width: thin; }
+  .set-tabs a { flex: none; white-space: nowrap; }
+}
+/* Narrow tables: a secondary column (an account's email, a technician's Outlook email) moves under
+   the name, so the status and action columns stay in view without scrolling sideways. */
+.set-inline-narrow { display: none; }
+@container stage (max-width: 520px) {
+  .set-col-wide { display: none; }
+  .set-inline-narrow { display: block; }
+  .kv.set-kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .kv.set-kv > b { margin-bottom: 8px; }
+  .set-add input { min-width: 0; flex-basis: 100%; }
+}
+/* end settings-ops */

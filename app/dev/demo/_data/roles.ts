@@ -15,6 +15,7 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
+import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
 
@@ -28,20 +29,54 @@ export const OFFICE_ROLES: readonly OfficeRole[] = OFFICE_ROLE_VALUES;
  *  from the session). Pages pass it to the data-access layer as a filter. */
 export const DEMO_TECHNICIAN_ID: TechnicianId = ME;
 
-/** Viewpoints offered on the landing page (the demo's ROLE map, without the creator). */
+/**
+ * Viewpoints offered on the landing page (the demo's ROLE map, L300-305). The app has no role
+ * switcher (X-02): the role comes from sign-in; the /dev/demo landing lists the viewpoints.
+ */
 export const VIEWPOINTS: Record<Viewpoint, { label: string; short: string; who: string; color: string }> = {
   tech: { label: "טכנאי · יורם", short: "טכנאי", who: "יורם", color: "var(--t-y)" },
   mgr: { label: "מנהל · דורון", short: "מנהל", who: "דורון", color: "var(--accent)" },
   cs: { label: "שירות לקוחות · שיראל", short: "שירות לקוחות", who: "שיראל", color: "var(--s-work)" },
+  creator: { label: "יוצר", short: "יוצר", who: "משתמש יוצר", color: "var(--ink)" },
 };
 
 /** OfficeShell `user` prop per role. */
 export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: string; avatarColor: string }> = {
   mgr: { name: VIEWPOINTS.mgr.who, roleLabel: VIEWPOINTS.mgr.short, avatarColor: VIEWPOINTS.mgr.color },
   cs: { name: VIEWPOINTS.cs.who, roleLabel: VIEWPOINTS.cs.short, avatarColor: VIEWPOINTS.cs.color },
+  creator: { name: VIEWPOINTS.creator.who, roleLabel: VIEWPOINTS.creator.short, avatarColor: VIEWPOINTS.creator.color },
 };
 
-export type OfficeNavKey = "home" | "cal" | "calls" | "analytics";
+export type OfficeNavKey = "home" | "cal" | "calls" | "analytics" | "users" | "settings";
+
+/**
+ * The Settings tabs a role's screens offer. Display only (G-04): the server checks the Creator
+ * role (matrix, accounts, D33/D34) and `settings` (operational settings, D35) itself.
+ * - Creator: every tab (fixed capabilities, D33).
+ * - A matrix role whose `settings` value is on: the operational settings of D35 (places, reasons
+ *   with the "טופל" text, call types, template labels). "משתמשים והרשאות" stays Creator-only (the
+ *   matrix is Creator-only, D33; the Manager's account administration is the "משתמשים" screen).
+ *   "טכנאים" and "מיילים והתראות" are not D35 operational settings: deny by default until the
+ *   owner says otherwise (the Manager manages technician accounts on "משתמשים", D34).
+ * - Otherwise none (the default for Manager and Customer Service: `settings` off, SE-03).
+ */
+export function settingsTabsOffered(role: OfficeRole, permissions: RolePermissions): readonly SettingsSection[] {
+  if (role === "creator") return SETTINGS_SECTION_VALUES;
+  if (!offers(permissions, "settings")) return [];
+  return ["places", "reasons", "types", "template"];
+}
+
+/**
+ * Account administration a role's screens offer (D34, a fixed capability, never a matrix key,
+ * SE-03). Display only: the server checks every account action in the database (D34).
+ * - "all": the Creator (every account, decides the Manager's requests; on Settings › משתמשים והרשאות).
+ * - "cs-tech": the Manager (Customer Service and Technician accounts; requests for Customer Service).
+ * - null: Customer Service.
+ */
+export function accountAdminScope(role: OfficeRole): "all" | "cs-tech" | null {
+  if (role === "creator") return "all";
+  return role === "mgr" ? "cs-tech" : null;
+}
 
 /**
  * The office home's title: the dashboard home ("לוח בקרה") where the role's matrix value offers
@@ -50,9 +85,14 @@ export type OfficeNavKey = "home" | "cal" | "calls" | "analytics";
 export const officeHomeLabel = (permissions: RolePermissions): string => (offers(permissions, "dashGen") ? "לוח בקרה" : "בית");
 
 /**
- * Office sidebar items, from the role's matrix values (read through
+ * Office sidebar items, from the role's values (read through
  * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730). Display only:
- * it hides menu items, it does not protect routes (G-04): the calendar page checks `cal` itself.
+ * it hides menu items, it does not protect routes (G-04): each page checks what it offers itself.
+ * - "משתמשים" (account administration, D34): the Manager only (a fixed capability, SE-03); the
+ *   Creator administers accounts on Settings › משתמשים והרשאות.
+ * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; a matrix role only
+ *   with `settings`), linking to the first offered tab.
+ * - "מדדי שימוש" is never in the menu (OF-15 PENDING d13: the usage screen is not built).
  */
 export function officeNav(role: OfficeRole, permissions: RolePermissions): (OfficeNavItem & { key: OfficeNavKey })[] {
   const items: (OfficeNavItem & { key: OfficeNavKey })[] = [
@@ -60,7 +100,10 @@ export function officeNav(role: OfficeRole, permissions: RolePermissions): (Offi
   ];
   if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים", href: demoHref.officeCalendar(role) });
   items.push({ key: "calls", label: "קריאות", href: demoHref.calls(role) });
-  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics() });
+  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics(role) });
+  if (accountAdminScope(role) === "cs-tech") items.push({ key: "users", label: "משתמשים", href: demoHref.users(role) });
+  const tabs = settingsTabsOffered(role, permissions);
+  if (tabs[0]) items.push({ key: "settings", label: "הגדרות", href: demoHref.settings(role, tabs[0]) });
   return items;
 }
 

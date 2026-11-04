@@ -17,9 +17,12 @@ export interface ReferenceQueries {
   /** The current "טופל" approval text and its version, shown on the close screen (D43, TE-19). */
   approvalText(): Promise<ApprovalText>;
   /**
-   * The role's permission-matrix values (D33; status "temporary" until the owner approves the
-   * final matrix, D51). Screens and navigation read them here (helpers in ./permissions) and use
-   * them for display only; enforcement is on the server and in the database (G-04).
+   * What the office role's screens offer. Manager and Customer Service: their permission-matrix
+   * values (D33; status "temporary" until the owner approves the final matrix, D51). Creator:
+   * every key true with the status "fixed" (D33: Creator capabilities are fixed, never matrix
+   * values). Screens and navigation read them here (helpers in ./permissions) and use them for
+   * display only; enforcement is on the server and in the database (G-04). A value that is not an
+   * office role is a RangeError.
    */
   permissions(role: OfficeRole): Promise<RolePermissions>;
 }

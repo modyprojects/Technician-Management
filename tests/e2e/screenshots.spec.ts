@@ -93,8 +93,8 @@ async function sign(page: Page, selector: string) {
   await page.mouse.up();
 }
 
-/** Opens docs/demo.html as a role (tech | cs | mgr), demo bar hidden. */
-async function demoAs(page: Page, role: "tech" | "cs" | "mgr") {
+/** Opens docs/demo.html as a role (tech | cs | mgr | creator), demo bar hidden. */
+async function demoAs(page: Page, role: "tech" | "cs" | "mgr" | "creator") {
   await page.goto(DEMO_URL);
   await page.locator(`#roles button[data-v="${role}"]`).click();
   await page.addStyleTag({ content: ".demobar{display:none!important}" });
@@ -333,6 +333,50 @@ test.describe("ui-demo-2 review screenshots", () => {
       await page.locator('[data-act="openDone"]').first().click();
       await page.mouse.move(0, 0);
       await demoShot("tech-done-view");
+    });
+  }
+});
+
+// UI demo, phase E (D53): the Creator's Settings tabs and the Manager's account administration,
+// next to docs/demo.html's Settings tabs (as the Creator). The demo has no "סוגי קריאה" tab (SE-16)
+// and no Manager account screen (SE-01): those app shots have no demo counterpart.
+const OUT_DEMO_3 = path.resolve("docs/review/ui-demo-3");
+
+test.describe("ui-demo-3 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`phase E screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize(size);
+      const shot = (name: string, fullPage = true) => appShot(page, path.join(OUT_DEMO_3, `${size.width}-${name}.png`), fullPage);
+
+      for (const [name, url] of [
+        ["settings-users", "/dev/demo/office/creator/settings/users"],
+        ["settings-techs", "/dev/demo/office/creator/settings/techs"],
+        ["settings-places", "/dev/demo/office/creator/settings/places"],
+        ["settings-reasons", "/dev/demo/office/creator/settings/reasons"],
+        ["settings-types", "/dev/demo/office/creator/settings/types"],
+        ["settings-mail", "/dev/demo/office/creator/settings/mail"],
+        ["settings-template", "/dev/demo/office/creator/settings/template"],
+        ["mgr-users", "/dev/demo/office/mgr/users"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name);
+      }
+
+      // docs/demo.html as the Creator: Settings, each tab.
+      const demoShot = async (name: string) => {
+        await page.addStyleTag({ content: UNCLIP_DEMO_HTML });
+        await page.screenshot({ path: path.join(OUT_DEMO_3, `${size.width}-demo-${name}.png`), fullPage: true });
+      };
+      for (const tab of ["users", "techs", "places", "reasons", "mail", "template"] as const) {
+        await demoAs(page, "creator");
+        await page.locator('.side .nav button[data-v="settings"]').click();
+        await page.locator(`[data-act="setTab"][data-v="${tab}"]`).click();
+        await expect(page.locator(`[data-act="setTab"][data-v="${tab}"]`)).toBeVisible();
+        await demoShot(`settings-${tab}`);
+      }
     });
   }
 });

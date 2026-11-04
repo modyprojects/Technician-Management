@@ -130,3 +130,20 @@ export function pageOf<T>(all: readonly T[], page: unknown, limit: unknown): Pag
   const start = (current - 1) * size;
   return { items: all.slice(start, start + size), total: all.length, page: current, limit: size, pageCount };
 }
+
+/**
+ * Normalizes an optional list filter (for example `roles` or `statuses`): null means "no filter"
+ * (none given, or every known value given); otherwise the known values to keep. A filter that was
+ * given but holds no known value returns [] and matches nothing (deny by default): an unknown
+ * value never widens a query to every record.
+ */
+export function filterListValues<T extends string>(
+  values: unknown,
+  isValid: (v: unknown) => v is T,
+  all: readonly T[],
+): T[] | null {
+  if (values === undefined || values === null) return null;
+  if (!Array.isArray(values)) return [];
+  const kept = [...new Set(values.filter(isValid))];
+  return kept.length === all.length ? null : kept;
+}

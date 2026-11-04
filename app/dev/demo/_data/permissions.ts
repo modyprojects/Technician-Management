@@ -4,14 +4,15 @@
 // imports), exactly as they will read the Creator-edited matrix from the database.
 // The values are TEMPORARY until the owner approves the final matrix in Step 10 (D51). They only
 // decide what the demo shows; real enforcement is on the server and in the database (G-04).
-import type { PermissionKey, PermissionValueStatus } from "@/features/reference/data/types";
-import type { OfficeRole } from "./types";
+// The Creator is not in the matrix: its capabilities are fixed (D33), served by the adapter as
+// every key true with the status "fixed".
+import type { MatrixRole, MatrixValueStatus, PermissionKey } from "@/features/reference/data/types";
 
 /** Status of every value below (D51). */
-export const PERMISSION_STATUS: PermissionValueStatus = "temporary";
+export const PERMISSION_STATUS: MatrixValueStatus = "temporary";
 
 /** Default matrix: Manager all on except settings and usage; Customer Service cal, calls, card. */
-export const PERMISSIONS: Readonly<Record<OfficeRole, Readonly<Record<PermissionKey, boolean>>>> = {
+export const PERMISSIONS: Readonly<Record<MatrixRole, Readonly<Record<PermissionKey, boolean>>>> = {
   mgr: {
     cal: true, calls: true, card: true, cancel: true, dashGen: true, dashTech: true, dashProd: true,
     export: true, settings: false, usage: false, products: true, conflicts: true, recordings: true,
