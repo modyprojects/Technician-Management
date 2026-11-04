@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ALLOWED_EXTENSIONS, ALLOWED_WRITERS, checkFiles, checkRepository, checkSql, lexSql } from "../../scripts/check-migrations.mjs";
+import { ALLOWED_EXTENSIONS, ALLOWED_REFERENCE_TRIGGERS, ALLOWED_WRITERS, checkFiles, checkRepository, checkSql, lexSql } from "../../scripts/check-migrations.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const rejects = (sql, pattern, options) => {
@@ -284,7 +284,6 @@ test("schema statements that only name UPDATE, DELETE, TRUNCATE or AS still pass
     create policy p2 on public.a for delete to authenticated using (true);
     grant select, insert, update, delete, truncate on public.a to authenticated;
     revoke truncate on public.a from anon;
-    alter table public.a rename column n to m;
     alter table public.a add column is_test boolean not null default false;
     comment on table public.a is 'UPDATE, DELETE and TRUNCATE are rejected; delete from x is not run';
     create function private.f() returns void language plpgsql as $$
@@ -318,7 +317,7 @@ test("R-S2 g1-g8: the security review's probes fail", () => {
   rejects(`${UPDATER("probe_w")}
     create function private.probe_harmless(x int default private.probe_w()) returns int language sql set search_path = '' as $$ select x $$;
     select private.probe_harmless();`, /the migration calls probe_harmless\(\)/);
-  rejects(`${UPDATER("probe_w")} alter function private.probe_w() rename to probe_r; select private.probe_r();`, /RENAME TO is not allowed/);
+  rejects(`${UPDATER("probe_w")} alter function private.probe_w() rename to probe_r; select private.probe_r();`, /RENAME is not allowed/);
   rejects(`create function private.probe_w() returns int language plpgsql as $$
       begin update public.role_permissions * set allowed = true; return 1; end $$;
     select private.probe_w();`, /the migration calls probe_w\(\)/);
@@ -380,9 +379,9 @@ test("R-G1: a writer is called when a statement that runs names it in any way", 
   // Escapes and renames.
   rejects(`${definition} select private.U&"\\0077"(1, 2);`, /U& Unicode escapes/, options);
   rejects(`${definition} select U&'x';`, /U& Unicode escapes/, options);
-  rejects(`${definition} alter function private.w(int, int) rename to harmless; select private.harmless(1, 2);`, /RENAME TO is not allowed/, options);
+  rejects(`${definition} alter function private.w(int, int) rename to harmless; select private.harmless(1, 2);`, /RENAME is not allowed/, options);
   rejects(`${definition} alter function private.w(int, int) set schema public;`, /SET SCHEMA is not allowed/, options);
-  rejects(`${definition} alter routine private.w(int, int) rename to harmless;`, /RENAME TO is not allowed/, options);
+  rejects(`${definition} alter routine private.w(int, int) rename to harmless;`, /RENAME is not allowed/, options);
   // PostgreSQL truncates identifiers to 63 bytes: a longer spelling is the same function.
   const long = "w".repeat(63);
   const longOptions = writer(`private.${long}()`, ["public.customers"]);
@@ -445,7 +444,7 @@ test("R-G2/R-G6: a reference INSERT lists its columns, sets no marker and uses p
   rejects(trigger("new := jsonb_populate_record(new, '{}');"), /BEFORE INSERT trigger on reference table call_types/);
   rejects(`create trigger t before insert on public.call_types for each row execute function private.not_defined_here();`,
     /BEFORE INSERT trigger on reference table call_types/);
-  passes(trigger("if new.label_he = 'x' then raise exception 'x'; end if;"));
+  passes(trigger("if new.label_he = 'x' then raise exception 'x'; end if;"), { allowedReferenceTriggers: new Set(["private.tg_x()"]) });
   passes(`insert into public.permissions (key, label_he, enforcement, sort_order) values ('k', 'תווית', 'screen', 14), ('k2', 'x', 'data', -1);`);
 });
 
@@ -520,9 +519,9 @@ test("R-G5: a reference table is only public.<name>; no inheritance, partitions,
     [`create table public.x (id int) inherits (public.customers);`, /INHERIT\/INHERITS is not allowed/],
     [`alter table public.customers attach partition s.x for values in (1);`, /ATTACH PARTITION is not allowed/],
     [`create table s.x partition of public.customers for values in (1);`, /PARTITION OF is not allowed/],
-    [`alter table s.call_types rename to customers;`, /RENAME TO is not allowed/],
+    [`alter table s.call_types rename to customers;`, /RENAME is not allowed/],
     [`alter table s.customers set schema public;`, /SET SCHEMA is not allowed/],
-    [`alter schema s rename to t;`, /RENAME TO is not allowed/],
+    [`alter schema s rename to t;`, /RENAME is not allowed/],
   ]) {
     rejects(sql, pattern);
   }
@@ -561,4 +560,319 @@ test("R-G1/R-G8: the independent guard review's call paths fail", () => {
   ]) {
     assert.ok(checkSql(sql).length > 0, sql);
   }
+});
+
+// Fix round 1 (final-verify items N1-N3) -----------------------------------------------------------------
+
+const EXISTING_REWRITE = /on the existing table .* is not allowed in migrations \(it rewrites existing rows\)/;
+
+test("N1: schema changes that rewrite an existing table's rows fail (drop and re-add, type changes, casts)", () => {
+  // Drop and re-add with a default: every existing profile would become a manager.
+  const dropAdd = checkSql(`alter table public.profiles drop column role;
+    alter table public.profiles add column role text not null default 'manager';`);
+  assert.ok(dropAdd.some((p) => /DROP COLUMN on the existing table public\.profiles/.test(p)), JSON.stringify(dropAdd));
+  assert.ok(dropAdd.some((p) => /ADD COLUMN with a DEFAULT on the existing table public\.profiles/.test(p)), JSON.stringify(dropAdd));
+  // A type change through an assignment cast and back rewrites every value.
+  const cast = checkSql(`create function private.to_r(text) returns public.r language sql immutable as $$ select 'manager'::public.r $$;
+    create cast (text as public.r) with function private.to_r(text) as assignment;
+    alter table public.profiles alter column role type public.r;
+    alter table public.profiles alter column role type text;`);
+  assert.ok(cast.some((p) => /CREATE CAST is not allowed/.test(p)), JSON.stringify(cast));
+  assert.ok(cast.some((p) => /ALTER COLUMN \.\.\. TYPE \/ SET DATA TYPE on the existing table public\.profiles/.test(p)), JSON.stringify(cast));
+  rejects(`create cast (text as public.r) without function as assignment;`, /CREATE CAST is not allowed/);
+  for (const [sql, pattern] of [
+    [`alter table public.profiles alter column role set data type varchar(20);`, /ALTER COLUMN \.\.\. TYPE/],
+    [`alter table only public.profiles alter role type text;`, /ALTER COLUMN \.\.\. TYPE/],
+    [`alter table public.profiles * alter column role type text;`, /ALTER COLUMN \.\.\. TYPE/],
+    [`alter table if exists public.role_permissions add column allowed2 boolean not null default true;`, /ADD COLUMN with a DEFAULT/],
+    [`alter table public.profiles add n uuid default gen_random_uuid();`, /ADD COLUMN with a DEFAULT/],
+    [`alter table public.profiles add column n int default null::int;`, /ADD COLUMN with a DEFAULT/],
+    [`alter table public.profiles add column n bigserial;`, /ADD COLUMN with a serial type/],
+    [`alter table public.profiles add column n int generated always as identity;`, /ADD COLUMN \.\.\. GENERATED/],
+    [`alter table public.profiles add column n int generated always as (1) stored;`, /ADD COLUMN \.\.\. GENERATED/],
+    [`alter table public.t alter column g set expression as (1);`, /ALTER COLUMN \.\.\. SET EXPRESSION/],
+    [`alter table public.profiles drop role;`, /DROP COLUMN/],
+    [`alter table public.profiles drop column if exists role cascade;`, /DROP COLUMN/],
+    [`alter table public.profiles enable row level security, drop column role;`, /DROP COLUMN/],
+    // ALTER TABLE wherever it starts: after BEGIN or THEN in a DO block, and in a function body.
+    [`do $$ begin if true then alter table public.profiles drop column role; end if; end $$;`, /DROP COLUMN/],
+    [`create function private.f() returns void language plpgsql as $$ begin alter table public.profiles drop column role; end $$;`, /function private\.f: DROP COLUMN/],
+  ]) {
+    rejects(sql, pattern);
+    rejects(sql, EXISTING_REWRITE);
+  }
+  // Marker defaults and TYPE ... USING were checked only when ALTER TABLE started the statement.
+  rejects(`do $$ begin alter table public.call_types alter column is_test set default true; end $$;`, /a default on is_test other than false/);
+  rejects(`create function private.f() returns void language plpgsql as $$ begin alter table public.call_types alter column is_test set default true; end $$;`,
+    /a default on is_test other than false/);
+  rejects(`do $$ begin alter table public.profiles alter column full_name type text using 'Fake'; end $$;`, /TYPE \.\.\. USING rewrites existing rows/);
+  // A typed table's columns change with its type.
+  rejects(`alter type public.c alter attribute a type int cascade;`, /ALTER\/DROP ATTRIBUTE is not allowed/);
+  rejects(`alter type public.c drop attribute a cascade;`, /ALTER\/DROP ATTRIBUTE is not allowed/);
+});
+
+test("N1: only a table created earlier in the same file by a plain top-level CREATE TABLE <schema>.<name> is new", () => {
+  passes(`create table public.a (id int);
+    alter table public.a add column x int not null default 1, drop column id, alter column x type bigint, add column s bigserial;
+    create unlogged table private.b (id int);
+    alter table private.b add column g int generated always as identity;`);
+  // Changes that do not rewrite existing rows pass on any table.
+  passes(`alter table public.profiles add column x text default null, add column y int references public.t (id) on delete set default,
+    add constraint c check (y > 0), alter column x set default 'a', alter column x set not null, drop constraint c,
+    add z int, enable row level security;`);
+  for (const sql of [
+    // IF NOT EXISTS may leave an existing table with rows in place.
+    `create table if not exists public.a (id int); alter table public.a add column x int default 1;`,
+    // Unqualified names may resolve elsewhere.
+    `create table a (id int); alter table a add column x int default 1;`,
+    `create table public.a (id int); alter table a drop column id;`,
+    `set search_path = private; create table a (id int); alter table public.a drop column id;`,
+    // A CREATE in a DO block may not have run.
+    `do $$ begin if false then create table public.profiles (id int); end if; end $$; alter table public.profiles drop column role;`,
+    // The ALTER comes before the CREATE.
+    `alter table public.a drop column id; create table public.a (id int);`,
+    // A table that received an INSERT has rows.
+    `create table public.call_types (id int, label_he text);
+     insert into public.call_types (label_he) values ('x');
+     alter table public.call_types add column note text default 'Fake';`,
+  ]) {
+    rejects(sql, EXISTING_REWRITE);
+  }
+  // A table created in an earlier file is an existing table in a later one.
+  const problems = checkFiles([
+    { name: "1.sql", sql: "create table public.a (id int);" },
+    { name: "2.sql", sql: "alter table public.a drop column id;" },
+  ]);
+  assert.ok(problems.some((p) => /^2\.sql: DROP COLUMN on the existing table public\.a/.test(p)), JSON.stringify(problems));
+});
+
+test("N2: every RENAME fails (a marker column renamed away would let a reference INSERT set it)", () => {
+  // The bypass: rename the marker away, insert it as true, rename it back.
+  rejects(`alter table public.call_types rename column is_test to flag;
+    insert into public.call_types (label_he, flag) values ('x', true);
+    alter table public.call_types rename column flag to is_test;`, /RENAME is not allowed/);
+  for (const sql of [
+    `alter table public.call_types rename is_test to flag;`,
+    `alter table only public.call_types rename column data_source to src;`,
+    `alter table public.account_requests rename target_is_test to t;`,
+    `alter table public.call_types rename constraint c to d;`,
+    `alter type public.r rename value 'manager' to 'technician';`,
+    `alter type public.c rename attribute a to b;`,
+    `alter index public.i rename to j;`,
+    `alter trigger t on public.a rename to u;`,
+    `alter policy p on public.a rename to q;`,
+    `do $$ begin alter table public.call_types rename column is_test to flag; end $$;`,
+    `create function private.f() returns void language plpgsql as $$ begin alter table public.call_types rename column is_test to flag; end $$;`,
+  ]) {
+    rejects(sql, /RENAME is not allowed/);
+  }
+});
+
+test("N3: an UPDATE in a rule action is found after DO, with ONLY, '*' or an alias", () => {
+  for (const sql of [
+    `create rule r as on insert to public.call_types do update public.role_permissions * set allowed = true;`,
+    `create rule r as on insert to public.call_types do update public.role_permissions * rp set allowed = true;`,
+    `create rule r as on insert to public.call_types do update public.role_permissions * as rp set allowed = true;`,
+    `create rule r as on insert to public.call_types do update only public.role_permissions set allowed = true;`,
+    `create rule r as on insert to public.call_types do update public.role_permissions set allowed = true;`,
+    `create rule r as on insert to public.call_types do instead update public.role_permissions * set allowed = true;`,
+  ]) {
+    rejects(sql, /UPDATE is not allowed in migrations/);
+  }
+});
+
+// Fix round 2 (verification round 1 items V1-1 ... V1-8) ---------------------------------------------------
+
+const CALL_TYPES = `create table public.call_types (id uuid primary key default gen_random_uuid(), label_he text not null,
+  is_test boolean not null default false, data_source text);\n`;
+const THREE_PARTS = /a name with three parts \(database\.schema\.object, record\.field\.field\) is not allowed/;
+
+test("V1-1: a three-part name (postgres.public.x) fails, and every rule that reads a name fails closed on one", () => {
+  // The verification's inputs: each rewrote or inserted rows on the local database.
+  const rule = `${CALL_TYPES} create rule ct_r as on insert to public.call_types do update postgres.public.permissions set label_he = 'Fake label';`;
+  rejects(rule, THREE_PARTS);
+  rejects(rule, /UPDATE is not allowed in migrations/);
+  const cursor = `do $$ declare c refcursor; n int; begin
+      open c for update postgres.public.permissions set label_he = 'Fake label' returning 1; fetch c into n; close c; end $$;`;
+  rejects(cursor, THREE_PARTS);
+  // OPEN ... FOR UPDATE <name>: after FOR, only a word of a locking clause or a policy may follow
+  // UPDATE; the guard does not need to read the target.
+  rejects(cursor, /UPDATE is not allowed in migrations/);
+  const dropAdd = `alter table postgres.public.role_permissions drop column allowed;
+    alter table postgres.public.role_permissions add column allowed boolean not null default true;`;
+  rejects(dropAdd, THREE_PARTS);
+  rejects(dropAdd, /an ALTER TABLE target the guard cannot read is not allowed/);
+  const trigger = `${CALL_TYPES} create function private.tg_ct() returns trigger language plpgsql set search_path = '' as $$
+      begin new.is_test := true; new.data_source := 'simulator'; return new; end $$;
+    create trigger ct_bi before insert on postgres.public.call_types for each row execute function private.tg_ct();`;
+  rejects(trigger, THREE_PARTS);
+  rejects(trigger, /BEFORE INSERT trigger on reference table \(unreadable name\)/);
+  const view = `create view postgres.public.call_types as select id, name as label_he from public.customers;`;
+  rejects(view, THREE_PARTS);
+  rejects(view, /a view name the guard cannot read is not allowed/);
+  const table = `create table postgres.public.call_types (id uuid, label_he text not null, is_test boolean not null default true);`;
+  rejects(table, THREE_PARTS);
+  rejects(table, /a table name the guard cannot read is not allowed/);
+  // Inside a function body, and a record field of a field.
+  rejects(`create function private.f() returns void language plpgsql as $$ begin perform postgres.private.write_audit('a', 'b', null, '{}'); end $$;`, THREE_PARTS);
+  rejects(`create function private.f() returns void language plpgsql as $$ declare r record; begin perform r.a.b; end $$;`, THREE_PARTS);
+  // The cursor form inside a function body makes the function a writer.
+  rejects(`create function private.f() returns void language plpgsql as $$ declare c refcursor; begin
+      open c for update public.permissions set label_he = 'Fake label' returning 1; end $$;
+    select private.f();`, /the migration calls f\(\)/);
+  // ON CONFLICT DO UPDATE is an UPDATE too (after DO the guard never reads the target).
+  rejects(`insert into public.role_permissions (role, permission_key, allowed) values ('manager', 'cal', true)
+    on conflict (role, permission_key) do update set allowed = true;`, /UPDATE is not allowed in migrations/);
+  // Locking clauses, policies and foreign key actions still pass.
+  passes(`create function private.f() returns void language plpgsql as $$ begin
+      perform 1 from public.a for update of a nowait;
+      perform 1 from public.a for update skip locked limit 1;
+      perform 1 from public.a where exists (select 1 from public.b for update);
+    end $$;
+    create policy p on public.a for update to authenticated using (true) with check (true);
+    create table public.t (id int, b int references public.b (id) on update set null on delete set default);`);
+});
+
+const triggerOn = (table, fn) => `create trigger ct_bi before insert on ${table} for each row execute function ${fn}();`;
+const tgDefinition = (body, declare = "") => `create function private.tg_ct() returns trigger language plpgsql set search_path = '' as $$
+  declare r record; v public.call_types; c refcursor; ${declare}
+  begin
+    ${body}
+  end $$;\n`;
+const REVIEWED_TRIGGER = /may run only a reviewed function of ALLOWED_REFERENCE_TRIGGERS/;
+
+test("V1-2: a BEFORE INSERT trigger on a reference table may run only a reviewed, pinned trigger function", () => {
+  assert.deepEqual([...ALLOWED_REFERENCE_TRIGGERS], ["private.tg_one_way_people()"]);
+  // jsonb_populate_record(new, ...) changes the stored row without assigning to NEW.
+  rejects(`${CALL_TYPES}${tgDefinition(`return jsonb_populate_record(new, '{"is_test": true, "data_source": "simulator"}');`)}
+    ${triggerOn("public.call_types", "private.tg_ct")} insert into public.call_types (label_he) values ('x');`, REVIEWED_TRIGGER);
+  // A function that never touches NEW is not enough: only the reviewed list may run.
+  rejects(`${tgDefinition("return new;")} ${triggerOn("public.call_types", "private.tg_ct")}`, REVIEWED_TRIGGER);
+  // The reviewed function, named schema-qualified and defined in the files.
+  const owp = `create function private.tg_one_way_people() returns trigger language plpgsql set search_path = '' as $$ begin return new; end $$;\n`;
+  passes(`${owp} create trigger t before insert or update on public.role_permissions for each row execute function private.tg_one_way_people('updated_by', 'approved_by');`);
+  rejects(`${owp} create trigger t before insert on public.role_permissions for each row execute function tg_one_way_people('a');`, REVIEWED_TRIGGER);
+  rejects(`create trigger t before insert on public.role_permissions for each row execute function private.tg_one_way_people('a');`,
+    /must use a function defined in the migrations \(private\.tg_one_way_people\(\)\)/);
+  // Wherever the trigger is created: after BEGIN in a DO block, and in a function body.
+  rejects(`do $$ begin perform 1; ${triggerOn("public.call_types", "private.tg_bad")} end $$;`, REVIEWED_TRIGGER);
+  rejects(`do $$ begin if true then ${triggerOn("public.call_types", "private.tg_bad")} end if; end $$;`, REVIEWED_TRIGGER);
+  rejects(`create function private.mk() returns void language plpgsql as $$ begin perform 1; ${triggerOn("public.call_types", "private.tg_bad")} end $$;`,
+    /function private\.mk: a BEFORE INSERT trigger on reference table call_types may run only a reviewed function/);
+  // Other tables and other timings are not limited by this rule.
+  passes(`${triggerOn("public.customers", "private.tg_bad")} create trigger t after insert on public.call_types for each row execute function private.tg_bad();`);
+});
+
+test("V1-2: every definition of a reviewed trigger function leaves NEW as it is and returns only NEW or NULL", () => {
+  const options = { allowedReferenceTriggers: new Set(["private.tg_ct()"]) };
+  const withTrigger = (definition) => `${definition} ${triggerOn("public.call_types", "private.tg_ct")}`;
+  passes(withTrigger(tgDefinition("if new.label_he = 'x' then raise exception 'x'; end if; return new;")), options);
+  passes(withTrigger(tgDefinition("perform 1 from public.profiles p where p.id = new.id for update; return null;")), options);
+  const CHANGES = /a reviewed reference-table trigger function may not change the new row \(NEW\)/;
+  const RETURNS = /a reviewed reference-table trigger function may return only NEW or NULL/;
+  for (const [body, pattern, declare] of [
+    // The four forms the verification ran, plus assignment forms.
+    ["select true, 'simulator' into strict new.is_test, new.data_source; return new;", CHANGES],
+    ["select 1, true into r, new.is_test; return new;", CHANGES],
+    ["open c for select true; fetch c into new.is_test; return new;", CHANGES],
+    ["perform 1; get diagnostics new.is_test = row_count; return new;", CHANGES],
+    ["foreach new.data_source in array array['simulator'] loop end loop; return new;", CHANGES],
+    ["for new in select new.id, true loop end loop; return new;", CHANGES],
+    ["for r, new in select 1, 2 loop end loop; return new;", CHANGES],
+    ["new.is_test := true; return new;", CHANGES],
+    ["new.is_test = true; return new;", CHANGES],
+    ["if true then new.data_source = 'simulator'; end if; return new;", CHANGES],
+    ["tg_ct.new := jsonb_populate_record(new, '{}'); return new;", CHANGES],
+    ["tg_ct.new = jsonb_populate_record(new, '{}'); return new;", CHANGES],
+    [`"new".is_test := true; return new;`, CHANGES],
+    ["new.tags[1] := 'x'; return new;", CHANGES],
+    ["call private.p(new.is_test); return new;", CHANGES],
+    ["a.is_test := true; return new;", CHANGES, "a alias for new;"],
+    // A changed copy, or a new row built from NEW, returned instead of NEW.
+    ["v := new; v.is_test := true; return v;", RETURNS],
+    [`return jsonb_populate_record(new, '{"is_test": true}');`, RETURNS],
+    ["return private.f(new);", RETURNS],
+  ]) {
+    rejects(withTrigger(tgDefinition(body, declare)), pattern, options);
+  }
+  rejects(withTrigger(`create function private.tg_ct() returns trigger language plpgsql as $$ begin
+      create function private.g() returns int language sql as $g$ select 1 $g$; return new; end $$;`),
+    /may not define other functions/, options);
+  rejects(withTrigger(`create function private.tg_ct() returns trigger language sql as $$ select 1 $$;`), /must have a dollar-quoted PL\/pgSQL body/, options);
+  // A later file may not replace the reviewed function with one that changes the row.
+  const problems = checkFiles([
+    { name: "1.sql", sql: `create function private.tg_one_way_people() returns trigger language plpgsql as $$ begin return new; end $$;
+      create trigger t before insert on public.role_permissions for each row execute function private.tg_one_way_people('a');` },
+    { name: "2.sql", sql: `create or replace function private.tg_one_way_people() returns trigger language plpgsql as $$
+      begin return jsonb_populate_record(new, '{"is_test": true}'); end $$;` },
+  ]);
+  assert.ok(problems.some((p) => /^2\.sql: function private\.tg_one_way_people: a reviewed reference-table trigger function may return only NEW or NULL/.test(p)), JSON.stringify(problems));
+});
+
+test("V1-3/V1-4: pg_graphql, pgmq and denied names fail quoted, unqualified and in a search_path", () => {
+  for (const [sql, pattern] of [
+    [`select graphql.resolve('mutation { updatepermissionsCollection(set: {label_he: "Fake label"}, atMost: 100) { affectedCount } }');`, /the graphql schema is not allowed/],
+    [`select graphql_public.graphql('{ x }');`, /the graphql_public schema is not allowed/],
+    [`select pgmq.send('q', '{}');`, /the pgmq schema is not allowed/],
+    [`select pgmq_public.send('q', '{}');`, /the pgmq_public schema is not allowed/],
+    // Quoted names (V1-4).
+    [`select "vault".create_secret('fake-value', 'fake_name');`, /the vault schema is not allowed/],
+    [`select "graphql".resolve('{ x }');`, /the graphql schema is not allowed/],
+    [`select pg_catalog."set_config"('search_path', 'x', false);`, /set_config\(\) is not allowed/],
+    // A denied name that is not followed by "." or "(": a search_path list, an operator's function.
+    [`set local search_path = vault, public;`, /the vault schema is not allowed/],
+    [`create function private.f() returns void language sql set search_path = graphql as $$ select 1 $$;`, /the graphql schema is not allowed/],
+    [`create operator public.### (function = query_to_xml, leftarg = text, rightarg = boolean);`, /query_to_xml\(\) is not allowed/],
+    // A search_path string.
+    [`set local search_path = 'vault', public;`, /the vault schema is not allowed in migrations, also not in a search_path string/],
+    [`create function private.f() returns void language sql set search_path to '$user', 'graphql_public, public' as $$ select 1 $$;`,
+      /the graphql_public schema is not allowed in migrations, also not in a search_path string/],
+    // Unqualified writers of those schemas (a default search_path set outside the migrations).
+    [`select create_secret('fake-value', 'fake_name');`, /create_secret\(\) is not allowed/],
+    [`select update_secret('00000000-0000-0000-0000-000000000000', 'x');`, /update_secret\(\) is not allowed/],
+    [`select resolve('{ x }');`, /resolve\(\) is not allowed/],
+    // A GraphQL mutation in a string.
+    [`select 'mutation { insertIntocall_typesCollection(objects: [{label_he: "Fake"}]) { affectedCount } }';`, /a string reads as a pg_graphql mutation/],
+    [`comment on table public.a is 'deleteFromcustomersCollection';`, /a string reads as a pg_graphql mutation/],
+  ]) {
+    rejects(sql, pattern);
+  }
+  passes(`comment on table public.a is 'update the collection later'; select 'vault';`);
+});
+
+test("V1-5: a column constraint named set or drop does not hide a DEFAULT", () => {
+  const setDefault = `alter table public.permissions add column note text not null constraint set default 'Fake note';`;
+  rejects(setDefault, /ADD COLUMN with a DEFAULT on the existing table public\.permissions/);
+  rejects(setDefault, /CONSTRAINT <name> DEFAULT is not allowed/);
+  const dropDefault = `create table public.call_types (id uuid, label_he text not null,
+    is_test boolean not null constraint drop default true, data_source text not null constraint drop default 'simulator');`;
+  rejects(dropDefault, /a default on is_test other than false is not allowed/);
+  rejects(dropDefault, /a default on data_source other than false is not allowed/);
+  rejects(dropDefault, /CONSTRAINT <name> DEFAULT is not allowed/);
+  passes(`alter table public.call_types alter column is_test drop default, alter data_source drop default;
+    alter table public.profiles add column y int references public.t (id) on delete set default on update set default;`);
+});
+
+test("V1-6: CREATE TABLE ... (LIKE ...) fails (it copies a marker default)", () => {
+  rejects(`create table public.call_types (label_he text not null, like public.profiles including defaults);`, /CREATE TABLE \.\.\. \(LIKE \.\.\.\) is not allowed/);
+  rejects(`create table public.x (like public.profiles);`, /CREATE TABLE \.\.\. \(LIKE \.\.\.\) is not allowed/);
+  passes(`create table public.x (id int, email text check (email like '%@example.test'));`);
+});
+
+test("V1-7: ADD COLUMN on an existing table only with a built-in type or a type the files create", () => {
+  rejects(`alter table public.permissions add column created_at_2 information_schema.time_stamp;`, /ADD COLUMN of type information_schema\.time_stamp .* on the existing table public\.permissions/);
+  rejects(`alter table public.permissions add column if not exists c time_stamp;`, /ADD COLUMN of type time_stamp/);
+  rejects(`alter table public.permissions add column c "integer";`, /ADD COLUMN of type integer/);
+  rejects(`alter table public.permissions add column c public.r;`, /ADD COLUMN of type public\.r/);
+  rejects(`create type public.r as enum ('a'); alter table public.permissions add column c r;`, /ADD COLUMN of type r/);
+  passes(`create type public.r as enum ('a');
+    alter table public.permissions add column c int, add d double precision, add column e character varying(3),
+      add column f timestamp with time zone, add column g text[], add column h pg_catalog.uuid, add column i public.r;
+    create table public.n (id int); alter table public.n add column c information_schema.time_stamp;`);
+  // A base type's DEFAULT is a hidden default too.
+  rejects(`create type public.t (input = int4in, output = int4out, default = '1');`, /a domain default is not allowed/);
+});
+
+test("V1-8: a CREATE TABLE at the start of a statement in a DO block does not make the table new", () => {
+  rejects(`do $$ begin perform 1; create table public.profiles (id int); end $$; alter table public.profiles drop column role;`, EXISTING_REWRITE);
 });

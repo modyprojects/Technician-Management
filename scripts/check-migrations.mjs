@@ -18,6 +18,10 @@
 // function is then a "writer" instead, and a migration never calls a writer.
 //
 // Rules for every file in supabase/migrations/*.sql:
+// 0. Names (fix round 2, V1-1): a name with three parts (database.schema.object, which PostgreSQL
+//    accepts for the current database, or record.field.field) fails anywhere; every rule that reads
+//    a schema-qualified name fails closed when it cannot read one (an INSERT, ALTER TABLE, CREATE
+//    TABLE/VIEW or trigger target).
 // 1. INSERT in a statement that runs is allowed only as a plain reference INSERT:
 //      insert into public.<reference table> (column, ...) values (constant, ...), ...;
 //    with an approved reference table (REFERENCE_TABLES), an explicit column list without the
@@ -25,10 +29,16 @@
 //    '...' strings, numbers, true, false, null). Nothing else may follow the VALUES list.
 // 2. No test markers: a reference INSERT's strings must not contain 'simulator', 'automated_test',
 //    'seed' or an example.test address; no ALTER may set a default on a marker column (other than
-//    false, never generated, no domain defaults), and a reference table may not be created with
-//    such a default. A BEFORE INSERT trigger on a reference table must use a function, defined in
-//    the migrations, that never assigns to NEW. As in the guard on main, a string that reads as
-//    an INSERT into a business table fails anywhere.
+//    false; DROP DEFAULT only as ALTER [COLUMN] x DROP DEFAULT; never generated), a reference table
+//    may not be created with such a default, no CREATE TABLE may copy defaults with LIKE, no
+//    column constraint may be named before DEFAULT (CONSTRAINT x DEFAULT), and no domain or base
+//    type may have a default. A BEFORE or INSTEAD OF INSERT trigger on a reference table (or on a
+//    table the guard cannot read), wherever it is created, may run only a function listed in
+//    ALLOWED_REFERENCE_TRIGGERS, named by its exact schema-qualified signature and defined in the
+//    files; every definition of such a function must be a PL/pgSQL body that never changes NEW
+//    (assignment, INTO, FOR/FOREACH, ALIAS FOR, GET DIAGNOSTICS, CALL) and returns only NEW or NULL.
+//    As in the guard on main, a string that reads as an INSERT into a business table fails
+//    anywhere, and so does a string that reads as a pg_graphql mutation.
 // 3. No COPY (anywhere, also in bodies), no EXPLAIN, no LOAD.
 // 4. Function bodies. Every CREATE FUNCTION / CREATE PROCEDURE body must be dollar-quoted
 //    (AS $$ ... $$) in LANGUAGE sql or plpgsql; any other form fails because the guard cannot read
@@ -45,20 +55,41 @@
 //    body or header, a string) fails.
 // 6. No dynamic SQL anywhere, also in function bodies: EXECUTE fails, except as a privilege in
 //    GRANT/REVOKE/ALTER DEFAULT PRIVILEGES and as EXECUTE FUNCTION/PROCEDURE in CREATE [EVENT]
-//    TRIGGER. Built-ins that run SQL text or write outside the schema fail too (query_to_xml and
-//    relatives, dblink, http, set_config, large-object and file functions, and the cron, vault,
-//    net, pgsodium, realtime and supabase_functions schemas). CREATE EXTENSION only for names in
-//    ALLOWED_EXTENSIONS; ALTER EXTENSION, subscriptions, foreign servers and foreign tables fail.
-//    standard_conforming_strings, backslash_quote and session_replication_role may not be named.
+//    TRIGGER. Built-ins that run SQL text or write outside the schema fail as any name, quoted or
+//    not (query_to_xml and relatives, dblink, http, set_config, large-object and file functions,
+//    create_secret, update_secret, resolve), and so do the names of the cron, vault, net, pgsodium,
+//    realtime, supabase_functions, dblink, graphql, graphql_public, pgmq and pgmq_public schemas,
+//    quoted or not, followed by "." or not, and inside a search_path string. CREATE EXTENSION only
+//    for names in ALLOWED_EXTENSIONS; ALTER EXTENSION, subscriptions, foreign servers and foreign
+//    tables fail. standard_conforming_strings, backslash_quote and session_replication_role may not
+//    be named.
 // 7. No other data change in statements that run: UPDATE (any form: ONLY, parentheses, "*",
-//    aliases), DELETE FROM, MERGE INTO, TRUNCATE, CREATE TABLE ... AS (any form), SELECT/WITH ...
-//    INTO, materialized views (create or refresh), ALTER COLUMN ... TYPE ... USING.
-// 8. Names stay what they are: no RENAME TO, no SET SCHEMA, no INHERIT/INHERITS, no ATTACH
-//    PARTITION or PARTITION OF, nothing in pg_temp, and a reference table name only as a table in
-//    public (no view, foreign table or table of that name in another schema).
+//    aliases, in a CTE; after DO, in a rule action or ON CONFLICT, always; after FOR, as in OPEN
+//    ... FOR UPDATE, unless a word of a locking clause or a policy follows), DELETE FROM, MERGE
+//    INTO, TRUNCATE, CREATE TABLE ... AS (any form), SELECT/WITH ... INTO, materialized views
+//    (create or refresh), ALTER COLUMN ... TYPE ... USING.
+//    Schema changes that rewrite existing rows fail too (fix round 1, N1). ALTER TABLE is read
+//    wherever it starts in a statement (also after BEGIN or THEN, and in function bodies). On an
+//    existing table, ALTER TABLE may not DROP COLUMN, change a column's type (TYPE, SET DATA TYPE),
+//    SET EXPRESSION, or ADD COLUMN with a DEFAULT other than null (SET DEFAULT only as ON
+//    DELETE/UPDATE SET DEFAULT), GENERATED, a serial type, or a type that is neither a built-in
+//    type (BUILTIN_TYPES, unquoted) nor a type created schema-qualified by a top-level statement
+//    of the files (a domain with a default fills every row; fix round 2, V1-5 and V1-7).
+//    "Existing" is every table except one created earlier in the same file by a plain top-level
+//    CREATE TABLE <schema>.<name> (not IF NOT EXISTS, not temporary, not in a DO block or function
+//    body) that no INSERT in the file has targeted yet; in function bodies every table is existing.
+//    CREATE CAST and ALTER TYPE ... ALTER/DROP ATTRIBUTE fail everywhere (a cast or a typed table
+//    change rewrites values).
+// 8. Names stay what they are: no RENAME of any kind (TO, COLUMN, a bare column, CONSTRAINT, VALUE,
+//    ATTRIBUTE), no SET SCHEMA, no INHERIT/INHERITS, no ATTACH PARTITION or PARTITION OF, nothing in
+//    pg_temp, and CREATE TABLE/VIEW may use a reference table name only for the table in public
+//    (no view, and no table of that name in another schema or unqualified).
 // Compensating runtime control for what a static check cannot see: tests/db/070_census.test.sql
 // requires a census of 0 and no rows in any table except the listed reference data on a database
-// built from migrations alone.
+// built from migrations alone. That database is empty, so a rewrite of populated business tables
+// is caught only by this guard and the review. A static check cannot prove that arbitrary SQL
+// changes no data; it rejects the constructs it knows can, and the review of every migration
+// checks the rest (docs/review/step1-pr13/README.md section 8).
 //
 // Usage: node scripts/check-migrations.mjs [repository root]
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -82,6 +113,12 @@ export const ALLOWED_WRITERS = new Map([
 // Extensions a migration may create (rule 6). None so far.
 export const ALLOWED_EXTENSIONS = new Set([]);
 
+// Reviewed trigger functions that may run BEFORE (or INSTEAD OF) INSERT on a reference table
+// (rule 2, fix round 2 V1-2), pinned to their exact signature. Every definition of one of them in
+// the files must also pass the body check (it never changes the new row). Adding an entry is a
+// reviewed change of this mandatory check.
+export const ALLOWED_REFERENCE_TRIGGERS = new Set(["private.tg_one_way_people()"]);
+
 const MARKER_COLUMNS = new Set(["is_test", "data_source", "target_is_test"]);
 const TEST_MARKERS = [
   { pattern: /\bsimulator\b/i, label: "data_source 'simulator'" },
@@ -91,14 +128,34 @@ const TEST_MARKERS = [
 ];
 const BOOTSTRAP = "bootstrap_first_creator";
 const DENIED_SETTINGS = /standard_conforming_strings|backslash_quote|session_replication_role/i;
-const DENIED_SCHEMAS = new Set(["cron", "vault", "net", "pgsodium", "realtime", "supabase_functions", "dblink"]);
+// Schemas that run or store data outside the reviewed schema (rule 6). Their names fail as any name,
+// quoted or not, and inside a search_path list (fix round 2, V1-3 and V1-4).
+const DENIED_SCHEMAS = new Set(["cron", "vault", "net", "pgsodium", "realtime", "supabase_functions", "dblink", "graphql", "graphql_public", "pgmq", "pgmq_public"]);
+// Functions that run SQL text or write outside the schema; they fail as any name, quoted or not.
+// create_secret, update_secret (vault) and resolve (pg_graphql) also fail unqualified, in case a
+// default search_path set outside the migrations reaches their schema.
 const DENIED_FUNCTIONS =
-  /^(?:query_to_xml|query_to_xml_and_xmlschema|query_to_xmlschema|cursor_to_xml|cursor_to_xmlschema|dblink\w*|http|http_\w+|set_config|lo_\w+|pg_file_\w+|pg_read_file|pg_read_binary_file|pg_ls_dir)$/;
-// An `update` or `truncate` token right after one of these is not a data change (FOR UPDATE,
-// ON UPDATE, BEFORE/AFTER/OR UPDATE in triggers, GRANT/REVOKE privilege lists, ON CONFLICT DO
-// UPDATE inside an INSERT, INSTEAD OF UPDATE).
-const BENIGN_BEFORE_UPDATE = new Set(["for", "key", "on", "before", "after", "or", "of", "grant", "revoke", ",", "do"]);
+  /^(?:query_to_xml|query_to_xml_and_xmlschema|query_to_xmlschema|cursor_to_xml|cursor_to_xmlschema|dblink\w*|http|http_\w+|set_config|lo_\w+|pg_file_\w+|pg_read_file|pg_read_binary_file|pg_ls_dir|create_secret|update_secret|resolve)$/;
+// An `update` or `truncate` token right after one of these may not be a data change (FOR UPDATE,
+// ON UPDATE, BEFORE/AFTER/OR UPDATE in triggers, GRANT/REVOKE privilege lists, INSTEAD OF UPDATE).
+// After DO it always is (a rule action, or ON CONFLICT DO UPDATE): fix round 2, V1-1.
+const BENIGN_BEFORE_UPDATE = new Set(["for", "key", "on", "before", "after", "or", "of", "grant", "revoke", ","]);
+// After a benign word, `update` is harmless only when one of these follows it (or nothing does).
+// Anything else (for example a name after OPEN ... FOR UPDATE, which starts an UPDATE) is reported
+// as an UPDATE without reading its target (fix round 2, V1-1).
+const AFTER_BENIGN_UPDATE = new Set([null, "of", "on", "or", "to", "nowait", "skip", "cascade", "restrict", "set", "no", ",", "(", ")",
+  "limit", "offset", "fetch", "for", "loop", "using", "with"]);
 const BENIGN_BEFORE_TRUNCATE = new Set(["before", "after", "or", "of", "grant", "revoke", ","]);
+// Built-in types an ADD COLUMN on an existing table may use unqualified (fix round 2, V1-7): any
+// other type may be a domain with a default, which fills every existing row.
+const BUILTIN_TYPES = new Set(["bigint", "bit", "bool", "boolean", "bpchar", "bytea", "char", "character", "cidr", "date", "decimal",
+  "double", "float", "float4", "float8", "inet", "int", "int2", "int4", "int8", "integer", "interval", "json", "jsonb", "macaddr",
+  "macaddr8", "money", "numeric", "real", "smallint", "text", "time", "timestamp", "timestamptz", "timetz", "tsquery", "tsvector",
+  "uuid", "varbit", "varchar", "xml"]);
+// ALTER TABLE ... ADD <one of these> adds a table constraint, not a column.
+const TABLE_CONSTRAINT_STARTS = new Set(["constraint", "primary", "unique", "check", "foreign", "exclude"]);
+// A serial column is a column with a sequence default: adding one fills every existing row.
+const SERIAL_TYPES = new Set(["serial", "serial2", "serial4", "serial8", "smallserial", "bigserial"]);
 
 // ------------------------------------------------------------------------------------------------
 // Tokenizer
@@ -384,10 +441,12 @@ function containsSequence(tokens, ...words) {
   return false;
 }
 
-// A possibly schema-qualified name at tokens[k]: { schema, name, next }.
+// A possibly schema-qualified name at tokens[k]: { schema, name, next }. A third part
+// (database.schema.name) is unreadable: null, so every caller fails closed (fix round 2, V1-1).
 function qualifiedNameAt(tokens, k) {
   if (!isName(tokens[k])) return null;
   if (isPunct(tokens[k + 1], ".") && isName(tokens[k + 2])) {
+    if (isPunct(tokens[k + 3], ".")) return null;
     return { schema: tokens[k].value, name: tokens[k + 2].value, next: k + 3, nameIndex: k + 2, schemaIndex: k };
   }
   return { schema: null, name: tokens[k].value, next: k + 1, nameIndex: k, schemaIndex: -1 };
@@ -501,12 +560,20 @@ function dataChanges(tokens) {
     if (t.type !== "ident") return;
     const prev = tokenKey(tokens[k - 1]);
     if (t.value === "insert" && isWord(tokens[k + 1], "into")) found.push({ kind: "INSERT", index: k });
-    if (t.value === "update" && (!BENIGN_BEFORE_UPDATE.has(prev) || relationThenSet(tokens, k + 1))) found.push({ kind: "UPDATE", index: k });
+    if (t.value === "update" && updateChangesData(tokens, k)) found.push({ kind: "UPDATE", index: k });
     if (t.value === "delete" && isWord(tokens[k + 1], "from")) found.push({ kind: "DELETE", index: k });
     if (t.value === "merge" && isWord(tokens[k + 1], "into")) found.push({ kind: "MERGE", index: k });
     if (t.value === "truncate" && !BENIGN_BEFORE_TRUNCATE.has(prev)) found.push({ kind: "TRUNCATE", index: k });
   });
   return found;
+}
+
+// An `update` token is a data change unless a benign word precedes it, a harmless word follows it
+// and what follows does not read as an UPDATE target followed by SET.
+function updateChangesData(tokens, k) {
+  if (!BENIGN_BEFORE_UPDATE.has(tokenKey(tokens[k - 1]))) return true;
+  if (!AFTER_BENIGN_UPDATE.has(tokenKey(tokens[k + 1]))) return true;
+  return relationThenSet(tokens, k + 1);
 }
 
 // UPDATE's target: [ONLY] [(] name [)] [*] [[AS] alias] SET
@@ -599,8 +666,68 @@ function referenceInsertProblems(tokens, k, where) {
   return problems;
 }
 
+// ALTER TABLE at tokens[k] ("alter", "table"): [IF EXISTS] [ONLY] name [*]. Returns the name and
+// the index of the first action, or null when the name cannot be read.
+function alterTableTarget(tokens, k) {
+  let m = k + 2;
+  if (isWord(tokens[m], "if") && isWord(tokens[m + 1], "exists")) m += 2;
+  if (isWord(tokens[m], "only")) m += 1;
+  const name = qualifiedNameAt(tokens, m);
+  if (!name) return null;
+  m = name.next;
+  if (tokens[m] && tokens[m].type === "op" && tokens[m].value === "*") m += 1;
+  return { name, next: m };
+}
+
+// ON DELETE|UPDATE SET DEFAULT (a foreign key action) at the DEFAULT token action[p].
+const foreignKeySetDefault = (tokens, p) =>
+  isWord(tokens[p - 1], "set") && isWord(tokens[p - 2], "delete", "update") && isWord(tokens[p - 3], "on");
+
+// The type of an added column at tokens[k] may not be a domain with a default (fix round 2, V1-7):
+// it must be a built-in type written unquoted (optionally pg_catalog.), or a type that a top-level
+// statement of the migration files creates schema-qualified. Returns a problem or null.
+function addedColumnTypeProblem(tokens, k, createdTypes) {
+  const name = qualifiedNameAt(tokens, k);
+  if (!name) return "ADD COLUMN with a type the guard cannot read";
+  const builtin = tokens[name.nameIndex].type === "ident" && BUILTIN_TYPES.has(name.name);
+  if ((name.schema === null || name.schema === "pg_catalog") && builtin) return null;
+  if (name.schema !== null && createdTypes.has(`${name.schema}.${name.name}`)) return null;
+  return `ADD COLUMN of type ${name.schema ? `${name.schema}.` : ""}${name.name} (neither a built-in type nor a type created schema-qualified in the migration files; a domain default would fill every existing row)`;
+}
+
+// An ALTER TABLE action that rewrites the values of existing rows (rule 7, fix round 1 N1), or null.
+function rewritingAction(action, createdTypes) {
+  if (isWord(action[0], "drop")) return isWord(action[1], "constraint") ? null : "DROP COLUMN";
+  if (isWord(action[0], "alter")) {
+    if (isWord(action[1], "constraint")) return null;
+    if (action.some((t) => isWord(t, "type"))) return "ALTER COLUMN ... TYPE / SET DATA TYPE";
+    if (action.some((t, k) => isWord(t, "set") && isWord(action[k + 1], "expression"))) return "ALTER COLUMN ... SET EXPRESSION";
+    return null;
+  }
+  if (!isWord(action[0], "add")) return null;
+  let m = 1;
+  const columnKeyword = isWord(action[m], "column");
+  if (columnKeyword) m += 1;
+  if (!columnKeyword && TABLE_CONSTRAINT_STARTS.has(wordAt(action, m))) return null;
+  for (let p = m; p < action.length; p += 1) {
+    const t = action[p];
+    // SET DEFAULT is harmless only as a foreign key action (ON DELETE/UPDATE SET DEFAULT); a column
+    // constraint named "set" (CONSTRAINT set DEFAULT ...) is a default (fix round 2, V1-5).
+    if (isWord(t, "default") && !foreignKeySetDefault(action, p)) {
+      const plainNull = isWord(action[p + 1], "null") &&
+        (action[p + 2] === undefined || isWord(action[p + 2], "not", "null", "check", "constraint", "references", "unique", "primary", "collate"));
+      if (!plainNull) return "ADD COLUMN with a DEFAULT";
+    }
+    if (isWord(t, "generated")) return "ADD COLUMN ... GENERATED";
+    if (t.type === "ident" && SERIAL_TYPES.has(t.value)) return "ADD COLUMN with a serial type";
+  }
+  if (isWord(action[m], "if") && isWord(action[m + 1], "not") && isWord(action[m + 2], "exists")) m += 3;
+  return addedColumnTypeProblem(action, m + 1, createdTypes);
+}
+
 // Rules that apply to every statement, in any context (top level, DO block, function body or header).
-function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
+// `newTables` holds the tables created earlier in the same file (rule 7); empty in function bodies.
+function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Set(), createdTypes = new Set() }) {
   const problems = [];
   const add = (message) => problems.push(`${where}: ${message}`);
   const first = wordAt(tokens, 0);
@@ -619,15 +746,47 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
       if (t.value === "copy") add("COPY is not allowed in migrations");
       if (t.value === "explain") add("EXPLAIN is not allowed in migrations (EXPLAIN ANALYZE runs its statement)");
       if (t.value === "load" && next && next.type === "string") add("LOAD is not allowed in migrations");
-      if (t.value === "rename" && isWord(next, "to")) add("RENAME TO is not allowed in migrations; names stay what they are");
+      // Any RENAME (TO, COLUMN, a bare column, CONSTRAINT, VALUE, ATTRIBUTE): a marker column renamed
+      // away, or an enum value renamed, changes what existing or inserted rows mean (N2).
+      if (t.value === "rename") add("RENAME is not allowed in migrations (TO, COLUMN, CONSTRAINT, VALUE, ATTRIBUTE); names stay what they are");
+      if (t.value === "create" && isWord(next, "cast")) add("CREATE CAST is not allowed in migrations (an assignment cast rewrites values in a column type change)");
+      if ((t.value === "alter" || t.value === "drop") && isWord(next, "attribute")) {
+        add("ALTER TYPE ... ALTER/DROP ATTRIBUTE is not allowed in migrations (it rewrites the columns of typed tables)");
+      }
       if (t.value === "set" && isWord(next, "schema")) add("SET SCHEMA is not allowed in migrations; names stay what they are");
       if (t.value === "inherits" || (t.value === "inherit" && !isWord(tokens[k - 1], "no"))) add("INHERIT/INHERITS is not allowed in migrations");
       if (t.value === "attach" && isWord(next, "partition")) add("ATTACH PARTITION is not allowed in migrations");
       if (t.value === "partition" && isWord(next, "of")) add("PARTITION OF is not allowed in migrations");
       if (t.value === "materialized" && isWord(next, "view")) add("a materialized view is not allowed in migrations (it stores data)");
       if (/^pg_temp(?:_[0-9]+)?$/.test(t.value) && isPunct(next, ".")) add("pg_temp is not allowed in migrations");
-      if (DENIED_SCHEMAS.has(t.value) && isPunct(next, ".")) add(`the ${t.value} schema is not allowed in migrations (it runs or stores data outside the schema)`);
-      if (DENIED_FUNCTIONS.test(t.value) && isPunct(next, "(")) add(`${t.value}() is not allowed in migrations (it runs SQL text or writes outside the schema)`);
+      // CONSTRAINT <name> DEFAULT: a named default hides from rules that read "SET DEFAULT" or
+      // "DROP DEFAULT" (fix round 2, V1-5); write DEFAULT without a constraint name.
+      if (t.value === "constraint" && isName(next) && isWord(tokens[k + 2], "default")) {
+        add("CONSTRAINT <name> DEFAULT is not allowed in migrations; write DEFAULT without a constraint name");
+      }
+    }
+    if (isName(t)) {
+      // Fix round 2, V1-3/V1-4: quoted or not, followed by "." or not (a search_path list).
+      if (DENIED_SCHEMAS.has(t.value)) add(`the ${t.value} schema is not allowed in migrations (it runs or stores data outside the schema)`);
+      if (DENIED_FUNCTIONS.test(t.value)) add(`${t.value}() is not allowed in migrations (it runs SQL text or writes outside the schema)`);
+      // Fix round 2, V1-1: database.schema.name (PostgreSQL accepts the current database's name)
+      // and record.field.field would slip past every rule that reads a schema-qualified name.
+      if (isPunct(next, ".") && isName(tokens[k + 2]) && isPunct(tokens[k + 3], ".")) {
+        add("a name with three parts (database.schema.object, record.field.field) is not allowed in migrations; write schema.object");
+      }
+      // A search_path list may not name a denied schema in a string either (fix round 2, V1-4).
+      if (t.value === "search_path") {
+        let m = k + 1;
+        if (isWord(tokens[m], "to") || (tokens[m] && tokens[m].type === "op" && tokens[m].value === "=")) m += 1;
+        for (; tokens[m] && (isName(tokens[m]) || tokens[m].type === "string"); m += 2) {
+          if (tokens[m].type === "string") {
+            for (const part of tokens[m].value.toLowerCase().split(/[\s,"]+/)) {
+              if (DENIED_SCHEMAS.has(part)) add(`the ${part} schema is not allowed in migrations, also not in a search_path string`);
+            }
+          }
+          if (!isPunct(tokens[m + 1], ",")) break;
+        }
+      }
     }
     if ((t.type === "ident" || t.type === "qident") && DENIED_SETTINGS.test(t.value)) add(`${t.value} may not be named in migrations`);
     if ((t.type === "string" || t.type === "dollar") && DENIED_SETTINGS.test(t.value)) add("standard_conforming_strings, backslash_quote and session_replication_role may not be named in migrations");
@@ -636,6 +795,9 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
       for (const m of t.value.matchAll(/\binsert\s+into\s+(?:"?([a-z_][a-z0-9_$]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_$]*)"?/gi)) {
         if (!REFERENCE_TABLES.has(m[2].toLowerCase())) add(`a string reads as an INSERT into "${m[2].toLowerCase()}"; migrations never carry such text`);
       }
+      // A pg_graphql mutation (insertInto...Collection, update...Collection, deleteFrom...Collection)
+      // is an INSERT or UPDATE in another language (fix round 2, V1-3).
+      if (/\b(?:insertInto|update|deleteFrom)\w*Collection\b/i.test(t.value)) add("a string reads as a pg_graphql mutation; migrations never carry such text");
     }
   });
 
@@ -662,10 +824,19 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
     m += 1;
     if (isWord(tokens[m], "if") && isWord(tokens[m + 1], "not") && isWord(tokens[m + 2], "exists")) m += 3;
     const name = qualifiedNameAt(tokens, m);
+    if (!name) add(`a ${isView ? "view" : "table"} name the guard cannot read is not allowed in migrations`);
     if (name && REFERENCE_TABLES.has(name.name) && (isView || name.schema !== "public")) {
       add(`"${name.name}" is a reference table name; it may exist only as the table public.${name.name}`);
     }
     if (isView) return;
+    // CREATE TABLE ... (LIKE source INCLUDING DEFAULTS) copies another table's defaults, a marker
+    // default true among them (fix round 2, V1-6).
+    if (name && isPunct(tokens[name.next], "(")) {
+      const close = matchingParen(tokens, name.next);
+      if (splitTopLevel(tokens, name.next + 1, close === -1 ? tokens.length : close).some((element) => isWord(element[0], "like"))) {
+        add("CREATE TABLE ... (LIKE ...) is not allowed in migrations (it copies another table's defaults); list the columns");
+      }
+    }
     let depth = 0;
     for (let p = name ? name.next : m; p < tokens.length; p += 1) {
       if (isPunct(tokens[p], "(")) depth += 1;
@@ -684,19 +855,31 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
     }
   });
 
-  // ALTER TABLE: no marker-column defaults, no TYPE ... USING rewrites.
-  if (startsWith(tokens, "alter", "table")) {
-    for (const action of splitTopLevel(tokens, 2, tokens.length)) {
+  // ALTER TABLE wherever it starts (also after BEGIN/THEN in a DO block or a function body): no
+  // marker-column defaults, no TYPE ... USING, and no rewrite of an existing table's rows (N1).
+  tokens.forEach((t, k) => {
+    if (!isWord(t, "alter") || !isWord(tokens[k + 1], "table")) return;
+    const target = alterTableTarget(tokens, k);
+    // Without a readable target the actions cannot be found either (fix round 2, V1-1).
+    if (!target) add("an ALTER TABLE target the guard cannot read is not allowed in migrations");
+    const shown = target ? (target.name.schema ? `${target.name.schema}.` : "") + target.name.name : "(unreadable name)";
+    const existing = !target || target.name.schema === null || !newTables.has(`${target.name.schema}.${target.name.name}`);
+    for (const action of splitTopLevel(tokens, target ? target.next : k + 2, tokens.length)) {
       markerDefault(action, add);
-      if (action.some((t) => isWord(t, "type")) && action.some((t) => isWord(t, "using"))) {
+      if (action.some((a) => isWord(a, "type")) && action.some((a) => isWord(a, "using"))) {
         add("ALTER COLUMN ... TYPE ... USING rewrites existing rows; not allowed in migrations");
       }
+      const rewrite = existing ? rewritingAction(action, createdTypes) : null;
+      if (rewrite) {
+        add(`${rewrite} on the existing table ${shown} is not allowed in migrations (it rewrites existing rows); only a table created earlier in the same file by a plain top-level CREATE TABLE <schema>.<name> may be changed this way`);
+      }
     }
-  }
+  });
 
-  // A domain default would be a hidden column default.
-  if ((containsSequence(tokens, "create", "domain") || containsSequence(tokens, "alter", "domain")) && tokens.some((t) => isWord(t, "default"))) {
-    add("a domain default is not allowed in migrations (it is a column default nobody sees)");
+  // A domain default (or a base type's DEFAULT) would be a hidden column default.
+  if (["domain", "type"].some((kind) => containsSequence(tokens, "create", kind) || containsSequence(tokens, "alter", kind)) &&
+    tokens.some((t) => isWord(t, "default"))) {
+    add("a domain default is not allowed in migrations (nor a base type's DEFAULT; it is a column default nobody sees)");
   }
 
   // SELECT/WITH ... INTO creates a table (top level and SQL-language bodies; in PL/pgSQL it assigns).
@@ -706,12 +889,19 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody }) {
   return problems;
 }
 
+// ALTER [COLUMN] <name> DROP DEFAULT: the whole action, ending at the DEFAULT token tokens[k].
+const alterDropDefault = (tokens, k) =>
+  k === tokens.length - 1 && isWord(tokens[k - 1], "drop") && isName(tokens[k - 2]) && isWord(tokens[0], "alter") &&
+  (k === 3 || (k === 4 && isWord(tokens[1], "column")));
+
 // A marker column's default is exactly `false` (not `false or true`), and it is never generated.
+// DROP DEFAULT is harmless only as ALTER [COLUMN] x DROP DEFAULT; a column constraint named "drop"
+// (CONSTRAINT drop DEFAULT true) is a default (fix round 2, V1-5).
 function markerDefault(tokens, add) {
   const marker = tokens.find((t) => isName(t) && MARKER_COLUMNS.has(t.value));
   if (!marker) return;
   tokens.forEach((t, k) => {
-    if (isWord(t, "default") && !isWord(tokens[k - 1], "drop")) {
+    if (isWord(t, "default") && !alterDropDefault(tokens, k)) {
       const plainFalse = isWord(tokens[k + 1], "false") &&
         (tokens[k + 2] === undefined || isWord(tokens[k + 2], "not", "null", "check", "constraint", "references", "unique", "primary", "collate"));
       if (!plainFalse) add(`a default on ${marker.value} other than false is not allowed (test data must never be created by default)`);
@@ -720,35 +910,116 @@ function markerDefault(tokens, add) {
   });
 }
 
-// A PL/pgSQL statement that assigns to the trigger's NEW row (NEW := ..., NEW.x := ..., NEW.x = ...
-// at the start of a statement, or SELECT ... INTO NEW).
-function assignsNew(tokens) {
+// PL/pgSQL statements that may change the trigger's NEW row (fix round 2, V1-2). NEW is the name
+// `new`, quoted or not, also behind the function's block label (<function>.new).
+const isNew = (t) => isName(t) && t.value === "new";
+const STATEMENT_STARTS = new Set(["begin", "then", "else", "loop", "declare"]);
+
+// A variable reference at tokens[k]: name (. name | [ ... ])*. Returns { end, hasNew } or null.
+function targetChain(tokens, k) {
+  if (!isName(tokens[k])) return null;
+  let hasNew = isNew(tokens[k]);
+  let m = k + 1;
+  for (;;) {
+    if (isPunct(tokens[m], ".") && isName(tokens[m + 1])) {
+      hasNew = hasNew || isNew(tokens[m + 1]);
+      m += 2;
+    } else if (isPunct(tokens[m], "[")) {
+      let depth = 0;
+      for (; m < tokens.length; m += 1) {
+        if (isPunct(tokens[m], "[")) depth += 1;
+        if (isPunct(tokens[m], "]") && --depth === 0) break;
+      }
+      m += 1;
+    } else return { end: m, hasNew };
+  }
+}
+
+// A comma-separated list of variable references at tokens[k] names NEW.
+function targetListHasNew(tokens, k) {
+  for (;;) {
+    const chain = targetChain(tokens, k);
+    if (!chain) return false;
+    if (chain.hasNew) return true;
+    if (!isPunct(tokens[chain.end], ",")) return false;
+    k = chain.end + 1;
+  }
+}
+
+const isAssign = (tokens, k) =>
+  (isPunct(tokens[k], ":") && tokens[k + 1] !== undefined && tokens[k + 1].type === "op" && tokens[k + 1].value.startsWith("="));
+
+// NEW := / NEW.x := anywhere, NEW = at a statement start, INTO [STRICT] NEW..., FOR/FOREACH NEW...
+// (which also reads `x ALIAS FOR new`), GET DIAGNOSTICS NEW... = ..., CALL with NEW (an INOUT argument).
+function changesNew(tokens) {
   return tokens.some((t, k) => {
-    if (isWord(t, "into") && isWord(tokens[k + 1], "new")) return true;
-    if (!isWord(t, "new") || !(k === 0 || isWord(tokens[k - 1], "begin", "then", "else", "loop"))) return false;
-    let m = k + 1;
-    if (isPunct(tokens[m], ".") && isName(tokens[m + 1])) m += 2;
-    return (isPunct(tokens[m], ":") && tokens[m + 1]?.value === "=") || (tokens[m]?.type === "op" && tokens[m].value.startsWith("="));
+    if (isName(t) && !isPunct(tokens[k - 1], ".")) {
+      const chain = targetChain(tokens, k);
+      if (chain.hasNew && isAssign(tokens, chain.end)) return true;
+      const atStart = k === 0 || isWord(tokens[k - 1], ...STATEMENT_STARTS);
+      if (chain.hasNew && atStart && tokens[chain.end] && tokens[chain.end].type === "op" && tokens[chain.end].value.startsWith("=")) return true;
+    }
+    if (isWord(t, "into") && targetListHasNew(tokens, isWord(tokens[k + 1], "strict") ? k + 2 : k + 1)) return true;
+    if (isWord(t, "for", "foreach") && targetListHasNew(tokens, k + 1)) return true;
+    if (isWord(t, "diagnostics", "call") && tokens.slice(k + 1).some(isNew)) return true;
+    return false;
   });
 }
 
-// CREATE TRIGGER: { table, before, insert, functionName } or null.
+// An allowed reference-table trigger function (ALLOWED_REFERENCE_TRIGGERS) must leave the new row
+// as it is: a readable PL/pgSQL body that never changes NEW and returns only NEW or NULL (a copy
+// of NEW changed and returned, or jsonb_populate_record(new, ...), would change the stored row).
+function referenceTriggerBodyProblems(d, where) {
+  if (!d.readable || d.language !== "plpgsql") return [`${where}: a reviewed reference-table trigger function must have a dollar-quoted PL/pgSQL body`];
+  const problems = [];
+  for (const body of d.bodyStatements) {
+    if (body.nested) {
+      problems.push(`${where}: a reviewed reference-table trigger function may not define other functions`);
+      continue;
+    }
+    if (changesNew(body.tokens)) problems.push(`${where}: a reviewed reference-table trigger function may not change the new row (NEW)`);
+    body.tokens.forEach((t, k) => {
+      if (isWord(t, "return") && !(isWord(body.tokens[k + 1], "new", "null") && body.tokens[k + 2] === undefined)) {
+        problems.push(`${where}: a reviewed reference-table trigger function may return only NEW or NULL`);
+      }
+    });
+  }
+  return problems;
+}
+
+// CREATE [OR REPLACE] [CONSTRAINT] TRIGGER anywhere in a statement (also after BEGIN or THEN in a
+// DO block or a function body): { table, before, insert, fn } or null. `table` and `fn` are null
+// when the guard cannot read them.
 function triggerInfo(tokens) {
+  for (let k = 0; k < tokens.length; k += 1) {
+    if (!isWord(tokens[k], "create")) continue;
+    let m = k + 1;
+    if (isWord(tokens[m], "or") && isWord(tokens[m + 1], "replace")) m += 2;
+    if (isWord(tokens[m], "constraint")) m += 1;
+    if (!isWord(tokens[m], "trigger")) continue;
+    const onAt = tokens.findIndex((t, p) => p > m && isWord(t, "on"));
+    const executeAt = tokens.findIndex((t, p) => p > m && isWord(t, "execute") && isWord(tokens[p + 1], "function", "procedure"));
+    const events = tokens.slice(m, onAt === -1 ? tokens.length : onAt);
+    return {
+      table: onAt === -1 ? null : qualifiedNameAt(tokens, onAt + 1),
+      before: events.some((t) => isWord(t, "before", "instead")),
+      insert: events.some((t) => isWord(t, "insert")),
+      fn: executeAt === -1 ? null : qualifiedNameAt(tokens, executeAt + 2),
+    };
+  }
+  return null;
+}
+
+// A plain top-level CREATE [UNLOGGED] TABLE <schema>.<name> (not IF NOT EXISTS, not temporary):
+// "<schema>.<name>", or null. IF NOT EXISTS does not count: the table may already exist with rows.
+function plainCreatedTable(tokens) {
   if (!isWord(tokens[0], "create")) return null;
-  const triggerAt = tokens.findIndex((t) => isWord(t, "trigger"));
-  if (triggerAt === -1 || triggerAt > 4) return null;
-  const onAt = tokens.findIndex((t, k) => k > triggerAt && isWord(t, "on"));
-  const executeAt = tokens.findIndex((t, k) => isWord(t, "execute") && isWord(tokens[k + 1], "function", "procedure"));
-  if (onAt === -1 || executeAt === -1) return null;
-  const table = qualifiedNameAt(tokens, onAt + 1);
-  const fn = qualifiedNameAt(tokens, executeAt + 2);
-  const events = tokens.slice(triggerAt, onAt);
-  return {
-    table,
-    before: events.some((t) => isWord(t, "before", "instead")),
-    insert: events.some((t) => isWord(t, "insert")),
-    functionName: fn ? fn.name : null,
-  };
+  let m = 1;
+  if (isWord(tokens[m], "unlogged")) m += 1;
+  if (!isWord(tokens[m], "table")) return null;
+  const name = qualifiedNameAt(tokens, m + 1);
+  if (!name || name.schema === null || !isPunct(tokens[name.next], "(")) return null;
+  return `${name.schema}.${name.name}`;
 }
 
 // Statements that reference a writer without running it.
@@ -832,6 +1103,7 @@ function parseStatement(tokens, where, problems, language) {
  */
 export function checkFiles(files, options = {}) {
   const allowedWriters = options.allowedWriters ?? ALLOWED_WRITERS;
+  const allowedTriggers = options.allowedReferenceTriggers ?? ALLOWED_REFERENCE_TRIGGERS;
   const problems = [];
   const definitions = [];
   const running = [];
@@ -862,6 +1134,14 @@ export function checkFiles(files, options = {}) {
   };
   for (const { name, sql } of files) walk(parseLevel(sql, name, problems, null), name, "run", null, true);
 
+  // Types and domains a top-level statement creates schema-qualified (rule 7, V1-7).
+  const createdTypes = new Set();
+  for (const { statement, topLevel } of running) {
+    if (!topLevel || !isWord(statement.tokens[0], "create") || !isWord(statement.tokens[1], "type", "domain")) continue;
+    const name = qualifiedNameAt(statement.tokens, 2);
+    if (name && name.schema !== null) createdTypes.add(`${name.schema}.${name.name}`);
+  }
+
   // Rule 4: readable bodies and allowed inserts; every function that changes data is a writer.
   const writers = new Set([...allowedWriters.keys()].map((signature) => signature.replace(/\(.*$/, "").split(".").pop()));
   writers.add(BOOTSTRAP);
@@ -872,11 +1152,13 @@ export function checkFiles(files, options = {}) {
       if (d.name) writers.add(d.name);
     }
     if (d.schema && /^pg_temp(?:_[0-9]+)?$/.test(d.schema)) problems.push(`${d.file}: ${d.qualifiedName}: functions in pg_temp are not allowed in migrations`);
-    problems.push(...anywhereProblems(d.headerTokens, `${d.file}: function ${d.qualifiedName} (header)`, { topLevel: false, sqlBody: false }));
+    problems.push(...anywhereProblems(d.headerTokens, `${d.file}: function ${d.qualifiedName} (header)`, { topLevel: false, sqlBody: false, createdTypes }));
+    if (d.signature && allowedTriggers.has(d.signature)) problems.push(...referenceTriggerBodyProblems(d, where));
     const entry = d.signature ? allowedWriters.get(d.signature) : undefined;
     for (const body of d.bodyStatements) {
       if (body.nested) continue;
-      problems.push(...anywhereProblems(body.tokens, where, { topLevel: false, sqlBody: body.language === "sql" }));
+      problems.push(...anywhereProblems(body.tokens, where, { topLevel: false, sqlBody: body.language === "sql", createdTypes }));
+      problems.push(...referenceTriggerProblems(body.tokens, where));
       for (const change of dataChanges(body.tokens)) {
         if (d.name) writers.add(d.name);
         if (change.kind !== "INSERT") continue;
@@ -913,30 +1195,53 @@ export function checkFiles(files, options = {}) {
     }
   }
 
-  // Statements that run.
+  // Rule 2 (fix round 2, V1-2): a BEFORE or INSTEAD OF INSERT trigger on a reference table (or on a
+  // table the guard cannot read) may only run a reviewed function of ALLOWED_REFERENCE_TRIGGERS,
+  // named by its exact schema-qualified signature and defined in the files. Checked wherever the
+  // trigger is created (a statement that runs, a DO block or a function body).
+  function referenceTriggerProblems(tokens, where) {
+    const trigger = triggerInfo(tokens);
+    if (!trigger || !trigger.before || !trigger.insert || (trigger.table && !REFERENCE_TABLES.has(trigger.table.name))) return [];
+    const shown = trigger.table ? trigger.table.name : "(unreadable name)";
+    const signature = trigger.fn && trigger.fn.schema !== null ? `${trigger.fn.schema}.${trigger.fn.name}()` : null;
+    if (!signature || !allowedTriggers.has(signature)) {
+      return [`${where}: a BEFORE INSERT trigger on reference table ${shown} may run only a reviewed function of ALLOWED_REFERENCE_TRIGGERS, named schema-qualified (it could change the new row)`];
+    }
+    if (!definitions.some((d) => d.signature === signature)) {
+      return [`${where}: a BEFORE INSERT trigger on reference table ${shown} must use a function defined in the migrations (${signature})`];
+    }
+    return [];
+  }
+
+  // Statements that run, in file order. `newTables` (rule 7): the tables this file created by a
+  // plain top-level CREATE TABLE <schema>.<name> that no INSERT has targeted yet.
+  let currentFile = null;
+  let newTables = new Set();
   for (const { file, statement, topLevel, definition } of running) {
     const { tokens } = statement;
+    if (file !== currentFile) {
+      currentFile = file;
+      newTables = new Set();
+    }
     if (definition) {
       // The definition itself runs (it creates the function); rule 5 is checked above.
       continue;
     }
-    problems.push(...anywhereProblems(tokens, file, { topLevel, sqlBody: false }));
+    problems.push(...anywhereProblems(tokens, file, { topLevel, sqlBody: false, newTables, createdTypes }));
+    problems.push(...referenceTriggerProblems(tokens, file));
     for (const change of dataChanges(tokens)) {
-      if (change.kind === "INSERT") problems.push(...referenceInsertProblems(tokens, change.index, file));
-      else problems.push(`${file}: ${change.kind} is not allowed in migrations; they change schema and approved reference data only`);
+      if (change.kind === "INSERT") {
+        problems.push(...referenceInsertProblems(tokens, change.index, file));
+        // A table that has rows is no longer new, whatever schema the INSERT names.
+        const target = insertTarget(tokens, change.index);
+        for (const key of [...newTables]) if (!target || key.endsWith(`.${target.table}`)) newTables.delete(key);
+      } else problems.push(`${file}: ${change.kind} is not allowed in migrations; they change schema and approved reference data only`);
     }
+    const created = topLevel ? plainCreatedTable(tokens) : null;
+    if (created) newTables.add(created);
     const bootstrapExempt = isWord(tokens[0], "revoke") || startsWith(tokens, "comment", "on", "function");
     if (!bootstrapExempt && mentionsBootstrap(tokens)) {
       problems.push(`${file}: bootstrap_first_creator may only be defined, revoked or commented in migrations (D49)`);
-    }
-    // A BEFORE INSERT trigger on a reference table must not change the new row (it could set a
-    // test marker behind a plain reference INSERT).
-    const trigger = triggerInfo(tokens);
-    if (trigger && trigger.table && REFERENCE_TABLES.has(trigger.table.name) && trigger.before && trigger.insert) {
-      const bodies = definitions.filter((d) => d.name === trigger.functionName);
-      if (bodies.length === 0 || bodies.some((d) => !d.readable || d.bodyStatements.some((b) => assignsNew(b.tokens)))) {
-        problems.push(`${file}: a BEFORE INSERT trigger on reference table ${trigger.table.name} must use a function, defined in the migrations, that never changes the new row`);
-      }
     }
     if (!referenceExempt(tokens)) {
       for (const writer of [...names(tokens)].filter((name) => writers.has(name))) {
