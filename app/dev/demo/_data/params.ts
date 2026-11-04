@@ -4,6 +4,7 @@
 // DataAccess. Pages import only these functions from here (eslint.config.mjs); they read screen
 // data through demoDataAccess.
 import "server-only";
+import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { CALLS } from "./queries";
 import { ME } from "./reference";
 import { OFFICE_ROLES } from "./roles";
@@ -20,7 +21,13 @@ function techVisits(keep: (v: Visit) => boolean): VisitParams[] {
 /** /dev/demo/office/[role] */
 export const officeRoleParams = (): { role: OfficeRole }[] => OFFICE_ROLES.map((role) => ({ role }));
 
-/** /dev/demo/office/[role]/calls/[req]: every call for both roles. */
+/** /dev/demo/office/[role]/settings/[tab]: every Settings tab for every office role (a role
+ *  without the tab gets the "אין הרשאה" state, not a 404). */
+export function officeSettingsParams(): { role: OfficeRole; tab: SettingsSection }[] {
+  return OFFICE_ROLES.flatMap((role) => SETTINGS_SECTION_VALUES.map((tab) => ({ role, tab })));
+}
+
+/** /dev/demo/office/[role]/calls/[req]: every call for every office role. */
 export function officeCallParams(): { role: OfficeRole; req: string }[] {
   return OFFICE_ROLES.flatMap((role) => CALLS.map((c) => ({ role, req: c.req })));
 }

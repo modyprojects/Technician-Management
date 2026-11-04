@@ -67,7 +67,7 @@ export const USERS: readonly User[] = [
 export const userByName = (name: string): User | undefined => USERS.find((u) => u.name === name);
 
 /** The office user each office viewpoint signs in as. */
-export const OFFICE_USER_NAME: Record<OfficeRole, string> = { mgr: "דורון", cs: "שיראל" };
+export const OFFICE_USER_NAME: Record<OfficeRole, string> = { mgr: "דורון", cs: "שיראל", creator: "משתמש יוצר" };
 
 /** The demo's office phone number (profile "חיוג למשרד"). */
 export const OFFICE_PHONE = "03-000-9000";

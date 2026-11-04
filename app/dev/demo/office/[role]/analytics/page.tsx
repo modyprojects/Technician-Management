@@ -22,7 +22,7 @@ import { isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { ANALYTICS_TABS, analyticsHref, monthOf, parseAnalyticsState, type AnalyticsTab } from "./_state";
 
-// Both roles are listed: the customer-service URL renders the "אין הרשאה" state instead of a 404.
+// Every office role is listed: the customer-service URL renders the "אין הרשאה" state instead of a 404.
 export const dynamicParams = false;
 
 export function generateStaticParams() {
@@ -72,9 +72,7 @@ export default async function OfficeAnalyticsPage({
   const canDrill = offers(permissions, "dashTech");
   const drillTech = canDrill ? state.tech : null;
   const month = monthOf(TODAY);
-  // TODO: demoHref.analytics() is the manager's path; a role offered dashboards later needs a
-  // role-aware route builder (routes.ts is shared).
-  const base = demoHref.analytics();
+  const base = demoHref.analytics(role);
 
   const techHref = (id: TechnicianId, filter: TechnicianVisitFilter = "all") => analyticsHref(base, { tab, tech: id, filter });
   const callHref = (req: string) => demoHref.call(role, req);

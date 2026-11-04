@@ -2,6 +2,7 @@
 import { officeCalendarHref, techCalendarHref, type OfficeCalendarState } from "@/features/calendar/data/search-params";
 import type { CalendarView } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
+import type { SettingsSection } from "@/features/settings/data/types";
 import type { OfficeRole } from "./types";
 
 export const DEMO_BASE = "/dev/demo";
@@ -21,10 +22,18 @@ export const demoHref = {
   calls: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/calls`,
   /** Full service-call card. */
   call: (role: OfficeRole, req: string): string => `${DEMO_BASE}/office/${role}/calls/${req}`,
-  /** Manager dashboards (general / technicians / products). Manager only. */
-  analytics: (): string => `${DEMO_BASE}/office/mgr/analytics`,
-  /** The dashboards address under a role (customer service gets "אין הרשאה"). */
-  officeAnalytics: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/analytics`,
+  /**
+   * Dashboards (general / technicians / products) under a role: the Manager's and the Creator's;
+   * customer service gets "אין הרשאה". `?tab&tech&filter&page` come from analytics/_state.
+   */
+  analytics: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/analytics`,
+  /**
+   * Settings tab under a role (default "users", "משתמשים והרשאות"). The Creator sees every tab; a
+   * matrix role only where its `settings` value offers it (roles.ts settingsTabsOffered; display only).
+   */
+  settings: (role: OfficeRole, section: SettingsSection = "users"): string => `${DEMO_BASE}/office/${role}/settings/${section}`,
+  /** "ניהול משתמשים": the Manager's account administration (D34, a fixed capability, SE-03). */
+  users: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/users`,
   /** Technician home (today). */
   tech: (): string => `${DEMO_BASE}/tech`,
   /** Technician visit card (details, previous visits). */

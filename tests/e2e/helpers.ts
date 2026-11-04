@@ -34,6 +34,24 @@ export const DEMO_PAGES = [
   "/dev/demo/tech/done/47800/1",
   "/dev/demo/tech/notifications",
   "/dev/demo/tech/profile",
+  // Phase E: the Creator viewpoint, Settings tabs and the Manager's account administration.
+  "/dev/demo/office/creator",
+  "/dev/demo/office/creator/calendar",
+  "/dev/demo/office/creator/calls",
+  "/dev/demo/office/creator/calls/48140",
+  "/dev/demo/office/creator/analytics",
+  "/dev/demo/office/creator/settings/users",
+  "/dev/demo/office/creator/settings/techs",
+  "/dev/demo/office/creator/settings/places",
+  "/dev/demo/office/creator/settings/reasons",
+  "/dev/demo/office/creator/settings/types",
+  "/dev/demo/office/creator/settings/mail",
+  "/dev/demo/office/creator/settings/template",
+  "/dev/demo/office/creator/users",
+  "/dev/demo/office/mgr/users",
+  "/dev/demo/office/cs/users",
+  "/dev/demo/office/mgr/settings/users",
+  "/dev/demo/office/cs/settings/places",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */

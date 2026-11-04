@@ -36,7 +36,8 @@ export type Product = {
 
 export type Reason = { name: string; on: boolean; w: number };
 
-export type UserRole = "creator" | OfficeRole;
+/** Office user roles (OfficeRole includes the Creator). */
+export type UserRole = OfficeRole;
 
 export type User = { name: string; email: string; role: UserRole; phone: string };
 
