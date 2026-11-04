@@ -141,6 +141,9 @@ export function SyncQueueBanner({
           ))}
         </ul>
       )}
+      {snapshot.visits.total > snapshot.visits.items.length && (
+        <div className="sub">ועוד ביקורים במכשיר שלא מוצגים כאן ({snapshot.visits.total - snapshot.visits.items.length})</div>
+      )}
       <p className="sub sy-warn">{QUEUE_WARNING}</p>
     </section>
   );

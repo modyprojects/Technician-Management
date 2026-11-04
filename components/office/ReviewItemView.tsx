@@ -234,7 +234,7 @@ export function ReviewItemView({
             <p className="sub rv-p rv-both">{BOTH_VERSIONS_RULE}</p>
           </DashboardSection>
 
-          <DashboardSection id="review-decision" title={r ? "ההחלטה" : "החלטה"}>
+          <DashboardSection id="review-decision" title={r ? "ההחלטה" : "טיפול בפריט"}>
             {r ? (
               <>
                 <div className="kv">

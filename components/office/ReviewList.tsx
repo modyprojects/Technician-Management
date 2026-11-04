@@ -99,6 +99,7 @@ function ReviewRow({
           </h3>
           <ReviewStatusPill status={item.status} />
           {item.authority === "closed-visit" && <ReviewClosedVisitPill />}
+          {item.isTest && !item.call.isTest && <TestBadge />}
         </div>
         <div className="sub ib-meta">
           <span>
