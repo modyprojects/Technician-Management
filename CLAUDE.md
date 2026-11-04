@@ -14,12 +14,13 @@
 ## Cloud-first and approval protocol
 - Existing connections: GitHub, Vercel, Supabase. Do not reconnect without a concrete issue. The owner does not use local VS Code or Node.js.
 - **Autonomous development (D53, supersedes D52's start and merge approvals):**
-  - **Autonomous within the approved scope:** Claude Code creates branches, commits and PRs, builds features and UI, runs tests, fixes issues and reviews code (parallel agents allowed). It continues to the next task without routine approvals.
-  - **Merge:** squash-merge a PR only when every mandatory check has passed on the exact merge candidate. Never merge with failing, pending, skipped, missing or inconclusive mandatory checks. Never push or force-push to `main`.
+  - **Autonomous within the approved scope:** Claude Code creates branches, commits and PRs, builds features and UI, runs tests, fixes issues and reviews code (parallel agents allowed). It continues to the next task without routine approvals. The approved scope is the product scope in `CLAUDE.md`, `docs/spec.md` and `docs/decisions.md` and the steps in `docs/ROADMAP.md`; work outside it (a material scope expansion) needs the owner's approval (D52 rule 2).
+  - **Merge:** squash-merge a PR only when every mandatory check has passed on the exact approved merge candidate: the exact head SHA that was checked and, where required, independently reviewed or approved by the owner. Any later commit needs the checks and reviews again. Never merge with failing, pending, skipped, missing or inconclusive mandatory checks. Never push or force-push to `main`.
   - **Owner approval still required:**
     - Merging any change that weakens protections in `CLAUDE.md`, `docs/security.md`, `.github/workflows/**`, `vercel.json`, `proxy.ts`, `app/dev/_gate.ts` or `config/release.json`.
     - Every remote Supabase operation, read-only included, approved per operation (D52 migration rules still apply; see Security contract).
     - Open owner-level decisions in `docs/decisions.md`. Meanwhile use clearly labelled, reversible, deny-by-default temporary behaviour and continue with independent work.
+  - **Approvals are separate (D52 rule 6):** an approval of one action never implies approval of another.
   - **Independent review:** changes to authentication, authorization, proxy/gate, environment handling or deployment configuration need a review by an agent that did not write the code. Record the result in the PR.
   - **Planning approval:** not required for work inside the approved scope. If an operation needs approval, pause only that operation and continue independent work.
 - **Migrations (D52):** every database migration, or an explicitly approved and precisely scoped migration batch, needs separate approval before it is applied to Supabase. A batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval.
@@ -31,7 +32,7 @@
   - **Owner checks:** the owner's anonymous-access and dashboard checks are periodic. They are not required after every routine merge.
   - **Never** disable deployment protection or bypass mandatory security checks.
   - Research for an automated anonymous-access check is kept in `docs/research/d31-anonymous-access-check.md`. It is not implemented yet.
-- High-risk stop gates: production access outside the protected Vercel workflow, remote Supabase operations, migrations, RLS/auth changes, credentials, access grants, real emails, paid services, transcription, destructive operations, third-party integrations, real customer data, weakening any protection.
+- High-risk stop gates: production access outside the protected Vercel workflow (the only allowed path is a merge to `main` followed by the automatic deployment; promote, rollback, alias and share-link tools stay forbidden), remote Supabase operations, migrations, RLS/auth changes, credentials, access grants, real emails, paid services, transcription, destructive operations, third-party integrations, real customer data, weakening any protection.
 - Prefer read-only inspection. Never read, request, list, copy or print credentials, tokens, API keys, passwords, environment-variable values or real records.
   - Environment-variable **names** and existing source references may be inspected.
   - If a value is needed, tell the owner the variable name; the owner configures it.
