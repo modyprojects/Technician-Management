@@ -80,6 +80,7 @@ type CommandResult<T = void> =
   - Invalid input returns `{ok:false, simulated:true, error}`.
   - Valid input returns `{ok:true, simulated:true, message:"פעולה מדומה · לא נשמר"}` and shows the demo toast.
   - It is wired in `app/dev/demo/layout.tsx`, inside `DemoToastProvider`. The layout reads, through the layer, what a server would check against stored data (`SimulatedServerState`: places and reasons in use, pending request ids, active and inactive account ids), so a simulated delete of a used reason or a decision on a request that is no longer pending fails as it would on the server.
+- **Route loaders.** `office/[role]/users/_accounts.ts` (account administration) and `office/[role]/settings/[tab]/_users.ts` (Settings › "משתמשים והרשאות") read through `demoDataAccess` and return the DTO props of `components/office/AccountAdminScreen` and `SettingsUsersTab`. Two demo stand-ins, to replace in production: the signed-in account is the viewpoint's demo user (`VIEWPOINTS[role].who`), and the Manager's own requests are filtered in memory from the bounded list. The production adapter takes the user from the session (G-03) and scopes `accounts.requests` to the requester on the server, so the count is exact.
 - **Page frames.** Every demo page renders through `DemoPage`, `DemoTechFrame` or `DemoOfficeFrame`, which carry the fixture sentinel and the "נתוני בדיקה" strip.
 
 ```tsx
@@ -99,7 +100,8 @@ if (!r.ok) setError(r.error);
 3. **Commands.** Commands become server actions that validate input again on the server (`CLAUDE.md`: Zod for inputs) and return `CommandResult` with `simulated: false`. A `CommandsProvider` built on them replaces `SimulatedCommandsProvider`.
 4. **Test data.** In production, dashboards never count test-marked records (SIM-08); in test environments they include them, with the label.
 5. **Colours from the database.** Components put DTO colours such as `Technician.color` into inline styles. The production adapter accepts only an allowlisted colour token (for example `t-y`) and maps it to `var(--t-…)`; it never passes stored CSS through, so a stored value such as `url(…)` cannot make the browser fetch an outside address (TODO before the Supabase adapter).
-6. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
+6. **Account administration.** `AccountCommands` become server functions that check the caller's role in the database under the caller's own session before any Auth admin call (D34); the secret key never reaches a client. The matrix (`settings.setPermission`) is changed only through a Creator-only server function (D33), audited.
+7. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
 
 ## ESLint enforcement (`eslint.config.mjs`; never weakened)
 - **Shared code.** In `components/**`, `features/**` and `lib/**`, importing `@/app/*` or a relative `../…/app/*` is an error.
@@ -108,7 +110,7 @@ if (!r.ok) setError(r.error);
 - **Known gap** (Phase A review): non-normalised paths and dynamic `import()` can evade these rules. No such case occurs in the code; normalising paths is an optional hardening.
 
 ## Bounded lists (`docs/security.md`: query bounds)
-- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits` and the visit rows of `technicianDetail`.
+- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits`, the visit rows of `technicianDetail`, `accounts.list` and `accounts.requests`.
 - **Calendar lists (`Bounded<T>`):** `CALENDAR_LANE_LIMIT` (30) visits per technician per day, `CALENDAR_WEEK_DAY_LIMIT` (100) per office week column; month views carry counts only; at most one lane per technician (100).
 - **Aggregate lists (`Bounded<T>`)** use fixed caps: `DASHBOARD_LIST_LIMIT` (20) and `OLDEST_FOLLOWUPS_LIMIT` (6). `total` gives the full count, so a screen can say "ועוד X".
 - **Settings lists** (technicians, reasons, places, call types, template labels) are capped at 100.
