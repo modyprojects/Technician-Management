@@ -2,12 +2,18 @@
 // Server-side, and only for the fixture adapter (adapter.ts, aggregations.ts, mappers.ts):
 // screens read through demoDataAccess (eslint.config.mjs blocks direct imports).
 import "server-only";
+import { applyCorrections } from "./corrections";
 import { addDays, toMin } from "./dates";
-import { CALLS } from "./seed";
+import { CALLS as SEEDED_CALLS } from "./seed";
 import { isClosedVisit, isOpenVisit } from "./status";
 import type { Call, TechId, Visit } from "./types";
 
-export { CALLS };
+/**
+ * Every demo call as the server holds it now: the seeded calls with the audited corrections of
+ * closed visits applied (corrections.ts: the current value is the latest correction; the originals
+ * stay in the history). Treat as read-only.
+ */
+export const CALLS: readonly Call[] = applyCorrections(SEEDED_CALLS);
 
 /** A visit together with its call (the demo's { c, v }). */
 export type CallVisit = { c: Call; v: Visit };
