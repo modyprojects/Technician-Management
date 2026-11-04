@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { REVIEW_KIND_LABELS } from "@/features/review/data/types";
+import { ReviewItemView } from "@/components/office/ReviewItemView";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { SimulatedCommandsProvider } from "../../../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../../../_data/adapter";
+import { notificationTimeLabel } from "../../../../_data/dates";
 import { officeReviewParams } from "../../../../_data/params";
 import { isOfficeRole, officeHomeLabel, reviewItemsOffered, reviewResolutionOffered, VIEWPOINTS } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
@@ -25,12 +25,12 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
   return { title: `פריט לבדיקה · ${VIEWPOINTS[role].label} · הדגמה` };
 }
 
-// One review item (D44): both versions side by side per field (base, current, incoming), the
-// source, the call and visit links, and the resolution. PLACEHOLDER (phase G ports): the body is
-// built on review.get(id) (ReviewItemDetail) and acts only through useCommands().review.resolve
-// (simulated). The state the resolution is checked against (version, status, decisions, fields,
-// note rule, whether this role may resolve: reviewResolutionOffered) is nested here only
-// (reviewState; deny by default elsewhere).
+// One review item (D44; D39 for invitations): what the kind means, the source, both versions side
+// by side per field (base, the system's value, the submitted value) and the decision. Reads only
+// through the layer (review.get). The decision runs only through useCommands().review.resolve
+// (simulated): the state it is checked against (version, status, decisions, fields, note rule and
+// whether this role may decide: reviewResolutionOffered, D14 cases Manager and Creator, others
+// `conflicts`) is nested here only (reviewState; deny by default elsewhere). Display only (G-04).
 export default async function OfficeReviewItemPage({ params }: PageProps<"/dev/demo/office/[role]/review/[id]">) {
   const { role, id } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -54,28 +54,20 @@ export default async function OfficeReviewItemPage({ params }: PageProps<"/dev/d
   }
   const item = await demoDataAccess.review.get(id);
   if (!item) notFound();
+  const canResolve = item.status === "open" && reviewResolutionOffered(role, permissions, item.authority);
+  const callHref = demoHref.call(role, item.call.req);
 
   return (
     <DemoOfficeFrame role={role} active="review">
-      <SimulatedCommandsProvider state={reviewState(item, reviewResolutionOffered(role, permissions, item.authority))}>
-        <div>
-          <Link className="lnk" href={demoHref.review(role)}>
-            › חזרה לפריטים לבדיקה
-          </Link>
-        </div>
-        <div className="ptitle">
-          <div>
-            <h1>{REVIEW_KIND_LABELS[item.kind]}</h1>
-            <div className="sub">
-              <Link className="lnk" href={demoHref.call(role, item.call.req)}>{`פנייה ${item.call.req} · ${item.call.customerName}`}</Link>
-            </div>
-          </div>
-        </div>
-        <section className="card" aria-labelledby="review-item-placeholder">
-          <div className="sec">
-            <h2 id="review-item-placeholder">המסך בבנייה</h2>
-          </div>
-        </section>
+      <SimulatedCommandsProvider state={reviewState(item, canResolve)}>
+        <ReviewItemView
+          item={item}
+          backHref={demoHref.review(role)}
+          callHref={callHref}
+          visitHref={item.visit ? `${callHref}#visit-${item.visit.n}` : null}
+          canResolve={canResolve}
+          timeLabel={notificationTimeLabel}
+        />
       </SimulatedCommandsProvider>
     </DemoOfficeFrame>
   );

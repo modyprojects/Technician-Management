@@ -5,13 +5,17 @@
 // for "המשך טיפול" the follow-up reason, "מה צריך בביקור הבא" (TE-21) and who gets the email
 // (TE-22, D09). The send button is CloseFooter (same visit draft). After a successful close the
 // body shows the result as the command reported it (TE-23: never claims a save or an email that
-// did not happen); leaving the screen then forgets the draft, as the demo's sendClose() does.
+// did not happen) and the sync progression instead of the demo's "נשלח מייל" toast (TE-23:
+// "נשמר במכשיר" → "ממתין לסנכרון" → "מסתנכרן" → "נשלח לשרת"; a simulated close performed no
+// step, so none is shown as done); leaving the screen then forgets the draft, as the demo's
+// sendClose() does.
 import Link from "next/link";
 import { useEffect, useId, useRef, type CSSProperties } from "react";
 import type { ApprovalText } from "@/features/reference/data/types";
 import type { VisitRef } from "@/features/visits/data/types";
 import { NEXT_NOTE_MAX, SIGNER_MAX } from "@/features/visits/data/validate";
 import { SignaturePad } from "./SignaturePad";
+import { SyncProgression } from "./SyncProgression";
 import {
   clearVisitDraft,
   isVisitDraftSent,
@@ -68,12 +72,15 @@ function CloseDone({ outcome, simulated, message }: { outcome: CloseOutcome; sim
             </span>
           </div>
           <div style={{ fontSize: 14, lineHeight: 1.5 }}>בהדגמה שום דבר לא נשמר ולא נשלח מייל.</div>
-          <div className="sub" style={{ lineHeight: 1.5 }}>
-            באפליקציה הסיום נשמר קודם במכשיר ונשלח לשרת. רק אחרי שהשרת מאשר את הקבלה יישלח מייל למנהל ולתיבת שירות הלקוחות.
-          </div>
+          <SyncProgression reached={null} caption="בהדגמה אף שלב לא בוצע. כך הסיום עובר מהטלפון לשרת:" />
         </>
       ) : (
-        message && <div style={{ fontSize: 14 }}>{message}</div>
+        <>
+          {message && <div style={{ fontSize: 14 }}>{message}</div>}
+          {/* The close command stored the closure on the device (its first step). Step 4: follow the
+              offline module's live state of this visit (sync.visit) instead of this first step. */}
+          <SyncProgression reached="saved-on-device" />
+        </>
       )}
     </section>
   );

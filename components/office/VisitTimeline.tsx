@@ -10,6 +10,8 @@ import type { MediaKind, MediaPhase, VisitSource, VisitStatus } from "@/features
 // Additions in the demo's visual language: visit source line (SIM-14), approved transcription
 // (TE-15), parts replaced (TE-17), next-visit note (TE-21), the approval text preserved at
 // signing instead of the current Settings text (OF-06, D43), and 🧪 on test media (SIM-19).
+// Each visit is the anchor `#visit-<n>` (links from "פריטים לבדיקה"); `renderExtra` adds a part at
+// the end of a visit (the call card's "תיקונים" of a closed visit, OF-10).
 
 /** A visit as the office call card shows it. Labels are formatted by the caller. */
 export type TimelineVisit = {
@@ -53,16 +55,22 @@ export type TimelineVisit = {
 
 export type RenderRecording = (visit: TimelineVisit) => ReactNode;
 
+/** A part at the end of one visit (for example its corrections); null for none. */
+export type RenderVisitExtra = (visit: TimelineVisit) => ReactNode;
+
 export function VisitTimeline({
   visits,
   showReport = true,
   renderRecording,
+  renderExtra,
 }: {
   visits: readonly TimelineVisit[];
   /** The technician's report (summary, recording, media, signature): the matrix key `card`. */
   showReport?: boolean;
   /** Recording control for viewers allowed to play originals (D37); otherwise a locked label. */
   renderRecording?: RenderRecording;
+  /** A part at the end of each visit (the caller decides per visit). */
+  renderExtra?: RenderVisitExtra;
 }) {
   const newestFirst = [...visits].sort((a, b) => b.n - a.n);
   return (
@@ -72,7 +80,7 @@ export function VisitTimeline({
       </h2>
       <div className="grid">
         {newestFirst.map((v) => (
-          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} />
+          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} renderExtra={renderExtra} />
         ))}
       </div>
     </section>
@@ -86,15 +94,17 @@ function VisitSection({
   v,
   showReport,
   renderRecording,
+  renderExtra,
 }: {
   v: TimelineVisit;
   showReport: boolean;
   renderRecording?: RenderRecording;
+  renderExtra?: RenderVisitExtra;
 }) {
   const s = VISIT_STATUSES[v.status];
   const hasReport = v.summary || v.recLabel;
   return (
-    <article className="card vis" style={{ borderRightColor: s.c }} aria-label={`ביקור ${v.n}`}>
+    <article id={`visit-${v.n}`} className="card vis vc-anchor" style={{ borderRightColor: s.c }} aria-label={`ביקור ${v.n}`}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <h3 className="num" style={{ fontSize: 16 }}>
           ביקור {v.n} · {v.dateLabel} · {v.start}–{v.end}
@@ -226,6 +236,8 @@ function VisitSection({
           </div>
         </>
       )}
+
+      {renderExtra?.(v)}
     </article>
   );
 }

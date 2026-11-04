@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CallDetail } from "@/components/office/CallDetail";
+import { VisitCorrections } from "@/components/office/VisitCorrections";
+import { visitCorrectionView } from "@/components/office/VisitCorrectionView";
 import type { TimelineVisit } from "@/components/office/VisitTimeline";
 import { offers } from "@/features/reference/data/permissions";
-import { isOpenVisitStatus } from "@/features/visits/data/types";
+import { isClosedVisitStatus, isOpenVisitStatus, type VisitCorrectionHistory } from "@/features/visits/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
+import { SimulatedCommandsProvider } from "../../../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../../../_data/adapter";
+import { notificationTimeLabel } from "../../../../_data/dates";
 import { officeCallParams } from "../../../../_data/params";
-import { customersOffered, isOfficeRole } from "../../../../_data/roles";
+import { closedVisitCorrectionsOffered, customersOffered, isOfficeRole } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
+import { correctionsState } from "../../_simulatedState";
 import { CallActions } from "./_CallActions";
 import { callDetailData } from "./_callDetailData";
 
@@ -42,8 +47,16 @@ function playRecording(v: TimelineVisit) {
 // Office service-call card (demo offCard(), screens 2-4): customer, call and product details,
 // assignment, visit timeline and the header actions (a simulated dial; cancel pending d08).
 // Reads only through the data-access layer (calls.get, calls.customerHistory,
-// reference.permissions). The customer section links to the customer card (OF-16, `calls`). What each role sees follows the role's matrix values (D33, temporary
-// per D51); this only shapes the demo screen (G-04).
+// reference.permissions, visits.corrections, reference.reasons). The customer section links to
+// the customer card (OF-16, `calls`). What each role sees follows the role's matrix values (D33,
+// temporary per D51); this only shapes the demo screen (G-04).
+// OF-10 (D14): every server-closed visit shows its "תיקונים" (originals kept, who, when, reason)
+// where the role's screens show the technician's report (`card`, which also gates
+// `visit_corrections` reads); "תיקון ביקור סגור" only for the Manager and the Creator (a fixed
+// capability, closedVisitCorrectionsOffered; never a matrix key, D33). The correction runs only
+// through useCommands().visits.correct (simulated): the state it is checked against (each closed
+// visit's version, current values, correctable fields, the active follow-up reasons and the
+// signed-in user) is nested here only (correctionsState; deny by default elsewhere).
 export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/office/[role]/calls/[req]">) {
   const { role, req } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -54,22 +67,57 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
   ]);
   if (!c) notFound();
   const last = c.visits[c.visits.length - 1]?.technician;
+  const showReport = offers(permissions, "card");
+
+  // Corrections are report content: read only where the role's screens show the report.
+  const histories: VisitCorrectionHistory[] = showReport
+    ? (
+        await Promise.all(
+          c.visits.filter((v) => isClosedVisitStatus(v.status)).map((v) => demoDataAccess.visits.corrections({ req: c.req, n: v.n })),
+        )
+      ).filter((h): h is VisitCorrectionHistory => h !== null)
+    : [];
+  const canCorrect = closedVisitCorrectionsOffered(role) && histories.length > 0;
+  const [state, reasons] = await Promise.all([
+    correctionsState(role, histories),
+    canCorrect ? demoDataAccess.reference.reasons() : Promise.resolve([]),
+  ]);
+  const activeReasons = reasons.filter((r) => r.active).map((r) => r.name);
+  const historyOf = new Map(histories.map((h) => [h.n, h]));
+  const customerName = c.customer.name;
+
+  const renderCorrections = (v: TimelineVisit) => {
+    const h = historyOf.get(v.n);
+    if (!h) return null;
+    return (
+      <VisitCorrections
+        history={visitCorrectionView(h, notificationTimeLabel)}
+        canCorrect={canCorrect}
+        reasons={activeReasons}
+        title={`פנייה ${h.req} · ביקור ${h.n} · ${customerName}`}
+      />
+    );
+  };
+
   return (
     <DemoOfficeFrame role={role} active="calls">
-      <CallDetail
-        call={callDetailData(c, customerCalls.items, role)}
-        backHref={demoHref.calls(role)}
-        customerHref={customersOffered(permissions) ? demoHref.customer(role, c.customer.id) : undefined}
-        showReport={offers(permissions, "card")}
-        renderRecording={offers(permissions, "recordings") ? playRecording : undefined}
-        actions={
-          <CallActions
-            tech={last ? { name: last.name, phone: last.phone } : null}
-            hasOpenVisit={c.visits.some((v) => isOpenVisitStatus(v.status))}
-            canCancel={offers(permissions, "cancel")}
-          />
-        }
-      />
+      <SimulatedCommandsProvider state={state}>
+        <CallDetail
+          call={callDetailData(c, customerCalls.items, role)}
+          backHref={demoHref.calls(role)}
+          customerHref={customersOffered(permissions) ? demoHref.customer(role, c.customer.id) : undefined}
+          showReport={showReport}
+          renderRecording={offers(permissions, "recordings") ? playRecording : undefined}
+          renderVisitExtra={histories.length ? renderCorrections : undefined}
+          actions={
+            <CallActions
+              tech={last ? { name: last.name, phone: last.phone } : null}
+              hasOpenVisit={c.visits.some((v) => isOpenVisitStatus(v.status))}
+              canCancel={offers(permissions, "cancel")}
+            />
+          }
+        />
+      </SimulatedCommandsProvider>
     </DemoOfficeFrame>
   );
 }

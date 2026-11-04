@@ -9,9 +9,11 @@ import type { TechDayVisit } from "@/features/visits/data/types";
 // ביקורים היום" when none, and a muted "הושלמו היום: …" line for the visits closed today.
 // Every row and every closed visit is a real link to its visit card (the demo's buttons opened
 // the card or the "הושלמו" list); the closed visits open read-only (D14, TE-26).
-// Addition: 🧪 badge on test calls (SIM-15).
-// Presentational: the caller passes the links and, optionally, a live status element per row
-// and the "יומן ›" affordance.
+// Additions: 🧪 badge on test calls (SIM-15); the visit's device sync pill when the device holds
+// work of the visit (TE-23, TE-24), beside the status of an open visit and after the name of a
+// closed one.
+// Presentational: the caller passes the links and, optionally, a live status element and a sync
+// pill per row and the "יומן ›" affordance.
 
 export type ScheduleEntry = {
   visit: TechDayVisit;
@@ -19,6 +21,8 @@ export type ScheduleEntry = {
   href: string;
   /** Status element; defaults to the DTO's status pill. */
   status?: ReactNode;
+  /** The visit's sync pill on the device (TE-23); omitted when the device holds nothing about it. */
+  sync?: ReactNode;
 };
 
 export function ScheduleList({
@@ -49,7 +53,7 @@ export function ScheduleList({
         {calendarAction}
       </div>
       {open.length ? (
-        open.map(({ visit: v, href, status }) => (
+        open.map(({ visit: v, href, status, sync }) => (
           <Link key={`${v.req}-${v.n}`} href={href} className="li">
             <span className="t num">{v.start}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
@@ -64,7 +68,14 @@ export function ScheduleList({
                 {v.city} · {v.isFollowUp ? "↻ ביקור המשך" : v.productName}
               </div>
             </span>
-            {status ?? <StatusPill status={v.status} />}
+            {sync ? (
+              <span className="sy-pills">
+                {status ?? <StatusPill status={v.status} />}
+                {sync}
+              </span>
+            ) : (
+              (status ?? <StatusPill status={v.status} />)
+            )}
           </Link>
         ))
       ) : (
@@ -80,12 +91,13 @@ export function ScheduleList({
           }}
         >
           הושלמו היום:{" "}
-          {closed.map(({ visit: v, href }, i) => (
+          {closed.map(({ visit: v, href, sync }, i) => (
             <span key={`${v.req}-${v.n}`}>
               {i > 0 && ", "}
               <Link href={href} className="lnk" aria-label={`${v.customerName} · ${v.start} · צפייה בלבד`}>
                 {v.customerName}
               </Link>
+              {sync && <> {sync}</>}
             </span>
           ))}
         </div>
