@@ -72,7 +72,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | UI demo with fictional data (`/dev/demo`: office homes, calls list, call card, manager dashboards, office calendar and visit drawer, technician home, visit, work and close, technician calendar, "הושלמו היום" and closed-visit view, notifications, profile; every action simulated) | Mock or demo (dev only) | D53, before the remaining Step 1 work |
 | Data-access layer (typed ports in `features/*/data`, `useCommands()`) | Implemented (fixture adapter `demoDataAccess`); Supabase adapter Planned | D53; Supabase adapter after Step 1 |
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
-| Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified before and after every Production deployment) | Step 0 |
+| Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified read-only by Claude Code before each merge and after each Production deployment; owner checks periodic; D53) | Step 0 |
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
 | Database schema, RLS, grants, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), test-data marking (D47) | Planned | Step 1, PRs 1.3–1.6 |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
