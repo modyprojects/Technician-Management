@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { PinIcon } from "@/components/ui/Icons";
 import { StatusPill } from "@/components/ui/StatusPill";
 import type { VisitRef, VisitStatus } from "@/features/visits/data/types";
-import { useVisitStatus } from "../../../../_VisitStatus";
+import { useVisitStatus } from "../../../_VisitStatus";
 
 export function WazeTile({ visit, status, address }: { visit: VisitRef; status: VisitStatus; address: string }) {
   const live = useVisitStatus(visit, status);

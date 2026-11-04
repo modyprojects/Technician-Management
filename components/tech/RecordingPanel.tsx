@@ -80,7 +80,7 @@ export function RecordingPanel({
 
   useEffect(() => {
     if (!recording) return;
-    const timer = setInterval(tick, 250);
+    const timer = setInterval(() => tick(), 250);
     return () => clearInterval(timer);
   }, [recording]);
 

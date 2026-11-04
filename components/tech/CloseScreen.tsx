@@ -58,7 +58,7 @@ function CloseDone({ outcome, simulated, message }: { outcome: CloseOutcome; sim
       style={{ padding: "16px 14px", display: "flex", flexDirection: "column", gap: 8, borderColor: done ? "var(--s-done)" : "var(--s-cont)" }}
     >
       <h2 ref={titleRef} tabIndex={-1} style={{ fontSize: 18, color: done ? "var(--s-done-fg)" : "var(--s-cont-fg)" }}>
-        {done ? "✓ הביקור סומן כ״טופל״" : "↻ הביקור הועבר להמשך טיפול"}
+        סיום הביקור · {done ? "✓ טופל" : "↻ המשך טיפול"}
       </h2>
       {simulated ? (
         <>
