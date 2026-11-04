@@ -17,7 +17,7 @@ import { isOfficeRole, officeHomeLabel, reviewItemsOffered, VIEWPOINTS } from ".
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 
-// Every office role is built: a role without `conflicts` gets "אין הרשאה" instead of a 404.
+// Every office role is built: a role without `conflicts` and `card` gets "אין הרשאה" instead of a 404.
 export const dynamicParams = false;
 
 export function generateStaticParams() {
@@ -35,13 +35,13 @@ const PAGE_SIZE = 40;
 
 const LIST_TITLES: Readonly<Record<ReviewListState["status"], string>> = {
   open: "פריטים פתוחים",
-  resolved: "פריטים שטופלו",
+  resolved: "פריטים שהוחלטו",
   all: "כל הפריטים",
 };
 
 const EMPTY_TEXTS: Readonly<Record<ReviewListState["status"], string>> = {
   open: "אין פריטים שממתינים לבדיקה",
-  resolved: "עדיין לא טופלו פריטים",
+  resolved: "עדיין אין פריטים שהוחלטו",
   all: "אין פריטים לבדיקה",
 };
 
@@ -51,11 +51,11 @@ function waitingDays(iso: string): number {
   return local ? Math.max(0, daysBetween(local.date, TODAY)) : 0;
 }
 
-// "פריטים לבדיקה" (D39, D44; matrix key `conflicts`: Manager on, Customer Service off, the Creator
-// fixed). Reads only through the layer: review.list with the URL state (?status=open|resolved|all,
+// "פריטים לבדיקה" (D39, D44; matrix keys `conflicts` and `card`, reviewItemsOffered: Manager on,
+// Customer Service off, the Creator fixed). Reads only through the layer: review.list with the URL state (?status=open|resolved|all,
 // &page=; 40 per page, OF-04) and its counts per status; the counters by kind come from one
 // bounded query of the open items (at most 100, newest first; the card says so when there are
-// more). A role without `conflicts` gets "אין הרשאה" and no item is read. Display only (G-04):
+// more). A role without `conflicts` and `card` gets "אין הרשאה" and no item is read. Display only (G-04):
 // the server reads `review_items` with `card` and checks every resolution itself. Decisions are
 // made on the item page (review/[id]).
 export default async function OfficeReviewPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/review">) {
@@ -89,7 +89,7 @@ export default async function OfficeReviewPage({ params, searchParams }: PagePro
   );
 }
 
-/** The screen body for a role with `conflicts`: counters, status filter and the list. */
+/** The screen body for a role with `conflicts` and `card`: counters, status filter and the list. */
 async function ReviewBody({ role, state }: { role: OfficeRole; state: ReviewListState }) {
   const [page, open] = await Promise.all([
     demoDataAccess.review.list(reviewListQueryOf(state, PAGE_SIZE)),
@@ -108,7 +108,7 @@ async function ReviewBody({ role, state }: { role: OfficeRole; state: ReviewList
 
   const statusLinks: ReviewStatusLink[] = [
     { key: "open", label: "פתוחים", count: page.counts.open, href: demoHref.review(role), on: state.status === "open" },
-    { key: "resolved", label: "טופלו", count: page.counts.resolved, href: demoHref.review(role, { status: "resolved" }), on: state.status === "resolved" },
+    { key: "resolved", label: "הוחלטו", count: page.counts.resolved, href: demoHref.review(role, { status: "resolved" }), on: state.status === "resolved" },
     { key: "all", label: "הכל", count: all, href: demoHref.review(role, { status: "all" }), on: state.status === "all" },
   ];
   const tiles: KpiTile[] = [
@@ -127,7 +127,7 @@ async function ReviewBody({ role, state }: { role: OfficeRole; state: ReviewList
     },
     {
       key: "resolved",
-      label: "טופלו",
+      label: "הוחלטו",
       metric: { value: page.counts.resolved, unit: "count" },
       detail: "שתי הגרסאות נשמרו",
     },

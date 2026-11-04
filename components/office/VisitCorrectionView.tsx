@@ -6,8 +6,8 @@ import type { VisitCorrection, VisitCorrectionHistory } from "@/features/visits/
 // only on account screens) and the times as labels. Server-safe (no "use client"): the page builds
 // the view and passes it to the client part.
 
-/** One listed correction as the card shows it (the DTO's values; who by name, when as a label). */
-export type VisitCorrectionRow = Pick<VisitCorrection, "id" | "field" | "after" | "reason"> & {
+/** One listed correction as the card shows it (the DTO's values and test marker; who by name, when as a label). */
+export type VisitCorrectionRow = Pick<VisitCorrection, "id" | "field" | "after" | "reason" | "isTest"> & {
   byName: string;
   /** "היום 17:42" (formatted by the page, Asia/Jerusalem). */
   atLabel: string;
@@ -36,6 +36,7 @@ export function visitCorrectionView(h: VisitCorrectionHistory, atLabel: (iso: st
       field: x.field,
       after: x.after,
       reason: x.reason,
+      isTest: x.isTest,
       byName: x.by.name,
       atLabel: atLabel(x.at),
     })),

@@ -30,7 +30,9 @@ import {
 import { outboxHref, parseOutboxViewState } from "@/features/outbox/data/search-params";
 import { isOutboxId } from "@/features/outbox/data/validate";
 import { parseReviewListState, reviewListHref, reviewListQueryOf } from "@/features/review/data/search-params";
+import { offersDecided, reviewDecisionOffered, reviewScreenOffered } from "@/features/review/data/permissions";
 import { REVIEW_NOTE_MAX, type ReviewResolveInput } from "@/features/review/data/types";
+import { PERMISSION_KEYS, type PermissionKey, type RolePermissions } from "@/features/reference/data/types";
 import {
   isReviewItemId,
   normalizeReviewListQuery,
@@ -328,6 +330,8 @@ test.describe("phase G validators (D44 review items, OF-10 corrections, TE-24 sy
     conflicts: ["nextNote"],
     noteRequired: true,
     canResolve: true,
+    source: "device",
+    targetVisitClosed: true,
   };
   const resolve = (over: Partial<ReviewResolveInput> = {}): ReviewResolveInput => ({
     id: "rv-6",
@@ -361,6 +365,54 @@ test.describe("phase G validators (D44 review items, OF-10 corrections, TE-24 sy
     expect(reviewResolutionError(resolve({ note: undefined }), ITEM)).toBe("יש לכתוב הערת החלטה");
     // Without the D14 rule the note is optional.
     expect(reviewResolutionError(resolve({ note: undefined }), { ...ITEM, noteRequired: false })).toBeNull();
+  });
+
+  test("review resolution: an invitation never changes a visit that is closed now (D39); keeping the current value stays possible", () => {
+    const invitation: ReviewResolveStored = { ...ITEM, source: "invitation", noteRequired: false, conflicts: [] };
+    for (const decision of ["apply-incoming", "per-field"] as const) {
+      const input = resolve({ decision, ...(decision === "per-field" ? { fields: { summary: "incoming" } } : {}) });
+      const e = reviewResolutionError(input, invitation);
+      expect(e, decision).toBe("זימון לא משנה ביקור סגור");
+      expect(e ?? "").not.toMatch(NO_DECISION_CODE);
+      // The same decision is fine while the visit is open, and for a device submission.
+      expect(reviewResolutionError(input, { ...invitation, targetVisitClosed: false }), decision).toBeNull();
+      expect(reviewResolutionError(input, { ...invitation, source: "device" }), decision).toBeNull();
+    }
+    expect(reviewResolutionError(resolve({ decision: "keep-current" }), invitation)).toBeNull();
+  });
+
+  /** A role's values with every key off except `on` (display only, G-04). */
+  const perms = (role: "mgr" | "cs" | "creator", on: readonly PermissionKey[]): RolePermissions => {
+    const values = Object.fromEntries(PERMISSION_KEYS.map((k) => [k, on.includes(k)])) as Record<PermissionKey, boolean>;
+    return role === "creator" ? { role, status: "fixed", values } : { role, status: "temporary", values };
+  };
+
+  test("review screen: offered only with `conflicts` and `card` (review_items are read with `card`)", () => {
+    expect(reviewScreenOffered(perms("mgr", ["conflicts", "card"]))).toBe(true);
+    expect(reviewScreenOffered(perms("mgr", ["conflicts"]))).toBe(false);
+    expect(reviewScreenOffered(perms("mgr", ["card"]))).toBe(false);
+    expect(reviewScreenOffered(perms("cs", ["cal", "calls", "card"]))).toBe(false);
+  });
+
+  test("review decision: D14 items by the fixed capability; others by `conflicts`; a cancellation also needs a decided `cancel`", () => {
+    const closed = { authority: "closed-visit", kind: "edit-conflict" } as const;
+    const address = { authority: "conflicts", kind: "address-change" } as const;
+    const cancellation = { authority: "conflicts", kind: "cancellation" } as const;
+    // D14: the fixed capability decides, whatever the matrix says.
+    expect(reviewDecisionOffered({ permissions: perms("mgr", []), closedVisitCapability: true, item: closed })).toBe(true);
+    expect(reviewDecisionOffered({ permissions: perms("cs", ["conflicts", "card"]), closedVisitCapability: false, item: closed })).toBe(false);
+    // Other items: `conflicts`.
+    expect(reviewDecisionOffered({ permissions: perms("cs", ["conflicts"]), closedVisitCapability: false, item: address })).toBe(true);
+    expect(reviewDecisionOffered({ permissions: perms("mgr", ["card"]), closedVisitCapability: true, item: address })).toBe(false);
+    // A cancellation also needs `cancel`; customer service's `cancel` cell waits for an open
+    // decision, so it counts as off even if the value were on.
+    expect(reviewDecisionOffered({ permissions: perms("mgr", ["conflicts", "cancel"]), closedVisitCapability: true, item: cancellation })).toBe(true);
+    expect(reviewDecisionOffered({ permissions: perms("mgr", ["conflicts"]), closedVisitCapability: true, item: cancellation })).toBe(false);
+    expect(reviewDecisionOffered({ permissions: perms("cs", ["conflicts", "cancel"]), closedVisitCapability: false, item: cancellation })).toBe(false);
+    expect(offersDecided(perms("cs", ["cancel"]), "cancel")).toBe(false);
+    expect(offersDecided(perms("creator", ["cancel"]), "cancel")).toBe(true);
+    // The Creator's pending capability (usage) stays off.
+    expect(offersDecided(perms("creator", ["usage"]), "usage")).toBe(false);
   });
 
   test("review resolution input: shapes a screen never sends are rejected", () => {

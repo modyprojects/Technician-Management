@@ -12,9 +12,11 @@
 // A simulated correction is added to this list marked "לא נשמר · פעולה מדומה" (nothing was
 // stored, so the visit above does not change); a stored one refreshes the card from the server.
 // Props are a view of VisitCorrectionHistory (VisitCorrectionView: the corrector's name only, no
-// account id reaches the browser through this part; phase E policy P1).
+// account id reaches the browser through this part; phase E policy P1). Each test correction carries
+// the 🧪 badge (D47). The part is the anchor `#visit-<n>-corrections` (the timeline's "תוקן" link).
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { TestBadge } from "@/components/ui/TestBadge";
 import { CORRECTABLE_FIELD_LABELS, TIME_CORRECTION_FIELDS, type CorrectableVisitField, type VisitCorrection } from "@/features/visits/data/types";
 import { ActionMessage, type ActionMessageValue } from "./AccountAdminParts";
 import { ReviewValueText } from "./ReviewParts";
@@ -76,6 +78,7 @@ export function VisitCorrections({
         field: correction.field,
         after: correction.after,
         reason: correction.reason,
+        isTest: correction.isTest,
         byName: correction.by.name,
         atLabel: "עכשיו",
       };
@@ -91,7 +94,7 @@ export function VisitCorrections({
   }
 
   return (
-    <section className="vc" aria-labelledby={headingId}>
+    <section id={`visit-${history.n}-corrections`} className="vc vc-anchor" aria-labelledby={headingId}>
       <div className="vc-head">
         <h4 id={headingId} className="vc-title">
           תיקונים
@@ -137,6 +140,12 @@ export function VisitCorrections({
                       <ReviewValueText value={row.after} />
                       <span className="sub vc-meta">
                         {row.byName} · <span className="num">{row.atLabel}</span> · סיבה: <bdi>{row.reason}</bdi>
+                        {row.isTest && (
+                          <>
+                            {" "}
+                            <TestBadge />
+                          </>
+                        )}
                       </span>
                       {simulated && <SettingsNotSaved />}
                     </span>

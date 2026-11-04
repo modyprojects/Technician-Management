@@ -59,7 +59,8 @@ export type ReviewStatus = (typeof REVIEW_STATUS_VALUES)[number];
 
 export const isReviewStatus = (value: unknown): value is ReviewStatus => value === "open" || value === "resolved";
 
-export const REVIEW_STATUS_LABELS: Readonly<Record<ReviewStatus, string>> = { open: "פתוח", resolved: "טופל" };
+/** "הוחלט", not "טופל": the visit status "טופל" sits next to it on the same row. */
+export const REVIEW_STATUS_LABELS: Readonly<Record<ReviewStatus, string>> = { open: "פתוח", resolved: "הוחלט" };
 
 /**
  * How an item is resolved: apply the submitted change, keep the server's value, or choose per

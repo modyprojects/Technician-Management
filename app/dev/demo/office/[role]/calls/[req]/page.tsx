@@ -53,7 +53,9 @@ function playRecording(v: TimelineVisit) {
 // OF-10 (D14): every server-closed visit shows its "תיקונים" (originals kept, who, when, reason)
 // where the role's screens show the technician's report (`card`, which also gates
 // `visit_corrections` reads); "תיקון ביקור סגור" only for the Manager and the Creator (a fixed
-// capability, closedVisitCorrectionsOffered; never a matrix key, D33). The correction runs only
+// capability, closedVisitCorrectionsOffered; never a matrix key, D33). TEMPORARY (owner question,
+// phase G): both need `card` here; whether the fixed capability stays reachable without `card` is
+// open. A corrected visit says "תוקן במשרד" and links to its "תיקונים". The correction runs only
 // through useCommands().visits.correct (simulated): the state it is checked against (each closed
 // visit's version, current values, correctable fields, the active follow-up reasons and the
 // signed-in user's name, never an account id) is nested here only (correctionsState; deny by
@@ -83,6 +85,12 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
   const state = await correctionsState(role, histories, activeReasons);
   const historyOf = new Map(histories.map((h) => [h.n, h]));
   const customerName = c.customer.name;
+  const detail = callDetailData(c, customerCalls.items, role);
+  // A corrected visit says so under its header and links to its "תיקונים" (only where they are read).
+  const call = {
+    ...detail,
+    visits: detail.visits.map((v) => ({ ...v, correctedCount: historyOf.get(v.n)?.corrections.total ?? 0 })),
+  };
 
   const renderCorrections = (v: TimelineVisit) => {
     const h = historyOf.get(v.n);
@@ -101,7 +109,7 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
     <DemoOfficeFrame role={role} active="calls">
       <SimulatedCommandsProvider state={state}>
         <CallDetail
-          call={callDetailData(c, customerCalls.items, role)}
+          call={call}
           backHref={demoHref.calls(role)}
           customerHref={customersOffered(permissions) ? demoHref.customer(role, c.customer.id) : undefined}
           showReport={showReport}

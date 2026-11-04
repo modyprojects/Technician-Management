@@ -37,3 +37,10 @@ export const itemsLabel = (n: number): string => (n === 1 ? "פריט אחד" : 
  */
 export const QUEUE_WARNING =
   "העבודה נשמרת במכשיר עד שהשרת מאשר שקיבל אותה, והסנכרון רץ רק כשהאפליקציה פתוחה. עד אז אין להסיר את האפליקציה ואין לנקות את נתוני הדפדפן: מה שנמצא רק במכשיר לא ניתן לשחזר.";
+
+/**
+ * The home banner's one-line version of the warning (D46); the visit's sync panel shows the full
+ * QUEUE_WARNING, each item's reason and "נסה שוב".
+ */
+export const QUEUE_WARNING_SHORT =
+  "מה שנמצא רק במכשיר לא ניתן לשחזר: אין להסיר את האפליקציה עד שהכל מגיע לשרת. הפירוט ו״נסה שוב״ בכרטיס הביקור.";

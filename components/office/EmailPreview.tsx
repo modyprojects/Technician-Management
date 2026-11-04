@@ -27,6 +27,8 @@ import {
 // - The record's facts above the email: the delivery state (every row is test data, so it is never
 //   delivered: "לא יישלח · נתוני בדיקה", never "sent"; SIM-09), the release state, the idempotency
 //   key (one logical notification per closure) and the mail provider (pending d12).
+// - Free text from the visit (names, address, summary, parts, notes, the approval text) is
+//   <bdi>-isolated, as on the review screens, so mixed Hebrew and Latin text keeps its order.
 // - The demo's media thumbnails (EM-03) and its "העתק" line (EM-02) are not shown.
 // Server Component: an OutboxEmail DTO (a snapshot at closure), the call-card link and the time format.
 
@@ -36,9 +38,9 @@ const recordingLabel = (sec: number): string => `${Math.floor(sec / 60)}:${Strin
 function releaseText(release: OutboxRelease): string {
   switch (release.state) {
     case "ready":
-      return "התקיימו: השרת קיבל את סיום הביקור, והסיכום מאושר";
+      return "שני התנאים התקיימו · השרת קיבל את סיום הביקור, והסיכום מאושר";
     case "held":
-      return `מוחזק: אין עדיין סיכום כתוב או תמלול מאושר · ${pendingDecisionHint(release.pending.decision)}`;
+      return `מוחזק · אין עדיין סיכום כתוב או תמלול מאושר · ${pendingDecisionHint(release.pending.decision)}`;
   }
 }
 
@@ -55,7 +57,13 @@ function Recipient({ r }: { r: OutboxRecipient }) {
   return (
     <li>
       <b>{label}</b>
-      {r.name !== label && ` · ${r.name}`} <Address email={r.email} />
+      {r.name !== label && (
+        <>
+          {" · "}
+          <bdi>{r.name}</bdi>
+        </>
+      )}{" "}
+      <Address email={r.email} />
       {r.fixed && r.pending && (
         <span className="sub ob-rcpt-note">איזה מנהל מקבל (מנהל אחד או כל המנהלים): {pendingDecisionHint(r.pending)}</span>
       )}
@@ -119,7 +127,7 @@ export function EmailPreview({
           <span>{releaseText(email.releaseDetail)}</span>
           <span>נוצר</span>
           <span>{timeLabel(email.createdAt)} · עם קבלת סיום הביקור בשרת</span>
-          <span>מפתח ייחודיות</span>
+          <span>מפתח ייחודי</span>
           <span>
             <code dir="ltr" className="ob-key">
               {email.idempotencyKey}
@@ -142,7 +150,7 @@ export function EmailPreview({
             {email.followUp.nextVisitNumber}.
             {email.followUp.nextNote && (
               <div className="ob-follow-note">
-                <b>מה צריך בביקור הבא:</b> {email.followUp.nextNote}
+                <b>מה צריך בביקור הבא:</b> <bdi>{email.followUp.nextNote}</bdi>
               </div>
             )}
           </div>
@@ -162,7 +170,9 @@ export function EmailPreview({
           {email.followUp && (
             <>
               <span>סיבת המשך טיפול</span>
-              <span>{email.followUp.reason}</span>
+              <span>
+                <bdi>{email.followUp.reason}</bdi>
+              </span>
             </>
           )}
         </div>
@@ -170,23 +180,31 @@ export function EmailPreview({
         <div className="kv ob-kv">
           <span>לקוח</span>
           <span>
-            {email.customer.name} · <span dir="ltr">{email.customer.phone}</span>
+            <bdi>{email.customer.name}</bdi> · <bdi dir="ltr">{email.customer.phone}</bdi>
           </span>
           <span>כתובת</span>
-          <span>{email.customer.address}</span>
+          <span>
+            <bdi>{email.customer.address}</bdi>
+          </span>
           <span>מוצר / מק&quot;ט</span>
           <span>
-            {email.product.name} · <bdi dir="ltr">{email.product.sku}</bdi>
+            <bdi>{email.product.name}</bdi> · <bdi dir="ltr">{email.product.sku}</bdi>
           </span>
           <span>טכנאי</span>
           <span>
-            {email.technician.name} · ביקור {id.visitNumber}
+            <bdi>{email.technician.name}</bdi> · ביקור {id.visitNumber}
           </span>
         </div>
 
         <div className="ob-summary">
           <div className="sub ob-strong">סיכום הטכנאי</div>
-          {email.summary ? <div>{email.summary}</div> : <div className="sub">אין עדיין סיכום מאושר, ולכן המייל מוחזק</div>}
+          {email.summary ? (
+            <div>
+              <bdi>{email.summary}</bdi>
+            </div>
+          ) : (
+            <div className="sub">אין עדיין סיכום מאושר, ולכן המייל מוחזק</div>
+          )}
           {email.recordingSeconds > 0 && (
             <div className="sub">
               הקלטה <span className="num">{recordingLabel(email.recordingSeconds)}</span> · ההאזנה בכרטיס הקריאה
@@ -199,7 +217,9 @@ export function EmailPreview({
           {email.parts.length ? (
             <ul className="ob-parts">
               {email.parts.map((p, i) => (
-                <li key={`${i}-${p}`}>{p}</li>
+                <li key={`${i}-${p}`}>
+                  <bdi>{p}</bdi>
+                </li>
               ))}
             </ul>
           ) : (
@@ -217,7 +237,11 @@ export function EmailPreview({
         {email.signature && (
           <div>
             <span aria-hidden="true">✍ </span>
-            נחתם ע&quot;י <b>{email.signature.signerName}</b>: &quot;{email.signature.signedText}&quot;
+            נחתם ע&quot;י{" "}
+            <b>
+              <bdi>{email.signature.signerName}</bdi>
+            </b>
+            : &quot;<bdi>{email.signature.signedText}</bdi>&quot;
             <div className="sub">הנוסח שהוצג ללקוח בזמן החתימה</div>
           </div>
         )}

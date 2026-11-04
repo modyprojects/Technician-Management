@@ -64,6 +64,7 @@ import {
 import {
   CORRECTABLE_VISIT_FIELDS,
   FOLLOWUP_CORRECTION_FIELDS,
+  isClosedVisitStatus,
   TIME_CORRECTION_FIELDS,
   VISIT_CORRECTIONS_LIMIT,
   type ClosedVisitDetail,
@@ -118,7 +119,17 @@ import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
 import { findOutboxRow, OUTBOX_ROWS, type DemoOutboxRow } from "./outbox";
 import { REVIEW_ITEMS, type DemoReviewField, type DemoReviewItem } from "./review";
 import { DEVICE_QUEUES, type DemoDeviceOperation, type DemoDeviceQueue } from "./sync";
-import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
+import {
+  CALLS,
+  customerCalls,
+  findCall,
+  findVisit,
+  findVisitAsClosed,
+  lastVisit,
+  previousVisits,
+  sortCalls,
+  visitsForTechOnDate,
+} from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
 import { ACCOUNT_REQUESTS, ACCOUNTS, accountById, type DemoAccount, type DemoAccountRequest } from "./accounts";
 import {
@@ -484,12 +495,16 @@ function reviewSummary(x: DemoReviewItem): ReviewItemSummary {
 }
 
 function reviewDetail(x: DemoReviewItem): ReviewItemDetail {
+  const summary = reviewSummary(x);
+  // D39: an invitation never changes a closed visit; if the item's visit has closed since the item
+  // was created, keeping the current value is the only decision left.
+  const invitationOnClosedVisit = x.source.kind === "invitation" && summary.visit !== null && isClosedVisitStatus(summary.visit.status);
   return {
-    ...reviewSummary(x),
+    ...summary,
     version: x.version,
     fields: x.fields.map(reviewField),
     appliedWithNotification: (x.applied ?? []).map((a) => ({ ...a })),
-    decisions: x.resolution ? [] : [...x.decisions],
+    decisions: x.resolution ? [] : invitationOnClosedVisit ? x.decisions.filter((d) => d === "keep-current") : [...x.decisions],
     // D14: a resolution that changes a server-closed or cancelled visit is audited with its reason.
     noteRequired: x.authority === "closed-visit",
     completionEmailKey: x.completionEmailKey ?? null,
@@ -696,14 +711,16 @@ export const demoDataAccess: DataAccess = {
         stats: { open: open.length, completed: closed.length },
       };
     },
+    // The technician's reads (get, history, doneVisit) show the values as closed, without office
+    // corrections: TEMPORARY, owner question (queries.ts CALLS_AS_CLOSED).
     async get(ref) {
       if (!validRef(ref)) return null;
-      const found = findVisit(ref.req, ref.n);
+      const found = findVisitAsClosed(ref.req, ref.n);
       return found ? visitDetail(found.c, found.v) : null;
     },
     async history(ref) {
       if (!validRef(ref)) return [];
-      const c = findCall(ref.req);
+      const c = findVisitAsClosed(ref.req, ref.n)?.c;
       return c ? previousVisits(c, ref.n).map((v) => historyItem(c, v)) : [];
     },
     async doneVisits(techId, date, page) {
@@ -714,7 +731,7 @@ export const demoDataAccess: DataAccess = {
     },
     async doneVisit(techId, ref): Promise<ClosedVisitDetail | null> {
       if (!isTechId(techId) || !validRef(ref)) return null;
-      const found = findVisit(ref.req, ref.n);
+      const found = findVisitAsClosed(ref.req, ref.n);
       if (!found || found.v.tech !== techId || !isClosedVisit(found.v)) return null;
       // No field times for the technician (TE-25 PENDING): left out of the DTO, not hidden by the screen.
       const detail: Omit<VisitDetail, FieldTimeKey> & Partial<Pick<VisitDetail, FieldTimeKey>> = visitDetail(found.c, found.v);

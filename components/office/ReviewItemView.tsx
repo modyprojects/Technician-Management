@@ -14,6 +14,7 @@ import {
   CLOSED_VISIT_RULE,
   INVITATION_REVIEW_RULE,
   REVIEW_KIND_EXPLANATIONS,
+  reviewChoiceText,
   ReviewClosedVisitPill,
   ReviewStatusPill,
   reviewSourceText,
@@ -91,7 +92,9 @@ function SourceRows({ source, timeLabel, receivedAt }: { source: ReviewSource; t
         <>
           <span>נושא הזימון</span>
           {/* Calendar text is untrusted: plain text only (React escapes it), never HTML or links. */}
-          <bdi className="rv-subject">{source.subject}</bdi>
+          <span className="rv-subject">
+            <bdi>{source.subject}</bdi>
+          </span>
         </>
       ) : (
         <>
@@ -100,9 +103,11 @@ function SourceRows({ source, timeLabel, receivedAt }: { source: ReviewSource; t
             <span className="dot" style={{ background: source.technician.color }} aria-hidden="true" /> {source.technician.name}
           </span>
           <span>מזהה פעולה</span>
-          <bdi dir="ltr" className="rv-code">
-            {source.operationId}
-          </bdi>
+          <span>
+            <bdi dir="ltr" className="rv-code">
+              {source.operationId}
+            </bdi>
+          </span>
           <span>נשלח מהמכשיר</span>
           <span>
             <span className="num">{timeLabel(source.deviceSentAt)}</span> <span className="sub">· לפי שעון המכשיר</span>
@@ -244,7 +249,7 @@ export function ReviewItemView({
                   </span>
                   {r.fieldChoices &&
                     Object.entries(r.fieldChoices).map(([key, choice]) => (
-                      <AppliedRow key={key} label={fieldLabel.get(key) ?? key} value={`נשארה הגרסה ${labels[choice]}`} />
+                      <AppliedRow key={key} label={fieldLabel.get(key) ?? key} value={reviewChoiceText(choice, labels)} />
                     ))}
                   <span>על ידי</span>
                   <span>{r.by.name}</span>
@@ -276,7 +281,9 @@ function AppliedRow({ label, value }: { label: string; value: string }) {
   return (
     <>
       <span>{label}</span>
-      <bdi>{value}</bdi>
+      <span>
+        <bdi>{value}</bdi>
+      </span>
     </>
   );
 }

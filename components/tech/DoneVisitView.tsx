@@ -22,6 +22,9 @@ import { VisitHeader } from "./VisitHeader";
 // - Added: the visit's sync state on the device (TE-23, TE-24), passed by the page as `sync`
 //   (SyncVisitPanel) when the device still holds or confirmed work of the visit. Its "נסה שוב" and
 //   "סנכרן עכשיו" act on the device's queue only; the visit itself stays read-only.
+// - TE-23 wording: the demo's "🔒 הביקור נשלח" becomes "🔒 הביקור נסגר בשרת" (the closure is what
+//   the server holds); a file of the visit can still be waiting or failing on the device, which the
+//   sync panel under it says, so the note never claims that everything was sent.
 // Presentational: a ClosedVisitDetail DTO and the back link; no actions of its own.
 
 const PHASES: readonly [MediaPhase, string][] = [
@@ -94,7 +97,7 @@ export function DoneVisitView({ visit, sync }: { visit: ClosedVisitDetail; sync?
   return (
     <>
       <div className="note" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        🔒 הביקור נשלח. אפשר לצפות בפרטים, אבל לא לערוך אותם.
+        🔒 הביקור נסגר בשרת. אפשר לצפות בפרטים, אבל לא לערוך אותם.
       </div>
 
       {sync}
@@ -159,7 +162,7 @@ export function DoneVisitView({ visit, sync }: { visit: ClosedVisitDetail; sync?
               הקלטה <span className="num">{recordingLabel(rec)}</span>
             </span>
             {visit.isTest && <TestBadge />}
-            <span>· אי אפשר להשמיע אותה אחרי שהביקור נשלח</span>
+            <span>· אי אפשר להשמיע אותה אחרי שהביקור נסגר בשרת</span>
           </div>
         )}
         {!summary && !transcript && rec === 0 && <div className="sub">אין סיכום</div>}

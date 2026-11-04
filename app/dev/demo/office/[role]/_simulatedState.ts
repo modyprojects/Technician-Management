@@ -10,7 +10,7 @@ import type { ProductListItem } from "@/features/products/data/types";
 import type { OfficeRole } from "@/features/reference/data/types";
 import type { ReviewItemDetail } from "@/features/review/data/types";
 import type { SettingsSection } from "@/features/settings/data/types";
-import { visitRefKey, type VisitCorrectionHistory } from "@/features/visits/data/types";
+import { isClosedVisitStatus, visitRefKey, type VisitCorrectionHistory } from "@/features/visits/data/types";
 import type { SimulatedServerState } from "../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../_data/adapter";
 import { closedVisitCorrectionsOffered } from "../../_data/roles";
@@ -62,7 +62,9 @@ export async function productsState(products: readonly ProductListItem[]): Promi
 /**
  * "פריטים לבדיקה" (D44): the item on the page, with what its resolution is checked against.
  * `canResolve` comes from the role helpers (reviewResolutionOffered: D14 cases Manager and Creator,
- * others `conflicts`); display only, the server checks the caller itself.
+ * others `conflicts`, an invitation's cancellation also `cancel`); the source and whether the
+ * item's visit is closed now (D39: an invitation never changes a closed visit). Display only, the
+ * server checks the caller and the visit itself.
  */
 export function reviewState(item: ReviewItemDetail, canResolve: boolean): SimulatedServerState {
   return {
@@ -75,6 +77,8 @@ export function reviewState(item: ReviewItemDetail, canResolve: boolean): Simula
         conflicts: item.fields.filter((f) => f.conflict).map((f) => f.key),
         noteRequired: item.noteRequired,
         canResolve,
+        source: item.source.kind,
+        targetVisitClosed: item.visit !== null && isClosedVisitStatus(item.visit.status),
       },
     },
   };

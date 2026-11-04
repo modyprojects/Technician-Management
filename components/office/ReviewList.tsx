@@ -153,7 +153,7 @@ function ReviewRow({
         {item.status === "open" ? (
           <span className="ib-wait">{reviewWaitingLabel(waitingDays)}</span>
         ) : (
-          <span className="ib-wait">טופל</span>
+          <span className="ib-wait">הוחלט</span>
         )}
         <span className="sub num">התקבל {timeLabel(item.receivedAt)}</span>
         <Link className={item.status === "open" ? "btn pri" : "btn"} href={itemHref} prefetch={false} aria-label={`${item.status === "open" ? "לטיפול בפריט" : "לצפייה בפריט"} · ${kind} · פנייה ${item.call.req}`}>

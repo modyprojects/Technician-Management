@@ -16,7 +16,9 @@
 // The look is the demo's drawer (.drawer-bg / .drawer, docs/demo.html L159-164), as the calendar's
 // CallDrawer: a modal dialog rendered into document.body (outside the card's layout), focus moves
 // into it, Tab stays inside, Escape, ✕, "ביטול" and a click on the dimmed background close it, and
-// the caller returns focus to the button that opened it.
+// the caller returns focus to the button that opened it. The background closes it only while the
+// form is untouched, and only when the press both started and ended on it (a text selection that
+// ends outside the panel never discards a typed correction).
 import { useEffect, useEffectEvent, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useCommands } from "@/features/data-access/commands-context";
@@ -98,6 +100,8 @@ export function VisitCorrectionDialog({
   const { visits } = useCommands();
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  /** The current press started on the dimmed background (not in the panel). */
+  const pressOnBackdrop = useRef(false);
   const fieldRef = useRef<HTMLSelectElement>(null);
   const valueRef = useRef<HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
@@ -239,15 +243,30 @@ export function VisitCorrectionDialog({
   const current = field ? history.current[field] : null;
   const valueLabel = time ? "השעה המתוקנת" : "הערך המתוקן";
   const reasonOptions = field === "followupReason" && typeof current === "string" && current && !reasons.includes(current) ? [current, ...reasons] : reasons;
+  /** Something was chosen or typed: only Escape, ✕ and "ביטול" close the dialog then. */
+  const dirty = field !== "" || reason !== "";
 
   return createPortal(
     <div
       className="drawer-bg"
+      onPointerDown={(e) => {
+        pressOnBackdrop.current = e.target === e.currentTarget;
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) close();
+        const fromBackdrop = pressOnBackdrop.current && e.target === e.currentTarget;
+        pressOnBackdrop.current = false;
+        if (fromBackdrop && !dirty) close();
       }}
     >
-      <div ref={panelRef} className="drawer vc-dialog" role="dialog" aria-modal="true" aria-labelledby={`${subId} ${titleId}`} tabIndex={-1}>
+      <div
+        ref={panelRef}
+        className="drawer vc-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={subId}
+        tabIndex={-1}
+      >
         <div className="dh">
           <div style={{ minWidth: 0 }}>
             <div id={subId} className="sub">

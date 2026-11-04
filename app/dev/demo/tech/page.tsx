@@ -30,10 +30,11 @@ export const metadata: Metadata = { title: "היום · טכנאי · הדגמה
 // card, with "יומן ›" linking to the calendar. The visit statuses on this screen follow the depart, arrive and close actions
 // (VisitStatusProvider in app/dev/demo/tech/layout.tsx).
 // Device sync (TE-23, TE-24; D06, D46): sync.device(DEMO_TECHNICIAN_ID) gives the work queue. While
-// it holds items, a banner above the next visit says how many have not reached the server, with
-// "סנכרן עכשיו", each visit's sync pill (customer and link read through visits.get) and "נסה שוב"
-// for a failed item; a visit of today that the device holds work of shows its sync pill in
-// "לו"ז היום". The actions are simulated (useCommands().sync, nested in the technician layout).
+// it holds items, a small banner above the next visit says how many have not reached the server,
+// with "סנכרן עכשיו" and one line per visit with its sync pill (customer and link read through
+// visits.get; the visit card's sync panel has each item and "נסה שוב"); a visit of today that the
+// device holds work of shows its sync pill in "לו"ז היום". The actions are simulated
+// (useCommands().sync, nested in the technician layout).
 export default async function TechHomePage() {
   const [day, unread, device] = await Promise.all([
     demoDataAccess.visits.techDay(DEMO_TECHNICIAN_ID, TODAY),

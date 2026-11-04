@@ -17,9 +17,22 @@ export function TestBadge({ label = false }: { label?: boolean }) {
   );
 }
 
+/** The simulator's label (SIM-14), shared by visits and by received invitations. */
+const SIMULATOR_SOURCE_LABEL = "🧪 זימון בדיקה";
+
 export const VISIT_SOURCE_LABELS = {
   outlook: "📅 נקלט אוטומטית מזימון Outlook",
-  simulator: "🧪 זימון בדיקה",
+  simulator: SIMULATOR_SOURCE_LABEL,
+} as const satisfies Record<VisitSource, string>;
+
+/**
+ * Where a received invitation came from ("פריטים לבדיקה", D39): the same sources as a visit's, but
+ * the invitation was not ingested as a visit change (it waits for review), so the Outlook label
+ * does not say "נקלט אוטומטית".
+ */
+export const INVITATION_SOURCE_LABELS = {
+  outlook: "📅 זימון Outlook",
+  simulator: SIMULATOR_SOURCE_LABEL,
 } as const satisfies Record<VisitSource, string>;
 
 /** The demo's source line under the technician card (TE-12), also used in office views (SIM-14). */

@@ -27,7 +27,8 @@ const PREVIEW_TITLE_ID = "ob-preview-title";
 // modal. Reads only through the data-access layer: outbox.list({ page }) and outbox.get(id), with
 // `?page&id` (parseOutboxViewState); no id, or an unknown one, shows the page's first row.
 // Read-only: there is no send, resend or delete. Every row is test data and is never delivered
-// (SIM-09, D24); no mail provider is chosen (d12). The call-card link opens the Manager's card in
+// (SIM-09, D24); no mail provider is chosen (d12). A fixture prototype of the Step 7 developer tool
+// (X-06), built ahead of Step 7 for the UI demo (D53): it reads no `email_outbox` table. The call-card link opens the Manager's card in
 // the demo (production: an absolute app link in the email).
 export default async function DemoOutboxPage({ searchParams }: PageProps<"/dev/demo/outbox">) {
   const state = parseOutboxViewState(await searchParams);
@@ -54,9 +55,9 @@ export default async function DemoOutboxPage({ searchParams }: PageProps<"/dev/d
           </div>
         </div>
         <div className="note">
-          מייל סיום ביקור נכתב לתור הדואר רק אחרי שהשרת מקבל את סיום הביקור עם סיכום מאושר: מייל אחד לכל סיום, למנהל ולתיבת שירות
-          הלקוחות, גם כשהביקור טופל וגם כשעבר להמשך טיפול. כל הרשומות כאן הן נתוני בדיקה, ולכן אף אחת מהן לא תישלח. המייל הוא תמונת
-          מצב מרגע הסיום: תיקון מאוחר של הביקור לא משנה אותו.
+          רשומת מייל סיום ביקור נכתבת לתור הדואר עם קבלת סיום הביקור בשרת, ויוצאת רק כשיש סיכום מאושר: מייל אחד לכל סיום, למנהל
+          ולתיבת שירות הלקוחות, גם כשהביקור טופל וגם כשעבר להמשך טיפול. כל הרשומות כאן הן נתוני בדיקה, ולכן אף אחת מהן לא תישלח.
+          המייל הוא תמונת מצב מרגע הסיום: תיקון מאוחר של הביקור לא משנה אותו.
           {held > 0 && ` בעמוד הזה ${held === 1 ? "רשומה אחת מוחזקת" : `${held} רשומות מוחזקות`} עד שיהיה סיכום מאושר.`}
         </div>
         <section className="card ob-box" aria-label="תור הדואר">

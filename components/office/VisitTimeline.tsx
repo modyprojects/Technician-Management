@@ -11,7 +11,10 @@ import type { MediaKind, MediaPhase, VisitSource, VisitStatus } from "@/features
 // (TE-15), parts replaced (TE-17), next-visit note (TE-21), the approval text preserved at
 // signing instead of the current Settings text (OF-06, D43), and 🧪 on test media (SIM-19).
 // Each visit is the anchor `#visit-<n>` (links from "פריטים לבדיקה"); `renderExtra` adds a part at
-// the end of a visit (the call card's "תיקונים" of a closed visit, OF-10).
+// the end of a visit (the call card's "תיקונים" of a closed visit, OF-10). A visit with audited
+// corrections (`correctedCount`, D14) shows "תוקן" under its header: a link to that part
+// (`#visit-<n>-corrections`), where each original stays visible; the values above are the current
+// ones.
 
 /** A visit as the office call card shows it. Labels are formatted by the caller. */
 export type TimelineVisit = {
@@ -51,6 +54,8 @@ export type TimelineVisit = {
   /** Item to pick up before the visit, and where from. */
   collect: string;
   collectFrom: string;
+  /** Audited corrections of the closed visit shown on this card (OF-10); 0 or absent for none. */
+  correctedCount?: number;
 };
 
 export type RenderRecording = (visit: TimelineVisit) => ReactNode;
@@ -118,6 +123,13 @@ function VisitSection({
       <div style={{ marginTop: 4 }}>
         <VisitSourceLine source={v.source} />
       </div>
+      {v.correctedCount ? (
+        <div style={{ marginTop: 6 }}>
+          <a className="pill vc-mark" href={`#visit-${v.n}-corrections`}>
+            תוקן במשרד · {v.correctedCount === 1 ? "תיקון אחד" : `${v.correctedCount} תיקונים`} ›
+          </a>
+        </div>
+      ) : null}
 
       {(v.departAt || v.arriveAt) && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>

@@ -1,14 +1,15 @@
+import { INVITATION_SOURCE_LABELS } from "@/components/ui/TestBadge";
 import type { IsoTimestamp } from "@/features/data-access/common";
 import {
   REVIEW_STATUS_LABELS,
   type ReviewDecision,
+  type ReviewFieldChoice,
   type ReviewItemSummary,
   type ReviewKind,
   type ReviewSource,
   type ReviewStatus,
   type ReviewValue,
 } from "@/features/review/data/types";
-import type { VisitSource } from "@/features/visits/data/types";
 
 // Shared pieces of "פריטים לבדיקה" (the list and the item view; D39, D43, D44, D45). docs/demo.html
 // has no such screen, so they are new visual elements in its language (.pill, .sub, .note): the
@@ -16,13 +17,7 @@ import type { VisitSource } from "@/features/visits/data/types";
 // and what each kind means. Server-safe: no hooks, no data. Product text only: decision codes stay
 // in comments (phase F review F2); demo-only lines come from the page as props.
 
-/** Where an invitation came from (SIM-14): these items were received, not ingested as visits. */
-const INVITATION_SOURCE_LABELS = {
-  outlook: "📅 זימון Outlook",
-  simulator: "🧪 זימון בדיקה",
-} as const satisfies Record<VisitSource, string>;
-
-/** "🧪 זימון בדיקה" or "📱 מהמכשיר של יורם". */
+/** "🧪 זימון בדיקה" (SIM-14, one label map in TestBadge) or "📱 מהמכשיר של יורם". */
 export function reviewSourceText(source: ReviewSource): string {
   return source.kind === "invitation" ? INVITATION_SOURCE_LABELS[source.source] : `📱 מהמכשיר של ${source.technician.name}`;
 }
@@ -37,6 +32,11 @@ export function reviewVersionLabels(source: ReviewSource): ReviewVersionLabels {
   return source.kind === "invitation"
     ? { base: "בזימון הקודם", current: "במערכת", incoming: "בזימון החדש" }
     : { base: "כשהמכשיר התחיל", current: "במערכת", incoming: "מהמכשיר" };
+}
+
+/** What a per-field choice does, in the form's result and on a resolved item (one wording). */
+export function reviewChoiceText(choice: ReviewFieldChoice, labels: ReviewVersionLabels): string {
+  return choice === "current" ? "נשאר הערך במערכת" : `הוחלה הגרסה ${labels.incoming}`;
 }
 
 /**
@@ -58,9 +58,9 @@ export const REVIEW_KIND_EXPLANATIONS: Readonly<Record<ReviewKind, string>> = {
     "בקריאה קיימת הגיע מק״ט אחר. זהות המוצר וההיסטוריה שלו לא נדרסות בשקט: השינוי מוחל רק אחרי החלטה כאן.",
   // D44: conflicts with a device submission.
   "edit-conflict":
-    "המכשיר שלח שינוי שמתנגש עם מה שנשמר במערכת. כל שדה מוצג עם הערך שהמכשיר התחיל ממנו: שדה ששינה רק צד אחד ממוזג אוטומטית כשזה בטוח, ושדה ששני הצדדים שינו דורש החלטה מפורשת. ההגשה מהמכשיר נשמרת גם אם היא נדחית.",
+    "המכשיר שלח שינוי שמתנגש עם מה שנשמר במערכת. כל שדה מוצג עם הערך שהמכשיר התחיל ממנו: שדה ששינה רק צד אחד ממוזג אוטומטית כשזה בטוח (בביקור שנסגר במערכת אין מיזוג אוטומטי), ושדה ששני הצדדים שינו דורש החלטה מפורשת. ההגשה מהמכשיר נשמרת גם אם היא נדחית.",
   "closure-of-cancelled-visit":
-    "המשרד ביטל את הביקור, והמכשיר שלח אחר כך סגירה שלו. הביטול עומד בינתיים; הסגירה, הסיכום והמדיה שנשלחו נשמרים כאן ולא נמחקים. אם הסגירה מתקבלת, מייל הסיום נשלח פעם אחת בלבד.",
+    "המשרד ביטל את הביקור, והמכשיר שלח אחר כך סגירה שלו. הביטול עומד בינתיים; הסגירה, הסיכום והמדיה שנשלחו נשמרים כאן ולא נמחקים. אם הסגירה מתקבלת, מייל הסיום נכנס לתור הדואר פעם אחת בלבד.",
   // D43: the approval text preserved at signing.
   "approval-text-mismatch":
     "נוסח האישור שנשלח עם החתימה לא תואם גרסה שמורה. הנוסח שנחתם נשמר כפי שהוא ולעולם לא מוחלף בנוסח הנוכחי מההגדרות.",
@@ -83,8 +83,9 @@ export const CLOSED_VISIT_RULE = "החלטה בפריט הזה משנה ביקו
 export function reviewDecisionHint(decision: ReviewDecision, item: Pick<ReviewItemSummary, "kind" | "source">): string {
   const device = item.source.kind === "device";
   if (item.kind === "closure-of-cancelled-visit") {
+    // What accepting the closure does to the visit's status is part of open decision #5: not claimed.
     return decision === "apply-incoming"
-      ? "הסגירה מהמכשיר מתקבלת והביקור נסגר לפיה. מייל הסיום נשלח פעם אחת בלבד."
+      ? "הסגירה מהמכשיר מתקבלת: התיעוד והמדיה מצורפים לביקור, ומייל הסיום נכנס לתור הדואר פעם אחת בלבד. מצב הביקור אחרי ההחלטה ממתין להחלטת בעלים."
       : "הביטול עומד. הסגירה והמדיה נשמרות עם הפריט ולא נמחקות.";
   }
   switch (decision) {
@@ -101,12 +102,14 @@ export function reviewDecisionHint(decision: ReviewDecision, item: Pick<ReviewIt
   }
 }
 
+// "הוחלט" uses its own colours (the accent tint), not the visit status "טופל"'s green, so the item
+// status and the visit status next to it never read as one.
 const STATUS_STYLE: Readonly<Record<ReviewStatus, { background: string; color: string }>> = {
   open: { background: "var(--s-work-bg)", color: "var(--s-work-fg)" },
-  resolved: { background: "var(--s-done-bg)", color: "var(--s-done-fg)" },
+  resolved: { background: "var(--accent-l)", color: "var(--accent-d)" },
 };
 
-/** "פתוח" / "טופל". */
+/** "פתוח" / "הוחלט". */
 export function ReviewStatusPill({ status }: { status: ReviewStatus }) {
   return (
     <span className="pill" style={STATUS_STYLE[status]}>

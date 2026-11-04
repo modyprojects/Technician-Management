@@ -11,9 +11,10 @@
 //   item's own rules, so a missing choice or note gets an inline error (aria-invalid, focus on the
 //   control) instead of a toast.
 // - A simulated result shows the decision marked "לא נשמר · פעולה מדומה" and says the item stays
-//   open (nothing was stored); a stored result refreshes the page from the server.
+//   open (nothing was stored), with "בחירת החלטה אחרת", which brings the form back as it was; a
+//   stored result refreshes the page from the server.
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import {
   REVIEW_DECISION_LABELS,
@@ -25,7 +26,7 @@ import {
   type ReviewResolveInput,
 } from "@/features/review/data/types";
 import { reviewResolveInputError } from "@/features/review/data/validate";
-import { reviewDecisionHint, reviewValueExcerpt, type ReviewVersionLabels } from "./ReviewParts";
+import { reviewChoiceText, reviewDecisionHint, reviewValueExcerpt, type ReviewVersionLabels } from "./ReviewParts";
 import { SettingsNotSaved } from "./SettingsShell";
 
 const SAVE_FAILED = "ההחלטה לא נשמרה. נסה שוב.";
@@ -64,10 +65,13 @@ export function ReviewResolveForm({ item, labels }: { item: ReviewItemDetail; la
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; target: ErrorTarget } | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  /** The form came back after a simulated result: focus returns to the chosen decision. */
+  const [reopened, setReopened] = useState(0);
   const decisionRef = useRef<HTMLInputElement>(null);
+  const decisionRefs = useRef(new Map<ReviewDecision, HTMLInputElement>());
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const fieldRefs = useRef(new Map<string, HTMLInputElement>());
-  const resultRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLElement>(null);
   const errorId = `${id}-error`;
   const noteHintId = `${id}-note-hint`;
   const emailHintId = `${id}-email`;
@@ -75,6 +79,15 @@ export function ReviewResolveForm({ item, labels }: { item: ReviewItemDetail; la
   useEffect(() => {
     if (result) resultRef.current?.focus();
   }, [result]);
+
+  const focusChosenDecision = useEffectEvent(() => {
+    (decision ? decisionRefs.current.get(decision) : undefined)?.focus();
+  });
+
+  // Only when the form comes back, not on every decision change.
+  useEffect(() => {
+    if (reopened) focusChosenDecision();
+  }, [reopened]);
 
   function fail(text: string, target: ErrorTarget) {
     setError({ text, target });
@@ -147,7 +160,7 @@ export function ReviewResolveForm({ item, labels }: { item: ReviewItemDetail; la
   if (result) {
     const headingId = `${id}-result`;
     return (
-      <div ref={resultRef} tabIndex={-1} className="rv-result" aria-labelledby={headingId}>
+      <section ref={resultRef} tabIndex={-1} className="rv-result" aria-labelledby={headingId}>
         <h3 id={headingId} className="rv-result-h">
           ההחלטה שנבחרה {result.simulated && <SettingsNotSaved />}
         </h3>
@@ -169,7 +182,21 @@ export function ReviewResolveForm({ item, labels }: { item: ReviewItemDetail; la
         {result.simulated && item.completionEmailKey && result.decision === "apply-incoming" && (
           <p className="sub rv-result-p">בהדגמה מייל הסיום לא נכנס לתור ולא נשלח.</p>
         )}
-      </div>
+        {result.simulated && (
+          <div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setResult(null);
+                setReopened((n) => n + 1);
+              }}
+            >
+              בחירת החלטה אחרת
+            </button>
+          </div>
+        )}
+      </section>
     );
   }
 
@@ -189,7 +216,11 @@ export function ReviewResolveForm({ item, labels }: { item: ReviewItemDetail; la
         {item.decisions.map((d, i) => (
           <label key={d} className="rv-opt">
             <input
-              ref={i === 0 ? decisionRef : undefined}
+              ref={(el) => {
+                if (i === 0) decisionRef.current = el;
+                if (el) decisionRefs.current.set(d, el);
+                else decisionRefs.current.delete(d);
+              }}
               type="radio"
               name={`${id}-decision`}
               value={d}
@@ -314,7 +345,7 @@ function ChoiceLine({ label, choice, labels }: { label: string; choice: ReviewFi
   return (
     <>
       <span>{label}</span>
-      <span>{choice ? `נשארת הגרסה ${labels[choice]}` : "—"}</span>
+      <span>{choice ? reviewChoiceText(choice, labels) : "—"}</span>
     </>
   );
 }

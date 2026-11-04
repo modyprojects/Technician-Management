@@ -14,7 +14,7 @@
 //   the command's error.
 // Never a scheduled job and never a claim of background sync: everything here runs on a tap.
 // Generic: operation ids and states from DeviceOperation DTOs; no demo or fixture knowledge.
-import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import { visitSyncState, type DeviceSyncState, type QueuedOperationState } from "@/features/sync/data/types";
@@ -165,9 +165,28 @@ export function SyncItemPill({ item }: { item: QueueItemRef }) {
 }
 
 /**
+ * A result line as two live regions that are always in the page: "status" for a result and "alert"
+ * for an error. The right one is filled; neither changes its role while text arrives (screen
+ * readers often miss a region whose role changes with its content).
+ */
+function ResultLines({ note, statusRef }: { note: ItemNote | null; statusRef?: RefObject<HTMLDivElement | null> }) {
+  const error = note?.kind === "error";
+  return (
+    <>
+      <div ref={statusRef} tabIndex={statusRef ? -1 : undefined} role="status" className={note && !error ? `sy-note sy-note-${note.kind}` : "sy-note"}>
+        {note && !error ? note.text : null}
+      </div>
+      <div role="alert" className={error ? "sy-note sy-note-error" : "sy-note"}>
+        {error ? note.text : null}
+      </div>
+    </>
+  );
+}
+
+/**
  * "נסה שוב" for a failed item (TE-24) and the result line under it. The button stays while the
  * command runs (aria-disabled), so focus is never lost; when the item is sent and the button goes
- * away, focus moves to the result line.
+ * away, focus moves to the result line. Its accessible name follows its visible text ("שולח…").
  */
 export function SyncRetry({ item, itemLabel }: { item: QueueItemRef; itemLabel: string }) {
   const queue = useSyncQueue();
@@ -189,21 +208,14 @@ export function SyncRetry({ item, itemLabel }: { item: QueueItemRef; itemLabel: 
         <button
           type="button"
           className="btn sy-btn"
-          aria-label={`נסה שוב · ${itemLabel}`}
+          aria-label={`${running ? "שולח…" : "נסה שוב"} · ${itemLabel}`}
           aria-disabled={running || queue.syncingAll || undefined}
           onClick={() => void onRetry()}
         >
           {running ? "שולח…" : "נסה שוב"}
         </button>
       )}
-      <div
-        ref={noteRef}
-        tabIndex={-1}
-        role={note?.kind === "error" ? "alert" : "status"}
-        className={note ? `sy-note sy-note-${note.kind}` : "sy-note"}
-      >
-        {note?.text}
-      </div>
+      <ResultLines note={note} statusRef={noteRef} />
     </>
   );
 }
@@ -238,9 +250,7 @@ export function SyncNow() {
       >
         {queue.syncingAll ? "מסתנכרן…" : "סנכרן עכשיו"}
       </button>
-      <div role={result?.kind === "error" ? "alert" : "status"} className={result ? `sy-note sy-note-${result.kind}` : "sy-note"}>
-        {result?.text}
-      </div>
+      <ResultLines note={result} />
     </div>
   );
 }

@@ -15,6 +15,22 @@ import type { Call, TechId, Visit } from "./types";
  */
 export const CALLS: readonly Call[] = applyCorrections(SEEDED_CALLS);
 
+/**
+ * TEMPORARY (owner question, phase G; docs/architecture-data-access.md): the technician's visit
+ * reads (visits.get, history, doneVisit) show the values as the technicians closed the visits,
+ * without office corrections. The schema gives technicians no read on `visit_corrections`, so
+ * until the owner decides they neither see a corrected value nor that a correction exists (deny by
+ * default). Office reads use CALLS.
+ */
+export const CALLS_AS_CLOSED: readonly Call[] = SEEDED_CALLS;
+
+/** Visit `n` of call `req` as the technician closed it (no office corrections; see CALLS_AS_CLOSED). */
+export function findVisitAsClosed(req: string, n: number): CallVisit | undefined {
+  const c = CALLS_AS_CLOSED.find((x) => x.req === req);
+  const v = c?.visits.find((x) => x.n === n);
+  return c && v ? { c, v } : undefined;
+}
+
 /** A visit together with its call (the demo's { c, v }). */
 export type CallVisit = { c: Call; v: Visit };
 

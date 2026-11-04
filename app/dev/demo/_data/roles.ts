@@ -16,7 +16,8 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
-import type { ReviewAuthority } from "@/features/review/data/types";
+import { reviewDecisionOffered, reviewScreenOffered } from "@/features/review/data/permissions";
+import type { ReviewItemSummary } from "@/features/review/data/types";
 import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
@@ -95,10 +96,12 @@ export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה זמנית: ${hebre
 
 /**
  * "פריטים לבדיקה" (D39, D44): matrix key `conflicts` (Manager on, Customer Service off by default;
- * the Creator fixed). Display only (G-04): the server reads `review_items` with `card` and checks
- * every resolution itself (docs/database-schema.md §8.3).
+ * the Creator fixed), and `card`, with which the server reads `review_items` (docs/database-schema.md
+ * §8.3; items carry report content). TEMPORARY (owner question, phase G): whether the D14 items stay
+ * reachable when `conflicts` or `card` is off; until then the whole screen follows both keys (deny
+ * by default). Display only (G-04): the server checks every read and resolution itself.
  */
-export const reviewItemsOffered = (permissions: RolePermissions): boolean => offers(permissions, "conflicts");
+export const reviewItemsOffered = (permissions: RolePermissions): boolean => reviewScreenOffered(permissions);
 
 /**
  * D14 audited corrections of a server-closed visit ("תיקון ביקור סגור", OF-10) and any resolution
@@ -110,10 +113,15 @@ export const closedVisitCorrectionsOffered = (role: OfficeRole): boolean => role
 
 /**
  * Whether the role's screen offers resolving an item (D44): an item that changes a server-closed or
- * cancelled visit follows the fixed D14 rule; every other item follows `conflicts`. Display only.
+ * cancelled visit follows the fixed D14 rule; every other item follows `conflicts`, and an
+ * invitation's cancellation also `cancel` (TEMPORARY; reviewDecisionOffered). Display only.
  */
-export function reviewResolutionOffered(role: OfficeRole, permissions: RolePermissions, authority: ReviewAuthority): boolean {
-  return authority === "closed-visit" ? closedVisitCorrectionsOffered(role) : offers(permissions, "conflicts");
+export function reviewResolutionOffered(
+  role: OfficeRole,
+  permissions: RolePermissions,
+  item: Pick<ReviewItemSummary, "authority" | "kind">,
+): boolean {
+  return reviewDecisionOffered({ permissions, closedVisitCapability: closedVisitCorrectionsOffered(role), item });
 }
 
 /** "לקוחות" and the customer card: matrix key `calls` (spec office screens). Display only. */

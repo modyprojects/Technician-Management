@@ -11,8 +11,8 @@ import { demoHref } from "../../../../_data/routes";
 import { NoAccessPlaceholder } from "../../_Placeholder";
 import { reviewState } from "../../_simulatedState";
 
-// Every item for every office role is built: a role without `conflicts` gets "אין הרשאה" (no item
-// data is read, not even for the title); an unknown id is a 404.
+// Every item for every office role is built: a role without `conflicts` and `card` gets "אין הרשאה"
+// (no item data is read, not even for the title); an unknown id is a 404.
 export const dynamicParams = false;
 
 export function generateStaticParams() {
@@ -30,7 +30,9 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 // through the layer (review.get). The decision runs only through useCommands().review.resolve
 // (simulated): the state it is checked against (version, status, decisions, fields, note rule and
 // whether this role may decide: reviewResolutionOffered, D14 cases Manager and Creator, others
-// `conflicts`) is nested here only (reviewState; deny by default elsewhere). Display only (G-04).
+// `conflicts`, an invitation's cancellation also `cancel`; and whether the item came from an
+// invitation and its visit is closed now, D39) is nested here only (reviewState; deny by default
+// elsewhere). Display only (G-04).
 export default async function OfficeReviewItemPage({ params }: PageProps<"/dev/demo/office/[role]/review/[id]">) {
   const { role, id } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -54,7 +56,7 @@ export default async function OfficeReviewItemPage({ params }: PageProps<"/dev/d
   }
   const item = await demoDataAccess.review.get(id);
   if (!item) notFound();
-  const canResolve = item.status === "open" && reviewResolutionOffered(role, permissions, item.authority);
+  const canResolve = item.status === "open" && reviewResolutionOffered(role, permissions, item);
   const callHref = demoHref.call(role, item.call.req);
 
   return (

@@ -622,11 +622,10 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 .sy-title h2 { font-family: var(--body); font-size: 14px; font-weight: 700; }
 .sy-banner .sy-title h2 { font-size: 15px; color: var(--warn-ink); }
 .sy-visits, .sy-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.sy-visit { padding-top: 8px; border-top: 1px solid var(--collect-line); display: flex; flex-direction: column; gap: 6px; }
+.sy-vline { padding-top: 6px; border-top: 1px solid var(--collect-line); }
 .sy-vhead { display: flex; justify-content: space-between; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
 .sy-vtitle { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
 .sy-op { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line2); }
-.sy-banner .sy-op { padding: 6px 0 0; border-top: 0; }
 .sy-op-main { min-width: 0; flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
 .sy-op-title { overflow-wrap: anywhere; }
 .sy-op-side { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0 8px; }
@@ -700,4 +699,11 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
    a pill inside a scroller (.ph-main, .stage, .scrollx, the outbox list) stretched the document
    below the app frame and the page itself scrolled into empty space. The pill or number contains it. */
 .pill:has(> .sr-only), .num:has(> .sr-only) { position: relative; }
+/* The scrollers themselves are the containing block of any absolutely positioned descendant that
+   has no positioned ancestor of its own (any .sr-only text), so such text is clipped by the
+   scroller and never stretches the document, whatever element it sits in. */
+.stage, .ph-main, .scrollx { position: relative; }
+/* The call card's "תוקן במשרד" link to a corrected visit's "תיקונים" (OF-10, D14). */
+.pill.vc-mark { background: var(--accent-l); color: var(--accent-d); text-decoration: none; }
+.pill.vc-mark:hover { text-decoration: underline; }
 /* end phase-g-integration */

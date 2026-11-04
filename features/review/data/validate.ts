@@ -66,21 +66,32 @@ export type ReviewResolveStored = {
   noteRequired: boolean;
   /** Whether the caller may resolve this item (D14 cases: Manager and Creator; others: `conflicts`). */
   canResolve: boolean;
+  /** Where the item came from: an invitation, or a technician's device. */
+  source: "invitation" | "device";
+  /**
+   * The item's visit is server-closed now (it may have closed after the item was created): an
+   * invitation never changes a closed visit (D39), so only "keep-current" stays possible.
+   */
+  targetVisitClosed: boolean;
 };
 
 /**
  * Every check of a resolution, in order: the input, the item, the caller, the status, the version
- * (D44), the decision, the per-field choices and the note. Deny by default: with nothing stored
- * the resolution fails ("הפריט לא נמצא").
+ * (D44), the decision, an invitation's change to a visit that is closed now (D39: never applied),
+ * the per-field choices and the note. Deny by default: with nothing stored the resolution fails
+ * ("הפריט לא נמצא").
  */
 export function reviewResolutionError(input: ReviewResolveInput, stored: ReviewResolveStored | undefined): string | null {
   const inputError = reviewResolveInputError(input);
   if (inputError) return inputError;
   if (!stored) return "הפריט לא נמצא";
   if (!stored.canResolve) return "אין הרשאה לטפל בפריט הזה";
-  if (stored.status !== "open") return "הפריט כבר טופל";
+  if (stored.status !== "open") return "כבר התקבלה החלטה בפריט הזה";
   if (stored.version !== input.expectedVersion) return "הפריט עודכן בינתיים · יש לרענן את הדף";
   if (!stored.decisions.includes(input.decision)) return "ההחלטה לא זמינה לפריט הזה";
+  if (stored.source === "invitation" && stored.targetVisitClosed && input.decision !== "keep-current") {
+    return "זימון לא משנה ביקור סגור";
+  }
   if (input.decision === "per-field") {
     const fields = input.fields ?? {};
     const choosable = Object.fromEntries(stored.choosable.map((k) => [k, true] as const));
