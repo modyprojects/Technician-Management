@@ -8,8 +8,8 @@
 // - mode "own" (the Manager, "ניהול משתמשים", section "הבקשות שלי"): cancel a pending request
 //   (accounts.cancelAccountRequest).
 // Nothing changes while a request is pending; every step is audited; no automatic expiry (D25).
-// In the UI demo the commands are simulated: the row shows the outcome locally, marked "בהדגמה ·
-// לא נשמר", and offers no further action. Display only (G-04): the server decides who may act.
+// In the UI demo the commands are simulated: the row shows the outcome locally, marked "לא נשמר ·
+// פעולה מדומה", and offers no further action. Display only (G-04): the server decides who may act.
 import { useEffect, useId, useRef, useState } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
 import type { AccountRef, AccountRequest } from "@/features/accounts/data/types";
@@ -17,7 +17,6 @@ import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/
 import { useCommands } from "@/features/data-access/commands-context";
 import {
   ActionMessage,
-  BoundedNote,
   RequestStatusPill,
   requestOutcomeText,
   requestRoleText,
@@ -25,9 +24,9 @@ import {
   type AccountRequestEntry,
   type ActionMessageValue,
 } from "./AccountAdminParts";
+import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShell";
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
-const NOT_SAVED = "בהדגמה · לא נשמר";
 const SMALL_BTN = { padding: "5px 12px", fontSize: 13 } as const;
 
 export function AccountAdminRequests({
@@ -113,6 +112,7 @@ export function AccountAdminRequests({
     const invalid = accountDecisionError({ outcome: "reject", reason: text });
     if (invalid) {
       setReasonError(invalid);
+      reasonRef.current?.focus();
       return;
     }
     void act(
@@ -141,23 +141,22 @@ export function AccountAdminRequests({
 
   return (
     <section className="card" style={{ overflow: "hidden" }} aria-labelledby={`${id}-title`}>
-      <div className="sec" style={{ paddingBottom: 6 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <h2 id={`${id}-title`} style={{ margin: 0 }}>
-            {title}
-          </h2>
-          {pendingCount > 0 && (
+      <SettingsCardHead
+        id={`${id}-title`}
+        title={title}
+        sub={
+          mode === "decide"
+            ? "בקשות של המנהל לחשבונות שירות לקוחות: יצירה, הפעלה, הפעלה מחדש ושינוי תפקיד. שום דבר לא משתנה עד שהיוצר מאשר; דחייה נשמרת עם סיבה, וכל צעד נרשם ביומן הביקורת."
+            : "יצירה, הפעלה, הפעלה מחדש ושינוי תפקיד של חשבון שירות לקוחות נכנסים לתוקף רק אחרי אישור היוצר. עד אז שום דבר לא משתנה."
+        }
+        action={
+          pendingCount > 0 ? (
             <span className="pill" style={{ background: "var(--warn-bg)", color: "var(--warn-fg)" }}>
               {pendingCount === 1 ? "בקשה אחת ממתינה" : `${pendingCount} ממתינות`}
             </span>
-          )}
-        </div>
-        <div className="sub" style={{ marginTop: 4, lineHeight: 1.5 }}>
-          {mode === "decide"
-            ? "בקשות של המנהל לחשבונות שירות לקוחות: יצירה, הפעלה, הפעלה מחדש ושינוי תפקיד. שום דבר לא משתנה עד שהיוצר מאשר; דחייה נשמרת עם סיבה, וכל צעד נרשם ביומן הביקורת."
-            : "יצירה, הפעלה, הפעלה מחדש ושינוי תפקיד של חשבון שירות לקוחות נכנסים לתוקף רק אחרי אישור היוצר. עד אז שום דבר לא משתנה."}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
       {entries.length === 0 ? (
         <div className="empty">אין בקשות</div>
       ) : (
@@ -201,7 +200,11 @@ export function AccountAdminRequests({
                   </div>
                   {outcome && <div className="sub">{outcome}</div>}
                   {r.status === "rejected" && r.reason && <div className="sub">סיבת הדחייה: {r.reason}</div>}
-                  {entry.local && <div className="sub">{NOT_SAVED}</div>}
+                  {entry.local && (
+                    <div>
+                      <SettingsNotSaved />
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <RequestStatusPill status={r.status} />
@@ -299,7 +302,7 @@ export function AccountAdminRequests({
           })}
         </ul>
       )}
-      <BoundedNote shown={entries.length} total={total} />
+      <SettingsMore shown={entries.length} total={total} />
       <ActionMessage message={message} style={{ padding: message ? "0 18px 12px" : 0 }} />
     </section>
   );

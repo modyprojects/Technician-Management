@@ -12,8 +12,8 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { Bounded } from "@/features/data-access/common";
 import type { NewPlaceInput, PlaceSetting } from "@/features/settings/data/types";
-import { PLACE_FIELD_MAX, SETTING_NAME_MAX } from "@/features/settings/data/validate";
-import { SettingsMore } from "./SettingsShell";
+import { newPlaceError, PLACE_FIELD_MAX, SETTING_NAME_MAX } from "@/features/settings/data/validate";
+import { SettingsMore, SettingsNotSaved } from "./SettingsShell";
 import { SettingsShellToggle } from "./SettingsShellToggle";
 
 const ADD_FAILED = "המקום לא נוסף. נסה שוב.";
@@ -31,6 +31,8 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
   const [draft, setDraft] = useState<NewPlaceInput>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Rows added by a simulated command (shown as not saved). */
+  const [unsaved, setUnsaved] = useState<readonly string[]>([]);
   const addButton = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const id = useId();
@@ -49,8 +51,6 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
-    setBusy(true);
-    setError(null);
     const input: NewPlaceInput = {
       name: draft.name.trim(),
       type: draft.type,
@@ -58,12 +58,23 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
       phone: draft.phone.trim(),
       hours: draft.hours.trim(),
     };
+    // Checked first with the command's own validator: a typo gets an inline error, not a toast.
+    const invalid = newPlaceError(input);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setBusy(true);
+    setError(null);
     let failure: string | null = null;
     let newId: string | null = null;
+    let simulated = false;
     try {
       const result = await settings.addPlace(input);
-      if (result.ok) newId = result.data?.id ?? `new-place-${rows.length + 1}`;
-      else failure = result.error;
+      if (result.ok) {
+        newId = result.data?.id ?? `new-place-${rows.length + 1}`;
+        simulated = result.simulated;
+      } else failure = result.error;
     } catch {
       failure = ADD_FAILED;
     } finally {
@@ -75,6 +86,7 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
     }
     const created: PlaceSetting = { id: newId, ...input, active: true, inUse: false, isTest: true };
     setRows((r) => [...r, created]);
+    if (simulated) setUnsaved((u) => [...u, created.id]);
     close();
   }
 
@@ -118,7 +130,7 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
           </button>
         </div>
         {open && (
-          <form id={formId} className="set-form" onSubmit={(e) => void add(e)} aria-label="הוספת מקום איסוף">
+          <form id={formId} className="set-form" noValidate onSubmit={(e) => void add(e)} aria-label="הוספת מקום איסוף">
             <label>
               שם
               <input value={draft.name} onChange={(e) => set("name", e.target.value)} required maxLength={SETTING_NAME_MAX} autoComplete="off" />
@@ -139,7 +151,7 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
             </label>
             <label>
               טלפון
-              <input type="tel" dir="ltr" value={draft.phone} onChange={(e) => set("phone", e.target.value)} maxLength={20} autoComplete="off" />
+              <input type="tel" dir="ltr" value={draft.phone} onChange={(e) => set("phone", e.target.value)} maxLength={PLACE_FIELD_MAX} autoComplete="off" />
             </label>
             <label>
               שעות פתיחה
@@ -176,7 +188,10 @@ export function SettingsPlaces({ places }: { places: Bounded<PlaceSetting> }) {
               {rows.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <b>{p.name}</b>
+                    <span className="set-name">
+                      <b>{p.name}</b>
+                      {unsaved.includes(p.id) && <SettingsNotSaved />}
+                    </span>
                   </td>
                   <td className="col-fit">{p.type}</td>
                   <td>{p.address}</td>

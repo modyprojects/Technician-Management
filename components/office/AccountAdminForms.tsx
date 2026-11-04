@@ -1,11 +1,13 @@
 "use client";
 
 // Account forms of account administration (SE-01, D34), opened inline under the accounts card's
-// "+" buttons (the demo's "+ הוספת משתמש" / "+ הוספת טכנאי" toasts, L943-944, become real forms):
-// - "account": the Creator's "+ הוספת משתמש" (Creator, Manager or Customer Service), immediate.
+// "+" button (the demo's "+ הוספת משתמש" toast, L943, becomes a real form). Same look as the other
+// Settings add forms (styles/ui.css "settings-ops": .set-form, colour swatches as in SettingsTechs).
+// - "account": the Creator's "+ הוספת משתמש" (Customer Service, Manager or Creator), immediate.
+//   Technicians are added on Settings › "טכנאים" (the demo's setTechs() "+ הוספת טכנאי").
 // - "cs-request": the Manager's "+ בקשת חשבון שירות לקוחות": a request that waits for the Creator;
 //   nothing is created until the Creator approves (D34 a).
-// - "tech": "+ הוספת טכנאי" (Manager and Creator), immediate (D34 c).
+// - "tech": the Manager's "+ הוספת טכנאי", immediate (D34 c).
 // No password field and no public sign-up (D50): until an email provider is approved the Creator
 // hands out the first sign-in details. Each submit runs one command from useCommands().accounts;
 // the inputs are checked first with the same validators the commands use (no toast for a typo).
@@ -30,7 +32,6 @@ import {
 } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
 import { TECHNICIAN_COLOR_TOKENS, type TechnicianColorToken } from "@/features/reference/data/types";
-import { ActionMessage, FormField, type ActionMessageValue } from "./AccountAdminParts";
 
 export type AccountFormKind = "account" | "cs-request" | "tech";
 
@@ -38,34 +39,32 @@ export type AccountFormResult =
   | { kind: "account" | "tech"; account: UserAccount }
   | { kind: "cs-request"; request: AccountRequest };
 
-/** Roles of "+ הוספת משתמש" (technicians have their own form, with colour and device). */
+/** Roles of "+ הוספת משתמש" (technicians: Settings › טכנאים, with colour and device). */
 const OFFICE_ACCOUNT_ROLES: readonly AccountRole[] = ["cs", "mgr", "creator"];
 
-/** Hebrew names of the allowlisted technician colours (never CSS from input). */
-const COLOR_LABELS: Readonly<Record<TechnicianColorToken, string>> = { "t-y": "ירוק", "t-e": "אדום", "t-s": "כחול" };
+/** Hebrew names of the allowlisted technician colours (inputs name a token, never CSS). */
+const COLOR_NAMES: Readonly<Record<TechnicianColorToken, string>> = { "t-y": "ירוק", "t-e": "אדום", "t-s": "כחול" };
 
 const DEFAULT_DEVICE = "סמארטפון";
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 
-const TITLES: Readonly<Record<AccountFormKind, string>> = {
-  account: "משתמש חדש",
+const LABELS: Readonly<Record<AccountFormKind, string>> = {
+  account: "הוספת משתמש",
   "cs-request": "בקשת חשבון שירות לקוחות",
-  tech: "טכנאי חדש",
-};
-
-const NOTES: Readonly<Record<AccountFormKind, string>> = {
-  account: "החשבון נוצר מיד. אין הרשמה עצמית: עד שיאושר ספק מייל, היוצר מוסר את פרטי הכניסה הראשוניים. לא קובעים כאן סיסמה.",
-  "cs-request": "הבקשה עוברת לאישור היוצר. עד שהיוצר מאשר לא נוצר חשבון ושום דבר לא משתנה.",
-  tech: "הטכנאי נוסף מיד. המייל משמש לכניסה ולשיוך זימונים מ-Outlook (לפי השדה \"אל\"). לא קובעים כאן סיסמה.",
-};
-
-const SUBMIT: Readonly<Record<AccountFormKind, string>> = {
-  account: "יצירת חשבון",
-  "cs-request": "שליחת הבקשה ליוצר",
   tech: "הוספת טכנאי",
 };
 
-const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: 10 } as const;
+const NOTES: Readonly<Record<AccountFormKind, string>> = {
+  account: "החשבון נוצר מיד. אין הרשמה עצמית: עד שיאושר ספק מייל, היוצר מוסר את פרטי הכניסה הראשוניים. טכנאים מוסיפים בלשונית \"טכנאים\".",
+  "cs-request": "הבקשה עוברת לאישור היוצר. עד שהיוצר מאשר לא נוצר חשבון ושום דבר לא משתנה.",
+  tech: "הטכנאי נוסף מיד. המייל משמש לכניסה לאפליקציה ולשיוך זימונים מ-Outlook לטכנאי.",
+};
+
+const SUBMIT: Readonly<Record<AccountFormKind, { idle: string; busy: string }>> = {
+  account: { idle: "יצירת חשבון", busy: "יוצר…" },
+  "cs-request": { idle: "שליחה לאישור היוצר", busy: "שולח…" },
+  tech: { idle: "הוספה", busy: "מוסיף…" },
+};
 
 export function AccountForm({
   formId,
@@ -84,6 +83,7 @@ export function AccountForm({
 }) {
   const { accounts } = useCommands();
   const id = useId();
+  const errorId = `${id}-error`;
   const firstRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -92,7 +92,7 @@ export function AccountForm({
   const [color, setColor] = useState<TechnicianColorToken>(TECHNICIAN_COLOR_TOKENS[0]);
   const [device, setDevice] = useState(DEFAULT_DEVICE);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<ActionMessageValue>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     firstRef.current?.focus();
@@ -106,19 +106,19 @@ export function AccountForm({
       kind === "account"
         ? newAccountError({ ...base, role })
         : kind === "tech"
-          ? newTechnicianError({ ...base, color, device })
+          ? newTechnicianError({ ...base, color, device: device.trim() })
           : accountRequestError({ kind: "create", ...base });
     if (invalid) {
-      setMessage({ kind: "error", text: invalid });
+      setError(invalid);
       return;
     }
     setBusy(true);
-    setMessage(null);
+    setError(null);
     try {
       if (kind === "cs-request") {
         const r = await accounts.requestAccount({ kind: "create", ...base });
         if (!r.ok || !r.data) {
-          setMessage({ kind: "error", text: r.ok ? FAILED : r.error });
+          setError(r.ok ? FAILED : r.error);
           return;
         }
         onDone({
@@ -146,7 +146,7 @@ export function AccountForm({
           ? await accounts.createTechnician({ ...base, color, device: device.trim() })
           : await accounts.createAccount({ ...base, role: accountRole });
       if (!r.ok || !r.data) {
-        setMessage({ kind: "error", text: r.ok ? FAILED : r.error });
+        setError(r.ok ? FAILED : r.error);
         return;
       }
       onDone({
@@ -162,7 +162,7 @@ export function AccountForm({
         },
       });
     } catch {
-      setMessage({ kind: "error", text: FAILED });
+      setError(FAILED);
     } finally {
       setBusy(false);
     }
@@ -171,102 +171,77 @@ export function AccountForm({
   return (
     <form
       id={formId}
-      onSubmit={(e) => void submit(e)}
-      aria-labelledby={`${id}-title`}
+      className="set-form"
       noValidate
-      style={{ borderTop: "1px solid var(--line)", padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10, background: "var(--tint)" }}
+      onSubmit={(e) => void submit(e)}
+      aria-label={LABELS[kind]}
+      aria-describedby={error ? errorId : undefined}
     >
-      <h3 id={`${id}-title`} style={{ fontSize: 15 }}>
-        {TITLES[kind]}
-      </h3>
-      <div style={GRID}>
-        <FormField id={`${id}-name`} label="שם">
-          <input
-            ref={firstRef}
-            id={`${id}-name`}
-            value={name}
-            maxLength={ACCOUNT_NAME_MAX}
-            autoComplete="off"
-            aria-required="true"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </FormField>
-        <FormField id={`${id}-email`} label={kind === "tech" ? "מייל (כניסה ו-Outlook)" : "מייל"}>
-          <input
-            id={`${id}-email`}
-            type="email"
-            dir="ltr"
-            value={email}
-            maxLength={EMAIL_MAX}
-            autoComplete="off"
-            aria-required="true"
-            placeholder="name@example.test"
-            style={{ textAlign: "right" }}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </FormField>
-        <FormField id={`${id}-phone`} label="טלפון עבודה">
-          <input
-            id={`${id}-phone`}
-            type="tel"
-            dir="ltr"
-            value={phone}
-            maxLength={PHONE_MAX}
-            autoComplete="off"
-            aria-required="true"
-            style={{ textAlign: "right" }}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-        </FormField>
-        {kind === "account" && (
-          <FormField id={`${id}-role`} label="הרשאה">
-            <select id={`${id}-role`} value={role} onChange={(e) => setRole(e.target.value as AccountRole)}>
-              {OFFICE_ACCOUNT_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ACCOUNT_ROLE_LABELS[r]}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        )}
-        {kind === "tech" && (
-          <>
-            <FormField id={`${id}-color`} label="צבע ביומן">
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span aria-hidden="true" className="dot" style={{ background: `var(--${color})`, width: 14, height: 14, borderRadius: 4, flex: "none" }} />
-                <select id={`${id}-color`} value={color} style={{ flex: 1, minWidth: 0 }} onChange={(e) => setColor(e.target.value as TechnicianColorToken)}>
-                  {TECHNICIAN_COLOR_TOKENS.map((t) => (
-                    <option key={t} value={t}>
-                      {COLOR_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </FormField>
-            <FormField id={`${id}-device`} label="מכשיר">
-              <input
-                id={`${id}-device`}
-                value={device}
-                maxLength={DEVICE_MAX}
-                autoComplete="off"
-                aria-required="true"
-                onChange={(e) => setDevice(e.target.value)}
-              />
-            </FormField>
-          </>
-        )}
-      </div>
-      <p className="sub" style={{ margin: 0, lineHeight: 1.5 }}>
-        {NOTES[kind]}
-      </p>
-      <ActionMessage message={message} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <label>
+        שם
+        <input ref={firstRef} value={name} onChange={(e) => setName(e.target.value)} required maxLength={ACCOUNT_NAME_MAX} autoComplete="off" />
+      </label>
+      <label>
+        {kind === "tech" ? "מייל ב-Outlook" : "מייל"}
+        <input
+          type="email"
+          dir="ltr"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          maxLength={EMAIL_MAX}
+          placeholder="name@example.test"
+          autoComplete="off"
+        />
+      </label>
+      <label>
+        טלפון
+        <input type="tel" dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={PHONE_MAX} autoComplete="off" />
+      </label>
+      {kind === "account" && (
+        <label>
+          הרשאה
+          <select value={role} onChange={(e) => setRole(e.target.value as AccountRole)}>
+            {OFFICE_ACCOUNT_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {ACCOUNT_ROLE_LABELS[r]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {kind === "tech" && (
+        <>
+          <label>
+            מכשיר
+            <input value={device} onChange={(e) => setDevice(e.target.value)} required maxLength={DEVICE_MAX} autoComplete="off" />
+          </label>
+          <fieldset className="set-swatches">
+            <legend>צבע ביומן</legend>
+            {TECHNICIAN_COLOR_TOKENS.map((token) => (
+              <label key={token} className="set-swatch-opt">
+                <input type="radio" name={`${id}-color`} value={token} checked={color === token} onChange={() => setColor(token)} />
+                {/* An allowlisted token, mapped to its CSS variable here (never CSS from input). */}
+                <span className="set-swatch" style={{ background: `var(--${token})` }} aria-hidden="true" />
+                {COLOR_NAMES[token]}
+              </label>
+            ))}
+          </fieldset>
+        </>
+      )}
+      <div className="set-form-actions">
         <button type="submit" className="btn pri" disabled={busy}>
-          {busy ? "שולח…" : SUBMIT[kind]}
+          {busy ? SUBMIT[kind].busy : SUBMIT[kind].idle}
         </button>
         <button type="button" className="btn" onClick={onCancel} disabled={busy}>
           ביטול
         </button>
+        <span className="sub">{NOTES[kind]}</span>
+        {error && (
+          <span id={errorId} role="alert" className="set-err">
+            {error}
+          </span>
+        )}
       </div>
     </form>
   );

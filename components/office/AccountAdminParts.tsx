@@ -131,19 +131,6 @@ export function AccountName({ name, isTest, note }: { name: string; isTest: bool
   );
 }
 
-/** A labelled input of the account forms (label above, full width). */
-export function FormField({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-      <label htmlFor={id} style={{ fontSize: 13, fontWeight: 700 }}>
-        {label}
-      </label>
-      {children}
-      {hint && <span className="sub" style={{ fontSize: 12 }}>{hint}</span>}
-    </div>
-  );
-}
-
 export type ActionMessageValue = { kind: "ok" | "error"; text: string } | null;
 
 /**
@@ -158,16 +145,6 @@ export function ActionMessage({ message, style }: { message: ActionMessageValue;
           {message.text}
         </span>
       )}
-    </div>
-  );
-}
-
-/** "מוצגים 100 מתוך 120" when a bounded list was cut (at most 100 rows, query bounds). */
-export function BoundedNote({ shown, total }: { shown: number; total: number }) {
-  if (total <= shown) return null;
-  return (
-    <div className="sub" style={{ padding: "8px 18px" }}>
-      מוצגים {shown} מתוך {total}
     </div>
   );
 }

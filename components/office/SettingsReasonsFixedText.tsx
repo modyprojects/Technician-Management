@@ -10,7 +10,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { ApprovalText } from "@/features/reference/data/types";
-import { FIXED_TEXT_MAX } from "@/features/settings/data/validate";
+import { FIXED_TEXT_MAX, fixedTextError } from "@/features/settings/data/validate";
 
 const FAILED = "הנוסח לא נשמר. נסה שוב.";
 
@@ -31,10 +31,16 @@ export function SettingsReasonsFixedText({ approvalText }: { approvalText: Appro
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || unchanged) return;
+    const next = text.trim();
+    // Checked first with the command's own validator: an empty text gets an inline error, not a toast.
+    const invalid = fixedTextError(next);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setBusy(true);
     setError(null);
     setDone(null);
-    const next = text.trim();
     let failure: string | null = null;
     let simulated = false;
     try {
@@ -58,7 +64,7 @@ export function SettingsReasonsFixedText({ approvalText }: { approvalText: Appro
   return (
     <section className="card sec" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>נוסח אישור &quot;טופל&quot;</h2>
-      <form onSubmit={(e) => void save(e)}>
+      <form noValidate onSubmit={(e) => void save(e)}>
         <label htmlFor={inputId} className="sub">
           הנוסח שהלקוח חותם עליו כשהטכנאי בוחר &quot;טופל&quot;
         </label>

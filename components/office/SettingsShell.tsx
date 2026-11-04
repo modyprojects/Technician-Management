@@ -11,6 +11,7 @@ import { SettingsTabs, type SettingsTabLink } from "./SettingsTabs";
 // - SettingsPendingToggle: a disabled switch for a setting that waits for an open owner decision,
 //   with the visible "ממתין להחלטה (dNN)" hint; it never resolves the decision.
 // - SettingsAlways: the fixed "תמיד" marker (D09 recipients, D17 labels): not a toggle.
+// - SettingsNotSaved: "לא נשמר" next to a row added by a simulated command (TE-23).
 // - SettingsMore: "מוצגים X מתוך Y" under a bounded list.
 
 export function SettingsShell({
@@ -108,6 +109,11 @@ export function SettingsAlways({ text = "תמיד", id }: { text?: string; id?: 
       {text}
     </span>
   );
+}
+
+/** Marks a row added on this screen by a simulated command: it was not saved (TE-23). */
+export function SettingsNotSaved() {
+  return <span className="sub">לא נשמר · פעולה מדומה</span>;
 }
 
 /** "מוצגים X מתוך Y" when a bounded list was cut (docs/security.md: query bounds). */

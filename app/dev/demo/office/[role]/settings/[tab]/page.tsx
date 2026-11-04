@@ -9,6 +9,7 @@ import { SettingsReasonsFixedText } from "@/components/office/SettingsReasonsFix
 import { SettingsShell } from "@/components/office/SettingsShell";
 import { SettingsTechs } from "@/components/office/SettingsTechs";
 import { SettingsTemplate } from "@/components/office/SettingsTemplate";
+import { SettingsUsersTab } from "@/components/office/SettingsUsersTab";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { isSettingsSection, SETTINGS_SECTION_LABELS, type SettingsSection } from "@/features/settings/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
@@ -16,7 +17,8 @@ import { demoDataAccess } from "../../../../_data/adapter";
 import { officeSettingsParams } from "../../../../_data/params";
 import { accountAdminScope, isOfficeRole, officeHomeLabel, settingsTabsOffered, VIEWPOINTS } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
-import { NoAccessPlaceholder, ScreenPlaceholder } from "../../_Placeholder";
+import { NoAccessPlaceholder } from "../../_Placeholder";
+import { loadSettingsUsers } from "./_users";
 
 // Every role x tab is built: a role without the tab gets "אין הרשאה" instead of a 404.
 export const dynamicParams = false;
@@ -39,19 +41,9 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<ReactNode> {
   switch (tab) {
     case "users":
-      // TEMPORARY placeholder: SettingsUsersTab (account administration and the permission
-      // matrix, SE-01 to SE-03) is being built in parallel and replaces this body.
-      return (
-        <ScreenPlaceholder
-          id="set-users-placeholder"
-          heading={SETTINGS_SECTION_LABELS.users}
-          items={[
-            "טבלת המשתמשים: שם, מייל, הרשאה, מצב וכניסה אחרונה, עם 🧪 למשתמשי בדיקה",
-            "בקשות של המנהל לחשבונות שירות לקוחות: אישור, או דחייה עם סיבה",
-            "מטריצת ההרשאות למנהל ולשירות לקוחות, עם סימון \"ערך זמני\" עד אישור הבעלים; היוצר קבוע ✓ 🔒",
-          ]}
-        />
-      );
+      // Account administration and the permission matrix (SE-01 to SE-03): ./_users.ts reads them
+      // through the layer; offered to the Creator only (settingsTabsOffered).
+      return <SettingsUsersTab {...await loadSettingsUsers(role)} />;
     case "techs":
       return <SettingsTechs technicians={await demoDataAccess.settings.technicians()} />;
     case "places":
@@ -75,9 +67,6 @@ async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<ReactNod
     case "template":
       return <SettingsTemplate template={await demoDataAccess.settings.template()} />;
   }
-  // Unreachable while `role` is unused by the bodies; kept so a new tab fails the type check.
-  void role;
-  return null;
 }
 
 // Settings (docs/demo.html offSettings(), L935-976, as amended by demo-deviations SE-01 to SE-16):

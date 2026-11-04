@@ -14,8 +14,8 @@ import { useId, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { Bounded } from "@/features/data-access/common";
 import type { CallTypeSetting } from "@/features/settings/data/types";
-import { SETTING_NAME_MAX } from "@/features/settings/data/validate";
-import { SettingsMore } from "./SettingsShell";
+import { SETTING_NAME_MAX, settingNameError } from "@/features/settings/data/validate";
+import { SettingsMore, SettingsNotSaved } from "./SettingsShell";
 import { SettingsShellToggle } from "./SettingsShellToggle";
 
 const ADD_FAILED = "סוג הקריאה לא נוסף. נסה שוב.";
@@ -29,6 +29,8 @@ export function SettingsCallTypes({ types }: { types: Bounded<CallTypeSetting> }
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Rows added by a simulated command (shown as not saved). */
+  const [unsaved, setUnsaved] = useState<readonly string[]>([]);
   const id = useId();
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
@@ -37,18 +39,23 @@ export function SettingsCallTypes({ types }: { types: Bounded<CallTypeSetting> }
     event.preventDefault();
     if (busy) return;
     const trimmed = name.trim();
-    if (trimmed && rows.some((t) => sameName(t.name, trimmed))) {
-      setError(DUPLICATE);
+    // Checked first with the command's own validator: a typo gets an inline error, not a toast.
+    const invalid = settingNameError(trimmed, "שם סוג הקריאה") ?? (rows.some((t) => sameName(t.name, trimmed)) ? DUPLICATE : null);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     setBusy(true);
     setError(null);
     let failure: string | null = null;
     let newId: string | null = null;
+    let simulated = false;
     try {
       const result = await settings.addCallType(trimmed);
-      if (result.ok) newId = result.data?.id ?? `new-type-${rows.length + 1}`;
-      else failure = result.error;
+      if (result.ok) {
+        newId = result.data?.id ?? `new-type-${rows.length + 1}`;
+        simulated = result.simulated;
+      } else failure = result.error;
     } catch {
       failure = ADD_FAILED;
     } finally {
@@ -58,7 +65,9 @@ export function SettingsCallTypes({ types }: { types: Bounded<CallTypeSetting> }
       setError(failure ?? ADD_FAILED);
       return;
     }
-    setRows((r) => [...r, { id: newId, name: trimmed, active: true, inUse: false, isTest: true }]);
+    const created: CallTypeSetting = { id: newId, name: trimmed, active: true, inUse: false, isTest: true };
+    setRows((r) => [...r, created]);
+    if (simulated) setUnsaved((u) => [...u, created.id]);
     setName("");
   }
 
@@ -82,7 +91,10 @@ export function SettingsCallTypes({ types }: { types: Bounded<CallTypeSetting> }
             {rows.map((t) => (
               <tr key={t.id}>
                 <td>
-                  <b>{t.name}</b>
+                  <span className="set-name">
+                    <b>{t.name}</b>
+                    {unsaved.includes(t.id) && <SettingsNotSaved />}
+                  </span>
                 </td>
                 <td className="col-center col-fit">
                   <SettingsShellToggle action={{ kind: "callTypeActive", id: t.id }} initial={t.active} label={`${t.name} פעיל`} />

@@ -15,8 +15,8 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { Bounded } from "@/features/data-access/common";
 import type { ReasonSetting } from "@/features/settings/data/types";
-import { SETTING_NAME_MAX } from "@/features/settings/data/validate";
-import { SettingsMore } from "./SettingsShell";
+import { SETTING_NAME_MAX, settingNameError } from "@/features/settings/data/validate";
+import { SettingsMore, SettingsNotSaved } from "./SettingsShell";
 import { SettingsShellToggle } from "./SettingsShellToggle";
 
 const ADD_FAILED = "הסיבה לא נוספה. נסה שוב.";
@@ -31,6 +31,8 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Rows added by a simulated command (shown as not saved). */
+  const [unsaved, setUnsaved] = useState<readonly string[]>([]);
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
   const errorId = `${id}-error`;
@@ -40,18 +42,23 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
     event.preventDefault();
     if (busy) return;
     const trimmed = name.trim();
-    if (trimmed && rows.some((r) => sameName(r.name, trimmed))) {
-      setError(DUPLICATE);
+    // Checked first with the command's own validator: a typo gets an inline error, not a toast.
+    const invalid = settingNameError(trimmed, "שם הסיבה") ?? (rows.some((r) => sameName(r.name, trimmed)) ? DUPLICATE : null);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     setBusy(true);
     setError(null);
     let failure: string | null = null;
     let newId: string | null = null;
+    let simulated = false;
     try {
       const result = await settings.addReason(trimmed);
-      if (result.ok) newId = result.data?.id ?? `new-reason-${rows.length + 1}`;
-      else failure = result.error;
+      if (result.ok) {
+        newId = result.data?.id ?? `new-reason-${rows.length + 1}`;
+        simulated = result.simulated;
+      } else failure = result.error;
     } catch {
       failure = ADD_FAILED;
     } finally {
@@ -71,6 +78,7 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
       isTest: true,
     };
     setRows((r) => [...r, created]);
+    if (simulated) setUnsaved((u) => [...u, created.id]);
     setName("");
   }
 
@@ -120,7 +128,10 @@ export function SettingsReasons({ reasons }: { reasons: Bounded<ReasonSetting> }
                   {r.order}
                 </td>
                 <td>
-                  <b>{r.name}</b>
+                  <span className="set-name">
+                    <b>{r.name}</b>
+                    {unsaved.includes(r.id) && <SettingsNotSaved />}
+                  </span>
                 </td>
                 <td className="num col-center col-fit">{r.usedThisMonth}</td>
                 <td className="col-fit">

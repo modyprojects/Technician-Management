@@ -386,6 +386,8 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 .set-tabs { width: 200px; flex: none; display: flex; flex-direction: column; gap: 4px; }
 .set-tabs a { display: block; text-align: right; padding: 10px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; border: 1px solid transparent; color: var(--ink2); text-decoration: none; }
 .set-tabs a.on { background: var(--card); border-color: var(--line); color: var(--accent); }
+/* The nav is also .scrollx (it scrolls sideways at 900px and below), which clips outside outlines. */
+.set-tabs a:focus-visible { outline-offset: -3px; }
 .set-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 /* Card title row: h2 (and sub-line) with the "+ הוספה" button (L944, L948). */
 .sec.set-head { padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -426,7 +428,6 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .set-layout { flex-direction: column; align-items: stretch; gap: 12px; }
   .set-tabs { width: auto; flex-direction: row; overflow-x: auto; padding: 2px; scrollbar-width: thin; }
   .set-tabs a { flex: none; white-space: nowrap; }
-  .set-tabs a:focus-visible { outline-offset: -3px; }
 }
 @container stage (max-width: 520px) {
   .kv.set-kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
