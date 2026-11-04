@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusPill } from "@/components/ui/StatusPill";
+import { isOpenVisitStatus, type VisitDetail } from "@/features/visits/data/types";
 import { DemoTechFrame } from "../../../../_components/DemoFrames";
 import { Placeholder } from "../../../../_components/Placeholder";
-import { demoHref, findVisit, isOpenVisit, ME, techVisitParams } from "../../../../_data";
+import { demoDataAccess } from "../../../../_data/adapter";
+import { techVisitParams } from "../../../../_data/params";
+import { DEMO_TECHNICIAN_ID } from "../../../../_data/roles";
+import { demoHref } from "../../../../_data/routes";
 
 export const dynamicParams = false;
 
@@ -12,18 +16,24 @@ export function generateStaticParams() {
   return techVisitParams();
 }
 
-export async function generateMetadata({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]">): Promise<Metadata> {
-  const { req, n } = await params;
-  const found = findVisit(req, Number(n));
-  return { title: found ? `${found.c.customer} · ביקור ${found.v.n} · הדגמה` : "כרטיס ביקור · הדגמה" };
+/** The demo technician's visit, or null (another technician's visit is not his to open). */
+async function myVisit(req: string, n: string): Promise<VisitDetail | null> {
+  const visit = await demoDataAccess.visits.get({ req, n: Number(n) });
+  return visit && visit.technician.id === DEMO_TECHNICIAN_ID ? visit : null;
 }
 
-// Technician visit card. Placeholder until the visit screen replaces it.
+export async function generateMetadata({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]">): Promise<Metadata> {
+  const { req, n } = await params;
+  const visit = await myVisit(req, n);
+  return { title: visit ? `${visit.customer.name} · ביקור ${visit.n} · הדגמה` : "כרטיס ביקור · הדגמה" };
+}
+
+// Technician visit card. Placeholder until the visit screen replaces it; that screen reads
+// visits.get(ref) and visits.history(ref) (earlier closed visits of the call, D36).
 export default async function TechVisitPage({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]">) {
   const { req, n } = await params;
-  const found = findVisit(req, Number(n));
-  if (!found || found.v.tech !== ME) notFound();
-  const { c, v } = found;
+  const visit = await myVisit(req, n);
+  if (!visit) notFound();
   return (
     <DemoTechFrame
       head={
@@ -34,17 +44,17 @@ export default async function TechVisitPage({ params }: PageProps<"/dev/demo/tec
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 4 }}>
             <div>
               <div className="sub" style={{ color: "var(--on-dark2)" }}>
-                פנייה {c.req} · משימה {v.task} · ביקור {v.n}
+                פנייה {visit.call.req} · משימה {visit.task} · ביקור {visit.n}
               </div>
-              <h1 style={{ fontSize: 21 }}>{c.customer}</h1>
+              <h1 style={{ fontSize: 21 }}>{visit.customer.name}</h1>
             </div>
-            <StatusPill status={v.status} />
+            <StatusPill status={visit.status} />
           </div>
         </>
       }
       foot={
-        isOpenVisit(v) ? (
-          <Link className="bigbtn" href={demoHref.work(c.req, v.n)} style={{ background: "var(--s-work)" }}>
+        isOpenVisitStatus(visit.status) ? (
+          <Link className="bigbtn" href={demoHref.work(visit.req, visit.n)} style={{ background: "var(--s-work)" }}>
             הגעתי · התחלת טיפול
           </Link>
         ) : undefined

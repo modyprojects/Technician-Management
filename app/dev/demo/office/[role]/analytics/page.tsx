@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { Placeholder } from "../../../_components/Placeholder";
-import { canSeeDashboards, isOfficeRole } from "../../../_data";
+import { canSeeDashboards, isOfficeRole } from "../../../_data/roles";
 
 // Manager only: customer service has no dashboard permission (D33 defaults, temporary per D51).
 export const dynamicParams = false;
@@ -13,7 +13,9 @@ export function generateStaticParams() {
 
 export const metadata: Metadata = { title: "דשבורדים · מנהל · הדגמה" };
 
-// Manager dashboards (general / technicians / products). Placeholder until the dashboards replace it.
+// Manager dashboards (general / technicians / products). Placeholder until the dashboards replace
+// it; they read demoDataAccess.dashboards.managerAnalytics({ from: "2026-10-01", to: "2026-10-31" })
+// and .technicianDetail(techId, period) for the drill-down.
 export default async function OfficeAnalyticsPage({ params }: PageProps<"/dev/demo/office/[role]/analytics">) {
   const { role } = await params;
   if (!isOfficeRole(role) || !canSeeDashboards(role)) notFound();

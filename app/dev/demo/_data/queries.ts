@@ -1,8 +1,7 @@
 // FICTITIOUS DATA ONLY: lookups over the demo's seeded calls. Allowed only under app/dev (G-05).
-// Server-side: importing this module bundles every seeded call. In "use client" files pass the
-// data in as props instead.
+// Server-side, and only for the fixture adapter (adapter.ts, aggregations.ts, mappers.ts):
+// screens read through demoDataAccess (eslint.config.mjs blocks direct imports).
 import { addDays, toMin } from "./dates";
-import { ME } from "./reference";
 import { CALLS } from "./seed";
 import { isClosedVisit, isOpenVisit } from "./status";
 import type { Call, TechId, Visit } from "./types";
@@ -38,9 +37,6 @@ export function visitsForTechOnDate(tech: TechId, date: string): CallVisit[] {
   return ALL_VISITS.filter((x) => x.v.tech === tech && x.v.date === date && x.v.status !== "cancel").sort(byStart);
 }
 
-/** The demo technician's (יורם) visits on a date. */
-export const myVisits = (date: string): CallVisit[] => visitsForTechOnDate(ME, date);
-
 /** All technicians' visits on a date, cancelled excluded, by start time (office calendar). */
 export function visitsOnDate(date: string): CallVisit[] {
   return ALL_VISITS.filter((x) => x.v.date === date && x.v.status !== "cancel").sort(byStart);
@@ -74,12 +70,6 @@ export function productCalls(sku: string, exceptReq?: string): Call[] {
 export function sortCalls(calls: readonly Call[]): Call[] {
   const key = (c: Call): string => lastVisit(c).date + lastVisit(c).start;
   return [...calls].sort((a, b) => key(b).localeCompare(key(a)));
-}
-
-/** The demo's calls-list search over request number, customer, phone, SKU and city, plus customer number (OF-05). */
-export function matchesQuery(c: Call, q: string): boolean {
-  const s = q.trim();
-  return !s || [c.req, c.customerNo, c.customer, c.phone, c.sku, c.city].some((x) => x.includes(s));
 }
 
 /** Open visits (scheduled, en route, in progress). */

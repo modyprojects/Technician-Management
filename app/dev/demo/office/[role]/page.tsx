@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DemoOfficeFrame } from "../../_components/DemoFrames";
 import { Placeholder } from "../../_components/Placeholder";
-import { demoHref, isOfficeRole, officeRoleParams, VIEWPOINTS } from "../../_data";
+import { officeRoleParams } from "../../_data/params";
+import { isOfficeRole, VIEWPOINTS } from "../../_data/roles";
+import { demoHref } from "../../_data/routes";
 
 export const dynamicParams = false;
 
@@ -17,7 +19,8 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
   return { title: `${role === "mgr" ? "לוח בקרה" : "בית"} · ${VIEWPOINTS[role].label} · הדגמה` };
 }
 
-// Office home for a role. Placeholder until the office-home screen replaces it.
+// Office home for a role. Placeholder until the office-home screen replaces it; that screen reads
+// demoDataAccess.dashboards.officeOverview(TODAY) (manager) or .csQueue(TODAY) (customer service).
 export default async function OfficeHomePage({ params }: PageProps<"/dev/demo/office/[role]">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();

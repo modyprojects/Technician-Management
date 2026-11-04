@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DemoPage } from "./_components/DemoPage";
-import { demoHref, findCall, VIEWPOINTS, type Viewpoint } from "./_data";
+import { demoDataAccess } from "./_data/adapter";
+import { VIEWPOINTS, type Viewpoint } from "./_data/roles";
+import { demoHref } from "./_data/routes";
 
 export const metadata: Metadata = { title: "הדגמת ממשק · תצוגת פיתוח" };
 
 type ScreenLink = { label: string; sub: string; href: string };
 
-const callName = (req: string): string => findCall(req)?.customer ?? req;
+/** Customer name of each example call, read through the data-access layer. */
+async function callNames(reqs: readonly string[]): Promise<(req: string) => string> {
+  const calls = await Promise.all(reqs.map((req) => demoDataAccess.calls.get(req)));
+  const names = new Map(calls.flatMap((c) => (c ? [[c.req, c.customer.name] as const] : [])));
+  return (req) => names.get(req) ?? req;
+}
 
 // Every demo screen, by viewpoint. Examples are calls from the demo's own story.
-const SCREENS: Record<Viewpoint, { intro: string; links: ScreenLink[] }> = {
+const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: string; links: ScreenLink[] }> => ({
   tech: {
     intro: "האפליקציה בטלפון של הטכנאי: היום, כרטיס ביקור, עבודה וסיום.",
     links: [
@@ -38,11 +45,12 @@ const SCREENS: Record<Viewpoint, { intro: string; links: ScreenLink[] }> = {
       { label: `כרטיס קריאה · ${callName("48205")}`, sub: "פנייה 48205 · ביקור המשך", href: demoHref.call("cs", "48205") },
     ],
   },
-};
+});
 
 const ORDER: Viewpoint[] = ["tech", "mgr", "cs"];
 
-export default function DemoLandingPage() {
+export default async function DemoLandingPage() {
+  const SCREENS = screens(await callNames(["48213", "48205", "48140"]));
   return (
     <DemoPage>
       <main className="mx-auto flex max-w-[1100px] flex-col gap-4 p-4 sm:p-6">

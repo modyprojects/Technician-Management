@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { OfficeShell } from "@/components/office/OfficeShell";
 import type { TechTab } from "@/components/tech/TechBottomNav";
 import { TechShell } from "@/components/tech/TechShell";
+import type { OfficeRole } from "@/features/reference/data/types";
 import { OFFICE_SHELL_USERS, officeNav, TECH_NAV_HREFS, type OfficeNavKey } from "../_data/roles";
-import type { OfficeRole } from "../_data/types";
 import { DemoPage } from "./DemoPage";
 
 /** DemoPage + OfficeShell with the role's sidebar (real links) and signed-in user. */
