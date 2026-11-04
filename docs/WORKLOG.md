@@ -1,5 +1,36 @@
 # Work Log (English only)
 
+## 2026-11-03/04 — PR #3 and PR #4 merged; D53; UI demo
+- **PR #3 (Step 1 / PR 1.1, documentation)** squash-merged as `1c6926e` after the owner's explicit approval ("merge approved — PR #3 only"). CI run 41632343961 green. Production deployment `dpl_5NYYw1JugbbVYt2nEY7q4wTPfkpN` READY, built from `1c6926e`.
+- **PR #4 (Step 1 / PR 1.2, database test infrastructure)** squash-merged as `76fed5f` after the owner's explicit approval ("merge approved — PR #4 only"). CI run 41639878074 green; `Database tests` run 41639878057 on `main`: 7/7 pass. Production deployment `dpl_6oeCxzJ91Fa1ErogtZgikcmjvFAM` READY, built from `76fed5f`.
+- Read-only protection checks by Claude Code before and after each merge:
+  - Vercel Authentication on All Deployments;
+  - Password Protection and Trusted IPs off;
+  - one team member (the owner);
+  - the same three Production addresses, none new;
+  - no custom firewall configuration.
+- Checks Claude Code cannot perform, reported to the owner:
+  - anonymous access: the environment's proxy blocks `*.vercel.app`;
+  - shareable links and Protection Bypass for Automation secrets: not readable through the read-only tools used.
+- Owner's manual checks after the PR #3 deployment (owner, 2026-11-03):
+  - in an incognito window, all three Production URLs showed the Vercel login screen: `technician-management-mody-projects.vercel.app`, `technician-management.vercel.app` and `technician-management-git-main-mody-projects.vercel.app`;
+  - dashboard: Vercel Authentication on All Deployments, no active Protection Bypass for Automation, no active Shareable Links, access restricted to the owner's account.
+- Decisions:
+  - D52 board reference set to d39.
+  - **D53 (autonomous development) approved** (owner, 2026-11-03), recorded in `docs/decisions.md` and `CLAUDE.md` (commit `07cbd09`). It supersedes D52's start and merge approvals. Owner approval remains for weakening the listed protections, for every remote Supabase operation (per operation) and for open owner decisions.
+  - D31 automation: research for an automated anonymous-access check documented in `docs/research/d31-anonymous-access-check.md`. Not implemented; it waits for owner decisions.
+  - Owner architecture rule (2026-11-03): screens read data only through a typed data-access layer; fixture adapter now, Supabase adapter later (`docs/architecture-data-access.md`).
+- PR 1.3 planning: the owner's mandatory security requirement (privilege hardening on tables, sequences and functions; negative tests) is recorded in `docs/ROADMAP.md`. Not started; every remote Supabase operation and every migration needs separate approval.
+- **Interruption record.** The first UI build workflow was interrupted on 2026-11-03 at 14:50 UTC: two screen agents were interrupted and two never started. The lead did not notice until the owner's status request on 2026-11-04, about 19.5 hours without progress. Remedies:
+  - checkpoint commits during long work;
+  - verifying the actual state of agents instead of assuming progress;
+  - progress reports every 30 minutes (two hourly scheduled tasks, at :07 and :37).
+- **UI demo** on branch `claude/ui-demo-1` (fictional data only, `/dev/demo`):
+  - done: foundation, calls list and call detail;
+  - done: typed data-access layer (Phase A). Its independent review found no must-fix items; the five should-fix findings were addressed in checkpoint `39876b2`;
+  - in progress: the remaining screens.
+  - The demo has no Supabase connection, real data or real email; every action is simulated.
+
 ## 2026-11-03 — PR 1.2 (database test infrastructure)
 - Branch `claude/step1-db-tests`; no migration, no change to the remote Supabase project.
 - Synchronized with `main` after PR #3 was squash-merged (`1c6926e`, 2026-11-03), without force-push or history rewrite:

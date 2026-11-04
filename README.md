@@ -1,6 +1,6 @@
 # Technician Management — secure English starter pack v3
 
-**Status: Step 0 deployed (2026-11-02); Step 1 (database and permissions) in progress per the owner-approved plan (2026-11-03).** The Step 0 foundation (Next.js base, demo design tokens, responsive shells and a `/dev` showcase with fictitious data) is merged to `main` and deployed to the protected Vercel Production, which only the owner can open (D29, D31). No schema migrated yet; no Supabase connection, app login or real data.
+**Status: Step 0 deployed (2026-11-02); Step 1 PRs 1.1 (documentation) and 1.2 (database test infrastructure) merged and deployed 2026-11-03. Since D53 (2026-11-03) development runs autonomously within the approved scope. Current priority: the interactive UI demo with fictional data (`/dev/demo`, protected), then the remaining Step 1 database work (every migration and every remote Supabase operation needs the owner's approval of that operation).** The Step 0 foundation (Next.js base, demo design tokens, responsive shells and a `/dev` showcase with fictitious data) is merged to `main` and deployed to the protected Vercel Production, which only the owner can open (D29, D31). No schema migrated yet; no Supabase connection, app login or real data.
 
 **Current state of the repository and features: [`docs/PROJECT-MAP.md`](docs/PROJECT-MAP.md).** History: `docs/WORKLOG.md`.
 

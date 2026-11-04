@@ -24,7 +24,16 @@ export function WazeTile({ visit, status, address }: { visit: VisitRef; status: 
       style={{ background: "var(--accent)", color: "var(--on-dark)", borderColor: "var(--accent)" }}
       aria-label={departs ? "Waze · יציאה ללקוח, הסטטוס יהיה בדרך" : "Waze · ניווט ללקוח"}
       data-sim={departs ? undefined : `ניווט ב-Waze אל ${address} · לא נפתח בהדגמה`}
-      onClick={departs ? () => void live.depart() : undefined}
+      onClick={
+        departs
+          ? (e) => {
+              // Handled here: the demo's global data-sim listener runs after React has already
+              // re-rendered this tile as a navigation tile, so it must not show the Waze toast too.
+              e.preventDefault();
+              void live.depart();
+            }
+          : undefined
+      }
     >
       <PinIcon />
       Waze

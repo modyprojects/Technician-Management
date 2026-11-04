@@ -55,7 +55,7 @@ export default async function TechHomePage() {
         />
       }
     >
-      <VisitStatusProvider visits={day.open.map((v) => ({ ref: refOf(v), status: v.status }))}>
+      <VisitStatusProvider>
         {day.next && <NextVisit visit={day.next} detailsHref={demoHref.visit(day.next.req, day.next.n)} />}
         <PickupsCard groups={day.pickups} placeActions={placeActions} />
         <ScheduleList

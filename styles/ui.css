@@ -242,3 +242,57 @@ a.stat { text-decoration: none; }
   .ocd-cols { grid-template-columns: minmax(0, 1fr); }
 }
 /* end office-call-detail */
+
+/* office-dashboards */
+/* Office home dashboards (UI demo, D53): manager "לוח בקרה" and customer-service "בית"
+   (components/office/KpiGrid, DashboardSection, DashboardStatusBar, TechLanes, WorkQueue*).
+   Built from the demo's dashboard language: .kpis/.kpi, card sec, .track, .ev colours, tables. */
+/* A KPI tile that links to the list behind the number (the demo's tiles are not links). */
+a.od-kpi-link { display: block; color: inherit; text-decoration: none; }
+a.od-kpi-link:hover { border-color: var(--accent); background: var(--tint); }
+.od-kpi-go { color: var(--accent); font-weight: 700; }
+/* "נתוני בדיקה" note (SIM-13) in the demo's warning colours. */
+.od-test-note { display: flex; gap: 4px 8px; align-items: baseline; flex-wrap: wrap; background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-fg); border-radius: 10px; padding: 8px 14px; font-size: 13px; line-height: 1.5; }
+/* Page-title actions, section headings and table footers. */
+.od-title-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.od-sec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.sec .od-sec-head h2 { margin-bottom: 0; }
+.od-sec-hint { margin-top: 3px; }
+.od-sec-actions { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; font-size: 14px; }
+.od-table-foot { display: flex; gap: 6px 16px; flex-wrap: wrap; align-items: center; padding: 10px 14px; }
+.od-jump { display: flex; gap: 8px; flex-wrap: wrap; }
+/* A day's visits by status: stacked track and the calendar legend. */
+.od-stack { height: 18px; border-radius: 6px; }
+.od-legend { list-style: none; margin: 10px 0 0; padding: 0; display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13px; }
+/* Technician lanes ("עכשיו בשטח" cards): day lane with status blocks, visit links, progress. */
+.od-lane { padding: 12px 14px; border-right: 4px solid; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.od-lane-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.od-lane-head h3 { font-size: 16px; }
+.od-tl { position: relative; height: 24px; background: var(--tint); border: 1px solid var(--line2); border-radius: 6px; overflow: hidden; }
+.od-tl-hr { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.od-tl-ev { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; border-right: 3px solid; }
+.od-tl-axis { position: relative; height: 14px; margin-top: 2px; font-size: 11px; color: var(--muted); }
+.od-tl-axis span { position: absolute; top: 0; line-height: 14px; }
+.od-vlist { list-style: none; margin: 0; padding: 0; }
+.od-visit { display: flex; gap: 8px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--line2); color: inherit; text-decoration: none; font-size: 13px; }
+.od-vlist li:last-child .od-visit { border-bottom: 0; }
+.od-visit:hover { background: var(--tint); }
+.od-visit-t { flex: none; font-weight: 700; }
+.od-visit-c { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.od-visit-src { flex: none; }
+.od-lane-foot { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-top: auto; }
+.od-lane-foot .track { flex: 1; height: 8px; }
+/* end office-dashboards */
+
+/* manager-analytics */
+/* Manager dashboards (UI demo, D53; demo offDash() L860-935). Tabs are real links styled like the
+   demo's ".tabs button" (L135-136, and its <=520px rule); the technician-card counts are links
+   styled like the demo's dashTech() buttons (L897). */
+.tabs a.ma-tab { border: 0; background: none; padding: 10px 16px; font-weight: 700; font-size: 15px; color: var(--muted); border-bottom: 3px solid transparent; text-decoration: none; }
+.tabs a.ma-tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+a.ma-stat { display: block; min-width: 0; background: var(--tint); border: 1px solid transparent; border-radius: 8px; padding: 8px; color: inherit; text-decoration: none; text-align: center; }
+a.ma-stat:hover { border-color: var(--line); }
+@container stage (max-width: 520px) {
+  .tabs a.ma-tab { padding: 8px 10px; font-size: 14px; }
+}
+/* end manager-analytics */

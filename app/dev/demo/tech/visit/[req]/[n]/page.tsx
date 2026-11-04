@@ -83,7 +83,7 @@ export default async function TechVisitPage({ params }: PageProps<"/dev/demo/tec
   const address = `${cu.address.street}, ${cu.address.city}`;
 
   return (
-    <VisitStatusProvider visits={[{ ref, status: visit.status }]}>
+    <VisitStatusProvider>
       <DemoTechFrame
         head={
           <VisitHeader

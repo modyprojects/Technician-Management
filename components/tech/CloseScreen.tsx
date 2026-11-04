@@ -127,7 +127,7 @@ export function CloseScreen({
       <b id={outcomeTitleId} style={{ fontSize: 14 }}>
         מה התוצאה של הביקור? <Req />
       </b>
-      <div role="group" aria-labelledby={outcomeTitleId} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div role="group" aria-labelledby={outcomeTitleId} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
         {OUTCOMES.map((o) => (
           <button
             key={o.value}
