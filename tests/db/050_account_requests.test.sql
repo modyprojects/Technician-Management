@@ -3,7 +3,7 @@
 -- escalation"; docs/testing.md category 4).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(73);
+select plan(84);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. b2 and b3 are inactive Customer Service
 -- accounts; d4 an inactive Technician without a field profile; a3 a Manager who leaves later.
@@ -175,11 +175,15 @@ select results_eq(
   'every decision and every change it applies is audited in the same transaction');
 
 -- Fulfilment of an approved create (Step 2 flow: Auth Admin API first, then the profile) ----------
-insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at) values
-  ('00000000-0000-4000-8000-0000000000f5', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-   'new.agent@example.test', now(), now()),
-  ('00000000-0000-4000-8000-0000000000f6', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-   'other@example.test', now(), now());
+-- The Step 2 server creates the Auth user with app_metadata.account_request_id = the request id
+-- (re-review R-S1); f6 carries the same nonce with another email.
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at)
+select v.id::uuid, '00000000-0000-0000-0000-000000000000'::uuid, 'authenticated', 'authenticated', v.email,
+       jsonb_build_object('provider', 'email', 'account_request_id', r.id::text), now(), now()
+from (values ('00000000-0000-4000-8000-0000000000f5', 'new.agent@example.test'),
+             ('00000000-0000-4000-8000-0000000000f6', 'other@example.test')) as v (id, email)
+cross join public.account_requests r
+where r.email = 'new.agent@example.test';
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok(
@@ -229,6 +233,9 @@ set local role authenticated;
 select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'fourth@example.test', 'נציגה רביעית') $$,
   'setup: a request by Manager a3');
 reset role;
+-- f7 carries the nonce of the pending request, so only its state refuses the binding below.
+update auth.users u set raw_app_meta_data = jsonb_build_object('provider', 'email', 'account_request_id', r.id::text)
+from public.account_requests r where r.email = u.email and u.id = '00000000-0000-4000-8000-0000000000f7';
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
@@ -319,6 +326,55 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'pending.agent@example.test', 'נציגה ממתינה') $$,
   'after the cancellation the email can be requested again');
+reset role;
+
+-- Re-review R-S5: only the requester or the Creator cancels an approved, unfulfilled creation;
+-- R-S1 (b): an Auth user created for a cancelled request is never bound through a later intent.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'rebind.cs@example.test', 'נציגה') $$,
+  'setup: a Manager asks to create a Customer Service account');
+select lives_ok($$ select public.authorize_account_creation('technician', 'tech.intent@example.test', 'טכנאי') $$,
+  'setup: the same Manager authorizes a Technician creation');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.decide_account_request((select id from public.account_requests where email = 'rebind.cs@example.test'), 'approve', 1, null),
+  2, 'setup: the Creator approves the create request');
+select lives_ok($$ select public.authorize_account_creation('manager', 'creator.intent@example.test', 'מנהל') $$,
+  'setup: the Creator authorizes a Manager creation');
+reset role;
+select set_config('tm_test.req_cs', (select id::text from public.account_requests where email = 'rebind.cs@example.test'), true);
+select set_config('tm_test.intent_tech', (select id::text from public.account_requests where email = 'tech.intent@example.test'), true);
+select set_config('tm_test.intent_creator', (select id::text from public.account_requests where email = 'creator.intent@example.test'), true);
+-- The Auth user for the approved request was created with its nonce, then the bind failed.
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000f8', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rebind.cs@example.test', jsonb_build_object('provider', 'email', 'account_request_id', current_setting('tm_test.req_cs')),
+   now(), now());
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.req_cs')::uuid, 2) $$,
+  '42501', 'not authorized', 'R-S5: another Manager cannot cancel a Manager''s approved, unfulfilled creation request');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_tech')::uuid, 1) $$,
+  '42501', 'not authorized', 'R-S5: another Manager cannot cancel a Manager''s creation intent');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_creator')::uuid, 1) $$,
+  '42501', 'not authorized', 'R-S5: a Manager cannot cancel the Creator''s creation intent');
+reset role;
+select ok(
+  (select bool_and(status = 'approved') and count(*) = 3 from public.account_requests
+   where id in (current_setting('tm_test.req_cs')::uuid, current_setting('tm_test.intent_tech')::uuid,
+                current_setting('tm_test.intent_creator')::uuid)),
+  'the refused cancellations changed nothing');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.cancel_account_request(current_setting('tm_test.req_cs')::uuid, 2), 3,
+  'setup: the requesting Manager cancels his approved request after the failed bind');
+select lives_ok($$ select public.authorize_account_creation('technician', 'rebind.cs@example.test', 'x') $$,
+  'setup: and authorizes a Technician creation for the same email');
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f8', 'technician', 'x', null, null,
+     (select id from public.account_requests where email = 'rebind.cs@example.test' and request_type = 'direct_create')) $$,
+  '42501', 'not authorized', 'R-S1 (b): the Auth user created for the cancelled request cannot be bound through the Manager''s new intent');
 reset role;
 
 select * from finish();

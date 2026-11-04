@@ -3,7 +3,8 @@
 // suite runs each down script inside a rolled-back transaction from byte-identical copies in
 // tests/db/ (the Database tests workflow runs tests/db only): one run on the empty tables and one
 // that proves the fail-closed precondition refuses to run once data exists. This test keeps every
-// copy in sync and requires that precondition as the first statement.
+// copy in sync and requires the whole script to be one DO block whose first action is that
+// precondition (re-review R-S3: separate statements ran on after a refusal under plain psql -f).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -56,18 +57,24 @@ for (const name of downScripts) {
     for (const copy of copies) assert.equal(copy, down);
   });
 
-  test(`${name}: the first statement refuses to run once data exists (fail closed)`, () => {
-    const [first] = lexSql(down).statements;
-    assert.match(first.code, /^do\b/i);
-    assert.match(first.bodies.join(" "), /raise exception[\s\S]*rollback refused/i);
-  });
-
-  test(`${name}: no CASCADE and no transaction control (it runs inside one transaction)`, () => {
-    assert.doesNotMatch(stripComments(down), /\bcascade\b/i);
+  test(`${name}: one DO block that refuses first (fail closed whatever the client flags, re-review R-S3)`, () => {
     const { statements, errors } = lexSql(down);
     assert.deepEqual(errors, []);
-    for (const { code } of statements) {
-      assert.doesNotMatch(code, /^(begin|commit|rollback|end|abort|start\s+transaction)\b/i, code);
+    assert.equal(statements.length, 1, "the down script must be a single statement, so a refusal cancels every DROP");
+    const [only] = statements;
+    assert.match(only.code, /^do\b/i);
+    assert.equal(only.bodies.length, 1);
+    const body = stripComments(only.bodies[0]);
+    const refusal = body.search(/raise exception[\s\S]*rollback refused/i);
+    const firstDrop = body.search(/\bdrop\b/i);
+    assert.ok(refusal !== -1 && firstDrop !== -1 && refusal < firstDrop, "the refusal comes before the first DROP");
+  });
+
+  test(`${name}: no CASCADE, no dynamic SQL and no transaction control`, () => {
+    const body = lexSql(lexSql(down).statements[0].bodies[0]).tokens;
+    assert.doesNotMatch(stripComments(down), /\bcascade\b/i);
+    for (const word of ["execute", "commit", "rollback", "savepoint", "cascade"]) {
+      assert.ok(!body.some((t) => t.type === "ident" && t.value === word), word);
     }
   });
 }

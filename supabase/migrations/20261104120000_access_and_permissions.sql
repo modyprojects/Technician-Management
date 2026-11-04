@@ -555,7 +555,9 @@ $$;
 -- row and recomputes every later hash, or deletes the newest rows, leaves a chain that verifies.
 -- Detection then needs an anchor recorded outside the database (the newest row's id and
 -- row_hash, docs/review/step1-pr13 "Audit anchoring"): given one, the anchored row must still
--- exist with the same hash; otherwise its id is returned.
+-- exist with the same hash; otherwise its id is returned. Owner-level access can also replace
+-- this function (re-review R-S4), so the authoritative anchor check is the self-contained query
+-- kept in the repository (docs/review/step1-pr13/audit-anchor-check.sql), which calls nothing here.
 create function private.audit_chain_verify(p_anchor_id bigint default null, p_anchor_row_hash text default null)
 returns bigint
 language plpgsql
@@ -910,7 +912,8 @@ $$;
 --   - Every direct creation (a Manager's Technician; the Creator's Technician, Customer Service or
 --     Manager): authorize_account_creation, which stores an approved 'direct_create' intent and
 --     audits it. TEMPORARY design choice (owner question Q16): the intent reuses account_requests.
--- Phase 2: the Step 2 server creates the Auth user with the secret key (never a profile).
+-- Phase 2: the Step 2 server creates the Auth user with the secret key (never a profile), with
+--   app_metadata.account_request_id set to the intent id (the binding nonce, re-review R-S1).
 -- Phase 3: admin_create_profile binds that Auth user to the intent, under the caller's session.
 
 -- D34: a Manager creates Technicians directly (Customer Service only through a request); the
@@ -955,10 +958,13 @@ $$;
 
 -- Phase 3. The Auth user must match an open intent: an approved 'direct_create' of the same
 -- caller, or an approved Customer Service 'create' request completed by the Creator (owner
--- question Q14); same role and email, and the Auth user created after the authorization
--- (TEMPORARY tolerance of one minute for the clock of the Auth service), so nobody can take over
--- an Auth user that already existed. Every binding failure returns the same error (S5, S12).
--- Never through service_role.
+-- question Q14); same role and email. Re-review R-S1: the binding is a nonce, not a clock window.
+-- The Step 2 server creates the Auth user with app_metadata.account_request_id = the intent id
+-- (as phase 1 returned it); only the secret key can write app_metadata, so an Auth user made by
+-- any other path (sign-up, another intent, a cancelled intent) never carries it. In addition the
+-- Auth user must be created after the authorization (no clock tolerance: a false refusal fails
+-- closed and the intent is cancelled and authorized again), and must not be anonymous, SSO or
+-- deleted. Every binding failure returns the same error (S5, S12). Never through service_role.
 create function private.admin_create_profile(
   p_user_id uuid, p_role text, p_full_name text, p_work_phone text default null,
   p_invitation_rep_name text default null, p_request_id uuid default null)
@@ -972,6 +978,10 @@ declare
   v_request public.account_requests;
   v_user_email text;
   v_user_created_at timestamptz;
+  v_user_nonce text;
+  v_user_anonymous boolean;
+  v_user_sso boolean;
+  v_user_deleted_at timestamptz;
 begin
   v_caller := private.require_caller(array['creator', 'manager']);
   if p_role = 'creator' or (v_caller.role = 'manager' and p_role <> 'technician') then
@@ -982,14 +992,18 @@ begin
     raise exception using errcode = '22023', message = 'invalid input';
   end if;
   select r.* into v_request from public.account_requests r where r.id = p_request_id for update;
-  select u.email, u.created_at into v_user_email, v_user_created_at from auth.users u where u.id = p_user_id;
+  select u.email, u.created_at, u.raw_app_meta_data ->> 'account_request_id', u.is_anonymous, u.is_sso_user, u.deleted_at
+  into v_user_email, v_user_created_at, v_user_nonce, v_user_anonymous, v_user_sso, v_user_deleted_at
+  from auth.users u where u.id = p_user_id;
   if v_request.id is null or v_user_created_at is null
      or v_request.status <> 'approved' or v_request.target_profile_id is not null
      or v_request.requested_role <> p_role
      or not ((v_request.request_type = 'direct_create' and v_request.requested_by = v_caller.id)
              or (v_request.request_type = 'create' and v_caller.role = 'creator'))
      or lower(coalesce(v_user_email, '')) <> v_request.email
-     or v_user_created_at < v_request.decided_at - interval '1 minute'
+     or v_user_nonce is distinct from p_request_id::text
+     or v_user_created_at < v_request.decided_at
+     or v_user_anonymous is distinct from false or v_user_sso is distinct from false or v_user_deleted_at is not null
      or exists (select 1 from public.profiles p where p.id = p_user_id) then
     raise exception using errcode = '42501', message = 'not authorized';
   end if;

@@ -3,7 +3,7 @@
 -- triggers hold for the owner role where the design says "every role".
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(42);
+select plan(48);
 
 -- Fixtures (local, rolled back). Auth users have no password; their metadata claims "creator" to
 -- prove that roles never come from Auth metadata. Every profile is test data (is_test defaults to
@@ -204,6 +204,38 @@ where id = '00000000-0000-4000-8000-0000000000ac';
 select throws_ok(
   $$ update public.account_requests set target_profile_id = '00000000-0000-4000-8000-0000000000d4' where id = '00000000-0000-4000-8000-0000000000ac' $$,
   '55000', 'account_requests: invalid status change', 'a fulfilled creation is never linked again');
+select throws_ok(
+  $$ update public.account_requests set status = 'cancelled' where id = '00000000-0000-4000-8000-0000000000ac' $$,
+  '55000', 'account_requests: invalid status change', 'R-S5: a fulfilled creation cannot be cancelled, even as postgres');
+select throws_ok(
+  $$ update public.account_requests set status = 'cancelled', target_profile_id = null where id = '00000000-0000-4000-8000-0000000000ac' $$,
+  '55000', 'account_requests: invalid status change', 'R-S5: nor unlinked and cancelled');
+
+-- One open creation per email and one pending request per account: the RPCs check first, so the
+-- partial unique indexes are the only protection when two calls race (re-review R-S5).
+insert into public.account_requests (request_type, requested_role, email, full_name, requested_by, status, decided_by, decided_at, is_test)
+values ('direct_create', 'technician', 'race@example.test', 'x', '00000000-0000-4000-8000-0000000000a1', 'approved',
+        '00000000-0000-4000-8000-0000000000a1', now(), true);
+select throws_ok(
+  $$ insert into public.account_requests (request_type, requested_role, email, full_name, requested_by, is_test)
+     values ('create', 'customer_service', 'race@example.test', 'x', '00000000-0000-4000-8000-0000000000a2', true) $$,
+  '23505', null, 'R-S5: a second open creation for the same email is refused by the unique index, even as postgres');
+select throws_ok(
+  $$ insert into public.account_requests (request_type, requested_role, email, full_name, requested_by, status, decided_by, decided_at, is_test)
+     values ('direct_create', 'manager', 'race@example.test', 'x', '00000000-0000-4000-8000-0000000000c1', 'approved',
+             '00000000-0000-4000-8000-0000000000c1', now(), true) $$,
+  '23505', null, 'R-S5: also when both are approved direct creations');
+select lives_ok(
+  $$ insert into public.account_requests (request_type, requested_role, email, full_name, requested_by, status, decided_by, decided_at, is_test)
+     values ('direct_create', 'technician', 'new.tech@example.test', 'x', '00000000-0000-4000-8000-0000000000a1', 'approved',
+             '00000000-0000-4000-8000-0000000000a1', now(), true) $$,
+  'a cancelled creation does not hold its email (the index is partial)');
+insert into public.account_requests (request_type, target_profile_id, target_version, requested_by, is_test)
+values ('activate', '00000000-0000-4000-8000-0000000000b2', 1, '00000000-0000-4000-8000-0000000000a1', true);
+select throws_ok(
+  $$ insert into public.account_requests (request_type, target_profile_id, target_version, requested_by, is_test)
+     values ('reactivate', '00000000-0000-4000-8000-0000000000b2', 1, '00000000-0000-4000-8000-0000000000a2', true) $$,
+  '23505', null, 'R-S5: a second pending request for the same account is refused by the unique index, even as postgres');
 
 -- No deletes (§1) and FK restrict --------------------------------------------------------------
 select throws_ok($$ delete from public.profiles where id = '00000000-0000-4000-8000-0000000000a2' $$,

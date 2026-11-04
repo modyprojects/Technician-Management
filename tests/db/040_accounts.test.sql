@@ -3,7 +3,7 @@
 -- caller's JWT claims, as PostgREST does.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(113);
+select plan(126);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. b3 is an inactive Customer Service
 -- account; f1, f2 and f3 are Auth users without a profile; b9, d8 and d9 (with field profile e9)
@@ -101,21 +101,67 @@ select is(
      and details = '{"actor_role": "manager", "requested_role": "technician"}'::jsonb),
   1::bigint, 'phase 1 is audited before the Auth Admin call (§8.5, security.md §5)');
 
--- An Auth user that existed before the authorization (orphaned or created elsewhere).
+-- Phase 2 is simulated: the Step 2 server creates the Auth user with app_metadata.account_request_id
+-- set to the intent id (the binding nonce, re-review R-S1). The fixture users exist already, so
+-- each test sets the nonce it needs as postgres. f4 existed an hour before its authorization
+-- (orphaned or created elsewhere); f5 was created 30 seconds before its authorization.
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at) values
   ('00000000-0000-4000-8000-0000000000f4', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-   'orphan@example.test', now() - interval '1 hour', now() - interval '1 hour');
+   'orphan@example.test', now() - interval '1 hour', now() - interval '1 hour'),
+  ('00000000-0000-4000-8000-0000000000f5', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'early@example.test', now() - interval '30 seconds', now() - interval '30 seconds');
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null, null) $$,
   '22023', 'invalid input', 'a profile is created only against a phase-1 intent or an approved request');
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null,
+     current_setting('tm_test.intent_f1')::uuid) $$,
+  '42501', 'not authorized',
+  'R-S1: an Auth user without the intent nonce (created by any other path, for example a sign-up) cannot be bound');
+reset role;
+update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('account_request_id', gen_random_uuid()::text)
+where id = '00000000-0000-4000-8000-0000000000f1';
+update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('account_request_id', current_setting('tm_test.intent_f1'))
+where id = '00000000-0000-4000-8000-0000000000f3';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null,
+     current_setting('tm_test.intent_f1')::uuid) $$,
+  '42501', 'not authorized', 'R-S1: an Auth user whose nonce names another intent cannot be bound');
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f3', 'technician', 'x', null, null,
      current_setting('tm_test.intent_f1')::uuid) $$,
-  '42501', 'not authorized', 'the Auth user''s email must match the intent');
+  '42501', 'not authorized', 'the Auth user''s email must match the intent (even with the right nonce)');
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000ff', 'technician', 'x', null, null,
      current_setting('tm_test.intent_f1')::uuid) $$,
   '42501', 'not authorized', 'an unknown Auth user gets the same generic error (S12)');
+reset role;
+update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('account_request_id', current_setting('tm_test.intent_f1')),
+  is_anonymous = true
+where id = '00000000-0000-4000-8000-0000000000f1';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null,
+     current_setting('tm_test.intent_f1')::uuid) $$,
+  '42501', 'not authorized', 'R-S1: an anonymous Auth user cannot be bound, even with the nonce');
+reset role;
+update auth.users set is_anonymous = false, is_sso_user = true where id = '00000000-0000-4000-8000-0000000000f1';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null,
+     current_setting('tm_test.intent_f1')::uuid) $$,
+  '42501', 'not authorized', 'R-S1: an SSO Auth user cannot be bound, even with the nonce');
+reset role;
+update auth.users set is_sso_user = false, deleted_at = now() where id = '00000000-0000-4000-8000-0000000000f1';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', 'x', null, null,
+     current_setting('tm_test.intent_f1')::uuid) $$,
+  '42501', 'not authorized', 'R-S1: a soft-deleted Auth user cannot be bound, even with the nonce');
+reset role;
+update auth.users set deleted_at = null where id = '00000000-0000-4000-8000-0000000000f1';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
 select lives_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f1', 'technician', '', '050-000-0000', null,
      current_setting('tm_test.intent_f1')::uuid) $$,
   'a Manager creates the authorized Technician profile (phase 3, immediate, D34 c)');
@@ -124,14 +170,26 @@ select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-
   '42501', 'not authorized', 'an intent is fulfilled once');
 select lives_ok($$ select public.authorize_account_creation('technician', 'user-b1@example.test', 'x') $$,
   'setup: an intent for the email of an account that already has a profile');
+select lives_ok($$ select public.authorize_account_creation('technician', 'orphan@example.test', 'x') $$,
+  'setup: an intent for the email of an Auth user created an hour earlier');
+select lives_ok($$ select public.authorize_account_creation('technician', 'early@example.test', 'x') $$,
+  'setup: an intent for the email of an Auth user created 30 seconds earlier');
+reset role;
+update auth.users u set raw_app_meta_data = coalesce(u.raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('account_request_id', r.id::text)
+from public.account_requests r
+where r.email = u.email and u.id in ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000f4',
+                                     '00000000-0000-4000-8000-0000000000f5');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000b1', 'technician', 'x', null, null,
      (select id from public.account_requests where email = 'user-b1@example.test')) $$,
   '42501', 'not authorized', 'a user with a profile gets the same generic error (S12)');
-select lives_ok($$ select public.authorize_account_creation('technician', 'orphan@example.test', 'x') $$,
-  'setup: an intent for the email of an Auth user created earlier');
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f4', 'technician', 'x', null, null,
      (select id from public.account_requests where email = 'orphan@example.test')) $$,
-  '42501', 'not authorized', 'an Auth user that existed before the authorization cannot be taken over (review S5)');
+  '42501', 'not authorized', 'an Auth user that existed before the authorization cannot be taken over, even with the nonce (review S5)');
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f5', 'technician', 'x', null, null,
+     (select id from public.account_requests where email = 'early@example.test')) $$,
+  '42501', 'not authorized', 'R-S1: no clock tolerance: an Auth user created 30 seconds before the authorization is refused');
 reset role;
 
 select ok(
@@ -149,6 +207,8 @@ select lives_ok($$ select public.authorize_account_creation('technician', 'user-
   'setup: a second Manager authorizes a Technician');
 reset role;
 select set_config('tm_test.intent_f3', (select id::text from public.account_requests where email = 'user-f3@example.test'), true);
+update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('account_request_id', current_setting('tm_test.intent_f3'))
+where id = '00000000-0000-4000-8000-0000000000f3';
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f3', 'technician', 'x', null, null,
@@ -162,6 +222,11 @@ select throws_ok($$ select public.authorize_account_creation('creator', 'c-new@e
   '42501', 'not authorized', 'even the Creator cannot authorize a Creator (D49: bootstrap only, owner question Q11)');
 select lives_ok($$ select public.authorize_account_creation('manager', 'user-f2@example.test', 'מנהל חדש') $$,
   'the Creator authorizes a Manager creation');
+reset role;
+update auth.users u set raw_app_meta_data = u.raw_app_meta_data || jsonb_build_object('account_request_id', r.id::text)
+from public.account_requests r where r.email = u.email and u.id = '00000000-0000-4000-8000-0000000000f2';
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
 select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f2', 'creator', 'x', null, null,
      (select id from public.account_requests where email = 'user-f2@example.test')) $$,
   '42501', 'not authorized', 'even the Creator cannot create a Creator profile');
@@ -174,6 +239,41 @@ select lives_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0
 reset role;
 select ok((select is_test and role = 'manager' from public.profiles where id = '00000000-0000-4000-8000-0000000000f2'),
   'every new user is a test user (TEMPORARY until go-live, D47)');
+
+-- Re-review R-S1 (a): an Auth user stays bound to the intent it was created for. The Creator
+-- authorizes a Manager creation, the Auth user is created with that intent's nonce, the Creator
+-- cancels the intent; a Manager's new intent for the same email cannot bind that Auth user.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select lives_ok($$ select public.authorize_account_creation('manager', 'rebind@example.test', 'x') $$,
+  'setup: the Creator authorizes a Manager creation');
+reset role;
+select set_config('tm_test.intent_x', (select id::text from public.account_requests where email = 'rebind@example.test'), true);
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000f6', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rebind@example.test', jsonb_build_object('provider', 'email', 'account_request_id', current_setting('tm_test.intent_x')),
+   now(), now());
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.cancel_account_request(current_setting('tm_test.intent_x')::uuid, 1), 2,
+  'setup: the Creator cancels his intent after the Auth user was created');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select lives_ok($$ select public.authorize_account_creation('technician', 'rebind@example.test', 'x') $$,
+  'setup: a Manager authorizes a Technician creation for the same email');
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f6', 'technician', 'x', null, null,
+     (select id from public.account_requests where email = 'rebind@example.test' and status = 'approved')) $$,
+  '42501', 'not authorized', 'R-S1: the Auth user created for the cancelled intent cannot be bound through the new intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f6', 'manager', 'x', null, null,
+     current_setting('tm_test.intent_x')::uuid) $$,
+  '42501', 'not authorized', 'nor through the cancelled intent itself');
+reset role;
+select is((select count(*) from public.profiles where id = '00000000-0000-4000-8000-0000000000f6'), 0::bigint,
+  'R-S1: no profile was created for the Auth user of the cancelled intent');
 
 -- Customer Service and Technician callers manage no account (review S7) -------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b9","role":"authenticated"}', true);
