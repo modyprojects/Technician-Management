@@ -125,16 +125,18 @@ export function CalendarDayTimeline({
                 overflowWrap: "anywhere",
               }}
             >
-              <b>
-                {v.customerName} · <span className="num">{v.start}</span>
-                {v.isTest && (
-                  <>
-                    {" "}
-                    <TestBadge />
-                  </>
-                )}
-              </b>
-              {v.city} · {visitSubject(v)}
+              <span className="ev-body">
+                <b>
+                  {v.customerName} · <span className="num">{v.start}</span>
+                  {v.isTest && (
+                    <>
+                      {" "}
+                      <TestBadge />
+                    </>
+                  )}
+                </b>
+                {v.city} · {visitSubject(v)}
+              </span>
             </Link>
           );
         })}

@@ -148,6 +148,10 @@ a.stat { text-decoration: none; }
 .ev { position: absolute; right: 5px; left: 5px; border-radius: 8px; padding: 5px 8px; font-size: 12px; line-height: 1.3; overflow: hidden; text-align: right; border: 0; border-right: 4px solid; }
 .ev b { font-size: 13px; display: block; }
 .ev:hover { filter: brightness(.97); box-shadow: 0 2px 6px rgba(0, 0, 0, .12); }
+/* .ev blocks that are links (calendars, UI demo D53): the demo's blocks are buttons, which centre
+   their content vertically; the .ev-body wrapper keeps the inline flow and is centred the same way. */
+a.ev { display: flex; align-items: center; text-decoration: none; }
+a.ev > .ev-body { min-width: 0; }
 /* Visit drawer (L159-164) and key-value list (L165-166). */
 .drawer-bg { position: fixed; inset: 0; background: var(--scrim); z-index: 60; display: flex; justify-content: flex-end; }
 .drawer { width: min(440px, 100%); height: 100%; background: var(--card); display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0, 0, 0, .25); padding-bottom: env(safe-area-inset-bottom, 0px); }

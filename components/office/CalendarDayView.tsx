@@ -44,12 +44,14 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
         borderRightColor: s.c,
       }}
     >
-      <b>{v.customerName}</b> <span className="num">{v.start}</span> · {v.city}
-      {v.n > 1 && ` · ביקור ${v.n}`} <br />
-      {s.label}
-      <span className="sr-only">
-        {" "}
-        · עד {v.end} · {v.technician.name}
+      <span className="ev-body">
+        <b>{v.customerName}</b> <span className="num">{v.start}</span> · {v.city}
+        {v.n > 1 && ` · ביקור ${v.n}`} <br />
+        {s.label}
+        <span className="sr-only">
+          {" "}
+          · עד {v.end} · {v.technician.name}
+        </span>
       </span>
     </Link>
   );
