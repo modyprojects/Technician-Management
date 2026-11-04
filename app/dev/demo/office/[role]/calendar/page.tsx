@@ -7,6 +7,7 @@ import { CalendarNoAccess } from "@/components/office/CalendarNoAccess";
 import { CalendarToolbar, type CalendarLink, type CalendarStep } from "@/components/office/CalendarToolbar";
 import { CalendarWeekView } from "@/components/office/CalendarWeekView";
 import { CallDrawer } from "@/components/office/CallDrawer";
+import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import {
   ALL,
   officeCalendarFilterOf,
@@ -93,17 +94,21 @@ export default async function OfficeCalendarPage({ params, searchParams }: PageP
   const visitHref = (v: VisitRef): string => href({ visit: { req: v.req, n: v.n } });
   const dayHref = (date: IsoDate): string => href({ view: "day", date });
 
-  const viewBody = async (): Promise<ReactNode> => {
+  /** The view and whether it shows test data (SIM-08, D47: the "נתוני בדיקה" note, outside the demo frame too). */
+  const viewBody = async (): Promise<{ node: ReactNode; includesTestData: boolean }> => {
     if (state.view === "month") {
       const month = await calendar.officeMonth(state.date.slice(0, 7), filter);
-      return <CalendarMonthView month={month} today={TODAY} dayHref={dayHref} />;
+      return { node: <CalendarMonthView month={month} today={TODAY} dayHref={dayHref} />, includesTestData: month.includesTestData };
     }
     if (state.view === "week") {
       const week = await calendar.officeWeek(state.date, filter);
-      return <CalendarWeekView week={week} today={TODAY} dayHref={dayHref} visitHref={visitHref} />;
+      return {
+        node: <CalendarWeekView week={week} today={TODAY} dayHref={dayHref} visitHref={visitHref} />,
+        includesTestData: week.includesTestData,
+      };
     }
     const day = await calendar.officeDay(state.date, filter);
-    return <CalendarDayView day={day} visitHref={visitHref} />;
+    return { node: <CalendarDayView day={day} visitHref={visitHref} />, includesTestData: day.includesTestData };
   };
 
   const [body, technicians, drawer] = await Promise.all([
@@ -138,7 +143,8 @@ export default async function OfficeCalendarPage({ params, searchParams }: PageP
         next={next}
         technicians={techChips}
       />
-      {body}
+      {body.includesTestData && <DashboardTestNote>היומן כולל נתוני בדיקה (סביבת בדיקה)</DashboardTestNote>}
+      {body.node}
       {drawer && (
         <CallDrawer
           key={`${drawer.req}:${drawer.n}`}

@@ -13,10 +13,6 @@ import { demoHref } from "../../_data/routes";
 
 export const metadata: Metadata = { title: "התראות · טכנאי · הדגמה" };
 
-/** This screen with `?page=` from page 2 (the list is paged: 40 per page, at most 100). */
-const pageHref = (page: number): string =>
-  page > 1 ? `${demoHref.techNotifications()}?page=${page}` : demoHref.techNotifications();
-
 /**
  * Where a notification leads (demo openNotif, L1134): its visit card. Without a visit, as in the
  * demo, the technician's day; a cancelled visit is not on the technician's screens (the visit
@@ -27,7 +23,7 @@ const hrefOf = (n: AppNotification): string =>
 
 // Technician notifications, opened from the bell (docs/demo.html techNotifs() L644-656; TE-28:
 // in-app only, created by events, no scheduled pickup reminder, D25). Reads only through the
-// data-access layer: notifications.list(DEMO_TECHNICIAN_ID, { page }) (paged, newest first) and
+// data-access layer: notifications.list(DEMO_TECHNICIAN_ID, { page }) (paged, newest first; 40 per page, `?page=` from page 2) and
 // notifications.unreadCount(DEMO_TECHNICIAN_ID) (G-03: production takes the user from the
 // session). The list splits into "חדשות" and "קודמות"; opening an item marks it read and opens its
 // visit card; "סמן הכל כנקרא" marks every notification read. Both run through
@@ -53,8 +49,8 @@ export default async function TechNotificationsPage({ searchParams }: PageProps<
             <Pager
               page={list.page}
               pageCount={list.pageCount}
-              prevHref={list.page > 1 ? pageHref(list.page - 1) : null}
-              nextHref={list.page < list.pageCount ? pageHref(list.page + 1) : null}
+              prevHref={list.page > 1 ? demoHref.techNotifications(list.page - 1) : null}
+              nextHref={list.page < list.pageCount ? demoHref.techNotifications(list.page + 1) : null}
               label="עמודי ההתראות"
             />
           }

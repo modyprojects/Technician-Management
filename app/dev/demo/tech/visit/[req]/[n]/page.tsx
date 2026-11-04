@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { DoneVisitHeader, DoneVisitView } from "@/components/tech/DoneVisitView";
 import { VisitHeader } from "@/components/tech/VisitHeader";
 import { VisitHistory } from "@/components/tech/VisitHistory";
 import { VisitInfoCard, VisitPickup, VisitProblem } from "@/components/tech/VisitInfo";
-import { VisitInfoClosed } from "@/components/tech/VisitInfoClosed";
 import { PhoneIcon, UserIcon, WhatsAppIcon } from "@/components/ui/Icons";
-import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
-import type { VisitDetail } from "@/features/visits/data/types";
+import type { VisitDetail, VisitRef } from "@/features/visits/data/types";
 import { DemoTechFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
 import { techVisitParams } from "../../../../_data/params";
@@ -37,27 +36,21 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/tech/vis
 
 const BACK = { backHref: demoHref.tech(), backLabel: "היום", backAriaLabel: "חזרה למסך היום" } as const;
 
-/** Read-only view of a closed visit (docs/demo.html techDoneView(); D14, TE-26). */
-function ClosedVisit({ visit }: { visit: VisitDetail }) {
+/**
+ * A closed visit opened at its visit-card address (a notification, a hand-written URL): the same
+ * read-only view as "הושלמו היום" (DoneVisitView; docs/demo.html techDoneView(); D14, TE-26), read
+ * through visits.doneVisit (no field times, TE-25), with "› חזרה" to the technician's day.
+ */
+async function ClosedVisit({ visitRef }: { visitRef: VisitRef }) {
+  const visit = await demoDataAccess.visits.doneVisit(DEMO_TECHNICIAN_ID, visitRef);
+  if (!visit) notFound();
   return (
     <DemoTechFrame
       activeTab="home"
       activeIsCurrent={false}
-      head={
-        <VisitHeader
-          {...BACK}
-          meta={`פנייה ${visit.call.req} · ביקור ${visit.n}`}
-          title={visit.customer.name}
-          trailing={
-            <>
-              {visit.call.isTest && <TestBadge />}
-              <StatusPill status={visit.status} />
-            </>
-          }
-        />
-      }
+      head={<DoneVisitHeader visit={visit} backHref={BACK.backHref} backAriaLabel={BACK.backAriaLabel} />}
     >
-      <VisitInfoClosed visit={visit} />
+      <DoneVisitView visit={visit} />
     </DemoTechFrame>
   );
 }
@@ -71,12 +64,13 @@ function ClosedVisit({ visit }: { visit: VisitDetail }) {
 // Open visit: "↻ ביקור המשך" history, the action tiles (Waze runs visits.depart on a scheduled
 // visit; dial, WhatsApp and the rep are navigation), the details, fault, technician notes, pickup
 // and the visit source, with "הגעתי · התחלת טיפול" (visits.arrive) or "המשך לטיפול ›" below.
-// Closed visit: read-only (D14), with the bottom navigation as the demo's "הושלמו" view.
+// Closed visit: the read-only view of "הושלמו היום" (DoneVisitView, D14), with the bottom navigation
+// as the demo's "הושלמו" view; the home and the landing link straight to tech/done/[req]/[n].
 export default async function TechVisitPage({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]">) {
   const { req, n } = await params;
   const visit = await myVisit(req, n);
   if (!visit) notFound();
-  if (!visit.editable) return <ClosedVisit visit={visit} />;
+  if (!visit.editable) return <ClosedVisit visitRef={{ req: visit.req, n: visit.n }} />;
 
   const ref = { req: visit.req, n: visit.n };
   const history = await demoDataAccess.visits.history(ref);

@@ -37,7 +37,8 @@ export default async function TechHomePage() {
     href: demoHref.visit(v.req, v.n),
     status: <LiveStatusPill visit={refOf(v)} status={v.status} />,
   }));
-  const closed: ScheduleEntry[] = day.closed.map((v) => ({ visit: v, href: demoHref.visit(v.req, v.n) }));
+  // A closed visit opens its read-only view (the same view as "הושלמו היום", TE-26, D14).
+  const closed: ScheduleEntry[] = day.closed.map((v) => ({ visit: v, href: demoHref.techDoneVisit(v.req, v.n) }));
   const placeActions = Object.fromEntries(
     day.pickups.map((g) => [g.place, <PlaceWazeButton key={g.place} place={g.place} address={g.placeAddress} />]),
   );

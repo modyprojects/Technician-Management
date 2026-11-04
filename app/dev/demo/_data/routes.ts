@@ -41,8 +41,11 @@ export const demoHref = {
     page !== undefined && Number.isInteger(page) && page > 1 ? `${DEMO_BASE}/tech/done?page=${page}` : `${DEMO_BASE}/tech/done`,
   /** One of the technician's closed visits, read-only (TE-26, D14). */
   techDoneVisit: (req: string, n: number): string => `${DEMO_BASE}/tech/done/${req}/${n}`,
-  /** Technician notifications (bell, TE-28). */
-  techNotifications: (): string => `${DEMO_BASE}/tech/notifications`,
+  /** Technician notifications (bell, TE-28); `?page=` from page 2. */
+  techNotifications: (page?: number): string =>
+    page !== undefined && Number.isInteger(page) && page > 1
+      ? `${DEMO_BASE}/tech/notifications?page=${page}`
+      : `${DEMO_BASE}/tech/notifications`,
   /** Technician profile (TE-29, TE-30). */
   techProfile: (): string => `${DEMO_BASE}/tech/profile`,
 } as const;

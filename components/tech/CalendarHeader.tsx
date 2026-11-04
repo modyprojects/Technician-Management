@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { BellIcon } from "@/components/ui/Icons";
+import { CALENDAR_SHIFT_LABELS } from "@/features/calendar/data/dates";
 import type { CalendarView } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
-import { CALENDAR_SHIFT_LABELS } from "@/features/calendar/data/dates";
+import { BellLink } from "./BellLink";
 import { calendarLabel } from "./CalendarDates";
 
 // Header of the technician's "היומן שלי" (docs/demo.html techCalendar() head L606-608 and the
@@ -22,38 +22,6 @@ const ARROW_STYLE: CSSProperties = {
   justifyContent: "center",
   minWidth: 28,
   minHeight: 28,
-};
-
-const BELL_STYLE: CSSProperties = {
-  position: "relative",
-  border: 0,
-  background: "var(--ink2)",
-  color: "var(--on-dark)",
-  width: 36,
-  height: 36,
-  borderRadius: "50%",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flex: "none",
-  marginInlineStart: 4,
-};
-
-const BADGE_STYLE: CSSProperties = {
-  position: "absolute",
-  top: -3,
-  left: -3,
-  background: "var(--danger)",
-  color: "var(--on-dark)",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 700,
-  minWidth: 18,
-  height: 18,
-  padding: "0 4px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
 };
 
 export function CalendarHeader({
@@ -100,14 +68,7 @@ export function CalendarHeader({
           <Link className="ph-back" href={nextHref} aria-label={names.next} style={ARROW_STYLE}>
             <span aria-hidden="true">›</span>
           </Link>
-          <Link href={notificationsHref} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"} style={BELL_STYLE}>
-            <BellIcon />
-            {unread > 0 && (
-              <span className="num" style={BADGE_STYLE}>
-                {unread}
-              </span>
-            )}
-          </Link>
+          <BellLink href={notificationsHref} unread={unread} style={{ marginInlineStart: 4 }} />
         </span>
       </div>
     </>

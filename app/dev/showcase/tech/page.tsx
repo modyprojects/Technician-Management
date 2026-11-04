@@ -26,6 +26,8 @@ export default function TechShellShowcase() {
             unread={h.unread}
             visitsToday={h.schedule.length}
             completed={h.completed}
+            notificationsHref="/dev/demo/tech/notifications"
+            completedHref="/dev/demo/tech/done"
           />
         }
       >

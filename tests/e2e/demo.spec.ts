@@ -499,27 +499,78 @@ test.describe("office calendar", () => {
   });
 });
 
+test.describe("office calendar test data and bounds", () => {
+  test("test visits carry 🧪 in the day and week views, and the \"נתוני בדיקה\" note shows (D47, SIM-15)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calendar");
+    await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
+    await expect(page.locator("a.ocal-ev").first()).toContainText("נתוני בדיקה");
+    await expect(page.locator("a.ocal-ev").first().locator(".pill")).toContainText("🧪");
+
+    await openPage(page, "/dev/demo/office/mgr/calendar?view=week");
+    await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
+    const block = page.locator("a.ocal-wk-ev").first();
+    await expect(block).toContainText("🧪");
+    await expect(block.locator(".sr-only")).toHaveText(/נתוני בדיקה/);
+
+    await openPage(page, "/dev/demo/office/mgr/calendar?view=month");
+    await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
+  });
+
+  test("a cancelled visit has no drawer (it is never on a calendar)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calendar?req=48230&n=1");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("21.10");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("month arrows open today or the month's first work day, never a weekend", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calendar?view=month");
+    const steps = page.getByRole("group", { name: "מעבר בין תאריכים" });
+    // November 2026 starts on a Sunday; August 2026 starts on a Saturday (so its first work day is the 2nd);
+    // October 2026 holds the demo's today, which is left out of the address.
+    await expect(steps.getByRole("link", { name: "החודש הבא" })).toHaveAttribute("href", /date=2026-11-01/);
+    await openPage(page, "/dev/demo/office/mgr/calendar?view=month&date=2026-09-15");
+    await expect(steps.getByRole("link", { name: "החודש הקודם" })).toHaveAttribute("href", /date=2026-08-02/);
+    await expect(steps.getByRole("link", { name: "החודש הבא" })).toHaveAttribute("href", /view=month(?!.*date=)/);
+  });
+});
+
+test.describe("showcase: \"הושלמו היום\" with rows", () => {
+  test("rows, the 🧪 badge and the pager render without overflow", async ({ page }) => {
+    const errors = collectErrors(page);
+    await openPage(page, "/dev/showcase");
+    const list = page.getByRole("region", { name: "ביקורים שהושלמו היום" });
+    await expect(list.getByRole("link")).toHaveCount(3);
+    await expect(list.getByRole("link").first()).toContainText("08:00");
+    await expect(list.getByRole("link").first()).toContainText("טופל");
+    await expect(list.locator(".pill", { hasText: "🧪" })).toHaveCount(2);
+    await expect(page.getByRole("navigation", { name: "עמודי הביקורים שהושלמו" })).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await page.waitForLoadState("networkidle");
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe("technician calendar and closed visits", () => {
   test("day / week / month segments and the arrows change the URL; \"יומן\" is the active tab", async ({ page }) => {
     await openPage(page, "/dev/demo/tech/calendar");
-    const views = page.getByRole("navigation", { name: "תצוגת היומן" });
+    const views = page.getByRole("group", { name: "תצוגת היומן" });
     await expect(views.getByRole("link", { name: "יומי" })).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "ימי השבוע" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "ניווט ראשי" }).getByRole("link", { name: "יומן" })).toHaveAttribute(
       "aria-current",
       "page",
     );
 
-    await page.getByRole("link", { name: "היום הבא" }).click();
+    await page.getByRole("link", { name: "יום העבודה הבא" }).click();
     await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-22$/);
-    await page.getByRole("link", { name: "היום הבא" }).click();
+    await page.getByRole("link", { name: "יום העבודה הבא" }).click();
     await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-25$/);
 
     await views.getByRole("link", { name: "שבועי" }).click();
     await expect(page).toHaveURL(/\/tech\/calendar\?view=week&date=2026-10-25$/);
     await expect(views.getByRole("link", { name: "שבועי" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("region", { name: "השבוע שלי" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "ימי השבוע" })).toHaveCount(0);
     await page.getByRole("link", { name: "השבוע הקודם" }).click();
     await expect(page).toHaveURL(/view=week&date=2026-10-18$/);
 
@@ -529,7 +580,7 @@ test.describe("technician calendar and closed visits", () => {
 
     await views.getByRole("link", { name: "יומי" }).click();
     await expect(page).toHaveURL(/\/tech\/calendar\?date=2026-10-18$/);
-    await expect(page.getByRole("navigation", { name: "ימי השבוע" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "ימי השבוע" })).toBeVisible();
   });
 
   test("a closed visit in the week opens its read-only view; \"› חזרה\" returns to the same view", async ({ page }) => {

@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DoneList } from "@/components/tech/DoneList";
 import { ActionTile, BigButton } from "@/components/ui/BigButton";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { PhoneIcon, PinIcon, UserIcon, WhatsAppIcon } from "@/components/ui/Icons";
 import { Kpi } from "@/components/ui/Kpi";
 import { ListItem } from "@/components/ui/ListItem";
+import { Pager } from "@/components/ui/Pager";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusPill, VISIT_STATUSES, type VisitStatus } from "@/components/ui/StatusPill";
 import { Tabs } from "@/components/ui/Tabs";
 import { Toggle } from "@/components/ui/Toggle";
-import { FIXTURE_SENTINEL } from "./_fixtures";
+import { DONE_TODAY, FIXTURE_SENTINEL } from "./_fixtures";
 import { TokenSwatch } from "./TokenSwatch";
 
 export const metadata: Metadata = { title: "תצוגת רכיבים · תצוגת פיתוח" };
@@ -180,6 +182,15 @@ export default function ShowcasePage() {
             </div>
           </div>
           <div className="note">🔒 ביקור שנסגר מוצג לקריאה בלבד.</div>
+        </div>
+      </Section>
+
+      <Section title="הושלמו היום · רשימה עם ביקורים (טכנאי)">
+        <div id="showcase-done-list" className="flex flex-col gap-3" style={{ maxWidth: 420 }}>
+          <DoneList
+            entries={DONE_TODAY.map((v) => ({ visit: v, href: "/dev/demo/tech/done" }))}
+            pager={<Pager page={1} pageCount={2} prevHref={null} nextHref="/dev/showcase#showcase-done-list" label="עמודי הביקורים שהושלמו" />}
+          />
         </div>
       </Section>
     </main>

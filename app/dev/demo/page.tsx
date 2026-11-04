@@ -19,20 +19,30 @@ async function callNames(reqs: readonly string[]): Promise<(req: string) => stri
 // Every demo screen, by viewpoint. Examples are calls from the demo's own story.
 const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: string; links: ScreenLink[] }> => ({
   tech: {
-    intro: "האפליקציה בטלפון של הטכנאי: היום, כרטיס ביקור, עבודה וסיום.",
+    intro: "האפליקציה בטלפון של הטכנאי: היום, כרטיס ביקור, עבודה וסיום, יומן, התראות ופרופיל.",
     links: [
       { label: "היום", sub: "הביקור הבא, מה לאסוף, לו״ז היום", href: demoHref.tech() },
       { label: `כרטיס ביקור · ${callName("48213")}`, sub: "פנייה 48213 · ביקור ראשון", href: demoHref.visit("48213", 1) },
       { label: `ביקור המשך · ${callName("48205")}`, sub: "פנייה 48205 · ביקור 2, עם הביקור הקודם", href: demoHref.visit("48205", 2) },
       { label: "מסך עבודה", sub: "תמונות, הקלטה, סיכום וחלפים · פנייה 48213", href: demoHref.work("48213", 1) },
       { label: "סיום ביקור וחתימה", sub: "טופל או המשך טיפול · פנייה 48213", href: demoHref.close("48213", 1) },
-      { label: `ביקור שנסגר · ${callName("47800")}`, sub: "פנייה 47800 · צפייה בלבד, עם אישור הלקוח", href: demoHref.visit("47800", 1) },
+      { label: `ביקור שנסגר · ${callName("47800")}`, sub: "פנייה 47800 · צפייה בלבד, עם אישור הלקוח", href: demoHref.techDoneVisit("47800", 1) },
+      { label: "היומן שלי", sub: "יומי, שבועי וחודשי", href: demoHref.techCalendar() },
+      { label: "הושלמו היום", sub: "הביקורים שנסגרו היום · צפייה בלבד", href: demoHref.techDone() },
+      { label: "התראות", sub: "חדשות וקודמות · סימון כנקרא", href: demoHref.techNotifications() },
+      { label: "פרופיל", sub: "השבוע שלי, התראות ועזרה", href: demoHref.techProfile() },
     ],
   },
   mgr: {
-    intro: "המשרד מהמחשב, מהטאבלט או מהטלפון: מעקב, קריאות ודשבורד.",
+    intro: "המשרד מהמחשב, מהטאבלט או מהטלפון: מעקב, יומן, קריאות ודשבורד.",
     links: [
       { label: "לוח בקרה", sub: "מסך הבית של המנהל", href: demoHref.officeHome("mgr") },
+      { label: "יומן טכנאים", sub: "יום, שבוע וחודש · סינון לפי טכנאי", href: demoHref.officeCalendar("mgr") },
+      {
+        label: `יומן · חלון ביקור · ${callName("48213")}`,
+        sub: "פנייה 48213 · פרטי הביקור מעל היומן",
+        href: demoHref.officeCalendar("mgr", { visit: { req: "48213", n: 1 } }),
+      },
       { label: "קריאות", sub: "חיפוש וסינון לפי סטטוס וטכנאי", href: demoHref.calls("mgr") },
       { label: `כרטיס קריאה · ${callName("48140")}`, sub: "פנייה 48140 · שלושה ביקורים", href: demoHref.call("mgr", "48140") },
       { label: `קריאה שטופלה · ${callName("47969")}`, sub: "פנייה 47969 · סיכום, תמונות וחתימת לקוח", href: demoHref.call("mgr", "47969") },
@@ -44,6 +54,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
     intro: "שירות הלקוחות: מעקב אחרי הקריאות. בלי דשבורד ובלי ביטול ביקור.",
     links: [
       { label: "בית", sub: "מסך הבית של שירות הלקוחות", href: demoHref.officeHome("cs") },
+      { label: "יומן טכנאים", sub: "תצוגה שבועית", href: demoHref.officeCalendar("cs", { view: "week" }) },
       { label: "קריאות", sub: "חיפוש וסינון לפי סטטוס וטכנאי", href: demoHref.calls("cs") },
       { label: `כרטיס קריאה · ${callName("48205")}`, sub: "פנייה 48205 · ביקור המשך", href: demoHref.call("cs", "48205") },
       { label: "דשבורד", sub: "אין הרשאה לתפקיד הזה", href: demoHref.officeAnalytics("cs") },
