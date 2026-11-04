@@ -56,7 +56,8 @@ function playRecording(v: TimelineVisit) {
 // capability, closedVisitCorrectionsOffered; never a matrix key, D33). The correction runs only
 // through useCommands().visits.correct (simulated): the state it is checked against (each closed
 // visit's version, current values, correctable fields, the active follow-up reasons and the
-// signed-in user) is nested here only (correctionsState; deny by default elsewhere).
+// signed-in user's name, never an account id) is nested here only (correctionsState; deny by
+// default elsewhere).
 export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/office/[role]/calls/[req]">) {
   const { role, req } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -78,11 +79,8 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
       ).filter((h): h is VisitCorrectionHistory => h !== null)
     : [];
   const canCorrect = closedVisitCorrectionsOffered(role) && histories.length > 0;
-  const [state, reasons] = await Promise.all([
-    correctionsState(role, histories),
-    canCorrect ? demoDataAccess.reference.reasons() : Promise.resolve([]),
-  ]);
-  const activeReasons = reasons.filter((r) => r.active).map((r) => r.name);
+  const activeReasons = canCorrect ? (await demoDataAccess.reference.reasons()).filter((r) => r.active).map((r) => r.name) : [];
+  const state = await correctionsState(role, histories, activeReasons);
   const historyOf = new Map(histories.map((h) => [h.n, h]));
   const customerName = c.customer.name;
 

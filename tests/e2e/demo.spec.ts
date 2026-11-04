@@ -1664,3 +1664,582 @@ test.describe("back from field (OF-16, D23, D38)", () => {
     await expect(tileValue("ממתינות לביקור חדש")).toHaveText(String(total));
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Phase G: "פריטים לבדיקה" (D39, D44), audited corrections of a closed visit on the call card
+// (OF-10, D14, D43, D45), the /dev mock outbox (X-06, EM-01 to EM-05, D09) and the technician's
+// device sync state (TE-23, TE-24, D06, D46). Display-only access (G-04); every action simulated.
+
+/** Views of the phase G screens behind query strings (status filter, paging, a selected row). */
+const PHASE_G_VIEWS = [
+  "/dev/demo/office/mgr/review?status=resolved",
+  "/dev/demo/office/creator/review?status=all",
+  "/dev/demo/outbox?id=ob-48190-1",
+  "/dev/demo/outbox?page=2",
+] as const;
+
+/** "נשלח" (sent) only ever negated: "לא נשלח", "שום מייל לא נשלח", "אף אחת לא נשלחה". */
+const POSITIVE_SENT = /(?<!לא )נשלח/;
+
+test.describe("phase G views render", () => {
+  for (const path of PHASE_G_VIEWS) {
+    test(`${path}: sentinel, test-data strip, no overflow, no console errors`, async ({ page }) => {
+      const errors = collectErrors(page);
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(200);
+      await openPage(page, path);
+      await expect(page.locator(`[data-fixtures="${FIXTURE_SENTINEL}"]`).first()).toBeAttached();
+      await expect(page.getByRole("note", { name: "הדגמה עם נתוני בדיקה" })).toBeVisible();
+      expect(await horizontalOverflow(page)).toEqual([]);
+      await page.waitForLoadState("networkidle");
+      expect(errors).toEqual([]);
+    });
+  }
+
+  test("an unknown review item or role is a 404", async ({ request }) => {
+    for (const path of [
+      "/dev/demo/office/mgr/review/rv-999",
+      "/dev/demo/office/creator/review/nope",
+      "/dev/demo/office/xx/review",
+      "/dev/demo/office/xx/review/rv-1",
+    ]) {
+      const res = await request.get(path);
+      expect(res.status(), path).toBe(404);
+      expect(await res.text(), path).not.toContain(FIXTURE_SENTINEL);
+    }
+  });
+});
+
+test.describe("review items: access per role (matrix key `conflicts`)", () => {
+  onlyInProject("desktop");
+
+  test("Manager and Creator have \"פריטים לבדיקה\" after \"חזרו מהשטח\"; customer service has neither the item nor any item data", async ({
+    page,
+  }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}`);
+      const nav = sideNav(page);
+      await expect(nav.getByRole("link", { name: "פריטים לבדיקה", exact: true }), role).toHaveAttribute(
+        "href",
+        `/dev/demo/office/${role}/review`,
+      );
+      const labels = (await nav.getByRole("link").allInnerTexts()).map((l) => l.trim());
+      expect(labels.indexOf("פריטים לבדיקה"), role).toBe(labels.indexOf("חזרו מהשטח") + 1);
+      // The mock outbox is a /dev tool: never in the office sidebar (X-06).
+      await expect(nav.locator('a[href*="/outbox"]'), role).toHaveCount(0);
+    }
+    await openPage(page, "/dev/demo/office/mgr/review");
+    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
+    await openPage(page, "/dev/demo/office/mgr/review/rv-6");
+    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
+
+    await openPage(page, "/dev/demo/office/cs");
+    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה" })).toHaveCount(0);
+    for (const path of ["/dev/demo/office/cs/review", "/dev/demo/office/cs/review/rv-1", "/dev/demo/office/cs/review/rv-7"]) {
+      await openPage(page, path);
+      await expect(page.getByRole("heading", { name: "אין הרשאה" }), path).toBeVisible();
+      await expect(page.locator("main"), path).toContainText("לתפקיד הזה אין גישה לפריטים לבדיקה.");
+      // No item is read: no list, no request number, no form.
+      const text = await page.locator("main").innerText();
+      for (const req of ["48226", "48230", "48190", "יעל שושן"]) expect(text, `${path} ${req}`).not.toContain(req);
+      await expect(page.locator("main form"), path).toHaveCount(0);
+    }
+  });
+});
+
+test.describe("review items: the list (D39, D44)", () => {
+  const rows = (page: Page, name: string) => page.getByRole("list", { name }).locator(":scope > li");
+
+  test("open items first; counters per status; the status chips are links with aria-current", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/review");
+    const tiles = page.getByRole("region", { name: "מוני פריטים לבדיקה" });
+    const tile = (label: string) => tiles.locator(".kpi").filter({ has: page.locator(".l", { hasText: label }) }).locator(".v");
+    await expect(tile("פתוחים")).toHaveText("6");
+    await expect(tile("מנהל או יוצר בלבד")).toHaveText("2");
+    await expect(tile("טופלו")).toHaveText("2");
+    await expect(rows(page, "פריטים פתוחים")).toHaveCount(6);
+    // Each row: kind, status, source, the call and visit links to the call card.
+    const first = rows(page, "פריטים פתוחים").first();
+    await expect(first).toContainText("פתוח");
+    await expect(first).toContainText(/🧪 זימון בדיקה|📱 מהמכשיר של/);
+    await expect(first.getByRole("link", { name: /^כרטיס הקריאה · פנייה \d+$/ })).toHaveAttribute("href", /\/dev\/demo\/office\/mgr\/calls\/\d+$/);
+    const visit = page.getByRole("link", { name: "ביקור 1 בכרטיס הקריאה 48226" });
+    await expect(visit).toHaveAttribute("href", "/dev/demo/office/mgr/calls/48226#visit-1");
+    // The two device items that change a server-closed or cancelled visit are marked 🔒.
+    await expect(rows(page, "פריטים פתוחים").filter({ hasText: "מנהל או יוצר בלבד" })).toHaveCount(2);
+
+    const chips = page.getByRole("group", { name: "הצגה:" });
+    await expect(chips.getByRole("link", { name: /^פתוחים/ })).toHaveAttribute("aria-current", "true");
+    await chips.getByRole("link", { name: /^טופלו/ }).click();
+    await expect(page).toHaveURL(/[?&]status=resolved(&|$)/);
+    await expect(chips.getByRole("link", { name: /^טופלו/ })).toHaveAttribute("aria-current", "true");
+    await expect(rows(page, "פריטים שטופלו")).toHaveCount(2);
+    for (const row of await rows(page, "פריטים שטופלו").all()) {
+      await expect(row).toContainText("הוחלט:");
+      await expect(row.getByRole("link", { name: /^לצפייה בפריט/ })).toBeVisible();
+    }
+    await chips.getByRole("link", { name: /^הכל/ }).click();
+    await expect(page).toHaveURL(/[?&]status=all(&|$)/);
+    await expect(rows(page, "כל הפריטים")).toHaveCount(8);
+  });
+
+  test("a row opens its item page", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/review");
+    await page.getByRole("link", { name: "לטיפול בפריט · התנגשות עריכה · פנייה 48190" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/review\/rv-6$/);
+    await expect(page.getByRole("heading", { level: 1, name: "התנגשות עריכה" })).toBeVisible();
+    await page.getByRole("link", { name: "חזרה לפריטים לבדיקה" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/review$/);
+  });
+});
+
+test.describe("review items: both versions and the decision (D44)", () => {
+  const fields = (page: Page) => page.locator("#review-fields .rv-field");
+  const decision = (page: Page) => page.locator("#review-decision");
+
+  test("both versions per field: base, the system's value and the incoming value, with the conflict marked", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/review/rv-6");
+    await expect(fields(page)).toHaveCount(2);
+    for (const f of await fields(page).all()) {
+      await expect(f.locator("dt")).toHaveText(["כשהמכשיר התחיל", "במערכת", "מהמכשיר"]);
+      await expect(f.locator("dd")).toHaveCount(3);
+    }
+    const note = fields(page).filter({ has: page.getByRole("heading", { name: "מה צריך בביקור הבא" }) });
+    await expect(note).toContainText("התנגשות · שני הצדדים שינו");
+    await expect(note.locator(".rv-cur dd")).toHaveText("להביא מנגנון מילוי WC-300 ולהחליף");
+    await expect(note.locator(".rv-inc dd")).toHaveText("להביא מנגנון מילוי WC-300 ולבדוק גם את ברז הניל");
+    const summary = fields(page).filter({ has: page.getByRole("heading", { name: "סיכום הטיפול" }) });
+    await expect(summary).toContainText("השתנה במכשיר");
+    // The device source: operation id and the device-reported send time.
+    await expect(page.locator("#review-about")).toContainText("op-48190-1-tablet");
+    await expect(page.locator("#review-about")).toContainText("לפי שעון המכשיר");
+
+    await openPage(page, "/dev/demo/office/mgr/review/rv-1");
+    await expect(fields(page)).toHaveCount(1);
+    const tech = fields(page).first();
+    await expect(tech.locator("dt")).toHaveText(["בזימון הקודם", "במערכת", "בזימון החדש"]);
+    await expect(tech.locator("dd")).toHaveText(["אדי", "אדי", "שמואל"]);
+    await expect(tech).toContainText("השתנה בזימון");
+    await expect(page.locator("#review-about")).toContainText("🧪 זימון בדיקה");
+    await expect(page.locator("#review-about")).toContainText("זימון אף פעם לא משנה ביקור סגור");
+    // Decision codes stay out of the user text.
+    expect(await page.locator("main").innerText()).not.toMatch(/\bD\d{2}\b/);
+  });
+
+  test("a closed-visit item needs a decision and a note: blocked inline, then simulated with the toast", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/review/rv-6");
+    const box = decision(page);
+    await expect(box).toContainText("הערת החלטה (חובה)");
+    const submit = box.getByRole("button", { name: "שמירת ההחלטה" });
+
+    await submit.click();
+    await expect(box.getByRole("alert")).toHaveText("יש לבחור החלטה");
+    await expect(toast(page)).toHaveCount(0);
+
+    await box.getByRole("radio", { name: /החלת השינוי/ }).check();
+    await submit.click();
+    const note = box.getByRole("textbox", { name: /הערת החלטה/ });
+    await expect(box.getByRole("alert")).toHaveText("יש לכתוב הערת החלטה");
+    await expect(note).toHaveAttribute("aria-invalid", "true");
+    await expect(note).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+
+    await note.fill("הטכנאי אישר בטלפון את הפירוט מהמכשיר");
+    await submit.click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("פריט לבדיקה · החלת השינוי");
+    await expect(box).toContainText("לא נשמר · פעולה מדומה");
+    await expect(box).toContainText("בהדגמה ההחלטה לא נשמרת");
+    await expect(box).toContainText("הטכנאי אישר בטלפון את הפירוט מהמכשיר");
+    await expect(box.locator(".rv-result")).toBeFocused();
+  });
+
+  test("per field: a conflicting field must be chosen; the one-sided field is pre-selected", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/review/rv-6");
+    const box = decision(page);
+    await box.getByRole("radio", { name: /בחירה לפי שדה/ }).check();
+    const summaryGroup = box.getByRole("radiogroup", { name: /סיכום הטיפול/ });
+    const noteGroup = box.getByRole("radiogroup", { name: /מה צריך בביקור הבא/ });
+    await expect(summaryGroup.getByRole("radio", { name: /מהמכשיר/ })).toBeChecked();
+    await expect(noteGroup.getByRole("radio", { checked: true })).toHaveCount(0);
+    await box.getByRole("textbox", { name: /הערת החלטה/ }).fill("שילוב: הסיכום מהמכשיר, ההערה מהמערכת");
+    await box.getByRole("button", { name: "שמירת ההחלטה" }).click();
+    await expect(box.getByRole("alert")).toHaveText("יש לבחור ערך לכל שדה בהתנגשות");
+    await expect(noteGroup).toHaveAttribute("aria-invalid", "true");
+    await expect(noteGroup.getByRole("radio").first()).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+
+    await noteGroup.getByRole("radio", { name: /במערכת/ }).check();
+    await box.getByRole("button", { name: "שמירת ההחלטה" }).click();
+    await expect(toast(page)).toContainText("פריט לבדיקה · בחירה לפי שדה");
+    await expect(box).toContainText("נשארת הגרסה מהמכשיר");
+    await expect(box).toContainText("נשארת הגרסה במערכת");
+    await expect(box).toContainText("לא נשמר · פעולה מדומה");
+  });
+
+  test("an invitation item takes an optional note: simulated without one", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/review/rv-1");
+    const box = decision(page);
+    await expect(box).toContainText("הערת החלטה (רשות)");
+    await box.getByRole("radio", { name: /השארת הקיים/ }).check();
+    await box.getByRole("button", { name: "שמירת ההחלטה" }).click();
+    await expect(toast(page)).toContainText("פריט לבדיקה · השארת הקיים");
+    await expect(box).toContainText("ללא הערה");
+    await expect(box).toContainText("לא נשמר · פעולה מדומה");
+  });
+
+  test("the offline closure of a cancelled visit names the one-time completion email (Creator)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/review/rv-7");
+    await expect(page.locator("#review-about")).toContainText("visit-completion:48230-1");
+    await expect(page.locator("#review-about")).toContainText("רק אם הסגירה מתקבלת");
+    const box = decision(page);
+    await box.getByRole("radio", { name: /החלת השינוי/ }).check();
+    await expect(box).toContainText("מייל הסיום ייכנס לתור פעם אחת בלבד, למנהל ולתיבת שירות הלקוחות");
+    await box.getByRole("textbox", { name: /הערת החלטה/ }).fill("הלקוח אישר שהטיפול בוצע");
+    await box.getByRole("button", { name: "שמירת ההחלטה" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(box).toContainText("בהדגמה מייל הסיום לא נכנס לתור ולא נשלח.");
+  });
+
+  test("a resolved item is read-only: the decision, who, when and the note; no form", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/review/rv-3");
+    const box = page.getByRole("region", { name: "ההחלטה" });
+    await expect(box).toContainText("השארת הקיים");
+    await expect(box).toContainText("דורון");
+    await expect(box).toContainText("הלקוח אישר בטלפון שהטכנאי באתר");
+    await expect(box).toContainText("הפריט סגור לעריכה");
+    await expect(page.locator("main form")).toHaveCount(0);
+    await expect(page.locator("main").getByRole("radio")).toHaveCount(0);
+    await expect(page.locator("main").getByRole("button", { name: "שמירת ההחלטה" })).toHaveCount(0);
+    // Both versions stay visible after the decision.
+    await expect(fields(page)).toHaveCount(1);
+    await expect(fields(page).first().locator("dd")).toHaveText(["בטיפול", "בטיפול", "בוטלה"]);
+  });
+});
+
+test.describe("closed-visit corrections on the call card (OF-10, D14, D43, D45)", () => {
+  const trigger = (page: Page, n: number) => page.getByRole("button", { name: `תיקון ביקור סגור · ביקור ${n}` });
+  const history = (page: Page, n: number) => page.locator(`#visit-${n} .vc`);
+
+  test("offered on a closed visit to the Manager and the Creator only; customer service sees the history only", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/calls/47969`);
+      await expect(trigger(page, 1), role).toBeVisible();
+      await expect(history(page, 1), role).toContainText("תיקונים · 3");
+    }
+    await openPage(page, "/dev/demo/office/cs/calls/47969");
+    await expect(page.getByRole("button", { name: /תיקון ביקור סגור/ })).toHaveCount(0);
+    await expect(history(page, 1)).toContainText("תיקונים · 3");
+    // Never on an open visit: 48205 has a closed visit 1 ("המשך טיפול") and an open visit 2.
+    await openPage(page, "/dev/demo/office/mgr/calls/48205");
+    await expect(trigger(page, 1)).toBeVisible();
+    await expect(trigger(page, 2)).toHaveCount(0);
+    await expect(history(page, 2)).toHaveCount(0);
+    await openPage(page, "/dev/demo/office/creator/calls/48213");
+    await expect(page.getByRole("button", { name: /תיקון ביקור סגור/ })).toHaveCount(0);
+  });
+
+  test("technicians never see it: their closed visits stay read-only", async ({ page }) => {
+    for (const path of ["/dev/demo/tech/visit/47800/1", "/dev/demo/tech/done/47800/1", "/dev/demo/tech/done/47963/1"]) {
+      await openPage(page, path);
+      await expect(page.getByText(/תיקון ביקור סגור/), path).toHaveCount(0);
+      await expect(page.getByText(/🔒 הביקור נשלח/), path).toBeVisible();
+    }
+  });
+
+  test("the history shows each original next to its corrections, with who, when and the reason", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/47969");
+    const h = history(page, 1);
+    const group = (label: string) => h.locator(".vc-group").filter({ has: page.locator(".vc-field", { hasText: label }) });
+    await expect(group("סיכום הטיפול").locator(".vc-orig")).toContainText("המקור מהטכנאי");
+    await expect(group("סיכום הטיפול").locator(".vc-orig")).toContainText("בוצע תיקון, נבדק ותקין.");
+    await expect(group("סיכום הטיפול")).toContainText("הוחלפה מחסנית המפצל");
+    await expect(group("סיכום הטיפול")).toContainText("דורון");
+    await expect(group("סיכום הטיפול")).toContainText("סיבה: הטכנאי מסר בטלפון פירוט שחסר בסיכום");
+    // A field time is a new time report; the device's report stays.
+    await expect(group("שעת סיום")).toContainText("דיווח זמן חדש · המקור נשמר");
+    await expect(group("שעת סיום").locator(".vc-orig")).toContainText("דיווח מהמכשיר");
+    await expect(group("שעת סיום").locator(".vc-orig")).toContainText("16:39");
+    await expect(group("שעת סיום")).toContainText("16:22");
+    // The visit itself shows the current value (the latest correction).
+    await expect(page.locator("#visit-1")).toContainText("סיום 16:22");
+  });
+
+  test("the dialog: the visit's fields only, never the signed approval text; a reason is required; the correction is simulated", async ({
+    page,
+  }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/47969");
+    await trigger(page, 1).click();
+    const dialog = page.getByRole("dialog", { name: /תיקון ביקור סגור/ });
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByLabel("שדה לתיקון");
+    await expect(field).toBeFocused();
+    // A "טופל" visit: summary, parts and the three field times; no follow-up fields, never the
+    // signed approval text, the signer or the signature (D43).
+    const options = (await field.locator("option").allInnerTexts()).map((o) => o.trim());
+    expect(options).toEqual(["בחירת שדה", "סיכום הטיפול", "חלפים שהוחלפו", "שעת יציאה", "שעת הגעה", "שעת סיום"]);
+    for (const o of options) expect(o).not.toMatch(/נוסח|חתימה|חותם|סיבת המשך/);
+    await expect(dialog).toContainText("נוסח האישור שנחתם, שם החותם והחתימה לא ניתנים לתיקון");
+
+    await field.selectOption("summary");
+    await expect(dialog).toContainText("המקור מהטכנאי");
+    await expect(dialog).toContainText("בוצע תיקון, נבדק ותקין.");
+    const value = dialog.getByLabel("הערך המתוקן");
+    await expect(value).toHaveValue("הוחלפה מחסנית המפצל, נבדק מעבר בין ראש המקלחת לפיה ותקין.");
+    await value.fill("הוחלפה מחסנית המפצל, נבדק מעבר ותקין. הלקוח הודרך בשימוש.");
+    await dialog.getByRole("button", { name: "שמירת התיקון" }).click();
+    const reason = dialog.getByLabel(/סיבת התיקון/);
+    await expect(dialog.getByRole("alert")).toHaveText("יש לכתוב סיבה לתיקון");
+    await expect(reason).toHaveAttribute("aria-invalid", "true");
+    await expect(reason).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+
+    await reason.fill("השלמה לפי שיחה עם הטכנאי");
+    await dialog.getByRole("button", { name: "שמירת התיקון" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("תיקון ביקור סגור · סיכום הטיפול");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger(page, 1)).toBeFocused();
+    const h = history(page, 1);
+    await expect(h).toContainText("תיקונים · 4");
+    await expect(h).toContainText("בהדגמה: התיקון של סיכום הטיפול היה נשמר והמקור נשאר. לא נשמר.");
+    const added = h.locator(".vc-row").filter({ hasText: "הלקוח הודרך בשימוש" });
+    await expect(added).toContainText("לא נשמר · פעולה מדומה");
+    await expect(added).toContainText("דורון");
+    await expect(added).toContainText("סיבה: השלמה לפי שיחה עם הטכנאי");
+    // The original stays visible.
+    await expect(h).toContainText("בוצע תיקון, נבדק ותקין.");
+  });
+
+  test("Escape, ✕ and \"ביטול\" close the dialog and return focus; no change is refused inline", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/calls/47948");
+    const dialog = page.getByRole("dialog", { name: /תיקון ביקור סגור/ });
+    await trigger(page, 1).click();
+    // A "המשך טיפול" visit also offers the follow-up reason and the next-visit note.
+    const options = await dialog.getByLabel("שדה לתיקון").locator("option").allInnerTexts();
+    expect(options).toContain("סיבת המשך טיפול");
+    expect(options).toContain("מה צריך בביקור הבא");
+    await dialog.getByLabel("שדה לתיקון").selectOption("nextNote");
+    await dialog.getByLabel(/סיבת התיקון/).fill("בדיקה");
+    await dialog.getByRole("button", { name: "שמירת התיקון" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger(page, 1)).toBeFocused();
+
+    await trigger(page, 1).click();
+    await dialog.getByRole("button", { name: "סגירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger(page, 1)).toBeFocused();
+    await trigger(page, 1).click();
+    await dialog.getByRole("button", { name: "ביטול" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger(page, 1)).toBeFocused();
+  });
+
+  test("the dialog fits the screen without sideways scrolling", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/47969");
+    await trigger(page, 1).click();
+    await page.getByRole("dialog", { name: /תיקון ביקור סגור/ }).getByLabel("שדה לתיקון").selectOption("parts");
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+});
+
+test.describe("mock outbox (X-06, EM-01 to EM-05, D09)", () => {
+  const items = (page: Page) => page.locator(".ob-items > li > a");
+  const preview = (page: Page) => page.locator("article.ob-preview");
+
+  test("a developer tool linked from the landing page's tools section, with its banner; nothing is ever sent", async ({ page }) => {
+    await openPage(page, "/dev/demo");
+    const tools = page.getByRole("navigation", { name: "כלי פיתוח" });
+    await tools.getByRole("link", { name: /דואר מדומה/ }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/outbox$/);
+    await expect(page.getByRole("note", { name: "כלי פיתוח" })).toHaveText(/כלי פיתוח · דואר מדומה · שום מייל לא נשלח/);
+    await expect(page.getByRole("heading", { level: 1, name: "דואר מדומה" })).toBeVisible();
+    // Every delivery state says it will not be sent; "נשלח" only ever negated.
+    const states = await page.locator(".ob-delivery").allInnerTexts();
+    expect(states.length).toBeGreaterThan(40);
+    for (const s of states) expect(s.trim()).toBe("לא יישלח · נתוני בדיקה");
+    const text = await page.locator("body").innerText();
+    expect(text).not.toMatch(POSITIVE_SENT);
+    expect(text).not.toMatch(/\bD\d{2}\b/);
+    // Read-only: no send, resend or delete.
+    await expect(page.locator("main").getByRole("button")).toHaveCount(0);
+  });
+
+  test("one record per closure: unique request and visit per row, the idempotency key of the visit", async ({ page }) => {
+    await openPage(page, "/dev/demo/outbox");
+    const lines = await page.locator(".ob-items .ob-item > .sub").allInnerTexts();
+    expect(lines.length).toBe(40);
+    const refs = lines.map((l) => l.match(/פנייה (\d+) · ביקור (\d+)/)?.slice(1, 3).join("-"));
+    expect(refs.every(Boolean)).toBe(true);
+    expect(new Set(refs).size).toBe(refs.length);
+    const [req, n] = (refs[0] ?? "").split("-");
+    await expect(preview(page).locator("code.ob-key")).toHaveText(`visit-completion:${req}-${n}`);
+    await expect(preview(page)).toContainText("מייל אחד לכל סיום ביקור, בלי כפילויות");
+    await expect(items(page).first()).toHaveAttribute("aria-current", "true");
+  });
+
+  test("recipients: the Manager and the service mailbox for both outcomes; the rep and media pending; the preserved approval text", async ({
+    page,
+  }) => {
+    for (const [id, outcome] of [
+      ["ob-48198-1", "done"],
+      ["ob-47964-1", "cont"],
+    ] as const) {
+      await openPage(page, `/dev/demo/outbox?id=${id}`);
+      const p = preview(page);
+      const to = p.locator(".ob-rcpts").first();
+      await expect(to.locator("li"), id).toHaveCount(2);
+      await expect(to, id).toContainText("מנהל");
+      await expect(to, id).toContainText("@example.test");
+      await expect(to, id).toContainText("תיבת שירות הלקוחות");
+      await expect(to, id).toContainText("<service@example.test>");
+      await expect(p, id).toContainText("איזה מנהל מקבל (מנהל אחד או כל המנהלים): ממתין להחלטת בעלים (d10)");
+      await expect(p, id).toContainText("ממתין להחלטה");
+      await expect(p, id).toContainText("הנציגה המטפלת");
+      await expect(p, id).toContainText("לא בנמענים: ממתין להחלטת בעלים (d10)");
+      await expect(p, id).toContainText("לא מצורפים למייל · ממתין להחלטת בעלים (d11) · הצפייה בכרטיס הקריאה");
+      await expect(p, id).toContainText("ממתין להחלטת בעלים (d12)");
+      // EM-04 business identifiers.
+      for (const label of ["מספר פנייה", "מספר משימה", "מספר לקוח", "מספר ביקור", "תוצאה"]) await expect(p, `${id} ${label}`).toContainText(label);
+      if (outcome === "done") {
+        await expect(p).toContainText('נחתם ע"י');
+        await expect(p).toContainText('"קריאת השירות טופלה לשביעות רצון הלקוח"');
+        await expect(p).toContainText("הנוסח שהוצג ללקוח בזמן החתימה");
+      } else {
+        await expect(p).toContainText("סיבת המשך טיפול");
+        await expect(p).toContainText("מה צריך לעשות:");
+        await expect(p).not.toContainText('נחתם ע"י');
+      }
+      // Both rows are on the first page: the selected one is marked.
+      await expect(page.locator('.ob-items a[aria-current="true"]'), id).toHaveAttribute("href", `/dev/demo/outbox?id=${id}`);
+    }
+  });
+
+  test("a closure without an approved summary is held (pending decision)", async ({ page }) => {
+    await openPage(page, "/dev/demo/outbox?id=ob-48190-1");
+    await expect(page.locator('.ob-items a[aria-current="true"]')).toContainText("מוחזק · אין סיכום מאושר");
+    await expect(preview(page)).toContainText("מוחזק: אין עדיין סיכום כתוב או תמלול מאושר · ממתין להחלטת בעלים (d06)");
+    await expect(preview(page)).toContainText("אין עדיין סיכום מאושר, ולכן המייל מוחזק");
+  });
+
+  test("choosing a row selects it in the URL, moves focus to its subject; the card link opens the call card", async ({ page }) => {
+    await openPage(page, "/dev/demo/outbox");
+    const second = items(page).nth(1);
+    const subject = (await second.locator(".ob-subject").innerText()).trim();
+    await second.click();
+    await expect(page).toHaveURL(/[?&]id=ob-\d+-\d+/);
+    await expect(second).toHaveAttribute("aria-current", "true");
+    await expect(items(page).first()).not.toHaveAttribute("aria-current", "true");
+    const title = page.locator("#ob-preview-title");
+    await expect(title).toHaveText(subject);
+    await expect(title).toBeFocused();
+    const req = subject.match(/פנייה (\d+)/)?.[1];
+    const card = preview(page).getByRole("link", { name: "לכרטיס הקריאה ›" });
+    await expect(card).toHaveAttribute("href", `/dev/demo/office/mgr/calls/${req}`);
+    await card.click();
+    await expect(page).toHaveURL(new RegExp(`/dev/demo/office/mgr/calls/${req}$`));
+  });
+});
+
+test.describe("technician sync state (TE-23, TE-24, D06, D46)", () => {
+  const banner = (page: Page) => page.getByRole("region", { name: /פריטים עוד לא הגיעו לשרת/ });
+
+  test("home: the pending-operations banner with each visit's pill, the last sync and the warning", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const b = banner(page);
+    await expect(b.getByRole("heading", { level: 2 })).toHaveText("⚠ 3 פריטים עוד לא הגיעו לשרת");
+    await expect(b).toContainText("נכשל: 1 · ממתין לסנכרון: 2");
+    await expect(b).toContainText("סנכרון אחרון: אתמול 16:32");
+    await expect(b.locator('.sy-vhead [data-sync-state="failed"]')).toHaveCount(1);
+    await expect(b.locator('.sy-vhead [data-sync-state="pending"]')).toHaveCount(1);
+    await expect(b.getByRole("link", { name: "דנה ברק" })).toHaveAttribute("href", "/dev/demo/tech/visit/47963/1");
+    await expect(b).toContainText("מה שנמצא רק במכשיר לא ניתן לשחזר");
+    // The banner sits above the next visit.
+    const above = await b.boundingBox();
+    const next = await page.getByRole("region", { name: "הביקור הבא" }).boundingBox();
+    expect(above && next && above.y + above.height <= next.y).toBe(true);
+  });
+
+  test("\"נסה שוב\" on the failed item and \"סנכרן עכשיו\" are simulated: nothing is sent", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const b = banner(page);
+    await b.getByRole("button", { name: "נסה שוב · תמונה אחרי הטיפול · פנייה 47963 · ביקור 1" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("ניסיון חוזר · שום דבר לא נשלח לשרת");
+    await expect(b.locator(".sy-op .sy-note")).toHaveText("לא נשלח · פעולה מדומה");
+    // Back to "נכשל": nothing reached the server.
+    await expect(b.locator('.sy-op [data-sync-state="failed"]')).toHaveCount(1);
+    await expect(b.locator('[data-sync-state="sent"]')).toHaveCount(0);
+
+    await b.getByRole("button", { name: "סנכרן עכשיו" }).click();
+    await expect(toast(page)).toContainText("סנכרון עכשיו · שום דבר לא נשלח לשרת");
+    await expect(b.locator(".sy-now .sy-note")).toHaveText("בהדגמה: 3 פריטים נשארו במכשיר, שום דבר לא נשלח לשרת. לא נשמר.");
+    await expect(b.locator('[data-sync-state="sent"]')).toHaveCount(0);
+    await expect(b.getByRole("button", { name: "סנכרן עכשיו" })).toBeFocused();
+  });
+
+  test("closed views: the visit's sync panel at both addresses; a confirmed visit says everything arrived", async ({ page }) => {
+    for (const path of ["/dev/demo/tech/done/47963/1", "/dev/demo/tech/visit/47963/1"]) {
+      await openPage(page, path);
+      const panel = page.getByRole("region", { name: "סנכרון עם השרת" });
+      await expect(panel.locator(".sy-head [data-sync-state]"), path).toHaveAttribute("data-sync-state", "failed");
+      await expect(panel, path).toContainText("ההעלאה נכשלה · הקובץ לא הגיע שלם לשרת");
+      await expect(panel.getByRole("button", { name: /^נסה שוב/ }), path).toBeVisible();
+      await expect(panel.getByRole("button", { name: "סנכרן עכשיו" }), path).toBeVisible();
+    }
+    await page.getByRole("region", { name: "סנכרון עם השרת" }).getByRole("button", { name: /^נסה שוב/ }).click();
+    await expect(toast(page)).toContainText("ניסיון חוזר · שום דבר לא נשלח לשרת");
+
+    await openPage(page, "/dev/demo/tech/done/47960/1");
+    const confirmed = page.getByRole("region", { name: "סנכרון עם השרת" });
+    await expect(confirmed.locator('[data-sync-state="sent"]')).toBeVisible();
+    await expect(confirmed).toContainText("כל העבודה של הביקור הגיעה לשרת.");
+    await expect(confirmed.getByRole("button")).toHaveCount(0);
+    // A visit the device holds nothing about has no panel.
+    await openPage(page, "/dev/demo/tech/done/47800/1");
+    await expect(page.getByRole("region", { name: "סנכרון עם השרת" })).toHaveCount(0);
+  });
+
+  test("the close confirmation shows the sync progression, no step done, and no \"email sent\" claim", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+    await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
+    await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
+    await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+    const send = page.locator(".bigbtn").last();
+    await expect(send).toBeEnabled();
+    await send.click();
+    const steps = page.getByRole("region", { name: "מה קורה עם הסיום" });
+    await expect(steps).toBeVisible();
+    await expect(steps.locator("[data-sync-state]")).toHaveText([/נשמר במכשיר/, /ממתין לסנכרון/, /מסתנכרן/, /נשלח לשרת/]);
+    await expect(steps).toContainText("בהדגמה אף שלב לא בוצע");
+    await expect(steps.locator(".sy-step-done")).toHaveCount(0);
+    await expect(steps).toContainText("רק אחרי שהשרת מקבל את הסיום עם סיכום מאושר");
+    // No line claims that an email was sent.
+    const lines = (await page.locator("body").innerText()).split("\n").filter((l) => l.includes("מייל"));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l).not.toMatch(/(?<!לא )(נשלח|נשלחה|יישלח) (ה)?מייל|מייל (נשלח|יישלח)/);
+    expect(await page.locator("body").innerText()).not.toContain("נשלח מייל לשירות הלקוחות");
+  });
+});
+
+test.describe("what the browser receives (phase G)", () => {
+  onlyInProject("desktop");
+
+  test("the call card's corrections and the review items carry no account ids", async ({ page }) => {
+    for (const path of [
+      "/dev/demo/office/mgr/calls/47969",
+      "/dev/demo/office/creator/calls/47969",
+      "/dev/demo/office/creator/calls/47948",
+      "/dev/demo/office/mgr/review/rv-3",
+      "/dev/demo/office/creator/review/rv-6",
+      "/dev/demo/outbox",
+      "/dev/demo/tech",
+    ]) {
+      const body = await (await page.request.get(path)).text();
+      expect(body, path).not.toMatch(/acc-[a-z]/);
+    }
+  });
+});

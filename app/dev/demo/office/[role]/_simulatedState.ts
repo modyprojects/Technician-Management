@@ -82,22 +82,26 @@ export function reviewState(item: ReviewItemDetail, canResolve: boolean): Simula
 
 /**
  * "תיקון ביקור סגור" (OF-10, D14): the call card's closed visits (from visits.corrections), the
- * active follow-up reasons and the signed-in user, so a simulated correction with a stale version,
- * no change, an unknown reason or a field the visit does not allow fails as on the server. Only
- * Manager and Creator may correct (closedVisitCorrectionsOffered; a fixed capability, D33).
+ * active follow-up reasons (read by the page) and the signed-in user's name, so a simulated
+ * correction with a stale version, no change, an unknown reason or a field the visit does not allow
+ * fails as on the server. Only Manager and Creator may correct (closedVisitCorrectionsOffered; a
+ * fixed capability, D33). The card carries no account id (phase E P1): only the name.
  */
-export async function correctionsState(role: OfficeRole, histories: readonly VisitCorrectionHistory[]): Promise<SimulatedServerState> {
+export async function correctionsState(
+  role: OfficeRole,
+  histories: readonly VisitCorrectionHistory[],
+  activeReasons: readonly string[],
+): Promise<SimulatedServerState> {
   const canCorrect = closedVisitCorrectionsOffered(role);
   if (!canCorrect || histories.length === 0) return {};
-  const [reasons, self] = await Promise.all([demoDataAccess.reference.reasons(), signedInAccount(role)]);
-  const active = reasons.filter((r) => r.active).map((r) => r.name);
+  const self = await signedInAccount(role);
   return {
     corrections: Object.fromEntries(
       histories.map((h) => [
         visitRefKey(h),
-        { version: h.version, status: h.status, current: h.current, correctable: [...h.correctable], canCorrect, reasons: active },
+        { version: h.version, status: h.status, current: h.current, correctable: [...h.correctable], canCorrect, reasons: [...activeReasons] },
       ]),
     ),
-    self,
+    ...(self ? { signedInName: self.name } : {}),
   };
 }

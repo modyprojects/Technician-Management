@@ -115,6 +115,12 @@ export type SimulatedServerState = {
   /** The signed-in account (production: from the session, G-03). */
   self?: AccountRef | null;
   /**
+   * The signed-in user's name only, for a screen that must not carry account ids (phase E P1:
+   * account ids only on the account screens): the call card's closed-visit corrections show who
+   * corrected by name. Production: the stored record carries the caller from the session.
+   */
+  signedInName?: string;
+  /**
    * "מוצרים" (PR-06): the products on the screen by SKU (stored version, name for the toast) and
    * the brands and suppliers by id (an edit may choose only an existing, active one).
    */
@@ -273,7 +279,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                     : typeof input.newValue === "string"
                       ? input.newValue.trim()
                       : null,
-                  by: state.self ?? NO_ACCOUNT,
+                  by: state.self ?? { id: "", name: state.signedInName ?? "" },
                   at: new Date().toISOString(),
                   reason: input.reason.trim(),
                   versionBefore: input.expectedVersion,

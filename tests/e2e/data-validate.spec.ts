@@ -27,7 +27,28 @@ import {
   productVersionError,
   skuError,
 } from "@/features/products/data/validate";
+import { outboxHref, parseOutboxViewState } from "@/features/outbox/data/search-params";
+import { isOutboxId } from "@/features/outbox/data/validate";
+import { parseReviewListState, reviewListHref, reviewListQueryOf } from "@/features/review/data/search-params";
+import { REVIEW_NOTE_MAX, type ReviewResolveInput } from "@/features/review/data/types";
+import {
+  isReviewItemId,
+  normalizeReviewListQuery,
+  reviewResolutionError,
+  reviewResolveInputError,
+  type ReviewResolveStored,
+} from "@/features/review/data/validate";
 import { reasonDeletable } from "@/features/settings/data/types";
+import { visitSyncState } from "@/features/sync/data/types";
+import { isOperationId, syncNowError, syncRetryError } from "@/features/sync/data/validate";
+import { visitRefKey, type CorrectableValues, type VisitCorrectionInput } from "@/features/visits/data/types";
+import {
+  CORRECTION_REASON_MAX,
+  correctionValueError,
+  visitCorrectionError,
+  visitCorrectionInputError,
+  type VisitCorrectionStored,
+} from "@/features/visits/data/validate";
 import {
   placeDeleteError,
   reasonDeleteError,
@@ -292,5 +313,207 @@ test.describe("phase F negative cases (inputs a screen never sends)", () => {
       page: 1,
       limit: 100,
     });
+  });
+});
+
+test.describe("phase G validators (D44 review items, OF-10 corrections, TE-24 sync, the /dev outbox)", () => {
+  onlyInProject("desktop");
+
+  /** A stored open item with a conflicting field and a required note (the D14 case). */
+  const ITEM: ReviewResolveStored = {
+    version: 2,
+    status: "open",
+    decisions: ["apply-incoming", "keep-current", "per-field"],
+    choosable: ["summary", "nextNote"],
+    conflicts: ["nextNote"],
+    noteRequired: true,
+    canResolve: true,
+  };
+  const resolve = (over: Partial<ReviewResolveInput> = {}): ReviewResolveInput => ({
+    id: "rv-6",
+    expectedVersion: 2,
+    decision: "apply-incoming",
+    note: "אושר בטלפון",
+    ...over,
+  });
+
+  test("review resolution: deny by default; caller, status, version, decision, per-field choices and the note are checked", () => {
+    expect(reviewResolutionError(resolve(), ITEM)).toBeNull();
+    expect(reviewResolutionError(resolve({ decision: "per-field", fields: { summary: "incoming", nextNote: "current" } }), ITEM)).toBeNull();
+    const errors = [
+      reviewResolutionError(resolve(), undefined),
+      reviewResolutionError(resolve(), { ...ITEM, canResolve: false }),
+      reviewResolutionError(resolve(), { ...ITEM, status: "resolved" }),
+      reviewResolutionError(resolve({ expectedVersion: 1 }), ITEM),
+      reviewResolutionError(resolve(), { ...ITEM, decisions: ["keep-current"] }),
+      reviewResolutionError(resolve({ decision: "per-field", fields: { summary: "incoming" } }), ITEM),
+      reviewResolutionError(resolve({ decision: "per-field", fields: { nextNote: "current", other: "current" } }), ITEM),
+      // Own keys only: a prototype name is not a stored field.
+      reviewResolutionError(resolve({ decision: "per-field", fields: JSON.parse('{"nextNote":"current","constructor":"current"}') }), ITEM),
+      reviewResolutionError(resolve({ note: undefined }), ITEM),
+      reviewResolutionError(resolve({ note: "   " }), ITEM),
+    ];
+    for (const e of errors) {
+      expect(e).not.toBeNull();
+      expect(e ?? "").not.toMatch(NO_DECISION_CODE);
+    }
+    expect(reviewResolutionError(resolve(), undefined)).toBe("הפריט לא נמצא");
+    expect(reviewResolutionError(resolve({ note: undefined }), ITEM)).toBe("יש לכתוב הערת החלטה");
+    // Without the D14 rule the note is optional.
+    expect(reviewResolutionError(resolve({ note: undefined }), { ...ITEM, noteRequired: false })).toBeNull();
+  });
+
+  test("review resolution input: shapes a screen never sends are rejected", () => {
+    const bad: unknown[] = [
+      null,
+      "rv-6",
+      resolve({ id: "../rv-6" }),
+      resolve({ id: "x".repeat(65) }),
+      resolve({ expectedVersion: 0 }),
+      resolve({ expectedVersion: 1.5 }),
+      resolve({ decision: "delete" as never }),
+      resolve({ fields: { summary: "incoming" } }),
+      resolve({ decision: "per-field" }),
+      resolve({ decision: "per-field", fields: {} }),
+      resolve({ decision: "per-field", fields: [] as never }),
+      resolve({ decision: "per-field", fields: { summary: "mine" as never } }),
+      resolve({ decision: "per-field", fields: { "<b>": "current" } }),
+      resolve({ note: 7 as never }),
+      resolve({ note: "x".repeat(REVIEW_NOTE_MAX + 1) }),
+    ];
+    for (const input of bad) {
+      const e = reviewResolveInputError(input as ReviewResolveInput);
+      expect(e, JSON.stringify(input)).not.toBeNull();
+      expect(e ?? "").not.toMatch(NO_DECISION_CODE);
+    }
+    expect(isReviewItemId("00000000-0000-4000-8000-000000000000")).toBe(true);
+    for (const id of ["", "rv 1", "rv/1", null, 6]) expect(isReviewItemId(id), String(id)).toBe(false);
+  });
+
+  test("review list query and URL state fall back to safe defaults", () => {
+    expect(normalizeReviewListQuery({ status: "deleted" as never, page: -3, limit: 5000 })).toEqual({ status: undefined, page: 1, limit: 100 });
+    expect(normalizeReviewListQuery(undefined)).toEqual({ status: undefined, page: 1, limit: 40 });
+    expect(parseReviewListState({ status: ["resolved", "open"], page: "2" })).toEqual({ status: "resolved", page: 2 });
+    expect(parseReviewListState(new URLSearchParams("status=<x>&page=abc"))).toEqual({ status: "open", page: 1 });
+    expect(reviewListQueryOf({ status: "all", page: 3 }, 40)).toEqual({ status: undefined, page: 3, limit: 40 });
+    expect(reviewListHref("/r", { status: "open", page: 1 })).toBe("/r");
+    expect(reviewListHref("/r", { status: "bogus" as never, page: 0.5 })).toBe("/r");
+    expect(reviewListHref("/r", { status: "all", page: 2 })).toBe("/r?status=all&page=2");
+  });
+
+  const CURRENT: CorrectableValues = {
+    summary: "בוצע תיקון",
+    parts: [],
+    followupReason: null,
+    nextNote: null,
+    departAt: "07:30",
+    arriveAt: "07:58",
+    endAt: "08:40",
+  };
+  const VISIT: VisitCorrectionStored = {
+    version: 3,
+    status: "done",
+    current: CURRENT,
+    correctable: ["summary", "parts", "departAt", "arriveAt", "endAt"],
+    canCorrect: true,
+    reasons: ["ממתין לחלקי חילוף"],
+  };
+  const correct = (over: Partial<VisitCorrectionInput> = {}): VisitCorrectionInput => ({
+    visitRef: { req: "47969", n: 1 },
+    field: "summary",
+    newValue: "הוחלפה מחסנית",
+    reason: "השלמה לפי הטכנאי",
+    expectedVersion: 3,
+    ...over,
+  });
+
+  test("closed-visit correction: never the signed approval text, the signer or the signature; a reason is required", () => {
+    expect(visitCorrectionError(correct(), VISIT)).toBeNull();
+    expect(visitCorrectionError(correct({ field: "parts", newValue: ["מחסנית מפצל BT-1120"] }), VISIT)).toBeNull();
+    expect(visitCorrectionError(correct({ field: "endAt", newValue: "08:22" }), VISIT)).toBeNull();
+    for (const field of ["signedText", "signerName", "signature"]) {
+      expect(visitCorrectionInputError(correct({ field: field as never })), field).toBe("נוסח האישור החתום, שם החותם והחתימה אינם ניתנים לתיקון");
+    }
+    const errors = [
+      visitCorrectionError(correct(), undefined),
+      visitCorrectionError(correct(), { ...VISIT, canCorrect: false }),
+      visitCorrectionError(correct({ expectedVersion: 2 }), VISIT),
+      visitCorrectionError(correct({ reason: "  " }), VISIT),
+      visitCorrectionError(correct({ reason: "x".repeat(CORRECTION_REASON_MAX + 1) }), VISIT),
+      visitCorrectionError(correct({ newValue: " בוצע תיקון " }), VISIT),
+      // Follow-up fields only on a visit closed as "המשך טיפול".
+      visitCorrectionError(correct({ field: "nextNote", newValue: "להביא חלק" }), VISIT),
+      visitCorrectionError(correct({ field: "followupReason", newValue: "ממתין לחלקי חילוף" }), { ...VISIT, correctable: [...VISIT.correctable, "followupReason"] }),
+      visitCorrectionError(correct({ field: "followupReason", newValue: "סיבה שלא קיימת" }), {
+        ...VISIT,
+        status: "cont",
+        current: { ...CURRENT, followupReason: "ממתין לחלקי חילוף" },
+        correctable: [...VISIT.correctable, "followupReason"],
+      }),
+      visitCorrectionInputError(correct({ field: "bogus" as never })),
+      visitCorrectionInputError(correct({ visitRef: { req: "../x", n: 1 } })),
+      visitCorrectionInputError(correct({ visitRef: { req: "47969", n: 0 } })),
+      visitCorrectionInputError(correct({ expectedVersion: 0 })),
+      visitCorrectionInputError(null as never),
+    ];
+    for (const e of errors) {
+      expect(e).not.toBeNull();
+      expect(e ?? "").not.toMatch(NO_DECISION_CODE);
+    }
+    expect(visitCorrectionError(correct(), undefined)).toBe("הביקור לא נמצא או שאינו סגור");
+    expect(visitCorrectionError(correct({ reason: "" }), VISIT)).toBe("יש לכתוב סיבה לתיקון");
+  });
+
+  test("corrected values follow each field's rules", () => {
+    for (const [field, value] of [
+      ["endAt", "25:00"],
+      ["endAt", "8:40"],
+      ["arriveAt", null],
+      ["summary", ""],
+      ["summary", ["a"]],
+      ["parts", "חלק"],
+      ["parts", Array.from({ length: 21 }, (_, i) => `חלק ${i}`)],
+      ["parts", ["x".repeat(101)]],
+      ["nextNote", "  "],
+      ["followupReason", ""],
+    ] as const) {
+      expect(correctionValueError(field, value as never), `${field}=${JSON.stringify(value)}`).not.toBeNull();
+    }
+    expect(correctionValueError("departAt", "07:05")).toBeNull();
+    expect(correctionValueError("parts", [])).toBeNull();
+  });
+
+  test("device sync: retry only a failed item of the queue; sync now needs the queue; a visit's state is its most urgent item", () => {
+    expect(syncNowError(undefined)).not.toBeNull();
+    expect(syncNowError({})).toBeNull();
+    expect(syncRetryError({ opId: "op-47963-1-img2" }, { state: "failed" })).toBeNull();
+    for (const [input, stored] of [
+      [{ opId: "op-1" }, undefined],
+      [{ opId: "op-1" }, { state: "pending" }],
+      [{ opId: "op-1" }, { state: "syncing" }],
+      [{ opId: "op-1" }, { state: "saved-on-device" }],
+      [{ opId: "../op" }, { state: "failed" }],
+      [{ opId: "x".repeat(65) }, { state: "failed" }],
+      [null, { state: "failed" }],
+    ] as const) {
+      expect(syncRetryError(input as never, stored), JSON.stringify(input)).not.toBeNull();
+    }
+    expect(isOperationId("00000000-0000-4000-8000-000000000000")).toBe(true);
+    expect(isOperationId("op 1")).toBe(false);
+    expect(visitSyncState([])).toBe("sent");
+    expect(visitSyncState([{ state: "pending" }, { state: "failed" }])).toBe("failed");
+    expect(visitSyncState([{ state: "saved-on-device" }, { state: "pending" }])).toBe("pending");
+    expect(visitSyncState([{ state: "saved-on-device" }, { state: "syncing" }])).toBe("syncing");
+    expect(visitRefKey(undefined)).toBe("undefined/undefined");
+    expect(visitRefKey({ req: "48213", n: 1 })).toBe("48213/1");
+  });
+
+  test("outbox URL state: a malformed id selects nothing; paging is clamped", () => {
+    expect(parseOutboxViewState({ id: "ob-48198-1", page: "2" })).toEqual({ page: 2, id: "ob-48198-1" });
+    expect(parseOutboxViewState(new URLSearchParams("id=../x&page=-1"))).toEqual({ page: 1, id: null });
+    expect(parseOutboxViewState({ id: ["ob-1", "ob-2"] })).toEqual({ page: 1, id: "ob-1" });
+    expect(outboxHref("/o", { id: "<script>", page: 1 })).toBe("/o");
+    expect(outboxHref("/o", { id: "ob-48198-1", page: 3 })).toBe("/o?page=3&id=ob-48198-1");
+    for (const id of ["", "a b", "x".repeat(65), null]) expect(isOutboxId(id), String(id)).toBe(false);
   });
 });
