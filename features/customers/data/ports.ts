@@ -6,7 +6,7 @@ import type { CustomerDetail, CustomerId, CustomerListQuery, CustomersPage } fro
 
 export interface CustomersQueries {
   /**
-   * Customers by latest activity, newest first, searched (name, customer number, phone with or
+   * Customers by latest or next visit, newest first, searched (name, customer number, phone with or
    * without dashes, city) and paged (default 40, at most 100; OF-04, OF-05).
    */
   list(query?: CustomerListQuery): Promise<CustomersPage>;

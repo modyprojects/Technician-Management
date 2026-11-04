@@ -20,7 +20,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { TestBadge, VISIT_SOURCE_LABELS, type VisitSource } from "@/components/ui/TestBadge";
+import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { ProductListItem, ProductOption, ProductUpdateInput } from "@/features/products/data/types";
 import { PRODUCT_NAME_MAX, productNameError, productUpdateError } from "@/features/products/data/validate";
@@ -54,17 +54,6 @@ type LocalEdit = {
 type Draft = { name: string; brandId: string | null; supplierId: string | null };
 
 type Field = "name" | "brand" | "supplier";
-
-/** The visit source as a compact icon; the full label is its accessible name and tooltip. */
-function SourceIcon({ source }: { source: VisitSource }) {
-  const [icon, ...words] = VISIT_SOURCE_LABELS[source].split(" ");
-  const label = words.join(" ");
-  return (
-    <span role="img" aria-label={label} title={label}>
-      {icon}
-    </span>
-  );
-}
 
 function Value({ text }: { text: string }) {
   return text ? <>{text}</> : <span style={{ color: "var(--muted)" }}>{NOT_ENTERED}</span>;
@@ -236,7 +225,7 @@ export function ProductsTable({
             <thead>
               <tr>
                 <th scope="col" className={SHORT}>
-                  מק&quot;ט
+                  מק״ט
                 </th>
                 <th scope="col">שם מוצר</th>
                 <th scope="col" className="col-fit set-col-wide">
@@ -265,7 +254,7 @@ export function ProductsTable({
                 const fs = p.firstSeen;
                 const firstSeen = fs ? (
                   <>
-                    <SourceIcon source={fs.source} />{" "}
+                    <VisitSourceIcon source={fs.source} />{" "}
                     {firstSeenHref ? (
                       <Link className="lnk num" href={firstSeenHref} prefetch={false} aria-label={`פנייה ${fs.req} · ביקור ${fs.n}`}>
                         {fs.req}

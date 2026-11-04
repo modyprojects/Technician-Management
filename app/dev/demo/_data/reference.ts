@@ -42,12 +42,13 @@ export const PRODUCTS: readonly Product[] = [
 /**
  * ADD (PR-01 to PR-04, D19): products the ingestion created from an invitation's SKU and name,
  * brand and supplier empty at creation ("לא הוזן", PR-04, OF-07). TB-75 shows a brand added later
- * through "מוצרים" (PR-06) with the supplier still empty. Kept out of PRODUCTS, whose order and
+ * through "מוצרים" (PR-06) and deactivated since (kept on the product, no longer offered in an
+ * edit), with the supplier still empty. Kept out of PRODUCTS, whose order and
  * weights drive the seeded calls (seed.ts); only the repeat-customer calls use them.
  */
 export const AUTO_PRODUCTS: readonly Product[] = [
   { sku: "MX-410", name: "ברז נשלף שחור מט", brand: "", sup: "", w: 0, issues: ["הנשלף לא ננעל"] },
-  { sku: "TB-75", name: "סוללת אמבטיה לקיר", brand: "טרה-סאן", sup: "", w: 0, issues: ["טפטוף מהסוללה"] },
+  { sku: "TB-75", name: "סוללת אמבטיה לקיר", brand: "הידרו-פלוס", sup: "", w: 0, issues: ["טפטוף מהסוללה"] },
 ];
 
 /** Every product: the demo's list and the products created from invitations. */
@@ -63,7 +64,7 @@ export function prod(sku: string): Product {
 /** A brand or supplier (ADD, PR-06: product reference data with ids; deactivated, never deleted). */
 export type ProductOptionRecord = { id: string; name: string; on: boolean };
 
-/** Brands: the demo's brand names, plus one inactive brand. */
+/** Brands: the demo's brand names, plus one inactive brand (still on TB-75). */
 export const BRANDS: readonly ProductOptionRecord[] = [
   { id: "br-aqua", name: "אקווה-ליין", on: true },
   { id: "br-nova", name: "נובה", on: true },
@@ -93,7 +94,7 @@ export const USERS: readonly User[] = [
   { name: "משתמש יוצר", email: "admin@example.test", role: "creator", phone: "050-000-0100" },
   { name: "דורון", email: "doron@example.test", role: "mgr", phone: "050-000-0101" },
   { name: "שיראל", email: "shirel@example.test", role: "cs", phone: "050-000-0102" },
-  { name: "נציגה 2", email: "rep2@example.test", role: "cs", phone: "050-000-0103" },
+  { name: "הדס", email: "rep2@example.test", role: "cs", phone: "050-000-0103" },
 ];
 
 /** Office user by name (the call's `rep`). */

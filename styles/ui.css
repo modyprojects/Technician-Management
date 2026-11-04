@@ -490,3 +490,13 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .ib-act .ib-wait { margin-inline-end: 0; text-align: center; }
 }
 /* end intake-backfield */
+
+/* customer-card */
+/* The customer card's five status counters (OF-16): one row from about 700px (the demo's 150px
+   minimum wraps them 4+1 at 820px), three plus two compact tiles at phone width. */
+.cu-kpis > .kpis { grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); }
+@container stage (max-width: 520px) {
+  .cu-kpis > .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cu-kpis .kpi { padding: 10px 12px; }
+}
+/* end customer-card */

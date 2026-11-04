@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CustomerCard } from "@/components/office/CustomerCard";
 import { CALL_STATUS_ORDER } from "@/components/ui/CallStatusPill";
-import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { callsListHref } from "@/features/calls/data/search-params";
 import type { CallStatus } from "@/features/calls/data/types";
-import { PRODUCT_RETURN_WINDOW_DAYS } from "@/features/products/data/types";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
@@ -14,6 +12,7 @@ import { officeCustomerParams } from "../../../../_data/params";
 import { customersOffered, isOfficeRole, officeHomeLabel, productsOffered } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { NoAccessPlaceholder } from "../../_Placeholder";
+import { RETURN_WINDOW_NOTE } from "../../_pendingNotes";
 
 // Every customer for every office role is built: a role without `calls` gets "אין הרשאה".
 export const dynamicParams = false;
@@ -32,13 +31,6 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
   return { title: x ? `${x.name} · לקוח ${x.number} · הדגמה` : "כרטיס לקוח · הדגמה" };
 }
 
-/**
- * The return window's status line. TEMPORARY: the spec says only "within a short time"; the
- * definition is the owner's (open decisions #15 / #20, board refs d23 / d31; the KPI definitions
- * are d31). Shown as pending, never as a decided rule.
- */
-const RETURN_WINDOW_NOTE = `חלון זמני · ${pendingDecisionHint("d31")}`;
-
 /** The calls list searched by the customer number (OF-05), every status or one. */
 const customerCallsHref = (role: OfficeRole, number: string, status: "all" | CallStatus): string =>
   callsListHref(demoHref.calls(role), { q: number, status, tech: "all", page: 1 });
@@ -46,7 +38,7 @@ const customerCallsHref = (role: OfficeRole, number: string, status: "all" | Cal
 // Customer card (spec office screens "Customers and customer card", OF-16; matrix key `calls`):
 // details from the latest invitation and the latest visit's address (D39), counters per
 // service-call status (D38) linked to the calls list, every call of the customer (bounded, newest
-// first) and the products that came back within PRODUCT_RETURN_WINDOW_DAYS (temporary). 🧪 on test
+// first) and the products that came back within the DTO's returnWindowDays (temporary). 🧪 on test
 // customers, calls and products (SIM-15 to SIM-17). An unknown id is a 404. Reads only through
 // the layer: customers.get and reference.permissions (display only, G-04).
 export default async function OfficeCustomerPage({ params }: PageProps<"/dev/demo/office/[role]/customers/[id]">) {
@@ -56,6 +48,11 @@ export default async function OfficeCustomerPage({ params }: PageProps<"/dev/dem
   if (!customersOffered(permissions)) {
     return (
       <DemoOfficeFrame role={role} active="customers">
+        <div className="ptitle">
+          <div>
+            <h1>כרטיס לקוח</h1>
+          </div>
+        </div>
         <NoAccessPlaceholder
           id="customer-no-access"
           text="לתפקיד הזה אין צפייה בקריאות ובלקוחות."
@@ -91,7 +88,7 @@ export default async function OfficeCustomerPage({ params }: PageProps<"/dev/dem
         callHrefs={callHrefs}
         statusHrefs={statusHrefs}
         productHrefs={productHrefs}
-        returnWindow={{ days: PRODUCT_RETURN_WINDOW_DAYS, note: RETURN_WINDOW_NOTE }}
+        returnWindowNote={RETURN_WINDOW_NOTE}
       />
     </DemoOfficeFrame>
   );

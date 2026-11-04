@@ -16,7 +16,7 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
-import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
+import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
 
@@ -64,16 +64,32 @@ export type OfficeNavKey =
  * TEMPORARY, reversible (open decision #15, board ref d23): which matrix key gates "זימונים שלא
  * נקלטו" and "חזרו מהשטח", and whether both are in the first release, is the owner's decision. Until
  * then the demo offers both to the roles the spec lists (Customer Service, Manager, Creator: every
- * office role) as a fixed rule, never a matrix key, and each screen shows
- * pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION). Display only (G-04).
+ * office role) as a fixed rule, never a matrix key, and each screen shows WORK_QUEUE_ACCESS_HINT.
+ * The screen shows the decision's number (#15), not its board ref: "d23" next to the approved
+ * D23 (Microsoft 365) would read as the same decision. Display only (G-04): the server stays
+ * deny-by-default until #15 is decided; this rule is not a grant.
  */
-export const WORK_QUEUE_SCREENS_DECISION = "d23";
-
-/** The visible line both work-queue screens show while #15 is open (CLAUDE.md: clearly labelled temporary behaviour). */
-export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה (החלטה פתוחה #15): בינתיים שירות לקוחות, מנהל ויוצר · ${pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION)}`;
+export const WORK_QUEUE_SCREENS_DECISION = { number: 15, boardRef: "d23" } as const satisfies {
+  number: number;
+  boardRef: OpenDecisionId;
+};
 
 /** Whether the role's screens offer "זימונים שלא נקלטו" and "חזרו מהשטח" (the temporary rule above). */
 export const workQueueScreensOffered = (role: OfficeRole): boolean => OFFICE_ROLES.includes(role);
+
+/** "א", "א וב", "א, ב וג" (Hebrew list). */
+function hebrewList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} ו${items[items.length - 1] as string}`;
+}
+
+/**
+ * The visible line both work-queue screens show while #15 is open (CLAUDE.md: clearly labelled
+ * temporary behaviour). The roles come from the rule itself, so the line cannot drift from it.
+ */
+export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה זמנית: ${hebrewList(
+  OFFICE_ROLES.filter(workQueueScreensOffered).map((r) => VIEWPOINTS[r].short),
+)} · ${pendingDecisionHint(`#${WORK_QUEUE_SCREENS_DECISION.number}`)}`;
 
 /** "לקוחות" and the customer card: matrix key `calls` (spec office screens). Display only. */
 export const customersOffered = (permissions: RolePermissions): boolean => offers(permissions, "calls");

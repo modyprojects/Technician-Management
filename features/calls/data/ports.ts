@@ -16,7 +16,8 @@ export interface CallsQueries {
    * "חזרו מהשטח" (OF-16): calls whose latest closed visit is "המשך טיפול" and that have no open
    * visit (service-call status "followup", D38), one row per call (that visit), oldest first,
    * optionally for one technician, paged (default 40, at most 100). Which matrix key gates the
-   * screen is open decision #15 (d23).
+   * screen is open decision #15 (d23). Server gate pending #15: deny by default; the demo's fixed
+   * rule (workQueueScreensOffered) is not a grant.
    */
   backFromField(query: BackFromFieldQuery): Promise<BackFromFieldPage>;
 }

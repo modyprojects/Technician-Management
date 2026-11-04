@@ -111,6 +111,14 @@ export const isHourMinute = (value: unknown): value is HourMinute =>
 export const isRecordKey = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9-]{1,32}$/.test(value);
 
+/**
+ * A value of an in-memory record by key, own keys only: an id such as "constructor" or "toString"
+ * (valid key syntax) never resolves to an Object.prototype member and reads as not found.
+ */
+export function ownValue<T>(records: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+  return records !== undefined && Object.hasOwn(records, key) ? records[key] : undefined;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A database id (uuid, 36 characters, either case). */

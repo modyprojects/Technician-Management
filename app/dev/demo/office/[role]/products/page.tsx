@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ListSearch } from "@/components/office/ListSearch";
 import { ProductRules } from "@/components/office/ProductRules";
-import { ProductSearch } from "@/components/office/ProductSearch";
 import { ProductsTable, type ProductsTableRow } from "@/components/office/ProductsTable";
 import { Pager } from "@/components/ui/Pager";
 import { callsListHref } from "@/features/calls/data/search-params";
@@ -77,7 +77,9 @@ export default async function OfficeProductsPage({ params, searchParams }: PageP
   // Links into the calls list and call cards only where the role's screens offer them (`calls`).
   const withCalls = offers(permissions, "calls");
   const rows: ProductsTableRow[] = page.items.map((product) => ({
-    product,
+    // A role without `calls` does not see the creating call (ProductFirstSeen: null when the call is
+    // not visible to the viewer); the count of calls stays (an aggregate, no call details).
+    product: withCalls ? product : { ...product, firstSeen: null },
     firstSeenDate: product.firstSeen ? ddmm(product.firstSeen.date) : "",
     firstSeenHref: withCalls && product.firstSeen ? demoHref.call(role, product.firstSeen.req) : null,
     callsHref: withCalls ? callsListHref(demoHref.calls(role), { q: product.sku, status: "all", tech: "all", page: 1 }) : null,
@@ -92,7 +94,14 @@ export default async function OfficeProductsPage({ params, searchParams }: PageP
           <div className="sub">מוצרים נוצרים מהזימונים לפי מק״ט · כאן עורכים שם, מותג וספק</div>
         </div>
       </div>
-      <ProductSearch action={demoHref.products(role)} query={state.q} clearHref={state.q ? demoHref.products(role) : null} />
+      <ListSearch
+        action={demoHref.products(role)}
+        query={state.q}
+        clearHref={state.q ? demoHref.products(role) : null}
+        formLabel="חיפוש מוצרים"
+        inputLabel="חיפוש מוצר"
+        placeholder="חיפוש לפי מק״ט, שם, מותג או ספק"
+      />
       <SimulatedCommandsProvider state={await productsState(page.items)}>
         <ProductsTable rows={rows} total={page.total} query={state.q} canEdit={offered} brands={brands.items} suppliers={suppliers.items} />
       </SimulatedCommandsProvider>

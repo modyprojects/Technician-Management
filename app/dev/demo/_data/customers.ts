@@ -17,8 +17,8 @@ export type DemoCustomer = {
   calls: readonly Call[];
   /** The newest call: contact details and the latest visit's address. */
   latest: Call;
-  /** Date of the latest visit over every call. */
-  lastActivity: string;
+  /** Date of the newest call's latest or next visit (the calls-list order, sortCalls). */
+  latestVisitDate: string;
 };
 
 /** Fixture customer id of a customer number. */
@@ -30,14 +30,14 @@ function buildCustomers(): DemoCustomer[] {
   const customers = [...byNumber.entries()].map(([number, calls]): DemoCustomer => {
     const sorted = sortCalls(calls);
     const latest = sorted[0] as Call;
-    return { id: customerIdOf(number), number, calls: sorted, latest, lastActivity: lastVisit(latest).date };
+    return { id: customerIdOf(number), number, calls: sorted, latest, latestVisitDate: lastVisit(latest).date };
   });
-  // Latest activity first (latest visit date and start), then the customer number.
+  // Latest or next visit first (date and start of the newest call's last visit), then the customer number.
   const key = (x: DemoCustomer): string => lastVisit(x.latest).date + lastVisit(x.latest).start;
   return customers.sort((a, b) => key(b).localeCompare(key(a)) || a.number.localeCompare(b.number));
 }
 
-/** Every customer, latest activity first (computed once). */
+/** Every customer, latest or next visit first (computed once). */
 export const CUSTOMERS: readonly DemoCustomer[] = buildCustomers();
 
 const BY_ID = new Map(CUSTOMERS.map((x) => [x.id, x]));

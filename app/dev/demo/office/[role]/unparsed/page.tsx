@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DashboardTestNote } from "@/components/office/DashboardTestNote";
-import { KpiGrid } from "@/components/office/KpiGrid";
 import { UnparsedInvitationsList } from "@/components/office/UnparsedInvitationsList";
 import { Pager } from "@/components/ui/Pager";
 import { clampPage } from "@/features/data-access/common";
@@ -26,7 +25,7 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 }
 
 /** Demo-only line under the explanation: Microsoft 365 is not connected, every invitation is simulated (D23, D24, SIM-14). */
-const DEMO_SOURCE_NOTE = "בהדגמה כל הזימונים מגיעים מסימולטור הזימונים (🧪 זימון בדיקה): Microsoft 365 עדיין לא מחובר (D23).";
+const DEMO_SOURCE_NOTE = "בהדגמה כל הזימונים מגיעים מסימולטור הזימונים (🧪 זימון בדיקה): Microsoft 365 עדיין לא מחובר.";
 
 // "זימונים שלא נקלטו" (spec office screens, OF-16, IN-03, IN-04): invitations the ingestion
 // service could not ingest, with the missing or invalid field; an unknown SKU is never a reason
@@ -60,22 +59,8 @@ export default async function OfficeUnparsedPage({ params, searchParams }: PageP
       </div>
       {page ? (
         <>
+          {/* No separate counter: the list heading carries the total (a per-problem-kind count needs a DTO field; open item). */}
           {includesTestData && <DashboardTestNote id="unparsed-test-note" />}
-          <div className="ib-kpis">
-            <KpiGrid
-              label="מונה זימונים שלא נקלטו"
-              describedBy={includesTestData ? "unparsed-test-note" : undefined}
-              tiles={[
-                {
-                  key: "waiting",
-                  label: "ממתינים לתיקון",
-                  metric: { value: page.total, unit: "count" },
-                  detail: "זימונים שלא נקלטו",
-                  color: page.total ? "var(--danger)" : undefined,
-                },
-              ]}
-            />
-          </div>
           <UnparsedInvitationsList
             id="unparsed-list"
             page={page}

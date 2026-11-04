@@ -118,7 +118,7 @@ export function seedCalls(): Call[] {
         const type = rnd() < 0.85 ? "תיקון" : "התקנה";
         const desc = pick(p.issues);
         const warranty = rnd() < 0.8 ? "כן" : "לא";
-        const rep = rnd() < 0.8 ? "שיראל" : "נציגה 2";
+        const rep = rnd() < 0.8 ? "שיראל" : "הדס";
         const reason = cont ? wpick(REASONS).name : null;
         const summary = cont ? "נדרש המשך טיפול, הלקוח עודכן." : "בוצע תיקון, נבדק ותקין.";
         const rec = rnd() < 0.55 ? 20 + Math.floor(rnd() * 60) : 0;
@@ -259,7 +259,7 @@ export function seedCalls(): Call[] {
   calls.push(
     C({
       req: "48230", customer: "חיים אוחיון", phone: "052-000-6060", city: "בת ים", street: "בלפור 12", floor: "4", apt: "11",
-      sku: "KT-1800", desc: "ידית רופפת.", rep: "נציגה 2",
+      sku: "KT-1800", desc: "ידית רופפת.", rep: "הדס",
       visits: [V({ tech: "e", date: TODAY, start: "12:00", end: "13:00", status: "cancel" })],
     }),
   );

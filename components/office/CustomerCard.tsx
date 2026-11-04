@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CALL_STATUS_ORDER, CALL_STATUSES, CallStatusPill } from "@/components/ui/CallStatusPill";
-import { TestBadge, VISIT_SOURCE_LABELS, type VisitSource } from "@/components/ui/TestBadge";
+import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { CallStatus, CallSummary } from "@/features/calls/data/types";
 import { ddmm } from "@/features/calendar/data/dates";
 import type { CustomerDetail, CustomerProduct } from "@/features/customers/data/types";
@@ -42,20 +42,9 @@ export type CustomerCardData = {
   statusHrefs: Readonly<Partial<Record<CallStatus | "all", string>>>;
   /** "מוצרים" searched by SKU, for roles the products screen is offered to; empty otherwise. */
   productHrefs: Readonly<Record<string, string>>;
-  /** The return window: days, and the line that says it is temporary (from the data layer). */
-  returnWindow: { days: number; note: string };
+  /** The line that says the return window is temporary (the page's pending note); the days come from the DTO. */
+  returnWindowNote: string;
 };
-
-/** The visit source as a compact icon; the full label is its accessible name and tooltip. */
-function SourceIcon({ source }: { source: VisitSource }) {
-  const [icon, ...words] = VISIT_SOURCE_LABELS[source].split(" ");
-  const label = words.join(" ");
-  return (
-    <span role="img" aria-label={label} title={label}>
-      {icon}
-    </span>
-  );
-}
 
 function NotEntered() {
   return <span style={{ color: "var(--muted)" }}>{NOT_ENTERED}</span>;
@@ -72,7 +61,7 @@ function ReqLink({ req, href }: { req: string; href: string | undefined }) {
   );
 }
 
-export function CustomerCard({ customer: x, today, backHref, callHrefs, statusHrefs, productHrefs, returnWindow }: CustomerCardData) {
+export function CustomerCard({ customer: x, today, backHref, callHrefs, statusHrefs, productHrefs, returnWindowNote }: CustomerCardData) {
   const day = (d: IsoDate) => (d === today ? "היום" : ddmm(d));
   const totalCalls = CALL_STATUS_ORDER.reduce((n, s) => n + x.statusCounts[s], 0);
   const a = x.latestAddress;
@@ -117,7 +106,9 @@ export function CustomerCard({ customer: x, today, backHref, callHrefs, statusHr
         </div>
       </div>
 
-      <KpiGrid tiles={tiles} label="קריאות הלקוח לפי סטטוס" />
+      <div className="cu-kpis">
+        <KpiGrid tiles={tiles} label="קריאות הלקוח לפי סטטוס" />
+      </div>
 
       <div className="cols2" style={{ alignItems: "start" }}>
         <section className="card sec" aria-labelledby="cu-details">
@@ -155,7 +146,13 @@ export function CustomerCard({ customer: x, today, backHref, callHrefs, statusHr
           </div>
         </section>
 
-        <CustomerProducts products={x.products} callHrefs={callHrefs} productHrefs={productHrefs} returnWindow={returnWindow} />
+        <CustomerProducts
+          products={x.products}
+          day={day}
+          callHrefs={callHrefs}
+          productHrefs={productHrefs}
+          returnWindow={{ days: x.returnWindowDays, note: returnWindowNote }}
+        />
       </div>
 
       <CustomerCallsTable calls={x.calls} day={day} callHrefs={callHrefs} allCallsHref={statusHrefs.all} />
@@ -165,14 +162,17 @@ export function CustomerCard({ customer: x, today, backHref, callHrefs, statusHr
 
 function CustomerProducts({
   products,
+  day,
   callHrefs,
   productHrefs,
   returnWindow,
 }: {
   products: CustomerDetail["products"];
+  day: (d: IsoDate) => string;
   callHrefs: CustomerCardData["callHrefs"];
   productHrefs: CustomerCardData["productHrefs"];
-  returnWindow: CustomerCardData["returnWindow"];
+  /** Days from the DTO (the value the server used) and the page's pending note. */
+  returnWindow: { days: number; note: string };
 }) {
   const cut = products.total > products.items.length;
   return (
@@ -195,7 +195,7 @@ function CustomerProducts({
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {products.items.map((cp) => (
-            <CustomerProductItem key={cp.product.sku} cp={cp} callHrefs={callHrefs} productHref={productHrefs[cp.product.sku]} />
+            <CustomerProductItem key={cp.product.sku} cp={cp} day={day} callHrefs={callHrefs} productHref={productHrefs[cp.product.sku]} />
           ))}
         </ul>
       )}
@@ -210,10 +210,12 @@ function CustomerProducts({
 
 function CustomerProductItem({
   cp,
+  day,
   callHrefs,
   productHref,
 }: {
   cp: CustomerProduct;
+  day: (d: IsoDate) => string;
   callHrefs: CustomerCardData["callHrefs"];
   productHref: string | undefined;
 }) {
@@ -231,10 +233,10 @@ function CustomerProductItem({
       <div className="sub">
         <span className="num">{cp.callCount}</span> {cp.callCount === 1 ? "קריאה" : "קריאות"} ·{" "}
         {cp.firstDate === cp.lastDate ? (
-          <span className="num">{ddmm(cp.firstDate)}</span>
+          <span className="num">{day(cp.firstDate)}</span>
         ) : (
           <>
-            ראשונה <span className="num">{ddmm(cp.firstDate)}</span> · אחרונה <span className="num">{ddmm(cp.lastDate)}</span>
+            ראשונה <span className="num">{day(cp.firstDate)}</span> · אחרונה <span className="num">{day(cp.lastDate)}</span>
           </>
         )}
       </div>
@@ -242,7 +244,7 @@ function CustomerProductItem({
         <ul aria-label={`קריאות חוזרות על ${p.name}`} style={{ listStyle: "none", margin: "2px 0 0", padding: 0, fontSize: 13, lineHeight: 1.6 }}>
           {cp.returns.items.map((r) => (
             <li key={r.req}>
-              פנייה <ReqLink req={r.req} href={callHrefs[r.req]} /> (<span className="num">{ddmm(r.date)}</span>) נפתחה{" "}
+              פנייה <ReqLink req={r.req} href={callHrefs[r.req]} /> (<span className="num">{day(r.date)}</span>) נפתחה{" "}
               <b className="num">{r.days}</b> {r.days === 1 ? "יום" : "ימים"} אחרי סגירת פנייה <ReqLink req={r.previousReq} href={callHrefs[r.previousReq]} />
             </li>
           ))}
@@ -361,7 +363,7 @@ function CustomerCallRow({ c, day, href }: { c: CallSummary; day: (d: IsoDate) =
         {/* Narrow widths: technician, visits and the latest visit under the product (their columns are hidden). */}
         <span className="sub set-inline-narrow" style={{ fontSize: 12 }}>
           <span className="dot" aria-hidden="true" style={{ background: v.technician.color }} /> {v.technician.name} · {visits} ·{" "}
-          <SourceIcon source={v.source} /> <span className="num">{day(v.date)}</span>
+          <VisitSourceIcon source={v.source} /> <span className="num">{day(v.date)}</span>
           {cancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
         </span>
       </td>
@@ -370,7 +372,7 @@ function CustomerCallRow({ c, day, href }: { c: CallSummary; day: (d: IsoDate) =
       </td>
       <td className={`${SHORT} num set-col-wide`}>{c.visitCount}</td>
       <td className={`${SHORT} num set-col-wide`}>
-        <SourceIcon source={v.source} /> {day(v.date)} {v.start}
+        <VisitSourceIcon source={v.source} /> {day(v.date)} {v.start}
         {cancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
       </td>
       <td className={SHORT} style={{ whiteSpace: "normal" }}>

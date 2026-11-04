@@ -5,7 +5,7 @@ import type { CustomerSummary } from "@/features/customers/data/types";
 // "לקוחות" table (spec office screens, OF-16; matrix key `calls`). The demo has no such screen,
 // so it follows the calls table (docs/demo.html callsTable(), L824-832): a card with a sideways
 // scroller, short columns centred and sized to content (G-07), the customer's name as the link to
-// the customer card. Presentational: the server searched, sorted (latest activity first) and
+// the customer card. Presentational: the server searched, sorted (latest or next visit first) and
 // paged the rows (OF-04); the caller passes the total for "מציג X מתוך Y".
 // - Customer number (OF-05) has its own column; 🧪 on test customers (SIM-16), in the name cell.
 // - "קריאות": the number of calls and whether any is still active (open, awaiting scheduling or
@@ -20,8 +20,8 @@ export type CustomersTableRow = {
   customer: CustomerSummary;
   /** The customer card. */
   href: string;
-  /** Date of the latest activity as the list shows it ("היום", "21.10"). */
-  lastActivity: string;
+  /** "ביקור אחרון / הבא" as the list shows it ("היום", "22.10"; a planned visit can be after today). */
+  latestVisit: string;
 };
 
 const SHORT = "col-center col-fit";
@@ -53,6 +53,7 @@ export function CustomersTable({
   rows,
   total,
   query,
+  returnedNote,
 }: {
   /** The current page of matching customers. */
   rows: readonly CustomersTableRow[];
@@ -60,7 +61,10 @@ export function CustomersTable({
   total: number;
   /** The search text, for the empty state. */
   query: string;
+  /** What qualifies "↩ מוצר חזר" (the page's note, for example a temporary window); shown under the table when a row carries the mark. */
+  returnedNote?: string;
 }) {
+  const anyReturned = rows.some((r) => r.customer.returnedProductCount > 0);
   return (
     <section className="card" style={{ overflow: "hidden" }} aria-label="רשימת הלקוחות">
       {rows.length > 0 && (
@@ -83,12 +87,12 @@ export function CustomersTable({
                   קריאות
                 </th>
                 <th scope="col" className={SHORT}>
-                  פעילות אחרונה
+                  ביקור אחרון / הבא
                 </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ customer: c, href, lastActivity }) => (
+              {rows.map(({ customer: c, href, latestVisit }) => (
                 <tr key={c.id}>
                   <td className={`${SHORT} num set-col-wide`}>{c.number}</td>
                   <td style={{ whiteSpace: "normal", minWidth: 120 }}>
@@ -123,7 +127,7 @@ export function CustomersTable({
                       <ActivityPill active={c.activeCallCount} />
                     </span>
                   </td>
-                  <td className={`${SHORT} num`}>{lastActivity}</td>
+                  <td className={`${SHORT} num`}>{latestVisit}</td>
                 </tr>
               ))}
             </tbody>
@@ -134,6 +138,12 @@ export function CustomersTable({
         {total ? (
           <div className="sub" style={{ padding: "10px 14px" }}>
             מציג <span className="num">{rows.length}</span> מתוך <span className="num">{total}</span>
+            {returnedNote && anyReturned && (
+              <span style={{ display: "block", marginTop: 4 }}>
+                <span aria-hidden="true">↩ </span>
+                ״מוצר חזר״: {returnedNote}
+              </span>
+            )}
           </div>
         ) : (
           <div className="empty">{query ? `לא נמצאו לקוחות עבור "${query}"` : "אין לקוחות"}</div>

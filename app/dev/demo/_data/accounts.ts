@@ -26,7 +26,7 @@ const ACCOUNT_ID: Record<string, string> = {
   "משתמש יוצר": "acc-creator",
   דורון: "acc-doron",
   שיראל: "acc-shirel",
-  "נציגה 2": "acc-rep2",
+  הדס: "acc-rep2",
 };
 
 /**
@@ -169,7 +169,7 @@ export const ACCOUNT_REQUESTS: readonly DemoAccountRequest[] = [
     id: "areq-5",
     kind: "create",
     accountId: "acc-rep2",
-    target: { name: "נציגה 2", email: "rep2@example.test", role: "cs" },
+    target: { name: "הדס", email: "rep2@example.test", role: "cs" },
     newRole: null,
     requestedBy: "acc-doron",
     requestedAt: "2026-09-14T10:00:00+03:00",

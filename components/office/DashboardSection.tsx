@@ -30,7 +30,8 @@ export function DashboardSection({
     <div className="od-sec-head">
       <div style={{ minWidth: 0 }}>
         <h2 id={headingId}>
-          {title}
+          {/* Isolated: a title that ends in Latin (for example "Outlook") must not pull the count into its LTR run. */}
+          <bdi>{title}</bdi>
           {count !== undefined && (
             <span className="sub num" style={{ fontWeight: 400, fontFamily: "var(--body)" }}>
               {` · ${count}`}

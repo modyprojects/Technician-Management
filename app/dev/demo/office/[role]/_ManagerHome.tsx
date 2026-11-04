@@ -113,9 +113,11 @@ export async function ManagerHome({ role }: { role: OfficeRole }) {
           emptyText="אין קריאות שמחכות לטיפול"
           footer={
             <>
-              <Link className="lnk" href={links.backFromField()}>
-                למסך חזרו מהשטח ›
-              </Link>
+              {links.backFromField && (
+                <Link className="lnk" href={links.backFromField}>
+                  למסך חזרו מהשטח ›
+                </Link>
+              )}
               <Link className="lnk" href={links.callsWith("followup")}>
                 כל קריאות המשך הטיפול ›
               </Link>

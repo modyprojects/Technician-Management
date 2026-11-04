@@ -74,6 +74,9 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
     intro: "היוצר רואה הכל: הגדרות, מטריצת ההרשאות ואישור בקשות של המנהל.",
     links: [
       { label: "לוח בקרה", sub: "מסך הבית של היוצר", href: demoHref.officeHome("creator") },
+      { label: "לקוחות", sub: "חיפוש לפי שם, מספר לקוח, טלפון או עיר", href: demoHref.customers("creator") },
+      { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון", href: demoHref.unparsed("creator") },
+      { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש", href: demoHref.backFromField("creator") },
       { label: "מוצרים", sub: "לפי מק״ט · עריכת שם, מותג וספק (מדומה)", href: demoHref.products("creator") },
       { label: "הגדרות · משתמשים והרשאות", sub: "משתמשים, בקשות לאישור ומטריצת ההרשאות", href: demoHref.settings("creator", "users") },
       { label: "הגדרות · טכנאים", sub: "צבע, טלפון, מייל ב-Outlook, פעיל", href: demoHref.settings("creator", "techs") },

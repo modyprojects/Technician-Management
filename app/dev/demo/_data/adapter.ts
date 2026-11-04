@@ -24,6 +24,7 @@ import {
   isNormalizedSku,
   normalizeSku,
   PRODUCT_CALLS_LIMIT,
+  PRODUCT_RETURN_WINDOW_DAYS,
   type ProductDetail,
   type ProductListItem,
   type ProductOption,
@@ -237,7 +238,7 @@ function customerSummary(x: DemoCustomer): CustomerSummary {
     city: c.city,
     callCount: x.calls.length,
     activeCallCount: x.calls.filter((call) => callStatus(call) !== "resolved").length,
-    lastActivity: x.lastActivity,
+    latestVisitDate: x.latestVisitDate,
     returnedProductCount: customerProducts(x).filter((p) => p.returns.length > 0).length,
     isTest: TEST,
   };
@@ -269,6 +270,7 @@ function customerDetail(x: DemoCustomer): CustomerDetail {
     statusCounts,
     calls: { ...calls, items: calls.items.map(callSummary) },
     products: boundedOf(products, CUSTOMER_PRODUCTS_LIMIT),
+    returnWindowDays: PRODUCT_RETURN_WINDOW_DAYS,
     isTest: TEST,
   };
 }

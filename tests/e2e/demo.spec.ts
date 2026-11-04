@@ -1261,8 +1261,11 @@ const PHASE_F_VIEWS = [
   "/dev/demo/office/creator/products?q=kt-2041",
 ] as const;
 
-/** The temporary access line of the two work-queue screens (open decision #15, board ref d23). */
-const WORK_QUEUE_HINT = /החלטה פתוחה #15.*ממתין להחלטת בעלים \(d23\)/;
+/**
+ * The temporary access line of the two work-queue screens (open decision #15, board ref d23): the
+ * roles of the fixed rule and the decision's number, never "d23" (it reads as the approved D23).
+ */
+const WORK_QUEUE_HINT = "הרשאת צפייה זמנית: מנהל, שירות לקוחות ויוצר · ממתין להחלטת בעלים (#15)";
 
 test.describe("phase F views render", () => {
   for (const path of PHASE_F_VIEWS) {
@@ -1364,6 +1367,9 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
     await expect(rowsOf(page)).toHaveCount(1);
     await expect(rowsOf(page).first().getByRole("link", { name: "משפחת לוי · לקוח 298747" })).toBeVisible();
     await expect(rowsOf(page).first().getByText("נתוני בדיקה")).toBeAttached();
+    // "↩ מוצר חזר" depends on the temporary return window: labelled pending on the list too.
+    await expect(rowsOf(page).first()).toContainText("מוצר חזר");
+    await expect(page.locator("main")).toContainText("״מוצר חזר״: חלון זמני · ממתין להחלטת בעלים (d31)");
 
     await search.fill("אבי כהן");
     await page.getByRole("button", { name: "חיפוש", exact: true }).click();
@@ -1413,6 +1419,16 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
     await expect(page.getByRole("link", { name: /במסך מוצרים/ })).toHaveCount(0);
     await page.getByRole("region", { name: "קריאות הלקוח לפי סטטוס" }).getByRole("link").first().click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/cs\/calls\?q=298747/);
+  });
+
+  test("a status counter opens the calls list with that status and exactly as many rows as it shows", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+    const resolved = page.getByRole("region", { name: "קריאות הלקוח לפי סטטוס" }).getByRole("link", { name: /^טופלה/ });
+    const value = Number(await resolved.locator(".v").innerText());
+    expect(value).toBeGreaterThan(0);
+    await resolved.click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calls\?(?=.*q=298747)(?=.*status=resolved)/);
+    await expect(page.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr")).toHaveCount(value);
   });
 
   test("the call card's customer link opens the customer card", async ({ page }) => {
@@ -1494,6 +1510,33 @@ test.describe("products (PR-04 to PR-07, D19)", () => {
     expect(await horizontalOverflow(page)).toEqual([]);
   });
 
+  test("edit: an inactive current brand is shown disabled and kept; saving with no change is refused inline", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    await page.getByRole("button", { name: "עריכה · סוללת אמבטיה לקיר (TB-75)" }).click();
+    const form = page.getByRole("form", { name: "עריכת המוצר TB-75" });
+    const brand = form.getByRole("combobox", { name: /^מותג/ });
+    const inactive = brand.locator("option", { hasText: "הידרו-פלוס (לא פעיל)" });
+    await expect(inactive).toHaveCount(1);
+    await expect(inactive).toBeDisabled();
+    await expect(brand).toHaveValue((await inactive.getAttribute("value")) ?? "");
+    // No other inactive option is offered.
+    await expect(brand.locator("option", { hasText: "(לא פעיל)" })).toHaveCount(1);
+
+    // Nothing changed: refused inline, no command, no toast.
+    await form.getByRole("button", { name: "שמירה" }).click();
+    await expect(form.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+
+    // Another field changed: the inactive brand is not sent, so it stays on the product.
+    await form.getByRole("textbox", { name: "שם מוצר" }).fill("סוללת אמבטיה לקיר · חדשה");
+    await form.getByRole("button", { name: "שמירה" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    const row = productRow(page, "TB-75");
+    await expect(row).toContainText("סוללת אמבטיה לקיר · חדשה");
+    await expect(row.getByText("הידרו-פלוס").filter({ visible: true })).toHaveCount(1);
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+  });
+
   test("edit: Escape closes the form and returns focus to its \"עריכה\"", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/products");
     const edit = page.getByRole("button", { name: "עריכה · כיור אמבטיה + סיפון (BS-220)" });
@@ -1513,7 +1556,10 @@ test.describe("unparsed invitations (IN-01 to IN-04, OF-16)", () => {
     await openPage(page, "/dev/demo/office/cs/unparsed");
     const main = page.locator("main");
     await expect(page.getByRole("heading", { level: 1, name: "זימונים שלא נקלטו" })).toBeVisible();
+    // The heading ends in Latin ("Outlook"): isolated, so the count stays after it (bidi).
+    await expect(page.locator("#unparsed-list-h > bdi")).toHaveText("ממתינים לתיקון ב-Outlook");
     await expect(main).toContainText(WORK_QUEUE_HINT);
+    await expect(main).not.toContainText("(d23)");
     const list = page.getByRole("list", { name: "זימונים שלא נקלטו" });
     const items = list.locator(":scope > li");
     await expect(items).toHaveCount(7);
@@ -1573,7 +1619,7 @@ test.describe("back from field (OF-16, D23, D38)", () => {
     await expect(page).toHaveURL(/\/back-from-field$/);
   });
 
-  test("each row: reason, technician, summary, a call-card link and a disabled Outlook action with the D23 hint", async ({ page }) => {
+  test("each row: reason, technician, summary, a call-card link and a disabled Outlook action with the Microsoft 365 hint", async ({ page }) => {
     await openPage(page, "/dev/demo/office/cs/back-from-field");
     const first = items(page).first();
     await expect(first.locator(".ib-reason")).toContainText("סיבת המשך טיפול");
@@ -1583,7 +1629,9 @@ test.describe("back from field (OF-16, D23, D38)", () => {
     await expect(outlook).toBeDisabled();
     const hintId = await outlook.getAttribute("aria-describedby");
     expect(hintId).toBeTruthy();
-    await expect(page.locator(`[id="${hintId}"]`)).toContainText("יהיה זמין אחרי חיבור Microsoft 365 (D23)");
+    await expect(page.locator(`[id="${hintId}"]`)).toHaveText("זימון ביקור חדש ב-Outlook יהיה זמין אחרי חיבור Microsoft 365.");
+    // Decision codes stay out of the user text (open #15 is shown by its number).
+    expect(await page.locator("main").innerText()).not.toMatch(/\b[dD]\d{2}\b/);
     await expect(page.locator(`[id="${hintId}"]`)).toBeVisible();
     // Never a fake Outlook link (OF-08 pattern).
     await expect(page.locator("main").getByRole("link", { name: /Outlook/ })).toHaveCount(0);
@@ -1598,10 +1646,17 @@ test.describe("back from field (OF-16, D23, D38)", () => {
     await expect(page).toHaveURL(new RegExp(`/dev/demo/office/cs/calls/${req}$`));
   });
 
-  test("the oldest wait counter matches the first row (oldest first)", async ({ page }) => {
+  test("the counters: the oldest wait matches the first row (oldest first); the waiting count matches the list total", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/back-from-field");
     await expect(page.locator("main")).toContainText(WORK_QUEUE_HINT);
+    const counters = page.getByRole("region", { name: "מוני חזרו מהשטח" });
+    const tileValue = (label: string) => counters.locator(".kpi").filter({ has: page.locator(".l", { hasText: label }) }).locator(".v");
     const days = Number((await items(page).first().locator(".ib-wait").innerText()).match(/\d+/)?.[0]);
-    await expect(page.getByRole("region", { name: "מוני חזרו מהשטח" })).toContainText(String(days));
+    expect(days).toBeGreaterThan(0);
+    await expect(tileValue("הוותיקה ביותר")).toHaveText(String(days));
+    const foot = await page.locator("#back-from-field-list .od-table-foot").innerText();
+    const total = Number(foot.match(/מתוך (\d+)/)?.[1]);
+    expect(total).toBeGreaterThan(0);
+    await expect(tileValue("ממתינות לביקור חדש")).toHaveText(String(total));
   });
 });

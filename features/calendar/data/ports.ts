@@ -37,7 +37,8 @@ export interface CalendarQueries {
 /**
  * Intake read model (separate from the calendars and from the ingestion service, which writes the
  * rows). Which matrix key gates "זימונים שלא נקלטו" is open decision #15 (d23); the spec lists
- * Customer Service, Manager and Creator.
+ * Customer Service, Manager and Creator. Server gate pending #15: deny by default; the demo's
+ * fixed rule (app/dev/demo/_data/roles.ts workQueueScreensOffered) is not a grant.
  */
 export interface IntakeQueries {
   /** Unresolved invitations the ingestion service could not ingest, newest first, paged (default 40, at most 100). */

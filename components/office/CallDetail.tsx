@@ -140,21 +140,18 @@ export function CallDetail({
         <div className="ocd-cols">
           <div className="grid">
             <section className="card sec">
-              <h2 style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                לקוח וכתובת
-                {cu.isTest && <TestBadge />}
+              {/* The customer-card link sits beside the heading, not inside it (a heading's name stays its title). */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 12 }}>
+                <h2 style={{ display: "flex", gap: 8, alignItems: "center", margin: 0 }}>
+                  לקוח וכתובת
+                  {cu.isTest && <TestBadge />}
+                </h2>
                 {customerHref && (
-                  <Link
-                    className="lnk"
-                    href={customerHref}
-                    prefetch={false}
-                    aria-label={`לכרטיס הלקוח · ${cu.name}`}
-                    style={{ marginInlineStart: "auto", fontSize: 14, fontWeight: 600 }}
-                  >
+                  <Link className="lnk" href={customerHref} prefetch={false} aria-label={`לכרטיס הלקוח · ${cu.name}`} style={{ fontSize: 14, fontWeight: 600 }}>
                     לכרטיס הלקוח ›
                   </Link>
                 )}
-              </h2>
+              </div>
               <div className="kv">
                 <span>מספר לקוח</span>
                 <span className="num">{cu.number}</span>

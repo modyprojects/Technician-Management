@@ -71,3 +71,24 @@ export function productVersionError(expectedVersion: number, stored: { version: 
   if (!stored) return "המוצר לא נמצא";
   return stored.version === expectedVersion ? null : "המוצר עודכן בינתיים · יש לרענן את הדף";
 }
+
+/** What is stored for an edit's checks (undefined: not found, or not visible to the caller). */
+export type ProductEditStored = {
+  product: { version: number } | undefined;
+  /** The chosen brand and supplier (only looked up when the edit sets one). */
+  brand: { active: boolean } | undefined;
+  supplier: { active: boolean } | undefined;
+};
+
+/**
+ * Every check of an edit, in order: the input, the product and its version, the brand, the
+ * supplier. Deny by default: with nothing stored the edit fails ("המוצר לא נמצא").
+ */
+export function productEditError(input: ProductUpdateInput, stored: ProductEditStored): string | null {
+  return (
+    productUpdateError(input) ??
+    productVersionError(input.expectedVersion, stored.product) ??
+    productOptionError(input.brandId, stored.brand, "מותג") ??
+    productOptionError(input.supplierId, stored.supplier, "ספק")
+  );
+}

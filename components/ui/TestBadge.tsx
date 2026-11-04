@@ -30,3 +30,14 @@ export function VisitSourceLine({ source }: { source: VisitSource }) {
     </div>
   );
 }
+
+/** The visit source as a compact icon (tables, lanes); the full label is its accessible name and tooltip. */
+export function VisitSourceIcon({ source, className }: { source: VisitSource; className?: string }) {
+  const [icon, ...words] = VISIT_SOURCE_LABELS[source].split(" ");
+  const label = words.join(" ");
+  return (
+    <span role="img" aria-label={label} title={label} className={className}>
+      {icon}
+    </span>
+  );
+}

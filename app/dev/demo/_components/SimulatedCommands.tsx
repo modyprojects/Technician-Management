@@ -29,10 +29,10 @@ import {
 } from "@/features/accounts/data/validate";
 import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
-import type { CommandResult } from "@/features/data-access/common";
+import { ownValue, type CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
-import { productOptionError, productUpdateError, productVersionError } from "@/features/products/data/validate";
+import { productEditError } from "@/features/products/data/validate";
 import { technicianColorCss } from "@/features/reference/data/types";
 import { PERMISSION_LABELS, TECH_NOTIFICATION_LABELS, type TechnicianSetting } from "@/features/settings/data/types";
 import {
@@ -271,7 +271,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
         deletePlace: (id) =>
           run(
-            () => [settingIdError(id), created.has(id) ? null : placeDeleteError(state.places?.[id])],
+            () => [settingIdError(id), created.has(id) ? null : placeDeleteError(ownValue(state.places, id))],
             () => "מחיקת מקום איסוף",
             () => void created.delete(id),
           ),
@@ -289,7 +289,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
         deleteReason: (id) =>
           run(
             // A reason created here is user-added and unused; a stored one is checked as the server would.
-            () => [settingIdError(id), created.has(id) ? null : reasonDeleteError(state.reasons?.[id])],
+            () => [settingIdError(id), created.has(id) ? null : reasonDeleteError(ownValue(state.reasons, id))],
             () => "מחיקת סיבת המשך טיפול",
             () => void created.delete(id),
           ),
@@ -347,15 +347,15 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
               state.self ? null : "אין משתמש מחובר",
               input.kind === "create"
                 ? testAccountEmailError(input.email)
-                : accountRequestTargetError(input.kind, state.accounts?.[input.accountId]),
+                : accountRequestTargetError(input.kind, ownValue(state.accounts, input.accountId)),
             ],
             () =>
               `בקשה לאישור היוצר · ${ACCOUNT_REQUEST_KIND_LABELS[input.kind]} · ${excerpt(
-                input.kind === "create" ? input.name : (state.accounts?.[input.accountId]?.name ?? ""),
+                input.kind === "create" ? input.name : (ownValue(state.accounts, input.accountId)?.name ?? ""),
                 40,
               )} · שום דבר לא משתנה עד האישור`,
             (): { request: AccountRequest } => {
-              const existing = input.kind === "create" ? null : state.accounts?.[input.accountId];
+              const existing = input.kind === "create" ? null : ownValue(state.accounts, input.accountId);
               const target =
                 input.kind === "create"
                   ? { name: input.name.trim(), email: input.email.trim(), role: "cs" as const }
@@ -380,7 +380,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
         decideAccountRequest: (requestId, decision) =>
           run(
-            () => [requestIdError(requestId), accountDecisionError(decision), pendingRequestError(state.requests?.[requestId])],
+            () => [requestIdError(requestId), accountDecisionError(decision), pendingRequestError(ownValue(state.requests, requestId))],
             () =>
               decision.outcome === "approve"
                 ? "אישור הבקשה · נכנסת לתוקף"
@@ -388,7 +388,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
         cancelAccountRequest: (requestId) =>
           run(
-            () => [requestIdError(requestId), pendingRequestError(state.requests?.[requestId])],
+            () => [requestIdError(requestId), pendingRequestError(ownValue(state.requests, requestId))],
             () => "ביטול הבקשה",
           ),
         deactivateAccount: (accountId) =>
@@ -396,15 +396,15 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
             () => [
               accountIdError(accountId),
               state.self && state.self.id === accountId ? "אי אפשר להשבית את החשבון שלך" : null,
-              accountStateError("deactivate", state.accounts?.[accountId]?.active),
+              accountStateError("deactivate", ownValue(state.accounts, accountId)?.active),
             ],
             // The Creator is notified only of a Manager's deactivation (D34 b); the screen says so.
-            () => `השבתת חשבון · ${excerpt(state.accounts?.[accountId]?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
+            () => `השבתת חשבון · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
           ),
         activateAccount: (accountId) =>
           run(
-            () => [accountIdError(accountId), accountStateError("activate", state.accounts?.[accountId]?.active)],
-            () => `הפעלת חשבון · ${excerpt(state.accounts?.[accountId]?.name ?? "", 40)} · מיידית`,
+            () => [accountIdError(accountId), accountStateError("activate", ownValue(state.accounts, accountId)?.active)],
+            () => `הפעלת חשבון · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · מיידית`,
           ),
         createTechnician: (input) =>
           run(
@@ -444,13 +444,14 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
         update: (input) =>
           run(
             () => [
-              productUpdateError(input),
-              productVersionError(input.expectedVersion, state.products?.items[input.sku]),
-              productOptionError(input.brandId, input.brandId ? state.products?.brands[input.brandId] : undefined, "מותג"),
-              productOptionError(input.supplierId, input.supplierId ? state.products?.suppliers[input.supplierId] : undefined, "ספק"),
+              productEditError(input, {
+                product: ownValue(state.products?.items, input.sku),
+                brand: input.brandId ? ownValue(state.products?.brands, input.brandId) : undefined,
+                supplier: input.supplierId ? ownValue(state.products?.suppliers, input.supplierId) : undefined,
+              }),
             ],
             () =>
-              `עריכת מוצר · ${input.sku} · ${excerpt(input.name ?? state.products?.items[input.sku]?.name ?? "", 40)}`,
+              `עריכת מוצר · ${input.sku} · ${excerpt(input.name ?? ownValue(state.products?.items, input.sku)?.name ?? "", 40)}`,
           ),
       },
     };

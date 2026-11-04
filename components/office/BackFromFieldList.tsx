@@ -190,8 +190,9 @@ export function BackFromFieldList({
       hint="הוותיקות קודם · ביקור חדש שנקלט מוריד את הקריאה מהרשימה, ביקור שבוטל מחזיר אותה"
     >
       {!page.outlookConnected && (
+        // D23 (the decision code stays out of the user text).
         <p id={hintId} className="note ib-note">
-          <b>זימון ביקור חדש ב-Outlook</b> יהיה זמין אחרי חיבור Microsoft 365 (D23).
+          <b>זימון ביקור חדש ב-Outlook</b> יהיה זמין אחרי חיבור Microsoft 365.
         </p>
       )}
       {page.items.length ? (

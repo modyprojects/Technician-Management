@@ -31,7 +31,6 @@ export type DemoUnparsedInvitation = {
 };
 
 const CALL_TYPE_EXPECTED = "ערך מרשימת סוגי הקריאה בהגדרות";
-const WARRANTY_EXPECTED = "כן / לא / כן · עד MM/YYYY";
 
 /** Newest first is the adapter's order; listed here in the same order. */
 export const UNPARSED_INVITATIONS: readonly DemoUnparsedInvitation[] = [
@@ -121,7 +120,11 @@ export const UNPARSED_INVITATIONS: readonly DemoUnparsedInvitation[] = [
     req: "48257",
     customer: "עומר דהן",
     problems: [
-      { kind: "invalid", field: "warranty", value: "אולי", expected: WARRANTY_EXPECTED },
+      // An invalid value of a required, list-backed field (the call type comes from the Settings
+      // list). Whether an invalid value in an OPTIONAL field (for example "באחריות") blocks intake
+      // is not specified (D17 makes warranty optional; TE-08 falls back to "לא צוין"): an owner
+      // question, so no fixture shows it.
+      { kind: "invalid", field: "type", value: "ביקור חוזר", expected: CALL_TYPE_EXPECTED },
       { kind: "unknown-place", value: "סניף חיפה" },
     ],
   },

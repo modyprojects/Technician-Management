@@ -13,13 +13,14 @@ import { backFromFieldHref, parseBackFromFieldState } from "@/features/calls/dat
 import { normalizeBackFromFieldQuery } from "@/features/calls/data/validate";
 import { customersListHref, parseCustomersListState } from "@/features/customers/data/search-params";
 import { isCustomerId, normalizeCustomerListQuery } from "@/features/customers/data/validate";
-import { filterListValues } from "@/features/data-access/common";
+import { filterListValues, ownValue } from "@/features/data-access/common";
 import { parseProductsListState, productsListHref } from "@/features/products/data/search-params";
 import { isNormalizedSku, normalizeSku } from "@/features/products/data/types";
 import {
   isProductOptionId,
   normalizeProductListQuery,
   PRODUCT_NAME_MAX,
+  productEditError,
   productNameError,
   productOptionError,
   productUpdateError,
@@ -195,6 +196,30 @@ test.describe("phase F validators (PR-06, PR-07, OF-16)", () => {
     expect(productVersionError(1, undefined)).not.toBeNull();
     expect(productVersionError(1, { version: 2 })).not.toBeNull();
     expect(productVersionError(2, { version: 2 })).toBeNull();
+  });
+
+  test("the edit as the command checks it (productEditError): deny by default without stored data; own keys only", () => {
+    const edit = { sku: "KT-2041", expectedVersion: 1, name: "ברז" };
+    const nothing = { product: undefined, brand: undefined, supplier: undefined };
+    // No stored state (any screen but "מוצרים" in the demo; a product the caller cannot see): refused.
+    expect(productEditError(edit, nothing)).toBe("המוצר לא נמצא");
+    expect(productEditError(edit, { ...nothing, product: { version: 1 } })).toBeNull();
+    expect(productEditError(edit, { ...nothing, product: { version: 2 } })).toBe("המוצר עודכן בינתיים · יש לרענן את הדף");
+    // Nothing to change comes first, before any stored lookup.
+    expect(productEditError({ sku: "KT-2041", expectedVersion: 1 }, { ...nothing, product: { version: 1 } })).toBe("אין שינוי לשמור");
+    // Options: an unknown id is "not found", an inactive one "not active".
+    const brands: Readonly<Record<string, { active: boolean }>> = { "br-aqua": { active: true }, "br-hydro": { active: false } };
+    const withBrand = (brandId: string) =>
+      productEditError({ ...edit, brandId }, { product: { version: 1 }, brand: ownValue(brands, brandId), supplier: undefined });
+    expect(withBrand("br-aqua")).toBeNull();
+    expect(withBrand("br-hydro")).toBe("המותג לא פעיל");
+    expect(withBrand("br-none")).toBe("המותג לא נמצא");
+    // Ids with valid key syntax that name Object.prototype members are not stored records.
+    for (const id of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+      expect(ownValue(brands, id), id).toBeUndefined();
+      expect(withBrand(id), id).toBe("המותג לא נמצא");
+    }
+    expect(ownValue(undefined, "br-aqua")).toBeUndefined();
   });
 
   test("customer ids and list queries; back from field needs a valid date", () => {

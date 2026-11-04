@@ -46,8 +46,12 @@ export type CustomerSummary = TestMarker & {
   callCount: number;
   /** Calls not resolved: open, awaiting scheduling or follow-up (D38). */
   activeCallCount: number;
-  /** Date of the customer's latest visit (any status). */
-  lastActivity: IsoDate;
+  /**
+   * "ביקור אחרון / הבא": the date of the latest or next visit of the customer's newest call (the
+   * calls list's column and order; a planned visit counts, so it can be after today; a cancelled
+   * visit keeps its date, as on the call row).
+   */
+  latestVisitDate: IsoDate;
   /** Distinct products that came back within PRODUCT_RETURN_WINDOW_DAYS (features/products/data/types). */
   returnedProductCount: number;
 };
@@ -58,7 +62,7 @@ export type CustomerListQuery = PageRequest & {
   q?: string;
 };
 
-/** Customers by latest activity, newest first, paged (OF-04 semantics: default 40, at most 100). */
+/** Customers by latest or next visit, newest first, paged (OF-04 semantics: default 40, at most 100). */
 export type CustomersPage = Page<CustomerSummary>;
 
 /**
@@ -110,4 +114,10 @@ export type CustomerDetail = TestMarker & {
   calls: Bounded<CallSummary>;
   /** Products by latest call, newest first; returned products first (at most CUSTOMER_PRODUCTS_LIMIT). */
   products: Bounded<CustomerProduct>;
+  /**
+   * The return window (days) the server used for `cameBack` and the returns (TEMPORARY,
+   * PRODUCT_RETURN_WINDOW_DAYS until the owner decides; it may become a setting). The card shows
+   * this value, never its own copy of the constant.
+   */
+  returnWindowDays: number;
 };
