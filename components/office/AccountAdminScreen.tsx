@@ -5,8 +5,7 @@
 // requests. Two scopes (display only, G-04; the server checks every action in the database, D34):
 // - "all": the Creator (Settings › "משתמשים והרשאות"): every account; "+ הוספת משתמש"
 //   (immediate; technicians are added on Settings › "טכנאים"); deactivate and activate any account
-//   but the Creator's own;
-//   "בקשות לאישור" with approve / reject (AccountAdminRequests, mode "decide").
+//   but the Creator's own; "בקשות לאישור" with approve / reject (AccountAdminRequests, "decide").
 // - "cs-tech": the Manager ("ניהול משתמשים"): Customer Service and Technician accounts only.
 //   "+ בקשת חשבון שירות לקוחות" makes a pending request that waits for the Creator (D34 a);
 //   "+ הוספת טכנאי" and a technician's activation are immediate (D34 c); deactivation of a Customer
@@ -14,7 +13,7 @@
 //   (D34 b); activating a Customer Service account is a request. "הבקשות שלי" lists the Manager's
 //   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e).
 // Every action runs one command from useCommands().accounts. In the UI demo the commands are
-// simulated: the changed row shows the result locally, marked "בהדגמה · לא נשמר", and offers no
+// simulated: the changed row shows the result locally, marked "לא נשמר · פעולה מדומה", and offers no
 // further action (nothing was stored, so a second action would act on stale data).
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ACCOUNT_REQUEST_KIND_LABELS, type AccountRequestKind, type UserAccount } from "@/features/accounts/data/types";

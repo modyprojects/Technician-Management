@@ -51,7 +51,19 @@ export const DEMO_PAGES = [
   "/dev/demo/office/mgr/users",
   "/dev/demo/office/cs/users",
   "/dev/demo/office/mgr/settings/users",
+  "/dev/demo/office/mgr/settings/techs",
+  "/dev/demo/office/mgr/settings/places",
+  "/dev/demo/office/mgr/settings/reasons",
+  "/dev/demo/office/mgr/settings/types",
+  "/dev/demo/office/mgr/settings/mail",
+  "/dev/demo/office/mgr/settings/template",
+  "/dev/demo/office/cs/settings/users",
+  "/dev/demo/office/cs/settings/techs",
   "/dev/demo/office/cs/settings/places",
+  "/dev/demo/office/cs/settings/reasons",
+  "/dev/demo/office/cs/settings/types",
+  "/dev/demo/office/cs/settings/mail",
+  "/dev/demo/office/cs/settings/template",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */
