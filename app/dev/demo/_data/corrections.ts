@@ -110,8 +110,8 @@ const VISIT_FIELD: Readonly<Record<CorrectableVisitField, keyof Visit>> = {
 /** A correctable value of a fixture visit (the follow-up fields only for "המשך טיפול"). */
 export function visitValue(v: Visit, field: CorrectableVisitField): CorrectionValue {
   if ((field === "followupReason" || field === "nextNote") && v.status !== "cont") return null;
+  if (field === "parts") return [...v.parts];
   const value = v[VISIT_FIELD[field]];
-  if (Array.isArray(value)) return [...value];
   return typeof value === "string" ? value : null;
 }
 
