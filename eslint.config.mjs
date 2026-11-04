@@ -29,8 +29,8 @@ const NO_APP_IMPORTS = {
 /**
  * Owner architecture rule (2026-11-03): "screens must read data only through a typed data-access
  * layer ... No fixture data inside components." Demo screens may import from _data only the
- * adapter (demoDataAccess), routes, roles (navigation and permission display config), dates
- * (formatting and the demo's TODAY) and params (static params read through the adapter).
+ * adapter (demoDataAccess), routes, roles (viewpoints and navigation presentation config), dates
+ * (formatting and the demo's TODAY) and params (build-time static params of the dynamic routes).
  */
 const DEMO_DATA_ONLY_THROUGH_LAYER = {
   regex: "(^|/)_data(/(?!(adapter|routes|roles|dates|params)$)[^/]+)?$",

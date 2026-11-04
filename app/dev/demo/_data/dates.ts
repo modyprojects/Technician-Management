@@ -77,3 +77,29 @@ export function nowHM(): string {
   const d = new Date();
   return pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
+
+const JERUSALEM_PARTS = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Jerusalem",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** ISO timestamp → local date "YYYY-MM-DD" and time "HH:MM" in Asia/Jerusalem (G-01); null if invalid. */
+export function jerusalemDateTime(iso: string): { date: string; time: string } | null {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  const p = Object.fromEntries(JERUSALEM_PARTS.formatToParts(ms).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+}
+
+/** Notification time (AppNotification.time, ISO) as the demo shows it: "היום 09:10", "אתמול 17:05" or "19.10 08:00". */
+export function notificationTimeLabel(iso: string): string {
+  const local = jerusalemDateTime(iso);
+  if (!local) return "";
+  const day = local.date === TODAY ? "היום" : local.date === addDays(TODAY, -1) ? "אתמול" : ddmm(local.date);
+  return `${day} ${local.time}`;
+}

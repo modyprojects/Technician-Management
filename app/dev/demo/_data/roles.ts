@@ -1,15 +1,16 @@
-// FICTITIOUS DATA ONLY: demo viewpoints, office navigation and the default permission matrix.
-// Allowed only under app/dev (G-05). Client-safe.
-// Permission values are the demo's defaults (D33) and are TEMPORARY until the owner approves the
-// final matrix in Step 10 (D51). Here they only decide what the demo shows; real enforcement is
-// on the server and in the database (G-04).
+// FICTITIOUS DATA ONLY: demo presentation config: viewpoints, the signed-in demo users, office
+// navigation and technician navigation. Allowed only under app/dev (G-05). Client-safe.
+// No permission values here: the matrix is data (D33, temporary per D51), served by
+// demoDataAccess.reference.permissions(role); officeNav() receives it and only shapes the menu.
+// Real enforcement is on the server and in the database (G-04).
 import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
+import { offersAnyDashboard } from "@/features/reference/data/permissions";
 import {
   isOfficeRole,
   OFFICE_ROLE_VALUES,
   type OfficeRole,
-  type PermissionKey,
+  type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
 import { ME } from "./reference";
@@ -38,39 +39,19 @@ export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: s
   cs: { name: VIEWPOINTS.cs.who, roleLabel: VIEWPOINTS.cs.short, avatarColor: VIEWPOINTS.cs.color },
 };
 
-/** Permission-matrix keys (D33). */
-export type PermKey = PermissionKey;
-
-/** Status of every value below (D51). */
-export const PERMISSION_STATUS = "temporary" as const;
-
-/** Default matrix (D33, D37): Manager all on except settings and usage; Customer Service cal, calls, card. */
-export const PERMISSIONS: Record<OfficeRole, Record<PermKey, boolean>> = {
-  mgr: {
-    cal: true, calls: true, card: true, cancel: true, dashGen: true, dashTech: true, dashProd: true,
-    export: true, settings: false, usage: false, products: true, conflicts: true, recordings: true,
-  },
-  cs: {
-    cal: true, calls: true, card: true, cancel: false, dashGen: false, dashTech: false, dashProd: false,
-    export: false, settings: false, usage: false, products: false, conflicts: false, recordings: false,
-  },
-};
-
-/** The demo's can(): what this role's screens show. Never access control (G-04). */
-export const can = (role: OfficeRole, key: PermKey): boolean => PERMISSIONS[role][key];
-
-/** Whether the role sees any dashboard tab. */
-export const canSeeDashboards = (role: OfficeRole): boolean => can(role, "dashGen") || can(role, "dashTech") || can(role, "dashProd");
-
 export type OfficeNavKey = "home" | "calls" | "analytics";
 
-/** Office sidebar items per role, as real links. */
-export function officeNav(role: OfficeRole): (OfficeNavItem & { key: OfficeNavKey })[] {
+/**
+ * Office sidebar items as real links, from the role's matrix values (read through
+ * demoDataAccess.reference.permissions(role)). Display only: it hides menu items, it does not
+ * protect routes (G-04).
+ */
+export function officeNav(role: OfficeRole, permissions: RolePermissions): (OfficeNavItem & { key: OfficeNavKey })[] {
   const items: (OfficeNavItem & { key: OfficeNavKey })[] = [
     { key: "home", label: role === "mgr" ? "לוח בקרה" : "בית", href: demoHref.officeHome(role) },
     { key: "calls", label: "קריאות", href: demoHref.calls(role) },
   ];
-  if (canSeeDashboards(role)) items.push({ key: "analytics", label: "דשבורדים", href: demoHref.analytics() });
+  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורדים", href: demoHref.analytics() });
   return items;
 }
 

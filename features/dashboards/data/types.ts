@@ -2,10 +2,23 @@
 // manager dashboards (docs/demo.html offDash(): כללי / טכנאים / מוצרים וספקים, OF-11 to OF-13).
 // Values are raw numbers; screens own the Hebrew labels and formatting. In test environments
 // they include test data and screens show "נתוני בדיקה" (SIM-08, SIM-13): see `includesTestData`.
-import type { HourMinute, IsoDate, TestMarker } from "@/features/data-access/common";
+// Every list is bounded (docs/security.md: query bounds): lists that grow with the data are
+// Bounded<T> with a fixed cap (below) or a Page<T>; the rest are bounded by design (one row per
+// technician, per follow-up reason or per week of a period of at most 366 days).
+import type { Bounded, HourMinute, IsoDate, Page, PageRequest, TestMarker } from "@/features/data-access/common";
 import type { Product, TechnicianId, TechnicianRef } from "@/features/reference/data/types";
 import type { CallStatus } from "@/features/calls/data/types";
 import type { VisitRef, VisitSource, VisitStatus } from "@/features/visits/data/types";
+
+/**
+ * Fixed cap of the growing dashboard lists (attention and work-queue lists, recently closed,
+ * SKUs, brand and supplier bars). `total` on each Bounded<T> is the full count, so a screen can
+ * add "ועוד X" and link to the calls list.
+ */
+export const DASHBOARD_LIST_LIMIT = 20;
+
+/** "המשך טיפול – הכי ותיקים" shows the demo's 6 rows. */
+export const OLDEST_FOLLOWUPS_LIMIT = 6;
 
 /** How a number is shown: "12", "67%", "34 דק׳", "4.5" (days). */
 export type MetricUnit = "count" | "percent" | "minutes" | "days";
@@ -100,22 +113,22 @@ export type OfficeOverview = {
     awaitingScheduling: Metric;
   };
   lanes: TechnicianLane[];
-  /** Calls that need the office, oldest first. */
-  attention: CallAttentionItem[];
+  /** Calls that need the office, oldest first (at most DASHBOARD_LIST_LIMIT). */
+  attention: Bounded<CallAttentionItem>;
 };
 
 /** Customer-service work queue ("בית") for a date. */
 export type CsWorkQueue = {
   date: IsoDate;
   includesTestData: boolean;
-  /** Calls whose every visit was cancelled, oldest first. */
-  awaitingScheduling: CallAttentionItem[];
-  /** "המשך טיפול" calls that need a new visit, oldest first. */
-  followupsNeedingVisit: CallAttentionItem[];
+  /** Calls whose every visit was cancelled, oldest first (at most DASHBOARD_LIST_LIMIT). */
+  awaitingScheduling: Bounded<CallAttentionItem>;
+  /** "המשך טיפול" calls that need a new visit, oldest first (at most DASHBOARD_LIST_LIMIT). */
+  followupsNeedingVisit: Bounded<CallAttentionItem>;
   /** Today's visits by technician. */
   todayByTechnician: TechnicianLane[];
-  /** Visits closed on the date and the work day before, newest first (at most 20). */
-  recentlyClosed: ClosedVisitItem[];
+  /** Visits closed on the date and the work day before, newest first (at most DASHBOARD_LIST_LIMIT). */
+  recentlyClosed: Bounded<ClosedVisitItem>;
 };
 
 /** Dashboard period, inclusive (the demo shows one month: "אוקטובר 2026"). */
@@ -165,8 +178,8 @@ export type ManagerAnalytics = {
     followupReasons: BarRow[];
     /** "ביקורים לפי שבוע" (Sunday–Saturday weeks overlapping the period). */
     weekly: { weekStart: IsoDate; weekEnd: IsoDate; visits: number }[];
-    /** "המשך טיפול – הכי ותיקים" (at most 6). */
-    oldestFollowups: CallAttentionItem[];
+    /** "המשך טיפול – הכי ותיקים", oldest first (at most OLDEST_FOLLOWUPS_LIMIT). */
+    oldestFollowups: Bounded<CallAttentionItem>;
   };
   technicians: {
     stats: TechnicianStats[];
@@ -174,21 +187,24 @@ export type ManagerAnalytics = {
     reasonsByTechnician: { reason: string; counts: Record<TechnicianId, number>; total: number }[];
   };
   products: {
-    /** "קריאות לפי מותג" / "לפי ספק" (label "" = not entered, OF-12). */
-    byBrand: BarRow[];
-    bySupplier: BarRow[];
-    /** "מק״טים עם הכי הרבה קריאות", most calls first. */
-    skus: {
-      product: Product;
-      calls: number;
-      /** % of the SKU's calls under warranty. */
-      warrantyRate: Metric;
-      /** % of the SKU's closed visits that ended in follow-up (red above 40%). */
-      followupRate: Metric;
-      /** Most common fault description; null when no calls. */
-      topIssue: string | null;
-    }[];
+    /** "קריאות לפי מותג" / "לפי ספק", most calls first (label "" = not entered, OF-12; at most DASHBOARD_LIST_LIMIT). */
+    byBrand: Bounded<BarRow>;
+    bySupplier: Bounded<BarRow>;
+    /** "מק״טים עם הכי הרבה קריאות", most calls first (at most DASHBOARD_LIST_LIMIT). */
+    skus: Bounded<SkuStats>;
   };
+};
+
+/** One row of "מק״טים עם הכי הרבה קריאות". */
+export type SkuStats = {
+  product: Product;
+  calls: number;
+  /** % of the SKU's calls under warranty. */
+  warrantyRate: Metric;
+  /** % of the SKU's closed visits that ended in follow-up (red above 40%). */
+  followupRate: Metric;
+  /** Most common fault description; null when no calls. */
+  topIssue: string | null;
 };
 
 /** A row of the technician drill-down table (dashTechDetail). */
@@ -209,11 +225,28 @@ export type TechnicianVisitRow = TestMarker &
     signed: boolean;
   };
 
+/** Visit filter of the technician drill-down (the demo's chips: הכל / פתוחים / טופל / המשך טיפול / בוטלה). */
+export const TECHNICIAN_VISIT_FILTER_VALUES = ["all", "open", "done", "cont", "cancel"] as const;
+export type TechnicianVisitFilter = (typeof TECHNICIAN_VISIT_FILTER_VALUES)[number];
+
+export const isTechnicianVisitFilter = (value: unknown): value is TechnicianVisitFilter =>
+  typeof value === "string" && (TECHNICIAN_VISIT_FILTER_VALUES as readonly string[]).includes(value);
+
+/** What the drill-down asks for: the chip filter and the page of rows (default 40, at most 100). */
+export type TechnicianDetailQuery = PageRequest & {
+  /** Default "all"; unknown values fall back to "all". */
+  filter?: TechnicianVisitFilter;
+};
+
 /** Technician drill-down ("פירוט הטכנאי"). */
 export type TechnicianDetail = {
   stats: TechnicianStats;
-  /** Visits of every status in the period, newest first. */
-  visits: TechnicianVisitRow[];
+  /** The filter applied to `visits`. */
+  filter: TechnicianVisitFilter;
+  /** The period's visits per chip ("הכל" includes every status; "open" = scheduled, en route, in progress). */
+  visitCounts: Record<TechnicianVisitFilter, number>;
+  /** The period's visits matching `filter`, newest first, one page. */
+  visits: Page<TechnicianVisitRow>;
   /** Most frequent follow-up reason; null when none. */
   topReason: string | null;
   /** Calls whose first visit was this technician's and is closed ("מתוך X קריאות"). */

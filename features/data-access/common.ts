@@ -10,20 +10,42 @@ export type IsoDate = string;
 /** Local time "HH:MM". */
 export type HourMinute = string;
 
+/**
+ * Point in time, ISO 8601 with an offset, e.g. "2026-10-20T17:05:00+03:00" (timestamptz in the
+ * database). Screens format it for the user (Asia/Jerusalem, G-01); DTOs never carry display text.
+ */
+export type IsoTimestamp = string;
+
 /** D47: every record DTO says whether it is test data, so screens can show "🧪 נתוני בדיקה". */
 export type TestMarker = { isTest: boolean };
 
-/** One page of a bounded list query. */
-export type Page<T> = {
+/**
+ * A list cut to a fixed, documented cap (lists inside aggregate DTOs such as dashboards). Every
+ * list result is bounded (docs/security.md: query bounds); `total` lets a screen say "ועוד X".
+ */
+export type Bounded<T> = {
+  /** At most `limit` items. */
   items: T[];
-  /** Matching records before paging. */
+  /** Matching records before the cap. */
   total: number;
+  /** The cap that was applied. */
+  limit: number;
+};
+
+/** One page of a bounded list query (the caller chooses page and size). */
+export type Page<T> = Bounded<T> & {
   /** 1-based page number actually returned (clamped). */
   page: number;
-  /** Page size actually used (clamped to MAX_PAGE_LIMIT). */
-  limit: number;
   /** Number of pages (at least 1). */
   pageCount: number;
+};
+
+/** What a caller asks of a paged list query. Both optional; adapters clamp them (clampPage, clampLimit). */
+export type PageRequest = {
+  /** 1-based page; default 1. */
+  page?: number;
+  /** Page size; default DEFAULT_PAGE_LIMIT (40), at most MAX_PAGE_LIMIT (100). */
+  limit?: number;
 };
 
 /** Result of every command (save, sign, upload, cancel ...). */
@@ -86,6 +108,17 @@ export const isHourMinute = (value: unknown): value is HourMinute =>
 /** Request number ("מספר פנייה") or another short identifier: letters, digits and dashes. */
 export const isRecordKey = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9-]{1,32}$/.test(value);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A database id (uuid, 36 characters, either case). */
+export const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
+
+/** The first `cap` items of an in-memory list (fixture adapters; a database uses LIMIT and a count). */
+export function boundedOf<T>(all: readonly T[], cap: number): Bounded<T> {
+  const limit = clampInt(cap, 1, MAX_PAGE_LIMIT, DEFAULT_PAGE_LIMIT);
+  return { items: all.slice(0, limit), total: all.length, limit };
+}
 
 /** Slice one page out of an in-memory list (fixture adapters; a database pages with LIMIT/OFFSET). */
 export function pageOf<T>(all: readonly T[], page: unknown, limit: unknown): Page<T> {

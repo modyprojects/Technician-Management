@@ -42,6 +42,17 @@ export type Place = TestMarker & {
   active: boolean;
 };
 
+/**
+ * The "טופל" approval text the customer signs (Settings, D35). Every edit creates a new,
+ * immutable version. The close command sends the version shown at signing, and the server keeps
+ * that exact text with the signature (D43, TE-19); editing the text never changes past signatures.
+ */
+export type ApprovalText = TestMarker & {
+  /** Immutable version identifier of the text. */
+  versionId: string;
+  text: string;
+};
+
 /** Office roles governed by the permission matrix (D33). Creator and Technician are fixed. */
 export const OFFICE_ROLE_VALUES = ["mgr", "cs"] as const;
 export type OfficeRole = (typeof OFFICE_ROLE_VALUES)[number];

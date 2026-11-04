@@ -25,10 +25,6 @@ export interface VisitsQueries {
    * later visits or open visits.
    */
   history(ref: VisitRef): Promise<VisitHistoryItem[]>;
-  /** The technician's open visits (scheduled, en route, in progress). */
-  openRefs(techId: TechnicianId): Promise<VisitRef[]>;
-  /** Every visit of the technician, cancelled excluded (static params of the visit card). */
-  refs(techId: TechnicianId): Promise<VisitRef[]>;
 }
 
 /**

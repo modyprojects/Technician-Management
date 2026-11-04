@@ -7,7 +7,7 @@ import type { NotificationsQueries } from "@/features/notifications/data/ports";
 import type { ReferenceQueries } from "@/features/reference/data/ports";
 import type { VisitCommands, VisitsQueries } from "@/features/visits/data/ports";
 
-export type { CommandResult, Page } from "./common";
+export type { Bounded, CommandResult, Page, PageRequest } from "./common";
 
 /** Read side. Server-side: Server Components and server functions call it. */
 export type DataAccess = {

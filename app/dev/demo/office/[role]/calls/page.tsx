@@ -5,11 +5,12 @@ import type { CallsTableRow } from "@/components/office/CallsTable";
 import { CALL_STATUS_ORDER, CALL_STATUSES } from "@/components/ui/CallStatusPill";
 import { callFilterOf, parseCallsListState } from "@/features/calls/data/search-params";
 import type { CallSummary } from "@/features/calls/data/types";
+import { offers } from "@/features/reference/data/permissions";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { dayLabel } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { can, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
+import { isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { CallsBrowser } from "./_CallsBrowser";
@@ -54,16 +55,17 @@ function toRow(c: CallSummary, role: OfficeRole): CallsTableRow {
 // Office calls list (docs/demo.html offCalls()/callsTable(), L816-832): search, technician
 // filter, status chips with counts (service-call status, OF-17) and 40-row pages; a row opens the
 // call card. Reads only through the data-access layer: the URL (?q=&status=&tech=&page=) is the
-// query, filtered and paged by calls.list() (OF-04). Export (OF-14) is pending, so its button
-// only shows the simulated-action notice.
+// query, filtered and paged by calls.list() (OF-04). The export button follows the role's matrix
+// value (reference.permissions, display only).
 export default async function OfficeCallsPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/calls">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
 
   const state = parseCallsListState(await searchParams);
-  const [page, technicians] = await Promise.all([
+  const [page, technicians, permissions] = await Promise.all([
     demoDataAccess.calls.list(callFilterOf(state, PAGE_SIZE)),
     demoDataAccess.reference.technicians(),
+    demoDataAccess.reference.permissions(role),
   ]);
 
   // Counts over every call, as in the demo (they do not follow the search or technician filter).
@@ -80,7 +82,10 @@ export default async function OfficeCallsPage({ params, searchParams }: PageProp
           <h1>קריאות</h1>
           <div className="sub">כל הקריאות שנקלטו מ-Outlook. לחיצה על שורה פותחת את כרטיס הקריאה.</div>
         </div>
-        {can(role, "export") && (
+        {offers(permissions, "export") && (
+          // TODO(OF-14): no exports port yet (XLSX export is pending a decision). When it exists,
+          // this becomes a command through useCommands() / an authorized server route, and data-sim
+          // goes (data-sim stays only for navigation affordances such as dial and Waze).
           <button type="button" className="btn" data-sim="ייצוא ל-Excel ממתין להחלטה · לא נוצר קובץ">
             ייצוא ל-Excel
           </button>

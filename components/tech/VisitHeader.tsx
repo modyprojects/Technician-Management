@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 // Technician visit-card header (docs/demo.html techCall() and techDoneView() head, TE-05):
 // back link, "פנייה · משימה · ביקור" line, customer name, and the visit status on the other side.
 // Every top-level element is its own child of .ph-head, so above 900px it aligns with the
-// 760px content column (TE-31).
+// 760px content column (TE-31). The trailing side (status pill, 🧪 badge of a test call, SIM-15)
+// wraps onto a second line instead of squeezing a long customer name on a phone.
 export function VisitHeader({
   backHref,
   backLabel = "חזרה",
@@ -49,7 +50,19 @@ export function VisitHeader({
           <h1 style={{ fontSize: 21 }}>{title}</h1>
         </div>
         {trailing && (
-          <span style={{ display: "flex", gap: 6, alignItems: "center", flex: "none" }}>{trailing}</span>
+          <span
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              justifyContent: "flex-end",
+              flexWrap: "wrap",
+              flex: "none",
+              maxWidth: "50%",
+            }}
+          >
+            {trailing}
+          </span>
         )}
       </div>
     </>

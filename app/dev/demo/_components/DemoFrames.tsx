@@ -3,14 +3,20 @@ import { OfficeShell } from "@/components/office/OfficeShell";
 import type { TechTab } from "@/components/tech/TechBottomNav";
 import { TechShell } from "@/components/tech/TechShell";
 import type { OfficeRole } from "@/features/reference/data/types";
+import { demoDataAccess } from "../_data/adapter";
 import { OFFICE_SHELL_USERS, officeNav, TECH_NAV_HREFS, type OfficeNavKey } from "../_data/roles";
 import { DemoPage } from "./DemoPage";
 
-/** DemoPage + OfficeShell with the role's sidebar (real links) and signed-in user. */
-export function DemoOfficeFrame({ role, active, children }: { role: OfficeRole; active: OfficeNavKey; children: ReactNode }) {
+/**
+ * DemoPage + OfficeShell with the role's sidebar (real links) and signed-in user. Server
+ * Component: the sidebar items follow the role's permission values, read through the layer
+ * (reference.permissions; display only, G-04).
+ */
+export async function DemoOfficeFrame({ role, active, children }: { role: OfficeRole; active: OfficeNavKey; children: ReactNode }) {
+  const permissions = await demoDataAccess.reference.permissions(role);
   return (
     <DemoPage viewpoint={role}>
-      <OfficeShell nav={officeNav(role)} activeKey={active} user={OFFICE_SHELL_USERS[role]}>
+      <OfficeShell nav={officeNav(role, permissions)} activeKey={active} user={OFFICE_SHELL_USERS[role]}>
         {children}
       </OfficeShell>
     </DemoPage>

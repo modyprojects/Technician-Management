@@ -118,7 +118,8 @@ export type DemoNotification = {
   kind: NotificationKind;
   title: string;
   sub: string;
-  time: string;
+  /** When the event happened: ISO timestamp, Asia/Jerusalem offset (the demo's "אתמול 17:05"). */
+  at: string;
   req?: string;
   n?: number;
   read: boolean;

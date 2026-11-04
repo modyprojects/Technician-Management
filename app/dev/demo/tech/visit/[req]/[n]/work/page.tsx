@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { WorkFooter } from "@/components/tech/WorkFooter";
+import { WorkScreen } from "@/components/tech/WorkScreen";
+import type { WorkSeed } from "@/components/tech/WorkDraft";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { isOpenVisitStatus } from "@/features/visits/data/types";
+import { isOpenVisitStatus, type VisitDetail, type VisitRef } from "@/features/visits/data/types";
 import { DemoTechFrame } from "../../../../../_components/DemoFrames";
-import { Placeholder } from "../../../../../_components/Placeholder";
 import { demoDataAccess } from "../../../../../_data/adapter";
 import { techOpenVisitParams } from "../../../../../_data/params";
 import { DEMO_TECHNICIAN_ID } from "../../../../../_data/roles";
@@ -16,22 +18,42 @@ export function generateStaticParams() {
   return techOpenVisitParams();
 }
 
-export const metadata: Metadata = { title: "טיפול בביקור · טכנאי · הדגמה" };
+/** The demo technician's open visit, or null (closed visits are read-only to technicians, D14). */
+async function myOpenVisit(req: string, n: string): Promise<VisitDetail | null> {
+  const visit = await demoDataAccess.visits.get({ req, n: Number(n) });
+  return visit && visit.technician.id === DEMO_TECHNICIAN_ID && isOpenVisitStatus(visit.status) && visit.editable ? visit : null;
+}
 
-// Work screen (photos, recording, summary, parts). Placeholder until the work screen replaces it;
-// that screen reads visits.get(ref) and runs useCommands().visits (addMedia, removeMedia,
-// saveSummary, saveRecording, deleteRecording, saveParts).
+export async function generateMetadata({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]/work">): Promise<Metadata> {
+  const { req, n } = await params;
+  const visit = await myOpenVisit(req, n);
+  return { title: visit ? `טיפול · ${visit.customer.name} · הדגמה` : "טיפול בביקור · טכנאי · הדגמה" };
+}
+
+// Technician work screen (docs/demo.html techWork(), L552-578; TE-14 to TE-17): photos and videos
+// before and after, the treatment summary (written, or a simulated recording), the parts replaced
+// and "סיום ביקור ›" once the work is ready. Reads visits.get(ref); the client components run
+// useCommands().visits (addMedia, removeMedia, saveSummary, saveRecording, deleteRecording,
+// saveParts). The status pill shows "בטיפול": the technician reaches this screen through "הגעתי".
 export default async function TechWorkPage({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]/work">) {
   const { req, n } = await params;
-  const visit = await demoDataAccess.visits.get({ req, n: Number(n) });
-  if (!visit || visit.technician.id !== DEMO_TECHNICIAN_ID || !isOpenVisitStatus(visit.status)) notFound();
+  const visit = await myOpenVisit(req, n);
+  if (!visit) notFound();
+  const ref: VisitRef = { req: visit.req, n: visit.n };
+  const seed: WorkSeed = {
+    media: visit.media,
+    summary: visit.summary,
+    recordingSeconds: visit.recordingSeconds,
+    parts: visit.parts,
+  };
   return (
     <DemoTechFrame
       head={
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
             <Link className="ph-back" href={demoHref.visit(visit.req, visit.n)}>
-              › פרטי קריאה
+              <span aria-hidden="true">› </span>
+              פרטי קריאה
             </Link>
             <StatusPill status="work" />
           </div>
@@ -40,13 +62,9 @@ export default async function TechWorkPage({ params }: PageProps<"/dev/demo/tech
           </h1>
         </>
       }
-      foot={
-        <Link className="bigbtn" href={demoHref.close(visit.req, visit.n)} style={{ background: "var(--ink)" }}>
-          סיום ביקור ›
-        </Link>
-      }
+      foot={<WorkFooter visit={ref} seed={seed} closeHref={demoHref.close(visit.req, visit.n)} />}
     >
-      <Placeholder screen="מסך הטיפול" />
+      <WorkScreen visit={ref} seed={seed} pickupItem={visit.pickup?.item ?? null} />
     </DemoTechFrame>
   );
 }

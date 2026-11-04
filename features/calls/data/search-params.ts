@@ -1,7 +1,8 @@
 // Calls-list URL state (?q=&status=&tech=&page=) ↔ CallFilter. Pure: used by the list page on
 // the server (to query the layer) and by the browser (to update the URL), so a Supabase adapter
 // receives exactly the same filter. Unknown or malformed values fall back to defaults.
-import { clampPage, isRecordKey, normalizeQuery } from "@/features/data-access/common";
+import { clampPage, normalizeQuery } from "@/features/data-access/common";
+import { isTechnicianId } from "@/features/reference/data/validate";
 import { isCallStatus, type CallFilter, type CallStatus } from "./types";
 
 /** What the calls-list controls show. */
@@ -27,7 +28,7 @@ export function parseCallsListState(sp: SearchParamsLike | URLSearchParams): Cal
   return {
     q: normalizeQuery(get("q")),
     status: isCallStatus(status) ? status : ALL,
-    tech: tech && tech !== ALL && isRecordKey(tech) ? tech : ALL,
+    tech: tech && tech !== ALL && isTechnicianId(tech) ? tech : ALL,
     page: clampPage(get("page")),
   };
 }

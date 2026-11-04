@@ -176,6 +176,11 @@ export type CloseVisitInput = {
   signerName?: string;
   /** PNG data URL of the signature; required for "done". */
   signatureDataUrl?: string;
+  /**
+   * Version id of the approval text shown at signing ("done"; reference.approvalText(), D43).
+   * The server verifies it (with the text hash a production adapter adds) and keeps that exact text.
+   */
+  approvalTextVersionId?: string;
   /** "מה צריך בביקור הבא" (cont only). */
   nextNote?: string;
 };

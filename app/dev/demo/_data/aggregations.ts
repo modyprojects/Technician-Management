@@ -3,22 +3,27 @@
 // the DTOs in features/dashboards/data/types. Server-side; used only by adapter.ts.
 // Allowed only under app/dev (G-05). A Supabase adapter computes the same figures in SQL.
 import type { CallStatus } from "@/features/calls/data/types";
-import type { IsoDate } from "@/features/data-access/common";
-import type {
-  AnalyticsPeriod as Period,
-  BarRow,
-  CallAttentionItem,
-  ClosedVisitItem,
-  CsWorkQueue,
-  ManagerAnalytics,
-  Metric,
-  MetricUnit,
-  OfficeOverview,
-  TechnicianDetail,
-  TechnicianStats,
+import { boundedOf, pageOf, type Bounded, type IsoDate } from "@/features/data-access/common";
+import {
+  DASHBOARD_LIST_LIMIT,
+  OLDEST_FOLLOWUPS_LIMIT,
+  type AnalyticsPeriod as Period,
+  type BarRow,
+  type CallAttentionItem,
+  type ClosedVisitItem,
+  type CsWorkQueue,
+  type ManagerAnalytics,
+  type Metric,
+  type MetricUnit,
+  type OfficeOverview,
+  type SkuStats,
+  type TechnicianDetail,
+  type TechnicianDetailQuery,
+  type TechnicianStats,
+  type TechnicianVisitFilter,
 } from "@/features/dashboards/data/types";
 import { addDays, daysBetween, shiftWorkDay, weekStart } from "./dates";
-import { callStatus, isClosedVisit } from "./status";
+import { callStatus, isClosedVisit, isOpenVisit } from "./status";
 import { followupReasonOf, productDto, techRef, technicianLanes } from "./mappers";
 import { ALL_VISITS, avg, CALLS, lastVisit, travelOf, treatOf, type CallVisit } from "./queries";
 import { PRODUCTS, prod, REASONS, TECHS } from "./reference";
@@ -31,6 +36,9 @@ const pct = (part: number, whole: number): number | null => (whole ? Math.round(
 
 /** Rounded average, or null for an empty list (the demo shows 0; screens show "—"). */
 const avgOrNull = (xs: readonly number[]): number | null => (xs.length ? avg(xs) : null);
+
+/** The first DASHBOARD_LIST_LIMIT items and the full count. */
+const capped = <T>(all: readonly T[]): Bounded<T> => boundedOf(all, DASHBOARD_LIST_LIMIT);
 
 const nonNull = (xs: readonly (number | null)[]): number[] => xs.filter((x): x is number => x != null);
 
@@ -84,7 +92,7 @@ export function officeOverview(date: IsoDate): OfficeOverview {
       awaitingScheduling: metric(statuses.filter((s) => s === "awaiting").length, "count"),
     },
     lanes: technicianLanes(today),
-    attention: attention(date, ["awaiting", "followup"]),
+    attention: capped(attention(date, ["awaiting", "followup"])),
   };
 }
 
@@ -93,7 +101,6 @@ export function csQueue(date: IsoDate): CsWorkQueue {
   const from = shiftWorkDay(date, -1);
   const recentlyClosed: ClosedVisitItem[] = ALL_VISITS.filter((x) => isClosedVisit(x.v) && x.v.date >= from && x.v.date <= date)
     .sort((a, b) => (b.v.date + (b.v.endAt ?? "")).localeCompare(a.v.date + (a.v.endAt ?? "")))
-    .slice(0, 20)
     .map(({ c, v }) => ({
       req: c.req,
       n: v.n,
@@ -110,10 +117,10 @@ export function csQueue(date: IsoDate): CsWorkQueue {
   return {
     date,
     includesTestData: true,
-    awaitingScheduling: attention(date, ["awaiting"]),
-    followupsNeedingVisit: attention(date, ["followup"]),
+    awaitingScheduling: capped(attention(date, ["awaiting"])),
+    followupsNeedingVisit: capped(attention(date, ["followup"])),
     todayByTechnician: technicianLanes(visitsOn(date)),
-    recentlyClosed,
+    recentlyClosed: capped(recentlyClosed),
   };
 }
 
@@ -189,7 +196,7 @@ export function managerAnalytics(period: Period, asOf: IsoDate): ManagerAnalytic
       })),
       followupReasons: REASONS.map((r) => ({ key: r.name, label: r.name, value: reasonCount(r.name) })),
       weekly,
-      oldestFollowups: followups.slice(0, 6),
+      oldestFollowups: boundedOf(followups, OLDEST_FOLLOWUPS_LIMIT),
     },
     technicians: {
       stats: TECHS.map((t) => techStats(t.id, closed, calls)),
@@ -199,28 +206,43 @@ export function managerAnalytics(period: Period, asOf: IsoDate): ManagerAnalytic
       }),
     },
     products: {
-      byBrand: groupCount(calls, (c) => prod(c.sku).brand),
-      bySupplier: groupCount(calls, (c) => prod(c.sku).sup),
-      skus: PRODUCTS.map((p) => {
-        const cs = calls.filter((c) => c.sku === p.sku);
-        const vs = cs.flatMap((c) => c.visits).filter(isClosedVisit);
-        const issues = new Map<string, number>();
-        for (const c of cs) issues.set(c.desc, (issues.get(c.desc) ?? 0) + 1);
-        const top = [...issues.entries()].sort((a, b) => b[1] - a[1])[0];
-        return {
-          product: productDto(p.sku),
-          calls: cs.length,
-          warrantyRate: metric(pct(cs.filter((c) => c.warranty.startsWith("כן")).length, cs.length), "percent"),
-          followupRate: metric(pct(vs.filter((v) => v.status === "cont").length, vs.length), "percent"),
-          topIssue: top ? top[0] : null,
-        };
-      }).sort((a, b) => b.calls - a.calls),
+      byBrand: capped(groupCount(calls, (c) => prod(c.sku).brand)),
+      bySupplier: capped(groupCount(calls, (c) => prod(c.sku).sup)),
+      skus: capped(skuStats(calls)),
     },
   };
 }
 
-/** Technician drill-down ("פירוט הטכנאי"). */
-export function technicianDetail(id: TechId, period: Period): TechnicianDetail {
+/** "מק״טים עם הכי הרבה קריאות", most calls first. */
+function skuStats(calls: readonly Call[]): SkuStats[] {
+  return PRODUCTS.map((p) => {
+    const cs = calls.filter((c) => c.sku === p.sku);
+    const vs = cs.flatMap((c) => c.visits).filter(isClosedVisit);
+    const issues = new Map<string, number>();
+    for (const c of cs) issues.set(c.desc, (issues.get(c.desc) ?? 0) + 1);
+    const top = [...issues.entries()].sort((a, b) => b[1] - a[1])[0];
+    return {
+      product: productDto(p.sku),
+      calls: cs.length,
+      warrantyRate: metric(pct(cs.filter((c) => c.warranty.startsWith("כן")).length, cs.length), "percent"),
+      followupRate: metric(pct(vs.filter((v) => v.status === "cont").length, vs.length), "percent"),
+      topIssue: top ? top[0] : null,
+    };
+  }).sort((a, b) => b.calls - a.calls);
+}
+
+/** Whether a visit matches a drill-down chip (the demo's tdFilter). */
+function matchesVisitFilter(v: Visit, filter: TechnicianVisitFilter): boolean {
+  if (filter === "all") return true;
+  return filter === "open" ? isOpenVisit(v) : v.status === filter;
+}
+
+/** Technician drill-down ("פירוט הטכנאי"): rows filtered by the chip and paged. */
+export function technicianDetail(
+  id: TechId,
+  period: Period,
+  query: TechnicianDetailQuery & { filter: TechnicianVisitFilter },
+): TechnicianDetail {
   const all = ALL_VISITS.filter((x) => x.v.tech === id && inRange(x.v.date, period)).sort((a, b) =>
     (b.v.date + b.v.start).localeCompare(a.v.date + a.v.start),
   );
@@ -230,29 +252,41 @@ export function technicianDetail(id: TechId, period: Period): TechnicianDetail {
   const top = REASONS.map((r) => [r.name, closed.filter((x) => x.v.reason === r.name).length] as const)
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1])[0];
+  const count = (f: TechnicianVisitFilter): number => all.filter((x) => matchesVisitFilter(x.v, f)).length;
+  // pageOf() clamps page and limit (default 40, at most 100).
+  const page = pageOf(
+    all.filter((x) => matchesVisitFilter(x.v, query.filter)),
+    query.page,
+    query.limit,
+  );
   return {
     stats: techStats(id, closed, calls),
-    visits: all.map(({ c, v }) => {
-      const p = prod(c.sku);
-      return {
-        req: c.req,
-        n: v.n,
-        date: v.date,
-        start: v.start,
-        status: v.status,
-        reason: v.reason,
-        customerName: c.customer,
-        city: c.city,
-        product: { sku: p.sku, name: p.name },
-        travelMinutes: travelOf(v),
-        treatMinutes: treatOf(v),
-        mediaCount: v.media.length,
-        hasRecording: v.rec > 0,
-        hasSummary: v.summary.trim() !== "",
-        signed: v.signer !== null,
-        isTest: true,
-      };
-    }),
+    filter: query.filter,
+    visitCounts: { all: all.length, open: count("open"), done: count("done"), cont: count("cont"), cancel: count("cancel") },
+    visits: {
+      ...page,
+      items: page.items.map(({ c, v }) => {
+        const p = prod(c.sku);
+        return {
+          req: c.req,
+          n: v.n,
+          date: v.date,
+          start: v.start,
+          status: v.status,
+          reason: v.reason,
+          customerName: c.customer,
+          city: c.city,
+          product: { sku: p.sku, name: p.name },
+          travelMinutes: travelOf(v),
+          treatMinutes: treatOf(v),
+          mediaCount: v.media.length,
+          hasRecording: v.rec > 0,
+          hasSummary: v.summary.trim() !== "",
+          signed: v.signer !== null,
+          isTest: true,
+        };
+      }),
+    },
     topReason: top ? top[0] : null,
     firstVisitCalls: firsts.length,
     includesTestData: true,

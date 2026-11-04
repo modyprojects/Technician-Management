@@ -3,7 +3,9 @@
 // Simulated-action feedback for the UI demo (D53). Nothing in the demo is saved or sent, so every
 // action that would change data, call, navigate outside or send shows this toast instead.
 // - Any element with data-sim="detail" (also in Server Components) shows the toast on click;
-//   the click's default action is prevented.
+//   the click's default action is prevented. data-sim is only for navigation affordances (dial,
+//   Waze) and for the two features that have no port yet (export OF-14, recording playback
+//   OF-06; TODOs at their buttons). Data actions go through useCommands().
 // - Client components call useSimulate()("detail").
 // - Bottom-nav and sidebar buttons without a link (screens outside the demo) say so.
 import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";

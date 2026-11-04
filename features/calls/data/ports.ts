@@ -1,7 +1,7 @@
 // Service-call ports. Implemented by app/dev/demo/_data/adapter.ts (queries, fictional
 // fixtures), app/dev/demo/_components/SimulatedCommands.tsx (commands, simulated) and, later,
 // by Supabase adapters that run on the server under the caller's session (RLS).
-import type { CommandResult } from "@/features/data-access/common";
+import type { CommandResult, Page, PageRequest } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
 import type { CallDetail, CallFilter, CallsPage, CallSummary, VisitSlot } from "./types";
 
@@ -10,10 +10,8 @@ export interface CallsQueries {
   list(filter: CallFilter): Promise<CallsPage>;
   /** The call card; null when not found (or not visible). */
   get(req: string): Promise<CallDetail | null>;
-  /** Other calls of the same customer (same phone or customer number), newest first. */
-  customerHistory(req: string): Promise<CallSummary[]>;
-  /** Every request number (static params of the demo build; not for production lists). */
-  ids(): Promise<string[]>;
+  /** Other calls of the same customer (same phone or customer number), newest first, paged (default 40, at most 100). */
+  customerHistory(req: string, page?: PageRequest): Promise<Page<CallSummary>>;
 }
 
 /** Office actions on a call. Results say whether they were simulated. */

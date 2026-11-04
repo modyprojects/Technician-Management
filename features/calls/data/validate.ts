@@ -8,6 +8,7 @@ import {
   isRecordKey,
   normalizeQuery,
 } from "@/features/data-access/common";
+import { isTechnicianId } from "@/features/reference/data/validate";
 import { CALL_STATUS_VALUES, isCallStatus, type CallFilter, type VisitSlot } from "./types";
 
 export const NOTE_MAX = 500;
@@ -24,7 +25,7 @@ export function normalizeCallFilter(filter: CallFilter | undefined): NormalizedC
     q: normalizeQuery(f.q),
     // Every status selected is the same as none.
     statuses: statuses.length === CALL_STATUS_VALUES.length ? [] : statuses,
-    technicianId: isRecordKey(f.technicianId) ? f.technicianId : undefined,
+    technicianId: isTechnicianId(f.technicianId) ? f.technicianId : undefined,
     from: isIsoDate(f.from) ? f.from : undefined,
     to: isIsoDate(f.to) ? f.to : undefined,
     page: clampPage(f.page),
