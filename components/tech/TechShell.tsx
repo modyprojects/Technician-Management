@@ -8,6 +8,7 @@ export function TechShell({
   children,
   foot,
   activeTab,
+  activeIsCurrent = true,
   navHrefs,
 }: {
   head: ReactNode;
@@ -15,6 +16,8 @@ export function TechShell({
   foot?: ReactNode;
   /** Shows the bottom navigation with this tab selected; omit for screens without it. */
   activeTab?: TechTab;
+  /** False on a screen opened from the tab (not the tab's own page): no aria-current. */
+  activeIsCurrent?: boolean;
   /** Optional link per bottom-navigation tab; tabs without one render as buttons. */
   navHrefs?: TechNavHrefs;
 }) {
@@ -23,8 +26,12 @@ export function TechShell({
       <div className="phone">
         <header className="ph-head">{head}</header>
         <main className="ph-main">{children}</main>
-        {foot && <div className="ph-foot">{foot}</div>}
-        {activeTab && <TechBottomNav active={activeTab} hrefs={navHrefs} />}
+        {foot && (
+          <div className="ph-foot" role="region" aria-label="פעולות">
+            {foot}
+          </div>
+        )}
+        {activeTab && <TechBottomNav active={activeTab} current={activeIsCurrent} hrefs={navHrefs} />}
       </div>
     </div>
   );

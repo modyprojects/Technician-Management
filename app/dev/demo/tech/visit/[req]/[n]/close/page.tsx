@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CloseFooter } from "@/components/tech/CloseFooter";
+import { CloseBackLink } from "@/components/tech/CloseBackLink";
 import { CloseScreen } from "@/components/tech/CloseScreen";
 import type { WorkSeed } from "@/components/tech/WorkDraft";
 import { isOpenVisitStatus, type VisitDetail, type VisitRef } from "@/features/visits/data/types";
@@ -10,6 +9,7 @@ import { demoDataAccess } from "../../../../../_data/adapter";
 import { techOpenVisitParams } from "../../../../../_data/params";
 import { DEMO_TECHNICIAN_ID } from "../../../../../_data/roles";
 import { demoHref } from "../../../../../_data/routes";
+import { CloseFoot } from "./_CloseFoot";
 
 export const dynamicParams = false;
 
@@ -33,7 +33,9 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/tech/vis
 // TE-18 to TE-23): the outcome, then the approval text, signer name and signature ("טופל") or the
 // follow-up reason and next-visit note ("המשך טיפול"). Reads visits.get(ref),
 // reference.reasons() (active ones) and reference.approvalText(); the client components run
-// useCommands().visits.close(ref, input) and show the result.
+// useCommands().visits.close(ref, input) and show the result. After a successful close the header
+// link leads to "היום" instead of back to the work screen, and the visit shows as closed on the
+// other technician screens (VisitStatusProvider).
 export default async function TechClosePage({ params }: PageProps<"/dev/demo/tech/visit/[req]/[n]/close">) {
   const { req, n } = await params;
   const visit = await myOpenVisit(req, n);
@@ -55,16 +57,13 @@ export default async function TechClosePage({ params }: PageProps<"/dev/demo/tec
       head={
         <>
           <div>
-            <Link className="ph-back" href={workHref}>
-              <span aria-hidden="true">› </span>
-              חזרה לטיפול
-            </Link>
+            <CloseBackLink visit={ref} seed={seed} workHref={workHref} homeHref={demoHref.tech()} />
           </div>
           <h1 style={{ fontSize: 19, marginTop: 6 }}>סיום ביקור · {visit.customer.name}</h1>
         </>
       }
       foot={
-        <CloseFooter visit={ref} seed={seed} approvalTextVersionId={approvalText.versionId} homeHref={demoHref.tech()} />
+        <CloseFoot visit={ref} seed={seed} approvalTextVersionId={approvalText.versionId} homeHref={demoHref.tech()} />
       }
     >
       <CloseScreen

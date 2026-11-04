@@ -124,9 +124,9 @@ export function CloseScreen({
           </div>
         </section>
       )}
-      <b id={outcomeTitleId} style={{ fontSize: 14 }}>
+      <h2 id={outcomeTitleId} style={{ fontFamily: "var(--body)", fontSize: 14, fontWeight: 700 }}>
         מה התוצאה של הביקור? <Req />
-      </b>
+      </h2>
       <div role="group" aria-labelledby={outcomeTitleId} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
         {OUTCOMES.map((o) => (
           <button
@@ -177,9 +177,9 @@ export function CloseScreen({
 
       {k.outcome === "cont" && (
         <section className="card" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }} aria-label="המשך טיפול">
-          <b id={reasonTitleId} style={{ fontSize: 13 }}>
+          <h2 id={reasonTitleId} style={{ fontFamily: "var(--body)", fontSize: 13, fontWeight: 700 }}>
             סיבה <Req />
-          </b>
+          </h2>
           <div role="group" aria-labelledby={reasonTitleId} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {reasons.map((r) => (
               <button

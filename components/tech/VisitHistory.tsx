@@ -1,9 +1,12 @@
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
+import { TestBadge } from "@/components/ui/TestBadge";
 import type { VisitHistoryItem } from "@/features/visits/data/types";
 
 // "↻ ביקור המשך" box on the technician visit card (docs/demo.html techCall() L519-524; TE-06).
 // Same look as the demo (orange border, pale background, "ביקור N · תאריך · טכנאי · סיבה",
 // the summary in quotes, the media count). Changes (TE-06, D36, D37):
+// - The photos and videos themselves, as the call card's thumbnail row (OF-06), with the 🧪
+//   badge on test media (SIM-19). Production shows them through short-lived signed URLs only.
 // - Every earlier closed visit of the same call is shown, newest first (the demo showed only the
 //   last one), even when another technician did it.
 // - Instead of the previous recording (the demo showed its length) the approved transcription is
@@ -61,9 +64,23 @@ export function VisitHistory({ items }: { items: readonly VisitHistoryItem[] }) 
                 <b>חלפים שהוחלפו:</b> {h.parts.join(", ")}
               </div>
             )}
-            <div className="num" style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-              {mediaLabel(h.mediaCount)}
+            <div className="num" style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, display: "flex", gap: 6, alignItems: "center" }}>
+              {mediaLabel(h.media.length)}
+              {h.media.some((m) => m.isTest) && <TestBadge />}
             </div>
+            {h.media.length > 0 && (
+              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                {h.media.map((m) => (
+                  <div
+                    key={m.id}
+                    className={m.kind === "vid" ? "thumb vid" : "thumb"}
+                    style={{ width: 56 }}
+                    role="img"
+                    aria-label={`${m.kind === "vid" ? "סרטון" : "תמונה"} · ${m.when === "before" ? "לפני הטיפול" : "אחרי הטיפול"} · ביקור ${h.n}`}
+                  />
+                ))}
+              </div>
+            )}
           </article>
         );
       })}

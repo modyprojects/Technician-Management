@@ -51,7 +51,7 @@ const mediaOf = (c: Call, v: Visit): MediaDto[] =>
   v.media.map((m, i) => ({ id: `${c.req}-${v.n}-${i + 1}`, kind: m.t, when: m.when, isTest: TEST }));
 
 /** The source of the call's first invitation. */
-const callSource = (c: Call) => c.visits[0]?.source ?? "outlook";
+const callSource = (c: Call) => c.visits[0]?.source ?? "simulator";
 
 export function visitRecord(c: Call, v: Visit): VisitRecord {
   return {
@@ -167,6 +167,7 @@ export function historyItem(c: Call, v: Visit): VisitHistoryItem {
     followupReason: v.reason,
     nextNote: v.nextNote,
     parts: [...v.parts],
+    media: mediaOf(c, v),
     mediaCount: v.media.length,
     recordingSeconds: v.rec,
     customerName: c.customer,

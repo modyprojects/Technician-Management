@@ -6,7 +6,7 @@
 // artificial delay, and the demo toast shows "פעולה מדומה · לא נשמר" with what would have happened.
 // Screens call useCommands() and never this module directly.
 import { useMemo, type ReactNode } from "react";
-import { cancelReasonError, noteError, requestNumberError, slotError } from "@/features/calls/data/validate";
+import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
@@ -16,6 +16,7 @@ import {
   mediaError,
   mediaIdError,
   partsError,
+  pickupCollectedError,
   recordingError,
   summaryError,
   visitRefError,
@@ -76,17 +77,7 @@ export function SimulatedCommandsProvider({ children }: { children: ReactNode })
 
     return {
       calls: {
-        reschedule: (ref, slot) =>
-          run(
-            () => [visitRefError(ref), slotError(slot)],
-            () =>
-              `שינוי מועד לביקור ${ref.n} · פנייה ${ref.req}${slot ? ` · ${slot.date} ${slot.start}–${slot.end}` : ""} · בפועל המועד משתנה בזימון ב-Outlook`,
-          ),
-        addNote: (req, text) =>
-          run(
-            () => [requestNumberError(req), noteError(text)],
-            () => `הערה לפנייה ${req}: ${excerpt(text)}`,
-          ),
+        // OF-09 PENDING (d08): no screen calls this yet (the call card shows a disabled placeholder).
         cancelVisit: (ref, input) =>
           run(
             () => [visitRefError(ref), cancelReasonError(input?.reason)],
@@ -97,12 +88,17 @@ export function SimulatedCommandsProvider({ children }: { children: ReactNode })
         depart: (ref) =>
           run(
             () => [visitRefError(ref)],
-            () => `יציאה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בדרך"`,
+            () => `יציאה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בדרך" · Waze לא נפתח בהדגמה`,
           ),
         arrive: (ref) =>
           run(
             () => [visitRefError(ref)],
             () => `הגעה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בטיפול"`,
+          ),
+        setPickupCollected: (ref, collected) =>
+          run(
+            () => [visitRefError(ref), pickupCollectedError(collected)],
+            () => `${collected ? "סימון נאסף" : "ביטול סימון נאסף"} · ${visitLabel(ref)}`,
           ),
         saveSummary: (ref, text) =>
           run(

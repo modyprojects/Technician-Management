@@ -38,12 +38,12 @@ export function SummaryEditor({ visit, draft, onChange }: { visit: VisitRef; dra
   return (
     <section className="card" style={{ padding: "12px 14px" }} aria-labelledby={titleId}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "2px 10px", marginBottom: 8 }}>
-        <b id={titleId} style={{ fontSize: 14 }}>
+        <h2 id={titleId} style={{ fontFamily: "var(--body)", fontSize: 14, fontWeight: 700 }}>
           סיכום הטיפול{" "}
           <span style={{ color: "var(--danger)" }} aria-hidden="true">
             *
           </span>
-        </b>
+        </h2>
         <span className="sub">{VOICE_ONLY_CLOSE ? "חובה: כתיבה או הקלטה" : "חובה: סיכום כתוב · הקלטה לא חובה"}</span>
       </div>
       <div className="seg" role="group" aria-label="אופן הסיכום" style={{ marginBottom: 10 }}>

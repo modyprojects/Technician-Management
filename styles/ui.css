@@ -54,14 +54,17 @@ a.btn, a.chip { display: inline-block; text-align: center; }
 a.bigbtn, a.ph-back, a.xbtn { text-decoration: none; }
 a.xbtn { display: inline-flex; align-items: center; justify-content: center; color: inherit; }
 /* Toast (L76). Deviation for owner review: width:max-content, so a fixed toast centred with
-   left:50% is not limited to half the screen width; max-width still caps it as in the demo. */
-.toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); width: max-content; background: var(--ink); color: var(--on-dark); padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; z-index: 90; max-width: min(560px, calc(100% - 32px)); box-shadow: 0 6px 24px rgba(0, 0, 0, .25); text-align: center; }
+   left:50% is not limited to half the screen width; max-width still caps it as in the demo.
+   pointer-events:none: a toast never swallows a tap on what lies under it. */
+.toast { pointer-events: none; position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); width: max-content; background: var(--ink); color: var(--on-dark); padding: 12px 18px; border-radius: 12px; font-weight: 600; font-size: 14px; z-index: 90; max-width: min(560px, calc(100% - 32px)); box-shadow: 0 6px 24px rgba(0, 0, 0, .25); text-align: center; }
 
 /* Technician (L82-114). .techwrap/.phone are the real app layout; the phone frame itself is DROP. */
 .techwrap { height: 100%; display: block; }
 .phone { width: 100%; height: 100%; background: var(--bg); overflow: hidden; display: flex; flex-direction: column; }
 .ph-head { background: var(--ink); color: var(--on-dark); padding: max(12px, env(safe-area-inset-top, 0px)) 16px 14px; flex: none; }
 .ph-head a, .ph-back { color: var(--on-dark3); font-size: 14px; background: none; border: 0; padding: 4px 0; }
+/* Focus ring on the dark header and sidebar: the accent outline is under 3:1 on --ink (WCAG 1.4.11). */
+.ph-head :focus-visible, .side :focus-visible { outline-color: var(--on-dark); }
 .ph-main { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .ph-foot { padding: 12px 14px 16px; background: var(--card); border-top: 1px solid var(--line); flex: none; }
 .ph-nav { height: auto; padding-block: 8px max(8px, env(safe-area-inset-bottom, 0px)); background: var(--card); border-top: 1px solid var(--line); display: flex; justify-content: space-around; align-items: center; flex: none; }
@@ -225,20 +228,25 @@ a.stat { text-decoration: none; }
    phones (the demo's single-line table that scrolls sideways); at 521-900px it moves under the
    customer name, so the calls table keeps fitting at 820px (G-07). */
 .oc-custno-sub { display: none; }
+/* The follow-up reason: inside the status pill as in the demo, but under it at 521-900px, so the
+   status column shrinks to "המשך טיפול" and customer and product get the width (G-07). */
+.oc-reason-sub { display: none; }
 @container stage (min-width: 521px) and (max-width: 900px) {
   .oc-custno-col { display: none; }
   .oc-custno-sub { display: block; }
+  .oc-reason-inline { display: none; }
+  .oc-reason-sub { display: block; white-space: normal; font-size: 12px; margin-top: 3px; }
 }
 /* end office-calls */
 
 /* office-call-detail */
 /* Office call card columns (UI demo, D53; demo offCard() L851: minmax(0,1fr) minmax(0,1.5fr),
    top-aligned). The demo sets them inline, so its card keeps two columns even on a phone. Here
-   they stack when the work area is narrower than 800px (phones, tablets and desktop windows just
-   above 900px), so the 120px key column of .kv keeps room for its values. */
+   they keep two columns down to a 600px work area (the demo's look at 820px) and stack below it
+   (phones), so the 120px key column of .kv keeps room for its values. */
 .ocd { container-type: inline-size; container-name: ocd; }
 .ocd-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
-@container ocd (max-width: 799px) {
+@container ocd (max-width: 599px) {
   .ocd-cols { grid-template-columns: minmax(0, 1fr); }
 }
 /* end office-call-detail */

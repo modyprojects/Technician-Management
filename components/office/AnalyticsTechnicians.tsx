@@ -111,7 +111,8 @@ export function AnalyticsTechnicians({
         <div className="sec" style={{ paddingBottom: 0 }}>
           <h2 id="ma-reasons-tech">סיבות להמשך טיפול לפי טכנאי</h2>
         </div>
-        <div className="scrollx">
+        {/* Focusable, so a keyboard can scroll the table sideways on a phone (no links inside). */}
+        <div className="scrollx" tabIndex={0} role="region" aria-labelledby="ma-reasons-tech">
           <table aria-labelledby="ma-reasons-tech">
             <thead>
               <tr>

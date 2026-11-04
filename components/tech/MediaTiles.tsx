@@ -6,7 +6,7 @@
 // commands are simulated: no camera, no file picker and no upload; the tile shows a locally drawn
 // placeholder. The demo's "+ דוגמה" tile is not part of the app (X-08). Test media carry the 🧪
 // badge (SIM-19).
-import { useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { MediaItem, MediaKind, MediaPhase, VisitRef } from "@/features/visits/data/types";
@@ -119,6 +119,12 @@ export function MediaTiles({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
+  // After a removal the removed tile's button is gone: focus moves to "add photo" instead of <body>.
+  const addRef = useRef<HTMLButtonElement>(null);
+  const [removed, setRemoved] = useState(0);
+  useEffect(() => {
+    if (removed) addRef.current?.focus();
+  }, [removed]);
   const items = media.filter((m) => m.when === phase);
   const required = phase === "after";
   const full = items.length >= MEDIA_PER_PHASE_MAX;
@@ -139,13 +145,16 @@ export function MediaTiles({
     const r = await visits.removeMedia(visit, id);
     setBusy(false);
     if (!r.ok) setError(r.error);
-    else onChange((d) => ({ ...d, media: d.media.filter((m) => m.id !== id) }));
+    else {
+      onChange((d) => ({ ...d, media: d.media.filter((m) => m.id !== id) }));
+      setRemoved((n) => n + 1);
+    }
   }
 
   return (
     <section className="card" style={{ padding: "12px 14px" }} aria-labelledby={titleId} aria-busy={busy}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "2px 10px", marginBottom: 8 }}>
-        <b id={titleId} style={{ fontSize: 14 }}>
+        <h2 id={titleId} style={{ fontFamily: "var(--body)", fontSize: 14, fontWeight: 700 }}>
           {PHASE_LABEL[phase]}
           {required && (
             <>
@@ -155,7 +164,7 @@ export function MediaTiles({
               </span>
             </>
           )}
-        </b>
+        </h2>
         <span className="sub">{required ? "חובה: לפחות תמונה או סרטון" : "תמונות או סרטונים · לא חובה"}</span>
       </div>
       <div className="media">
@@ -164,7 +173,14 @@ export function MediaTiles({
         ))}
         {!full && (
           <>
-            <button type="button" className="addm" onClick={() => void add("img")} disabled={busy} aria-label={`הוספת תמונה ${PHASE_LABEL[phase]}`}>
+            <button
+              ref={addRef}
+              type="button"
+              className="addm"
+              onClick={() => void add("img")}
+              disabled={busy}
+              aria-label={`הוספת תמונה ${PHASE_LABEL[phase]}`}
+            >
               <CameraIcon />
               תמונה
             </button>

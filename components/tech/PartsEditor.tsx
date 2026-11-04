@@ -5,7 +5,7 @@
 // field and "הוספה", and, when the visit had an item to pick up before it, a one-tap chip that
 // adds that item. Optional. Every change goes through useCommands().visits.saveParts with the
 // whole list; the draft changes only when the command accepts it.
-import { useId, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { VisitRef } from "@/features/visits/data/types";
 import { PART_MAX, PARTS_MAX } from "@/features/visits/data/validate";
@@ -27,6 +27,8 @@ export function PartsEditor({
 }) {
   const { visits } = useCommands();
   const [text, setText] = useState("");
+  // After a removal the removed chip's button is gone: focus moves to the part field.
+  const fieldRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
@@ -65,9 +67,9 @@ export function PartsEditor({
   return (
     <section className="card" style={{ padding: "12px 14px" }} aria-labelledby={titleId} aria-busy={busy}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "2px 10px", marginBottom: 8 }}>
-        <b id={titleId} style={{ fontSize: 14 }}>
+        <h2 id={titleId} style={{ fontFamily: "var(--body)", fontSize: 14, fontWeight: 700 }}>
           חלפים שהוחלפו
-        </b>
+        </h2>
         <span className="sub">לא חובה</span>
       </div>
       {parts.length > 0 ? (
@@ -77,7 +79,7 @@ export function PartsEditor({
               <span style={{ overflowWrap: "anywhere" }}>{p}</span>
               <button
                 type="button"
-                onClick={() => void save(parts.filter((x) => x !== p))}
+                onClick={() => void save(parts.filter((x) => x !== p)).then(() => fieldRef.current?.focus())}
                 disabled={busy}
                 aria-label={`הסרת ${p}`}
                 style={{ border: 0, background: "var(--line2)", borderRadius: "50%", width: 24, height: 24, padding: 0, flex: "none", fontSize: 12, lineHeight: 1 }}
@@ -95,6 +97,7 @@ export function PartsEditor({
       {!full && (
         <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
           <input
+            ref={fieldRef}
             id={fieldId}
             aria-label="שם החלק"
             value={text}

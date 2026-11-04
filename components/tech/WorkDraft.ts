@@ -8,6 +8,7 @@
 // accepted. Generic: no demo or fixture knowledge here.
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { MediaItem, VisitRef } from "@/features/visits/data/types";
+import { RECORDING_MAX_SECONDS } from "@/features/visits/data/validate";
 
 /** What the work screen starts from: the visit's saved work (empty for a visit not yet worked on). */
 export type WorkSeed = {
@@ -67,8 +68,8 @@ export type VisitDraft = {
  */
 export const VOICE_ONLY_CLOSE = false;
 
-/** D13 (provisional) and TE-15: a recording is at most 180 seconds. */
-export const RECORDING_LIMIT_SECONDS = 180;
+/** D13 (provisional) and TE-15: a recording is at most 180 seconds (the shared validator's limit). */
+export const RECORDING_LIMIT_SECONDS = RECORDING_MAX_SECONDS;
 
 /**
  * Photos and videos per phase (before / after) on one visit. A temporary UI bound until the final

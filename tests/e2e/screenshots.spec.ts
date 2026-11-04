@@ -108,9 +108,17 @@ test.describe("ui-demo-1 review screenshots", () => {
     test(`demo screens at ${size.width}px`, async ({ page }) => {
       test.setTimeout(180_000);
       await page.setViewportSize(size);
+      // Full page only when a screen scrolls; a screen that fits keeps the live viewport, so the
+      // technician footer and bottom navigation stay at the bottom as on the device (TE-32).
       const shot = async (name: string, fullPage = true) => {
-        if (fullPage) await page.addStyleTag({ content: UNCLIP_APP });
-        await page.screenshot({ path: path.join(OUT_DEMO, `${size.width}-${name}.png`), fullPage });
+        const scrolls = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>("[data-fixtures]>div:last-child, .ph-main, .work")].some(
+            (el) => el.scrollHeight > el.clientHeight + 1,
+          ),
+        );
+        const full = fullPage && scrolls;
+        if (full) await page.addStyleTag({ content: UNCLIP_APP });
+        await page.screenshot({ path: path.join(OUT_DEMO, `${size.width}-${name}.png`), fullPage: full });
       };
       /** Waits until the simulated-action toast has gone, so it does not cover the screen. */
       const toastGone = () => expect(page.locator(".toast")).toHaveCount(0, { timeout: 8_000 });
@@ -125,10 +133,35 @@ test.describe("ui-demo-1 review screenshots", () => {
         ["analytics-technicians", "/dev/demo/office/mgr/analytics?tab=tech"],
         ["tech-home", "/dev/demo/tech"],
         ["tech-visit", "/dev/demo/tech/visit/48205/2"],
+        // States the owner asked to see (closed and resolved views, access, drill-downs).
+        ["tech-visit-closed", "/dev/demo/tech/visit/47800/1"],
+        ["call-detail-resolved", "/dev/demo/office/mgr/calls/47969"],
+        ["call-detail-awaiting", "/dev/demo/office/mgr/calls/48230"],
+        ["call-detail-cs", "/dev/demo/office/cs/calls/48205"],
+        ["analytics-cs-no-access", "/dev/demo/office/cs/analytics"],
+        ["analytics-products", "/dev/demo/office/mgr/analytics?tab=prod"],
+        ["analytics-tech-detail", "/dev/demo/office/mgr/analytics?tab=tech&tech=y"],
       ] as const) {
         await openPage(page, url);
         await shot(name);
       }
+
+      // Work screen in recording mode (a simulated recording).
+      await openPage(page, "/dev/demo/tech/visit/48213/1/work");
+      await page.getByRole("group", { name: "אופן הסיכום" }).getByRole("button", { name: /הקלטה/ }).click();
+      await page.getByRole("button", { name: "התחלת הקלטה" }).click();
+      await page.waitForTimeout(1200);
+      await page.getByRole("button", { name: "עצירת הקלטה" }).click();
+      await expect(page.getByText("הקלטה מדומה · לא נשמרה. לחץ שוב כדי להקליט מחדש.")).toBeVisible();
+      await toastGone();
+      await shot("tech-work-recording");
+
+      // Close as "המשך טיפול" with a reason and the next-visit note (TE-21).
+      await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+      await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
+      await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
+      await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+      await shot("tech-close-followup");
 
       // Work screen with an "after" photo and a summary, then the close screen with a signature.
       await openPage(page, "/dev/demo/tech/visit/48205/2/work");

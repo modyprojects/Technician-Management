@@ -5,8 +5,12 @@
 // "בדרך" into "בטיפול" (TE-13). The actions go through the data-access layer
 // (useCommands().visits.depart / arrive); the screen shows the new status at once (optimistic)
 // and goes back to the previous status, with the error, when the command fails.
+// A successful close (the close screen's visits.close) marks the visit "טופל" or "המשך טיפול"
+// here too (markClosed), so the home and the visit card stop offering its actions.
 // In the UI demo the commands are simulated (D53): the provider's toast says
 // "פעולה מדומה · לא נשמר", nothing is saved, and a reload shows the fixture status again.
+// The provider is mounted once, in app/dev/demo/tech/layout.tsx, so the statuses survive client
+// navigation between the technician screens.
 // The departure and arrival times are recorded by the server and never shown to the technician
 // (TE-25 PENDING).
 import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
@@ -24,13 +28,15 @@ type Flow = {
   errorOf: (ref: VisitRef) => string | null;
   /** Runs the action from `current`; resolves true when the command succeeded. */
   run: (action: Action, ref: VisitRef, current: VisitStatus) => Promise<boolean>;
+  /** Records a close that the close command already accepted. */
+  markClosed: (ref: VisitRef, outcome: "done" | "cont") => void;
 };
 
 const FlowContext = createContext<Flow | null>(null);
 
 function useFlow(): Flow {
   const flow = use(FlowContext);
-  if (!flow) throw new Error("Wrap the technician screen in <VisitStatusProvider>.");
+  if (!flow) throw new Error("Wrap the technician screens in <VisitStatusProvider> (app/dev/demo/tech/layout.tsx).");
   return flow;
 }
 
@@ -39,8 +45,8 @@ const FROM: Record<Action, readonly VisitStatus[]> = { depart: ["new"], arrive: 
 const TO: Record<Action, VisitStatus> = { depart: "go", arrive: "work" };
 
 /**
- * Holds the statuses the technician changed on this screen (by "req-n"); a visit without a change
- * shows the status its DTO carries. Wrap the whole screen (header, content and footer).
+ * Holds the statuses the technician changed (by "req-n"); a visit without a change shows the
+ * status its DTO carries. Mounted once for every technician screen (app/dev/demo/tech/layout.tsx).
  */
 export function VisitStatusProvider({ children }: { children: ReactNode }) {
   const { visits: commands } = useCommands();
@@ -82,13 +88,21 @@ export function VisitStatusProvider({ children }: { children: ReactNode }) {
     [commands],
   );
 
+  const markClosed = useCallback((ref: VisitRef, outcome: "done" | "cont") => {
+    const key = keyOf(ref);
+    latest.current = { ...latest.current, [key]: outcome };
+    setStatus(latest.current);
+    setErrors((e) => ({ ...e, [key]: null }));
+  }, []);
+
   const flow = useMemo<Flow>(
     () => ({
       statusOf: (ref) => status[keyOf(ref)],
       errorOf: (ref) => errors[keyOf(ref)] ?? null,
       run,
+      markClosed,
     }),
-    [status, errors, run],
+    [status, errors, run, markClosed],
   );
 
   return <FlowContext value={flow}>{children}</FlowContext>;
@@ -106,6 +120,11 @@ export function useVisitStatus(ref: VisitRef, fallback: VisitStatus) {
     /** "הגעתי" on a scheduled or en-route visit ("בטיפול"). */
     arrive: () => flow.run("arrive", ref, status),
   };
+}
+
+/** markClosed(ref, outcome): call after the close command succeeded. */
+export function useMarkVisitClosed(): Flow["markClosed"] {
+  return useFlow().markClosed;
 }
 
 /** Status pill that follows the live status. */

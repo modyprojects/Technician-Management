@@ -8,7 +8,11 @@ export type TechnicianId = string;
 export type Technician = TestMarker & {
   id: TechnicianId;
   name: string;
-  /** CSS colour, e.g. "var(--t-y)" (Settings › טכנאים). */
+  /**
+   * CSS colour, e.g. "var(--t-y)" (Settings › טכנאים). Components put it into inline styles, so
+   * TODO(production adapter): store only an allowlisted token and map it to `var(--t-…)`; never
+   * pass stored CSS through (docs/architecture-data-access.md, "How a Supabase adapter plugs in").
+   */
   color: string;
   phone: string;
   /** Outlook attendee address. */

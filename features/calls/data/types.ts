@@ -91,6 +91,3 @@ export type CallsPage = Page<CallSummary> & {
   /** Every call the viewer may see ("הכל"). */
   allCount: number;
 };
-
-/** New time for an open visit. */
-export type VisitSlot = { date: IsoDate; start: HourMinute; end: HourMinute };

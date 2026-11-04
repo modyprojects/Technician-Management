@@ -16,7 +16,7 @@ export function AnalyticsNoAccess({ backHref, backLabel }: { backHref: string; b
           אין הרשאה
         </h2>
         <p style={{ margin: 0, maxWidth: 460, lineHeight: 1.5 }}>
-          לתפקיד הזה אין הרשאה לצפות בדשבורדים. ההרשאות נקבעות במטריצת ההרשאות בהגדרות (בתפקיד יוצר).
+          לתפקיד הזה אין הרשאה לצפות בדשבורד. את ההרשאות קובע היוצר במטריצת ההרשאות שבהגדרות.
         </p>
         <Link className="btn" href={backHref} prefetch={false}>
           <span aria-hidden="true">› </span>

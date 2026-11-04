@@ -118,7 +118,8 @@ export const demoDataAccess: DataAccess = {
           placeAddress: PLACES.find((p) => p.name === place)?.addr ?? null,
           items: [],
         };
-        group.items.push({ ref: { req: x.c.req, n: x.v.n }, item: x.v.collect, customerName: x.c.customer, start: x.v.start });
+        // "נאסף" is never stored in the fixtures (simulated commands save nothing): always false.
+        group.items.push({ ref: { req: x.c.req, n: x.v.n }, item: x.v.collect, customerName: x.c.customer, start: x.v.start, collected: false });
         groups.set(place, group);
       }
       const t = TECHS.find((x) => x.id === techId) as (typeof TECHS)[number];

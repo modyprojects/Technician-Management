@@ -9,7 +9,8 @@ export const PARTS_MAX = 20;
 export const REASON_MAX = 100;
 export const SIGNER_MAX = 100;
 export const NEXT_NOTE_MAX = 1000;
-export const RECORDING_MAX_SECONDS = 60 * 60;
+/** D13 (provisional) and TE-15: a recording is at most 180 seconds (the work screen uses the same limit). */
+export const RECORDING_MAX_SECONDS = 180;
 /** Largest accepted signature data URL (about 375 KB of PNG). */
 export const SIGNATURE_MAX_CHARS = 500_000;
 /** Largest accepted photo or video, in bytes. */
@@ -19,6 +20,10 @@ const INVALID_VISIT = "ביקור לא תקין";
 
 export function visitRefError(ref: VisitRef): string | null {
   return isRecordKey(ref?.req) && Number.isInteger(ref?.n) && ref.n >= 1 && ref.n <= 999 ? null : INVALID_VISIT;
+}
+
+export function pickupCollectedError(collected: boolean): string | null {
+  return typeof collected === "boolean" ? null : "סימון איסוף לא תקין";
 }
 
 export function summaryError(text: string): string | null {

@@ -43,8 +43,8 @@ Server Components and server functions call it.
 
 ### `Commands` (write side)
 Client components get it from `useCommands()`.
-- `calls`: `reschedule`, `addNote`, `cancelVisit`.
-- `visits`: `depart`, `arrive`, `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
+- `calls`: `cancelVisit`. OF-09 and SE-04 are PENDING (open decision d08), so no screen calls it yet: the call card shows a disabled placeholder. There is no reschedule or office-note command: neither is in the demo, the spec or `demo-deviations.md`, and scheduling stays in Outlook (OF-03).
+- `visits`: `depart`, `arrive`, `setPickupCollected` (TE-03 "נאסף"), `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
 
 ## `CommandResult`
 ```ts
@@ -84,7 +84,8 @@ if (!r.ok) setError(r.error);
 2. **Pages.** Pages call that implementation instead of `demoDataAccess`; screens and components stay unchanged.
 3. **Commands.** Commands become server actions that validate input again on the server (`CLAUDE.md`: Zod for inputs) and return `CommandResult` with `simulated: false`. A `CommandsProvider` built on them replaces `SimulatedCommandsProvider`.
 4. **Test data.** In production, dashboards never count test-marked records (SIM-08); in test environments they include them, with the label.
-5. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
+5. **Colours from the database.** Components put DTO colours such as `Technician.color` into inline styles. The production adapter accepts only an allowlisted colour token (for example `t-y`) and maps it to `var(--t-…)`; it never passes stored CSS through, so a stored value such as `url(…)` cannot make the browser fetch an outside address (TODO before the Supabase adapter).
+6. **Approvals.** Every remote Supabase operation and every migration needs the owner's approval (D52 rule 4, D53).
 
 ## ESLint enforcement (`eslint.config.mjs`; never weakened)
 - **Shared code.** In `components/**`, `features/**` and `lib/**`, importing `@/app/*` or a relative `../…/app/*` is an error.

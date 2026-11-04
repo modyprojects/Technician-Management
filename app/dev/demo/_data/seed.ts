@@ -3,6 +3,7 @@
 // (20261021), same order of random draws, so names, phones, cities, times and statuses match
 // the prototype. Fields the demo lacks (ADD rows in demo-deviations) are filled
 // deterministically without drawing random numbers, so the demo's sequence is unchanged.
+import "server-only";
 import { addDays, fromMin, isWork, pad, TODAY } from "./dates";
 import { FIXED_TEXT, PRODUCTS, REASONS, TECHS } from "./reference";
 import type { Call, MediaItem, Visit } from "./types";
@@ -52,12 +53,19 @@ const customerNo = (req: string): string => String(100000 + ((Number(req) * 7919
 const img = (when: MediaItem["when"] = "after"): MediaItem => ({ t: "img", when });
 const vid = (when: MediaItem["when"] = "after"): MediaItem => ({ t: "vid", when });
 
+/**
+ * Source of the fixture visits (SIM-14): the invitation simulator ("🧪 זימון בדיקה"), because
+ * Microsoft 365 is not connected (D23) and every fixture is test data (D47). Calls 48241 and
+ * 48251 keep "outlook" as labelled examples of the "📅 נקלט אוטומטית מזימון Outlook" line.
+ */
+const SOURCE: Visit["source"] = "simulator";
+
 /** The demo's V() defaults, plus the ADD fields. */
 function V(o: Partial<Visit> & Pick<Visit, "tech" | "date" | "start" | "end">): Visit {
   return {
     n: 1, task: 1, status: "new", departAt: null, arriveAt: null, endAt: null, summary: "", rec: 0, media: [],
     reason: null, signer: null, collect: "", collectFrom: "",
-    transcript: "", parts: [], nextNote: "", signedText: null, source: "outlook",
+    transcript: "", parts: [], nextNote: "", signedText: null, source: SOURCE,
     ...o,
   };
 }
@@ -115,7 +123,8 @@ export function seedCalls(): Call[] {
         const summary = cont ? "נדרש המשך טיפול, הלקוח עודכן." : "בוצע תיקון, נבדק ותקין.";
         const rec = rnd() < 0.55 ? 20 + Math.floor(rnd() * 60) : 0;
         const media: MediaItem[] = [img(), ...(rnd() < 0.3 ? [vid()] : [])];
-        const signer = cont ? null : "הלקוח";
+        // The fictitious customer signs (the demo's literal "הלקוח" read as a name).
+        const signer = cont ? null : customer;
         calls.push({
           req: reqNo, customerNo: customerNo(reqNo), customer, phone, phone2: "", city, street, building: "", floor, apt,
           arrival: "", type, sku: p.sku, desc, warranty, rep, techNote: "", isTest: true,
@@ -125,7 +134,7 @@ export function seedCalls(): Call[] {
               departAt: fromMin(arrive - travel), arriveAt: fromMin(arrive), endAt: fromMin(end), reason, summary, rec, media, signer,
               collect: "", collectFrom: "",
               transcript: rec ? summary : "", parts: [], nextNote: reason ? (NEXT_NOTE[reason] ?? "") : "",
-              signedText: signer ? FIXED_TEXT : null, source: "outlook",
+              signedText: signer ? FIXED_TEXT : null, source: SOURCE,
             },
           ],
         });
@@ -146,7 +155,7 @@ export function seedCalls(): Call[] {
       c.visits.push(
         V({
           n: 2, task: 2, tech: d0.tech, date: nd, start: "15:30", end: "17:00", status: "done", departAt: "15:02", arriveAt: "15:34",
-          endAt: "16:20", summary: "הוחלף החלק, הכל תקין.", media: [img()], signer: "הלקוח",
+          endAt: "16:20", summary: "הוחלף החלק, הכל תקין.", media: [img()], signer: c.customer,
           parts: PART[c.sku] ? [PART[c.sku] as string] : [], signedText: FIXED_TEXT,
         }),
       );
@@ -181,7 +190,7 @@ export function seedCalls(): Call[] {
     C({
       req: "48241", customer: "קבלן ש.ב. בנייה", phone: "08-000-6677", city: "יבנה", street: "הנשיא 5", type: "התקנה", sku: "KT-1800",
       desc: "התקנת 4 ברזים בדירות חדשות.", warranty: "לא", techNote: "לתאם בטלפון עם מנהל העבודה באתר.",
-      visits: [V({ tech: "y", date: TODAY, start: "16:00", end: "18:00" })],
+      visits: [V({ tech: "y", date: TODAY, start: "16:00", end: "18:00", source: "outlook" })],
     }),
     C({
       req: "48198", customer: "דוד פרץ", phone: "050-000-8899", city: "חולון", street: "סוקולוב 12", sku: "BS-220", desc: "נזילה מהסיפון.",
@@ -233,7 +242,7 @@ export function seedCalls(): Call[] {
     }),
     C({
       req: "48251", customer: "מרים אלון", phone: "050-000-4141", city: "רחובות", street: "יעקב 9", sku: "KT-2041", desc: "טפטוף מהברז.",
-      visits: [V({ tech: "y", date: "2026-10-22", start: "09:00", end: "10:30" })],
+      visits: [V({ tech: "y", date: "2026-10-22", start: "09:00", end: "10:30", source: "outlook" })],
     }),
     C({
       req: "48252", customer: "דניאל רז", phone: "050-000-5252", city: "נס ציונה", street: "ויצמן 3", sku: "WC-300", desc: "ההדחה חלשה.",

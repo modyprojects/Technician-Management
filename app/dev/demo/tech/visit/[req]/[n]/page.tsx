@@ -14,7 +14,7 @@ import { techVisitParams } from "../../../../_data/params";
 import { DEMO_TECHNICIAN_ID } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { NavTile, PlaceWazeButton } from "../../../_DemoNav";
-import { LiveStatusPill, VisitStatusProvider } from "../../../_VisitStatus";
+import { LiveStatusPill } from "../../../_VisitStatus";
 import { VisitFoot, WazeTile } from "./_VisitFlow";
 
 export const dynamicParams = false;
@@ -42,6 +42,7 @@ function ClosedVisit({ visit }: { visit: VisitDetail }) {
   return (
     <DemoTechFrame
       activeTab="home"
+      activeIsCurrent={false}
       head={
         <VisitHeader
           {...BACK}
@@ -64,8 +65,9 @@ function ClosedVisit({ visit }: { visit: VisitDetail }) {
 // Technician visit card (docs/demo.html techCall() L517-551; TE-05 to TE-13).
 // Reads only through the data-access layer: visits.get(ref) and, while the visit is open,
 // visits.history(ref) (D36: earlier closed visits of the same call, only while the technician
-// has a current assignment on it; the layer returns only what he may see). Another technician's
-// visit is not found (G-03: production takes identity from the session; RLS enforces it).
+// has a current assignment on it). The page enforces D36 here (history only for his open visit);
+// the production adapter enforces it under the session and RLS. Another technician's visit is
+// not found (G-03: production takes identity from the session; RLS enforces it).
 // Open visit: "↻ ביקור המשך" history, the action tiles (Waze runs visits.depart on a scheduled
 // visit; dial, WhatsApp and the rep are navigation), the details, fault, technician notes, pickup
 // and the visit source, with "הגעתי · התחלת טיפול" (visits.arrive) or "המשך לטיפול ›" below.
@@ -83,54 +85,52 @@ export default async function TechVisitPage({ params }: PageProps<"/dev/demo/tec
   const address = `${cu.address.street}, ${cu.address.city}`;
 
   return (
-    <VisitStatusProvider>
-      <DemoTechFrame
-        head={
-          <VisitHeader
-            {...BACK}
-            meta={`פנייה ${call.req} · משימה ${visit.task} · ביקור ${visit.n}`}
-            title={cu.name}
-            trailing={
-              <>
-                {call.isTest && <TestBadge />}
-                <LiveStatusPill visit={ref} status={visit.status} />
-              </>
-            }
-          />
-        }
-        foot={<VisitFoot visit={ref} status={visit.status} workHref={demoHref.work(visit.req, visit.n)} />}
-      >
-        <VisitHistory items={history} />
-        <div role="group" aria-label="ניווט ויצירת קשר" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-          <WazeTile visit={ref} status={visit.status} address={address} />
-          <NavTile
-            icon={<PhoneIcon />}
-            label="לקוח"
-            ariaLabel={`חיוג ללקוח · ${cu.phone}`}
-            sim={`חיוג ללקוח · ${cu.phone} · לא מתבצעת שיחה בהדגמה`}
-          />
-          <NavTile
-            icon={<WhatsAppIcon />}
-            label="וואטסאפ"
-            ariaLabel={`וואטסאפ ללקוח · ${cu.phone}`}
-            sim={`וואטסאפ ללקוח · ${cu.phone} · לא נפתח בהדגמה`}
-          />
-          <NavTile
-            icon={<UserIcon />}
-            label="נציגה"
-            ariaLabel={rep.phone ? `חיוג לנציגה ${rep.name} · ${rep.phone}` : `נציגה ${rep.name} · אין מספר טלפון`}
-            sim={`חיוג לנציגה ${rep.name} · ${rep.phone ?? ""} · לא מתבצעת שיחה בהדגמה`}
-            disabled={!rep.phone}
-          />
-        </div>
-        <VisitInfoCard visit={visit} />
-        <VisitProblem problem={call.problem} techNote={call.techNote} />
-        <VisitPickup
-          pickup={visit.pickup}
-          action={visit.pickup && <PlaceWazeButton place={visit.pickup.place} address={visit.pickup.placeAddress} />}
+    <DemoTechFrame
+      head={
+        <VisitHeader
+          {...BACK}
+          meta={`פנייה ${call.req} · משימה ${visit.task} · ביקור ${visit.n}`}
+          title={cu.name}
+          trailing={
+            <>
+              {call.isTest && <TestBadge />}
+              <LiveStatusPill visit={ref} status={visit.status} />
+            </>
+          }
         />
-        <VisitSourceLine source={visit.source} />
-      </DemoTechFrame>
-    </VisitStatusProvider>
+      }
+      foot={<VisitFoot visit={ref} status={visit.status} workHref={demoHref.work(visit.req, visit.n)} />}
+    >
+      <VisitHistory items={history} />
+      <div role="group" aria-label="ניווט ויצירת קשר" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+        <WazeTile visit={ref} status={visit.status} address={address} />
+        <NavTile
+          icon={<PhoneIcon />}
+          label="לקוח"
+          ariaLabel={`לקוח · חיוג ${cu.phone}`}
+          sim={`חיוג ללקוח · ${cu.phone} · לא מתבצעת שיחה בהדגמה`}
+        />
+        <NavTile
+          icon={<WhatsAppIcon />}
+          label="וואטסאפ"
+          ariaLabel={`וואטסאפ ללקוח · ${cu.phone}`}
+          sim={`וואטסאפ ללקוח · ${cu.phone} · לא נפתח בהדגמה`}
+        />
+        <NavTile
+          icon={<UserIcon />}
+          label="נציגה"
+          ariaLabel={rep.phone ? `נציגה · חיוג ל${rep.name} ${rep.phone}` : `נציגה · ${rep.name} · אין מספר טלפון`}
+          sim={`חיוג לנציגה ${rep.name} · ${rep.phone ?? ""} · לא מתבצעת שיחה בהדגמה`}
+          disabled={!rep.phone}
+        />
+      </div>
+      <VisitInfoCard visit={visit} />
+      <VisitProblem problem={call.problem} techNote={call.techNote} />
+      <VisitPickup
+        pickup={visit.pickup}
+        action={visit.pickup && <PlaceWazeButton place={visit.pickup.place} address={visit.pickup.placeAddress} />}
+      />
+      <VisitSourceLine source={visit.source} />
+    </DemoTechFrame>
   );
 }

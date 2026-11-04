@@ -55,6 +55,16 @@ export function CallsBrowser({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  // A new page ("הבא ‹" sits under the table) starts at the table's first row. The page scrolls
+  // inside the demo frame, which Next's own scroll handling does not move, so do it here.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const shownPage = useRef(state.page);
+  useEffect(() => {
+    if (shownPage.current === state.page) return;
+    shownPage.current = state.page;
+    tableRef.current?.firstElementChild?.scrollIntoView({ block: "start" });
+  }, [state.page]);
+
   function go(next: Partial<CallsListState>) {
     clearTimeout(timer.current);
     const target: CallsListState = { q: query, status: shown.status, tech: shown.tech, ...next, page: 1 };
@@ -85,7 +95,7 @@ export function CallsBrowser({
         statusOptions={statusOptions}
         onStatusChange={(status: CallStatusFilter) => go({ status })}
       />
-      <div aria-busy={pending} style={{ display: "contents" }}>
+      <div ref={tableRef} aria-busy={pending} style={{ display: "contents" }}>
         <CallsTable rows={rows} total={total} />
       </div>
       <Pager

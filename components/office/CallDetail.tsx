@@ -8,10 +8,11 @@ import type { VisitStatus } from "@/features/visits/data/types";
 import { VisitTimeline, type RenderRecording, type TimelineVisit } from "./VisitTimeline";
 
 // Office service-call card as a full page (docs/demo.html offCard() L834-859, with the fields of
-// the calendar drawer drawerHtml() L803-814). Look as in the demo: breadcrumb, title with the
-// customer's name and a status pill, cards with key-value rows on the right and the visit
-// timeline on the left (1 : 1.5); the columns stack when the work area is narrow (styles/ui.css,
-// "office-call-detail").
+// the calendar drawer drawerHtml() L803-814). Look as in the demo: "› חזרה לקריאות" (L739),
+// breadcrumb, title with the customer's name and a status pill, the sub-line "פנייה · נציגה
+// מטפלת · ביקורים", cards with key-value rows on the right ("פרטי הקריאה" in the demo's row
+// order) and the visit timeline on the left (1 : 1.5); the columns stack only on a narrow work
+// area (styles/ui.css, "office-call-detail").
 // Changes from the demo (docs/demo-deviations.md): the header pill is the service-call status
 // (OF-17, D38); a 🧪 badge on test calls, customers and products (SIM-15 to SIM-17); customer
 // number (OF-05); brand and supplier show "לא הוזן" when empty (OF-07); warranty "לא צוין" when
@@ -105,6 +106,12 @@ export function CallDetail({
   const visitCount = call.visits.length === 1 ? "ביקור אחד" : `${call.visits.length} ביקורים`;
   return (
     <>
+      <div>
+        <Link className="btn" href={backHref} style={{ padding: "6px 12px" }}>
+          <span aria-hidden="true">› </span>
+          חזרה לקריאות
+        </Link>
+      </div>
       <nav className="sub" aria-label="נתיב ניווט">
         <Link className="lnk" href={backHref}>
           קריאות
@@ -120,7 +127,7 @@ export function CallDetail({
             {call.isTest && <TestBadge />}
           </div>
           <div className="sub">
-            פנייה <span className="num">{call.req}</span> · {call.type} · באחריות: {call.warranty} · {visitCount}
+            פנייה <span className="num">{call.req}</span> · נציגה מטפלת: {cu.rep} · {visitCount}
           </div>
         </div>
         {actions}
@@ -161,14 +168,14 @@ export function CallDetail({
                     <span>{cu.arrival}</span>
                   </>
                 )}
-                <span>נציגה מטפלת</span>
-                <span>{cu.rep}</span>
               </div>
             </section>
 
             <section className="card sec">
               <h2>פרטי הקריאה</h2>
               <div className="kv">
+                <span>סוג קריאה</span>
+                <span>{call.type}</span>
                 <span>מוצר</span>
                 <span>
                   {p.name} {p.isTest && <TestBadge />}
@@ -181,6 +188,8 @@ export function CallDetail({
                 <span>
                   {p.brand || NOT_ENTERED} · {p.supplier || NOT_ENTERED}
                 </span>
+                <span>באחריות</span>
+                <span>{call.warranty}</span>
                 <span>תיאור התקלה</span>
                 <span style={{ lineHeight: 1.45 }}>{call.desc}</span>
                 {call.techNote && (

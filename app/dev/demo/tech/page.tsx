@@ -11,7 +11,7 @@ import { DEMO_TECHNICIAN_ID } from "../_data/roles";
 import { demoHref } from "../_data/routes";
 import { PlaceWazeButton } from "./_DemoNav";
 import { NextVisit } from "./_NextVisit";
-import { LiveStatusPill, VisitStatusProvider } from "./_VisitStatus";
+import { LiveStatusPill } from "./_VisitStatus";
 
 export const metadata: Metadata = { title: "היום · טכנאי · הדגמה" };
 
@@ -23,7 +23,8 @@ const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
 // session). Header: date, greeting, avatar, bell with the unread count, "ביקורים היום" and
 // "הושלמו". Then the next-visit card ("יוצא · Waze" runs useCommands().visits.depart, TE-02),
 // "מה לאסוף לפני יציאה" grouped by place (TE-03) and "לו"ז היום" (TE-04) linking to each visit
-// card. The visit statuses on this screen follow the depart action (VisitStatusProvider).
+// card. The visit statuses on this screen follow the depart, arrive and close actions
+// (VisitStatusProvider in app/dev/demo/tech/layout.tsx).
 export default async function TechHomePage() {
   const [day, unread] = await Promise.all([
     demoDataAccess.visits.techDay(DEMO_TECHNICIAN_ID, TODAY),
@@ -60,24 +61,17 @@ export default async function TechHomePage() {
         />
       }
     >
-      <VisitStatusProvider>
-        {day.next && <NextVisit visit={day.next} detailsHref={demoHref.visit(day.next.req, day.next.n)} />}
-        <PickupsCard groups={day.pickups} placeActions={placeActions} />
-        <ScheduleList
-          open={open}
-          closed={closed}
-          calendarAction={
-            <button
-              type="button"
-              className="chip"
-              style={{ padding: "3px 10px", fontSize: 12 }}
-              data-sim={NOT_IN_DEMO}
-            >
-              יומן ›
-            </button>
-          }
-        />
-      </VisitStatusProvider>
+      {day.next && <NextVisit visit={day.next} detailsHref={demoHref.visit(day.next.req, day.next.n)} />}
+      <PickupsCard groups={day.pickups} placeActions={placeActions} />
+      <ScheduleList
+        open={open}
+        closed={closed}
+        calendarAction={
+          <button type="button" className="chip" style={{ padding: "4px 10px", fontSize: 12, minHeight: 24 }} data-sim={NOT_IN_DEMO}>
+            יומן ›
+          </button>
+        }
+      />
     </DemoTechFrame>
   );
 }

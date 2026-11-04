@@ -37,6 +37,8 @@ export interface VisitCommands {
   depart(ref: VisitRef): Promise<CommandResult>;
   /** "הגעתי": status "בטיפול", arrival time recorded. */
   arrive(ref: VisitRef): Promise<CommandResult>;
+  /** Ticks or clears "נאסף" for the visit's pickup on the technician home (TE-03). */
+  setPickupCollected(ref: VisitRef, collected: boolean): Promise<CommandResult>;
   /** Written summary (draft until close). */
   saveSummary(ref: VisitRef, text: string): Promise<CommandResult>;
   /** Adds a photo or video; returns the new media item. */

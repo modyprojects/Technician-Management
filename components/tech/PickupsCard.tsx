@@ -3,14 +3,15 @@
 // "מה לאסוף לפני יציאה" on the technician home (docs/demo.html techHome() L497-509; TE-03):
 // the open visits' pickups grouped by place, a "Waze ›" per place, a "נאסף" checkbox per item
 // ("ברז מטבח חלופי · ללוי 09:00") and "X מתוך Y נאסף". Look as in the demo.
-// TE-03 (CHANGE): production persists "נאסף" per technician per day. The data-access layer has no
-// read field or command for it yet (TODO(TE-03): a `collected` flag on PickupGroup items and a
-// visits command to set it), so, as in the demo, the ticks live on this screen only and are not
-// saved. No scheduled pickup reminder exists (TE-28, D25): this list is the reminder.
-// Presentational apart from the ticks: the caller passes the groups and the "Waze ›" element of
-// each place (a navigation affordance, TE-03).
-import { useState, type ReactNode } from "react";
-import type { PickupGroup } from "@/features/visits/data/types";
+// TE-03 (CHANGE): production keeps "נאסף" per technician per day. Each item starts from its DTO
+// `collected` value; a tick runs useCommands().visits.setPickupCollected(ref, on): the screen
+// shows the tick at once (optimistic) and undoes it, with an inline error, when the command
+// fails. In the UI demo the command is simulated (the provider's toast says nothing was saved).
+// No scheduled pickup reminder exists (TE-28, D25): this list is the reminder.
+// The caller passes the groups and the "Waze ›" element of each place (a navigation affordance).
+import { useRef, useState, type ReactNode } from "react";
+import { useCommands } from "@/features/data-access/commands-context";
+import type { PickupGroup, VisitRef } from "@/features/visits/data/types";
 
 const keyOf = (ref: { req: string; n: number }): string => `${ref.req}-${ref.n}`;
 
@@ -25,18 +26,40 @@ export function PickupsCard({
   /** "Waze ›" per place name. */
   placeActions?: Readonly<Record<string, ReactNode>>;
 }) {
-  const [collected, setCollected] = useState<ReadonlySet<string>>(() => new Set());
+  const { visits } = useCommands();
+  // Ticks changed on this screen, by "req-n" (an item without a change shows its DTO value).
+  const [changed, setChanged] = useState<Readonly<Record<string, boolean>>>({});
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const running = useRef(new Set<string>());
   const items = groups.flatMap((g) => g.items);
   if (!items.length) return null;
-  const doneN = items.filter((x) => collected.has(keyOf(x.ref))).length;
+  const isOn = (x: (typeof items)[number]): boolean => changed[keyOf(x.ref)] ?? x.collected;
+  const doneN = items.filter(isOn).length;
 
-  function toggle(key: string, on: boolean) {
-    setCollected((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(key);
-      else next.delete(key);
+  async function toggle(ref: VisitRef, before: boolean, on: boolean) {
+    const key = keyOf(ref);
+    if (running.current.has(key)) return;
+    running.current.add(key);
+    setChanged((c) => ({ ...c, [key]: on }));
+    setErrors((e) => {
+      const next = { ...e };
+      delete next[key];
       return next;
     });
+    let error: string | null = null;
+    try {
+      const result = await visits.setPickupCollected(ref, on);
+      if (!result.ok) error = result.error;
+    } catch {
+      error = "הסימון לא נשמר. נסה שוב.";
+    } finally {
+      running.current.delete(key);
+    }
+    if (error) {
+      const message = error;
+      setChanged((c) => ({ ...c, [key]: before }));
+      setErrors((e) => ({ ...e, [key]: message }));
+    }
   }
 
   return (
@@ -62,29 +85,36 @@ export function PickupsCard({
           </div>
           {g.items.map((x) => {
             const k = keyOf(x.ref);
-            const on = collected.has(k);
+            const on = isOn(x);
+            const error = errors[k];
             return (
-              <label
-                key={k}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  marginTop: 4,
-                  fontSize: 13,
-                  ...(on ? { textDecoration: "line-through", color: "var(--collect-done)" } : null),
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={(e) => toggle(k, e.target.checked)}
-                  style={{ width: 18, height: 18, margin: 0, padding: 0, flex: "none" }}
-                />
-                <span>
-                  {x.item} · {forCustomer(x.customerName)} <span className="num">{x.start}</span>
-                </span>
-              </label>
+              <div key={k}>
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    marginTop: 4,
+                    fontSize: 13,
+                    ...(on ? { textDecoration: "line-through", color: "var(--collect-done)" } : null),
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => void toggle(x.ref, on, e.target.checked)}
+                    style={{ width: 18, height: 18, margin: 0, padding: 0, flex: "none" }}
+                  />
+                  <span>
+                    {x.item} · {forCustomer(x.customerName)} <span className="num">{x.start}</span>
+                  </span>
+                </label>
+                {error && (
+                  <div role="alert" style={{ fontSize: 12, color: "var(--danger-fg)", marginTop: 2 }}>
+                    {error}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

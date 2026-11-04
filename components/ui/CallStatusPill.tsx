@@ -4,6 +4,7 @@
 // The colours of "פתוחה" (accent) and "ממתינה לשיבוץ" (warning) are new visual elements in the
 // demo's language, pending the owner's visual approval (OF-17); the other two reuse the
 // matching visit-status colours. The status values are the call DTO's (features/calls/data/types).
+import type { ReactNode } from "react";
 import type { CallStatus } from "@/features/calls/data/types";
 
 export type { CallStatus };
@@ -18,7 +19,7 @@ export const CALL_STATUSES = {
 /** Display order of the calls-list status chips (OF-17 lists them in this order). */
 export const CALL_STATUS_ORDER: readonly CallStatus[] = ["open", "awaiting", "followup", "resolved"];
 
-export function CallStatusPill({ status, extra = "" }: { status: CallStatus; extra?: string }) {
+export function CallStatusPill({ status, extra = "" }: { status: CallStatus; extra?: ReactNode }) {
   const s = CALL_STATUSES[status];
   return (
     <span className="pill" style={{ background: s.bg, color: s.fg }}>

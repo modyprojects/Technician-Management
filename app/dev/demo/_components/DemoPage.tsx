@@ -5,8 +5,9 @@ import { VIEWPOINTS, type Viewpoint } from "../_data/roles";
 import { demoHref } from "../_data/routes";
 
 // Wraps every UI-demo page (D53): carries the fixture sentinel (the bundle check finds demo data
-// by it) and a thin "נתוני בדיקה · הדגמה" strip above the screen. The strip takes its own row,
-// so it never covers the screen; the screen below keeps the full remaining height (technician
+// by it) and a thin "נתוני בדיקה · פעולות מדומות" strip above the screen. The strip takes its own
+// row, so it never covers the screen, and wraps to a second line on narrow screens rather than
+// cutting off "שום דבר לא נשמר"; the screen below keeps the full remaining height (technician
 // header and bottom navigation stay fixed) and scrolls inside it.
 export function DemoPage({ viewpoint, children }: { viewpoint?: Viewpoint; children: ReactNode }) {
   const who = viewpoint ? ` · ${VIEWPOINTS[viewpoint].label}` : "";
@@ -30,11 +31,11 @@ export function DemoPage({ viewpoint, children }: { viewpoint?: Viewpoint; child
           fontWeight: 700,
         }}
       >
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {`🧪 נתוני בדיקה · הדגמה${who} · פעולות מדומות, שום דבר לא נשמר`}
+        <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+          {`🧪 נתוני בדיקה · פעולות מדומות, שום דבר לא נשמר · הדגמה${who}`}
         </span>
         {viewpoint && (
-          <Link href={demoHref.landing()} className="lnk" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+          <Link href={demoHref.landing()} className="lnk" style={{ fontSize: 12, whiteSpace: "nowrap", paddingBlock: 4 }}>
             החלפת תצוגה ›
           </Link>
         )}

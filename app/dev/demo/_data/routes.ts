@@ -14,6 +14,8 @@ export const demoHref = {
   call: (role: OfficeRole, req: string): string => `${DEMO_BASE}/office/${role}/calls/${req}`,
   /** Manager dashboards (general / technicians / products). Manager only. */
   analytics: (): string => `${DEMO_BASE}/office/mgr/analytics`,
+  /** The dashboards address under a role (customer service gets "אין הרשאה"). */
+  officeAnalytics: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/analytics`,
   /** Technician home (today). */
   tech: (): string => `${DEMO_BASE}/tech`,
   /** Technician visit card (details, previous visits). */

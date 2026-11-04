@@ -7,16 +7,12 @@ export type { VisitSource };
 
 export const TEST_DATA_LABEL = "נתוני בדיקה";
 
+/** The 🧪 badge. Screen readers hear "נתוני בדיקה" (visually hidden text when `label` is off). */
 export function TestBadge({ label = false }: { label?: boolean }) {
   return (
-    <span
-      className="pill"
-      title={TEST_DATA_LABEL}
-      aria-label={TEST_DATA_LABEL}
-      style={{ background: "var(--warn-bg)", color: "var(--warn-fg)", padding: "1px 7px" }}
-    >
+    <span className="pill" title={TEST_DATA_LABEL} style={{ background: "var(--warn-bg)", color: "var(--warn-fg)", padding: "1px 7px" }}>
       <span aria-hidden="true">🧪</span>
-      {label && ` ${TEST_DATA_LABEL}`}
+      {label ? ` ${TEST_DATA_LABEL}` : <span className="sr-only">{TEST_DATA_LABEL}</span>}
     </span>
   );
 }

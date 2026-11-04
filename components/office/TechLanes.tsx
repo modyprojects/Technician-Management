@@ -118,8 +118,8 @@ export function TechLanes({
               <h3 id={headingId}>
                 <span className="dot" style={{ background: t.color }} aria-hidden="true" />{" "}
                 {technicianHref ? (
-                  <Link href={technicianHref(t.id)} prefetch={false} className="lnk">
-                    {t.name} ›
+                  <Link href={technicianHref(t.id)} prefetch={false} className="lnk" aria-label={`${t.name} · פירוט הטכנאי`}>
+                    {t.name} <span aria-hidden="true">›</span>
                   </Link>
                 ) : (
                   t.name

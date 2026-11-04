@@ -14,9 +14,12 @@ import type { VisitSource } from "@/features/visits/data/types";
 // - Columns follow design-system.md "Tables" (G-07): short columns centred and sized to content,
 //   customer and product take the remaining width; phones scroll the table sideways.
 // - Status column: the service-call status (OF-17, D38), with the follow-up reason as in the demo.
-// - ADD: customer number (OF-05), 🧪 badge on test calls (SIM-15), source of the shown visit
-//   (SIM-14). The customer number is a column on desktop and phone and moves under the customer
-//   name at 521-900px (styles/ui.css "office-calls"), so the table still fits at 820px.
+// - ADD: customer number (OF-05), 🧪 badge on test calls (SIM-15) next to the request number
+//   (the call's own cell, so it never reads as a customer badge, SIM-16), source of the shown
+//   visit (SIM-14) and "בוטל" when that visit was cancelled. The customer number is a column on
+//   desktop and phone and moves under the customer name at 521-900px; there the follow-up reason
+//   also moves under the status pill (styles/ui.css "office-calls"), so the table fits at 820px
+//   with the extra width going to customer and product (G-07).
 
 export type CallsTableRow = {
   /** Request number ("מספר פנייה"). */
@@ -38,6 +41,8 @@ export type CallsTableRow = {
   when: string;
   /** Source of that visit (SIM-14). */
   source: VisitSource;
+  /** That visit was cancelled: "בוטל" after the time. */
+  whenCancelled?: boolean;
   /** Service-call status (OF-17). */
   status: CallStatus;
   /** Follow-up reason shown after the status (status "followup"). */
@@ -129,15 +134,15 @@ export function CallsTable({
                   <Link href={r.href} prefetch={false} className="lnk num" aria-label={`פנייה ${r.req} · ${r.customer}`}>
                     {r.req}
                   </Link>
-                </td>
-                <td>
-                  <b>{r.customer}</b>
                   {r.isTest && (
                     <>
                       {" "}
                       <TestBadge />
                     </>
                   )}
+                </td>
+                <td>
+                  <b>{r.customer}</b>
                   <div className="sub oc-custno-sub">
                     מס׳ לקוח <span className="num">{r.customerNo}</span>
                   </div>
@@ -154,9 +159,14 @@ export function CallsTable({
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
                   <SourceIcon source={r.source} /> {r.when}
+                  {r.whenCancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
                 </td>
                 <td className={SHORT}>
-                  <CallStatusPill status={r.status} extra={r.reason ? ` · ${r.reason}` : ""} />
+                  <CallStatusPill
+                    status={r.status}
+                    extra={r.reason ? <span className="oc-reason-inline">{` · ${r.reason}`}</span> : undefined}
+                  />
+                  {r.reason && <div className="sub oc-reason-sub">{r.reason}</div>}
                 </td>
                 <td className="col-fit">{r.rep}</td>
               </tr>

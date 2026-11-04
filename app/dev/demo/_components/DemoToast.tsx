@@ -7,14 +7,36 @@
 //   Waze) and for the two features that have no port yet (export OF-14, recording playback
 //   OF-06; TODOs at their buttons). Data actions go through useCommands().
 // - Client components call useSimulate()("detail").
-// - Bottom-nav and sidebar buttons without a link (screens outside the demo) say so.
+// - Bottom-nav and sidebar buttons without a link (screens outside the demo) say so, under the
+//   title "לא בהדגמה" (nothing was attempted, so "לא נשמר" would not fit).
+// - The toast never takes clicks (styles/ui.css .toast, pointer-events: none) and, on technician
+//   screens, sits above the footer and bottom navigation, so it never blocks the main buttons.
 import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 export const SIMULATED_TITLE = "פעולה מדומה · לא נשמר";
 const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
+/** Title of the "not in the demo" toast: nothing was attempted, so nothing "was not saved". */
+const NOT_IN_DEMO_TITLE = "לא בהדגמה";
 const TOAST_MS = 4200; // as in the demo's toast()
+/** Gap between the toast and the technician footer or bottom navigation. */
+const TOAST_GAP_PX = 12;
 
 type Simulate = (detail?: string) => void;
+
+type Toast = { id: number; title: string; detail: string; bottom: number | null };
+
+/**
+ * Where the toast sits: above the technician footer (main buttons) and bottom navigation, so it
+ * never covers them (WCAG 2.4.11); null keeps the stylesheet's position (office screens).
+ */
+function toastBottom(): number | null {
+  let top = Infinity;
+  for (const bar of document.querySelectorAll<HTMLElement>(".ph-foot, .ph-nav")) {
+    const r = bar.getBoundingClientRect();
+    if (r.height > 0) top = Math.min(top, r.top);
+  }
+  return Number.isFinite(top) ? Math.max(0, window.innerHeight - top) + TOAST_GAP_PX : null;
+}
 
 const SimulateContext = createContext<Simulate>(() => {});
 
@@ -24,12 +46,18 @@ export function useSimulate(): Simulate {
 }
 
 export function DemoToastProvider({ children }: { children: ReactNode }) {
-  const [toast, setToast] = useState<{ id: number; detail: string } | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
   const seq = useRef(0);
 
   const simulate = useCallback<Simulate>((detail = "") => {
     seq.current += 1;
-    setToast({ id: seq.current, detail });
+    const notInDemo = detail === NOT_IN_DEMO;
+    setToast({
+      id: seq.current,
+      title: notInDemo ? NOT_IN_DEMO_TITLE : SIMULATED_TITLE,
+      detail,
+      bottom: toastBottom(),
+    });
   }, []);
 
   useEffect(() => {
@@ -59,8 +87,8 @@ export function DemoToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div role="status">
         {toast && (
-          <div key={toast.id} className="toast">
-            {SIMULATED_TITLE}
+          <div key={toast.id} className="toast" style={toast.bottom === null ? undefined : { bottom: toast.bottom }}>
+            {toast.title}
             {toast.detail && (
               <div style={{ fontWeight: 400, fontSize: 13, marginTop: 2, color: "var(--on-dark3)" }}>{toast.detail}</div>
             )}

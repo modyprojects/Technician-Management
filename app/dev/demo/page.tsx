@@ -26,23 +26,27 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: `ביקור המשך · ${callName("48205")}`, sub: "פנייה 48205 · ביקור 2, עם הביקור הקודם", href: demoHref.visit("48205", 2) },
       { label: "מסך עבודה", sub: "תמונות, הקלטה, סיכום וחלפים · פנייה 48213", href: demoHref.work("48213", 1) },
       { label: "סיום ביקור וחתימה", sub: "טופל או המשך טיפול · פנייה 48213", href: demoHref.close("48213", 1) },
+      { label: `ביקור שנסגר · ${callName("47800")}`, sub: "פנייה 47800 · צפייה בלבד, עם אישור הלקוח", href: demoHref.visit("47800", 1) },
     ],
   },
   mgr: {
-    intro: "המשרד מהמחשב, מהטאבלט או מהטלפון: מעקב, קריאות ודשבורדים.",
+    intro: "המשרד מהמחשב, מהטאבלט או מהטלפון: מעקב, קריאות ודשבורד.",
     links: [
       { label: "לוח בקרה", sub: "מסך הבית של המנהל", href: demoHref.officeHome("mgr") },
       { label: "קריאות", sub: "חיפוש וסינון לפי סטטוס וטכנאי", href: demoHref.calls("mgr") },
       { label: `כרטיס קריאה · ${callName("48140")}`, sub: "פנייה 48140 · שלושה ביקורים", href: demoHref.call("mgr", "48140") },
-      { label: "דשבורדים", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics() },
+      { label: `קריאה שטופלה · ${callName("47969")}`, sub: "פנייה 47969 · סיכום, תמונות וחתימת לקוח", href: demoHref.call("mgr", "47969") },
+      { label: `ממתינה לשיבוץ · ${callName("48230")}`, sub: "פנייה 48230 · הביקור בוטל", href: demoHref.call("mgr", "48230") },
+      { label: "דשבורד", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics() },
     ],
   },
   cs: {
-    intro: "שירות הלקוחות: מעקב אחרי הקריאות. בלי דשבורדים ובלי ביטול קריאה.",
+    intro: "שירות הלקוחות: מעקב אחרי הקריאות. בלי דשבורד ובלי ביטול ביקור.",
     links: [
       { label: "בית", sub: "מסך הבית של שירות הלקוחות", href: demoHref.officeHome("cs") },
       { label: "קריאות", sub: "חיפוש וסינון לפי סטטוס וטכנאי", href: demoHref.calls("cs") },
       { label: `כרטיס קריאה · ${callName("48205")}`, sub: "פנייה 48205 · ביקור המשך", href: demoHref.call("cs", "48205") },
+      { label: "דשבורד", sub: "אין הרשאה לתפקיד הזה", href: demoHref.officeAnalytics("cs") },
     ],
   },
 });
@@ -50,7 +54,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
 const ORDER: Viewpoint[] = ["tech", "mgr", "cs"];
 
 export default async function DemoLandingPage() {
-  const SCREENS = screens(await callNames(["48213", "48205", "48140"]));
+  const SCREENS = screens(await callNames(["48213", "48205", "48140", "47800", "47969", "48230"]));
   return (
     <DemoPage>
       <main className="mx-auto flex max-w-[1100px] flex-col gap-4 p-4 sm:p-6">

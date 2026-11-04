@@ -3,7 +3,7 @@
 // by Supabase adapters that run on the server under the caller's session (RLS).
 import type { CommandResult, Page, PageRequest } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
-import type { CallDetail, CallFilter, CallsPage, CallSummary, VisitSlot } from "./types";
+import type { CallDetail, CallFilter, CallsPage, CallSummary } from "./types";
 
 export interface CallsQueries {
   /** Calls list, newest first (latest visit date and start), filtered and paged (OF-04). */
@@ -14,15 +14,17 @@ export interface CallsQueries {
   customerHistory(req: string, page?: PageRequest): Promise<Page<CallSummary>>;
 }
 
-/** Office actions on a call. Results say whether they were simulated. */
+/**
+ * Office actions on a call. Results say whether they were simulated.
+ * No reschedule or office-note command: neither is in docs/demo.html, docs/spec.md or
+ * docs/demo-deviations.md, and scheduling stays in Outlook (OF-03). Adding one needs an owner
+ * decision (an ADD row) first.
+ */
 export interface CallCommands {
   /**
-   * Moves an open visit. Until Microsoft 365 is connected the time is changed in the Outlook
-   * invitation (OF-03); `slot` is optional so the UI can record the request without a picker.
+   * Cancels one open visit, never the whole call (D38). OF-09 / SE-04 are PENDING (open decision
+   * d08): the call card shows only a disabled placeholder, so no screen calls this yet. Matrix key
+   * `cancel` (D33).
    */
-  reschedule(ref: VisitRef, slot?: VisitSlot): Promise<CommandResult>;
-  /** Adds an office note to the call (1–500 characters). */
-  addNote(req: string, text: string): Promise<CommandResult>;
-  /** Cancels one open visit, never the whole call (D38; OF-09 pending, matrix key `cancel`). */
   cancelVisit(ref: VisitRef, input?: { reason?: string }): Promise<CommandResult>;
 }

@@ -4,7 +4,8 @@
 // "חתימת הלקוח *" with "נקה", a <canvas> drawn with pointer events (finger, pen or mouse; touch
 // does not scroll the page while signing, .sig touch-action: none), and "חותמים עם האצבע או
 // העכבר". After each stroke the drawing is reported as a PNG data URL; "נקה" reports null. The
-// drawing survives a resize or rotation: the pad redraws the last reported image.
+// drawing survives a resize or rotation: the pad redraws the last reported image at its own size
+// (not stretched). Starting a stroke blurs the focused field, so the on-screen keyboard closes.
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 /** The demo draws at 2x (initSig: cv.width = r.width * 2). */
@@ -70,8 +71,10 @@ export function SignaturePad({
       const g = context(canvas);
       const src = saved.current;
       if (!g || !src) return;
+      // Redraw at the image's own size (it was exported at SCALE), never stretched to the new box:
+      // the next stroke exports the canvas as the signature.
       const img = new Image();
-      img.onload = () => g.drawImage(img, 0, 0, r.width, r.height);
+      img.onload = () => g.drawImage(img, 0, 0, img.naturalWidth / SCALE, img.naturalHeight / SCALE);
       img.src = src;
     };
     fit();
@@ -91,6 +94,9 @@ export function SignaturePad({
     const g = context(canvas);
     if (!g) return;
     e.preventDefault();
+    // preventDefault() also stops the focus change a press would make: blur the focused field
+    // ("שם החותם"), so a phone's on-screen keyboard closes and does not cover the pad.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     canvas.setPointerCapture(e.pointerId);
     drawing.current = true;
     const [x, y] = point(e, canvas);

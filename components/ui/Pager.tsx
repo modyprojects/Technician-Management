@@ -2,6 +2,10 @@ import Link from "next/link";
 
 // Previous / next page links for a server-paged list (OF-04: server-side search and pagination),
 // in the demo's visual language (.sub line, .lnk links). Renders nothing for a single page.
+// scroll={false}: the caller decides where a new page starts (the calls list scrolls to its table).
+
+/** At least 24px tall tap targets (WCAG 2.5.8). */
+const LINK_TARGET = { display: "inline-block", paddingBlock: 4 } as const;
 export function Pager({
   page,
   pageCount,
@@ -25,7 +29,7 @@ export function Pager({
       style={{ display: "flex", gap: 14, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}
     >
       {prevHref ? (
-        <Link className="lnk" href={prevHref} prefetch={false} scroll={false}>
+        <Link className="lnk" href={prevHref} prefetch={false} scroll={false} style={LINK_TARGET}>
           › הקודם
         </Link>
       ) : (
@@ -37,7 +41,7 @@ export function Pager({
         עמוד <span className="num">{page}</span> מתוך <span className="num">{pageCount}</span>
       </span>
       {nextHref ? (
-        <Link className="lnk" href={nextHref} prefetch={false} scroll={false}>
+        <Link className="lnk" href={nextHref} prefetch={false} scroll={false} style={LINK_TARGET}>
           הבא ‹
         </Link>
       ) : (

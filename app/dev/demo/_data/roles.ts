@@ -1,11 +1,13 @@
 // FICTITIOUS DATA ONLY: demo presentation config: viewpoints, the signed-in demo users, office
-// navigation and technician navigation. Allowed only under app/dev (G-05). Client-safe.
+// navigation and technician navigation. Allowed only under app/dev (G-05). Server-side: it
+// imports the fixture reference data (./reference, server-only), so a client component that
+// imports it fails the build.
 // No permission values here: the matrix is data (D33, temporary per D51), served by
 // demoDataAccess.reference.permissions(role); officeNav() receives it and only shapes the menu.
 // Real enforcement is on the server and in the database (G-04).
 import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
-import { offersAnyDashboard } from "@/features/reference/data/permissions";
+import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
 import {
   isOfficeRole,
   OFFICE_ROLE_VALUES,
@@ -39,19 +41,27 @@ export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: s
   cs: { name: VIEWPOINTS.cs.who, roleLabel: VIEWPOINTS.cs.short, avatarColor: VIEWPOINTS.cs.color },
 };
 
-export type OfficeNavKey = "home" | "calls" | "analytics";
+export type OfficeNavKey = "home" | "cal" | "calls" | "analytics";
 
 /**
- * Office sidebar items as real links, from the role's matrix values (read through
- * demoDataAccess.reference.permissions(role)). Display only: it hides menu items, it does not
- * protect routes (G-04).
+ * The office home's title: the dashboard home ("לוח בקרה") where the role's matrix value offers
+ * `dashGen`, otherwise the work queue ("בית"). Display only (G-04).
+ */
+export const officeHomeLabel = (permissions: RolePermissions): string => (offers(permissions, "dashGen") ? "לוח בקרה" : "בית");
+
+/**
+ * Office sidebar items, from the role's matrix values (read through
+ * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730). Display only:
+ * it hides menu items, it does not protect routes (G-04). "יומן טכנאים" (OF-03) is not built in
+ * this demo: it has no link, so the demo toast says the screen is not part of the demo.
  */
 export function officeNav(role: OfficeRole, permissions: RolePermissions): (OfficeNavItem & { key: OfficeNavKey })[] {
   const items: (OfficeNavItem & { key: OfficeNavKey })[] = [
-    { key: "home", label: role === "mgr" ? "לוח בקרה" : "בית", href: demoHref.officeHome(role) },
-    { key: "calls", label: "קריאות", href: demoHref.calls(role) },
+    { key: "home", label: officeHomeLabel(permissions), href: demoHref.officeHome(role) },
   ];
-  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורדים", href: demoHref.analytics() });
+  if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים" });
+  items.push({ key: "calls", label: "קריאות", href: demoHref.calls(role) });
+  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics() });
   return items;
 }
 

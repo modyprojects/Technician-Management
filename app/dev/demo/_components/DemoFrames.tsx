@@ -28,17 +28,20 @@ export function DemoTechFrame({
   head,
   foot,
   activeTab,
+  activeIsCurrent,
   children,
 }: {
   head: ReactNode;
   foot?: ReactNode;
   /** Shows the bottom navigation (home, notifications-style screens); omit on visit screens. */
   activeTab?: TechTab;
+  /** False on a screen opened from the tab, such as a closed visit (no aria-current). */
+  activeIsCurrent?: boolean;
   children: ReactNode;
 }) {
   return (
     <DemoPage viewpoint="tech">
-      <TechShell head={head} foot={foot} activeTab={activeTab} navHrefs={TECH_NAV_HREFS}>
+      <TechShell head={head} foot={foot} activeTab={activeTab} activeIsCurrent={activeIsCurrent} navHrefs={TECH_NAV_HREFS}>
         {children}
       </TechShell>
     </DemoPage>

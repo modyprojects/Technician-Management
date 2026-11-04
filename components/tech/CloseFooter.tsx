@@ -4,19 +4,21 @@
 // the send button in the outcome's colour ("בחר תוצאה" / "שליחה · הקריאה טופלה" / "שליחה · המשך
 // טיפול"), disabled until the form is complete, with the missing items under it. Sending runs
 // useCommands().visits.close(ref, input) (after saving a summary edited since its last save);
-// errors show here. After a successful close the footer links back to the technician's day.
+// errors show here. After a successful close the footer links back to the technician's day, and
+// `onClosed` lets the caller record the new status (the home and the visit card follow it).
 import Link from "next/link";
 import { useId } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { CloseVisitInput, VisitRef } from "@/features/visits/data/types";
 import { closeHint, closeReady } from "./CloseRules";
-import { useVisitDraft, withClose, type WorkSeed } from "./WorkDraft";
+import { useVisitDraft, withClose, type CloseOutcome, type WorkSeed } from "./WorkDraft";
 
 export function CloseFooter({
   visit,
   seed,
   approvalTextVersionId,
   homeHref,
+  onClosed,
 }: {
   visit: VisitRef;
   seed: WorkSeed;
@@ -24,6 +26,8 @@ export function CloseFooter({
   approvalTextVersionId: string;
   /** The technician's day ("היום"). */
   homeHref: string;
+  /** Called once the close command succeeded. */
+  onClosed?: (outcome: CloseOutcome) => void;
 }) {
   const { visits } = useCommands();
   const [draft, update] = useVisitDraft(visit, seed);
@@ -70,7 +74,10 @@ export function CloseFooter({
     const r = await visits.close(visit, input);
     if (!r.ok) return fail(r.error);
     update((d) => withClose(d, { submit: { state: "sent", outcome, simulated: r.simulated, message: r.message ?? "" } }));
+    onClosed?.(outcome);
   }
+
+  const failed = k.submit.state === "error";
 
   return (
     <>
@@ -80,13 +87,13 @@ export function CloseFooter({
         style={{ background: k.outcome === "cont" ? "var(--s-cont)" : "var(--s-done)" }}
         disabled={!ready || sending}
         aria-busy={sending}
-        aria-describedby={hint ? hintId : undefined}
+        aria-describedby={failed || hint ? hintId : undefined}
         onClick={() => void send()}
       >
         {label}
       </button>
       {k.submit.state === "error" ? (
-        <div role="alert" style={{ textAlign: "center", marginTop: 6, color: "var(--danger)", fontSize: 13, fontWeight: 700 }}>
+        <div id={hintId} role="alert" style={{ textAlign: "center", marginTop: 6, color: "var(--danger)", fontSize: 13, fontWeight: 700 }}>
           {k.submit.error}
         </div>
       ) : (

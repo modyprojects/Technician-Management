@@ -78,7 +78,7 @@ export async function ManagerHome({ role }: { role: OfficeRole }) {
             </Link>
             {offersAnyDashboard(permissions) && (
               <Link className="btn pri" href={demoHref.analytics()}>
-                לדשבורדים ›
+                לדשבורד ›
               </Link>
             )}
           </>

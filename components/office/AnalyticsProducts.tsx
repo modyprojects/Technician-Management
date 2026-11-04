@@ -72,7 +72,8 @@ export function AnalyticsProducts({ products }: { products: Products }) {
           <span className="sub">מסומן באדום: שיעור המשך טיפול מעל {FOLLOWUP_ALERT_PERCENT}%</span>
         </div>
         {skus.items.length ? (
-          <div className="scrollx">
+          // Focusable, so a keyboard can scroll the table sideways on a phone (no links inside).
+          <div className="scrollx" tabIndex={0} role="region" aria-labelledby="ma-skus">
             <table aria-labelledby="ma-skus">
               <thead>
                 <tr>

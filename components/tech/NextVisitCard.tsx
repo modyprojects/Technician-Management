@@ -37,7 +37,7 @@ export function NextVisitCard({
     <section className="card" style={{ padding: 14, border: "2px solid var(--accent)" }} aria-label="הביקור הבא">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>
-          {status === "new" ? "הביקור הבא" : "עכשיו"} · {visit.start}–{visit.end}
+          {status === "new" ? "הביקור הבא" : status === "go" || status === "work" ? "עכשיו" : "נסגר"} · {visit.start}–{visit.end}
         </span>
         <StatusPill status={status} />
       </div>

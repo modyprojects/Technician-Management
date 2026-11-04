@@ -101,8 +101,8 @@ export type VisitHistoryRelation = "call" | "customer" | "product";
 
 /**
  * A previous closed visit as a technician may see it (TE-06, D36): summary, approved transcript,
- * parts, follow-up reason and next-visit note, media count and recording length. Never signer
- * names, signatures, field times or the audio.
+ * parts, follow-up reason and next-visit note, photos and videos, and the recording length.
+ * Never signer names, signatures, field times or the audio.
  */
 export type VisitHistoryItem = TestMarker &
   VisitRef & {
@@ -116,6 +116,8 @@ export type VisitHistoryItem = TestMarker &
     followupReason: string | null;
     nextNote: string;
     parts: string[];
+    /** The visit's photos and videos (TE-06, D36); production shows them through short-lived signed URLs only (OF-06). */
+    media: MediaItem[];
     mediaCount: number;
     recordingSeconds: number;
     customerName: string;
@@ -144,7 +146,8 @@ export type TechDayVisit = TestMarker &
 export type PickupGroup = {
   place: string;
   placeAddress: string | null;
-  items: { ref: VisitRef; item: string; customerName: string; start: HourMinute }[];
+  /** `collected`: the technician ticked "נאסף" (TE-03: kept per technician per day). */
+  items: { ref: VisitRef; item: string; customerName: string; start: HourMinute; collected: boolean }[];
 };
 
 /** A technician's schedule for one date plus the home-header counters (TE-01). */

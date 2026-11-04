@@ -1,6 +1,7 @@
 // FICTITIOUS DATA ONLY: lookups over the demo's seeded calls. Allowed only under app/dev (G-05).
 // Server-side, and only for the fixture adapter (adapter.ts, aggregations.ts, mappers.ts):
 // screens read through demoDataAccess (eslint.config.mjs blocks direct imports).
+import "server-only";
 import { addDays, toMin } from "./dates";
 import { CALLS } from "./seed";
 import { isClosedVisit, isOpenVisit } from "./status";

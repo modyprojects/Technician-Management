@@ -45,6 +45,7 @@ function toRow(c: CallSummary, role: OfficeRole): CallsTableRow {
     visits: c.visitCount,
     when: `${dayLabel(v.date)} ${v.start}`,
     source: v.source,
+    whenCancelled: v.status === "cancel",
     status: c.status,
     reason: c.followupReason ?? undefined,
     rep: c.representative,

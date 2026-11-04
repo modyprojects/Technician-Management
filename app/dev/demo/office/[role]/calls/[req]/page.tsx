@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CallDetail } from "@/components/office/CallDetail";
 import type { TimelineVisit } from "@/components/office/VisitTimeline";
-import type { CallDetail as CallDetailDto } from "@/features/calls/data/types";
 import { offers } from "@/features/reference/data/permissions";
 import { isOpenVisitStatus } from "@/features/visits/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
@@ -11,7 +10,7 @@ import { officeCallParams } from "../../../../_data/params";
 import { isOfficeRole } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { CallActions } from "./_CallActions";
-import { callDetailData, visitWhen } from "./_callDetailData";
+import { callDetailData } from "./_callDetailData";
 
 export const dynamicParams = false;
 
@@ -40,16 +39,11 @@ function playRecording(v: TimelineVisit) {
   );
 }
 
-/** The open visit the header actions apply to (the latest by visit number), if any. */
-function openVisitOf(c: CallDetailDto) {
-  const v = c.visits.filter((x) => isOpenVisitStatus(x.status)).at(-1);
-  return v ? { n: v.n, techName: v.technician.name, when: visitWhen(v) } : null;
-}
-
 // Office service-call card (demo offCard(), screens 2-4): customer, call and product details,
-// assignment, visit timeline and simulated actions. Reads only through the data-access layer
-// (calls.get, calls.customerHistory, reference.permissions). What each role sees follows the
-// role's matrix values (D33, temporary per D51); this only shapes the demo screen (G-04).
+// assignment, visit timeline and the header actions (a simulated dial; cancel pending d08).
+// Reads only through the data-access layer (calls.get, calls.customerHistory,
+// reference.permissions). What each role sees follows the role's matrix values (D33, temporary
+// per D51); this only shapes the demo screen (G-04).
 export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/office/[role]/calls/[req]">) {
   const { role, req } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -69,9 +63,8 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
         renderRecording={offers(permissions, "recordings") ? playRecording : undefined}
         actions={
           <CallActions
-            req={c.req}
             tech={last ? { name: last.name, phone: last.phone } : null}
-            openVisit={openVisitOf(c)}
+            hasOpenVisit={c.visits.some((v) => isOpenVisitStatus(v.status))}
             canCancel={offers(permissions, "cancel")}
           />
         }

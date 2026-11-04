@@ -2,6 +2,7 @@
 // Ported from docs/demo.html "reference data" (L265-305). Email addresses use the reserved
 // example.test domain instead of the demo's example.co.il. Order and weights must stay as in
 // the demo: the seeded calls (seed.ts) depend on them.
+import "server-only";
 import type { OfficeRole, Place, Product, Reason, Tech, TechId, User } from "./types";
 
 export const TECHS: readonly Tech[] = [

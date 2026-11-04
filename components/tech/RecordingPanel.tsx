@@ -42,6 +42,12 @@ export function RecordingPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const startedAt = useRef(0);
+  // After deleting, the "מחיקה" button is gone: focus moves to the record button.
+  const recordRef = useRef<HTMLButtonElement>(null);
+  const [deleted, setDeleted] = useState(0);
+  useEffect(() => {
+    if (deleted) recordRef.current?.focus();
+  }, [deleted]);
 
   async function stop() {
     if (!startedAt.current) return; // already stopping
@@ -68,7 +74,10 @@ export function RecordingPanel({
     const r = await visits.deleteRecording(visit);
     setBusy(false);
     if (!r.ok) setError(r.error);
-    else onChange((d) => ({ ...d, recordingSeconds: 0, recordingSimulated: r.simulated }));
+    else {
+      onChange((d) => ({ ...d, recordingSeconds: 0, recordingSimulated: r.simulated }));
+      setDeleted((n) => n + 1);
+    }
   }
 
   const tick = useEffectEvent(() => {
@@ -97,6 +106,7 @@ export function RecordingPanel({
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--bg)", borderRadius: 10, padding: 12 }}>
         <button
+          ref={recordRef}
           type="button"
           onClick={recording ? () => void stop() : start}
           disabled={busy}
