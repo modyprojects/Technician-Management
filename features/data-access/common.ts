@@ -100,7 +100,9 @@ export function cleanText(text: unknown, max: number): string {
 const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const HOUR_MINUTE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export const isIsoDate = (value: unknown): value is IsoDate => typeof value === "string" && ISO_DATE.test(value);
+/** "YYYY-MM-DD" of a date that exists (2026-02-31 does not: Date would roll it over to March). */
+export const isIsoDate = (value: unknown): value is IsoDate =>
+  typeof value === "string" && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 export const isHourMinute = (value: unknown): value is HourMinute =>
   typeof value === "string" && HOUR_MINUTE.test(value);

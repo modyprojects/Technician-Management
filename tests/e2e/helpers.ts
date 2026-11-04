@@ -27,6 +27,13 @@ export const DEMO_PAGES = [
   "/dev/demo/tech/visit/48205/2/work",
   "/dev/demo/tech/visit/48213/1/close",
   "/dev/demo/tech/visit/48205/2/close",
+  "/dev/demo/office/mgr/calendar",
+  "/dev/demo/office/cs/calendar",
+  "/dev/demo/tech/calendar",
+  "/dev/demo/tech/done",
+  "/dev/demo/tech/done/47800/1",
+  "/dev/demo/tech/notifications",
+  "/dev/demo/tech/profile",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */

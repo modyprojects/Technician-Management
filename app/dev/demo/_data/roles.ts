@@ -52,18 +52,17 @@ export const officeHomeLabel = (permissions: RolePermissions): string => (offers
 /**
  * Office sidebar items, from the role's matrix values (read through
  * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730). Display only:
- * it hides menu items, it does not protect routes (G-04). "יומן טכנאים" (OF-03) is not built in
- * this demo: it has no link, so the demo toast says the screen is not part of the demo.
+ * it hides menu items, it does not protect routes (G-04): the calendar page checks `cal` itself.
  */
 export function officeNav(role: OfficeRole, permissions: RolePermissions): (OfficeNavItem & { key: OfficeNavKey })[] {
   const items: (OfficeNavItem & { key: OfficeNavKey })[] = [
     { key: "home", label: officeHomeLabel(permissions), href: demoHref.officeHome(role) },
   ];
-  if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים" });
+  if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים", href: demoHref.officeCalendar(role) });
   items.push({ key: "calls", label: "קריאות", href: demoHref.calls(role) });
   if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics() });
   return items;
 }
 
-/** Technician bottom-navigation links. "יומן" and "פרופיל" are not part of this demo. */
-export const TECH_NAV_HREFS: TechNavHrefs = { home: demoHref.tech() };
+/** Technician bottom-navigation links: "היום", "יומן" and "פרופיל". */
+export const TECH_NAV_HREFS: TechNavHrefs = { home: demoHref.tech(), cal: demoHref.techCalendar(), prof: demoHref.techProfile() };

@@ -7,22 +7,25 @@
 // capped at a documented limit); every DTO is test data (D47). Static params of the demo build are
 // not part of the layer: params.ts reads the fixtures for them.
 import "server-only";
+import { normalizeCalendarFilter, isYearMonth } from "@/features/calendar/data/validate";
+import type { YearMonth } from "@/features/calendar/data/types";
 import { normalizeCallFilter } from "@/features/calls/data/validate";
 import type { CallsPage, CallStatus } from "@/features/calls/data/types";
 import { isIsoDate, isRecordKey, MAX_PAGE_LIMIT, pageOf, type IsoDate } from "@/features/data-access/common";
 import type { DataAccess } from "@/features/data-access/types";
 import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
 import { isOfficeRole, type OfficeRole } from "@/features/reference/data/types";
-import type { TechDay, VisitRef } from "@/features/visits/data/types";
+import type { ClosedVisitDetail, TechDay, VisitRef } from "@/features/visits/data/types";
 import { visitRefError } from "@/features/visits/data/validate";
 import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
+import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures, techWithEmail } from "./calendar";
 import { daysBetween, TODAY } from "./dates";
-import { callDetail, callSummary, historyItem, techDayVisit, visitDetail } from "./mappers";
-import { NOTIFICATIONS } from "./notifications";
+import { calendarVisitDetail, callDetail, callSummary, historyItem, techDayVisit, visitDetail } from "./mappers";
+import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
 import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
-import { FIXED_TEXT, ME, PLACES, prod, PRODUCTS, REASONS, TECH_IDS, TECHS } from "./reference";
-import { callStatus, isOpenVisit } from "./status";
+import { FIXED_TEXT, ME, OFFICE_PHONE, PLACES, prod, PRODUCTS, REASONS, TECH_IDS, TECHS } from "./reference";
+import { callStatus, isClosedVisit, isOpenVisit } from "./status";
 import type { Call, TechId } from "./types";
 
 const TEST = true as const;
@@ -50,6 +53,11 @@ const CALLS_NEWEST_FIRST: readonly Call[] = sortCalls(CALLS);
 function assertDate(date: IsoDate): IsoDate {
   if (!isIsoDate(date)) throw new RangeError("Invalid date");
   return date;
+}
+
+function assertMonth(month: YearMonth): YearMonth {
+  if (!isYearMonth(month)) throw new RangeError("Invalid month");
+  return month;
 }
 
 function assertPeriod(period: AnalyticsPeriod): AnalyticsPeriod {
@@ -143,6 +151,41 @@ export const demoDataAccess: DataAccess = {
       const c = findCall(ref.req);
       return c ? previousVisits(c, ref.n).map((v) => historyItem(c, v)) : [];
     },
+    async doneVisits(techId, date, page) {
+      if (!isTechId(techId)) return null;
+      const closed = visitsForTechOnDate(techId, assertDate(date)).filter((x) => isClosedVisit(x.v));
+      const result = pageOf(closed, page?.page, page?.limit);
+      return { ...result, items: result.items.map(techDayVisit) };
+    },
+    async doneVisit(techId, ref): Promise<ClosedVisitDetail | null> {
+      if (!isTechId(techId) || !validRef(ref)) return null;
+      const found = findVisit(ref.req, ref.n);
+      if (!found || found.v.tech !== techId || !isClosedVisit(found.v)) return null;
+      return { ...visitDetail(found.c, found.v), editable: false };
+    },
+  },
+
+  calendar: {
+    async officeDay(date, filter) {
+      return officeDay(assertDate(date), normalizeCalendarFilter(filter));
+    },
+    async officeWeek(weekOf, filter) {
+      return officeWeek(assertDate(weekOf), normalizeCalendarFilter(filter));
+    },
+    async officeMonth(month, filter) {
+      return officeMonth(assertMonth(month), normalizeCalendarFilter(filter));
+    },
+    async visit(ref) {
+      if (!validRef(ref)) return null;
+      const found = findVisit(ref.req, ref.n);
+      return found ? calendarVisitDetail(found.c, found.v) : null;
+    },
+    async techWeek(techId, weekOf) {
+      return isTechId(techId) ? techWeek(techId, assertDate(weekOf)) : null;
+    },
+    async techMonth(techId, month) {
+      return isTechId(techId) ? techMonth(techId, assertMonth(month)) : null;
+    },
   },
 
   dashboards: {
@@ -206,6 +249,22 @@ export const demoDataAccess: DataAccess = {
     },
     async unreadCount(userId) {
       return userId === ME ? NOTIFICATIONS.filter((x) => !x.read).length : 0;
+    },
+    async preferences() {
+      // Nothing is ever saved in the demo (simulated commands): every user has the defaults.
+      return { ...NOTIFICATION_PREFERENCES };
+    },
+  },
+
+  profile: {
+    async technician(techId, date) {
+      if (!isTechId(techId)) return null;
+      return {
+        technician: techWithEmail(techId),
+        week: techWeekFigures(techId, assertDate(date)),
+        officePhone: OFFICE_PHONE,
+        isTest: TEST,
+      };
     },
   },
 };

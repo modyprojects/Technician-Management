@@ -10,6 +10,7 @@ import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
+import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
 import type { VisitRef } from "@/features/visits/data/types";
 import {
   closeVisitError,
@@ -141,6 +142,24 @@ export function SimulatedCommandsProvider({ children }: { children: ReactNode })
               input.outcome === "done"
                 ? `סיום ביקור · טופל · נחתם ע"י ${excerpt(input.signerName ?? "", 40)} · ${visitLabel(ref)} · לא נשלח מייל`
                 : `סיום ביקור · המשך טיפול – ${input.reason ?? ""} · ${visitLabel(ref)} · לא נשלח מייל`,
+          ),
+      },
+      notifications: {
+        markRead: (ids) =>
+          run(
+            () => [notificationIdsError(ids)],
+            () => (ids.length === 1 ? "סימון התראה כנקראה" : `סימון ${ids.length} התראות כנקראו`),
+          ),
+        markAllRead: () =>
+          run(
+            () => [],
+            () => "סימון כל ההתראות כנקראו",
+          ),
+        setPreferences: (prefs) =>
+          run(
+            () => [notificationPreferencesError(prefs)],
+            () =>
+              `הגדרות התראות · זימון חדש או שינוי ביומן: ${prefs.newOrChange ? "פועל" : "כבוי"} · צליל התראה: ${prefs.sound ? "פועל" : "כבוי"}`,
           ),
       },
     };

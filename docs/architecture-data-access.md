@@ -19,25 +19,30 @@
 Domains:
 - `calls`, with `search-params.ts` mapping the URL `?q&status&tech&page` to and from a filter;
 - `visits`;
+- `calendar` (read models of the office and technician calendars; separate from the intake service in `features/calendar/ingestion`), with `search-params.ts` mapping `?view&date&tech&req&n` (office) and `?view&date` (technician);
 - `dashboards`;
 - `reference`, with `permissions.ts` display helpers;
 - `notifications`;
+- `profile` (technician profile);
 - `customers` (types only).
 
 ## Aggregates
 ```ts
-type DataAccess = { calls: CallsQueries; visits: VisitsQueries; dashboards: DashboardQueries;
-                    reference: ReferenceQueries; notifications: NotificationsQueries };
-type Commands   = { calls: CallCommands; visits: VisitCommands };
+type DataAccess = { calls: CallsQueries; visits: VisitsQueries; calendar: CalendarQueries;
+                    dashboards: DashboardQueries; reference: ReferenceQueries;
+                    notifications: NotificationsQueries; profile: ProfileQueries };
+type Commands   = { calls: CallCommands; visits: VisitCommands; notifications: NotificationCommands };
 ```
 
 ### `DataAccess` (read side)
 Server Components and server functions call it.
 - `calls`: `list(filter)` (paged, plus status counts), `get(req)`, `customerHistory(req, page?)`.
-- `visits`: `techDay(techId, date)`, `get(ref)`, `history(ref)`. For a technician, `history` returns only earlier closed visits of the same call (D36).
+- `visits`: `techDay(techId, date)`, `get(ref)`, `history(ref)`, `doneVisits(techId, date, page?)` ("הושלמו היום", paged), `doneVisit(techId, ref)` (the technician's own closed visit, read-only; null for an open visit or another technician's visit, D14). For a technician, `history` returns only earlier closed visits of the same call (D36).
+- `calendar` (read-only, OF-03, TE-27; matrix key `cal` for the office): `officeDay(date, filter?)` (one lane per technician, visits placed in overlap lanes), `officeWeek(weekOf, filter?)` (Sunday to Thursday), `officeMonth(month, filter?)` (counts per day), `visit(ref)` (the drawer), `techWeek(techId, weekOf)` (day and week views), `techMonth(techId, month)`. Cancelled visits are never on a calendar. A malformed date or month is a `RangeError`.
 - `dashboards`: `officeOverview(date)`, `managerAnalytics(period)`, `technicianDetail(techId, period, query?)`, `csQueue(date)`.
 - `reference`: `technicians()`, `products(page?)`, `reasons()`, `places()`, `approvalText()`, `permissions(role)`. Permission values are for display only and stay "temporary" until the owner approves them (D51, G-04).
-- `notifications`: `list(userId, page?)`, `unreadCount(userId)`.
+- `notifications`: `list(userId, page?)`, `unreadCount(userId)`, `preferences(userId)` (profile toggles, TE-29).
+- `profile`: `technician(techId, date)`: name, phone, email, the figures of the week containing `date` and the office phone. Display only.
 
 `techId` and `userId` arguments are filters, not identity. In production the identity comes from the session, and RLS rejects other users' data.
 
@@ -45,6 +50,7 @@ Server Components and server functions call it.
 Client components get it from `useCommands()`.
 - `calls`: `cancelVisit`. OF-09 and SE-04 are PENDING (open decision d08), so no screen calls it yet: the call card shows a disabled placeholder. There is no reschedule or office-note command: neither is in the demo, the spec or `demo-deviations.md`, and scheduling stays in Outlook (OF-03).
 - `visits`: `depart`, `arrive`, `setPickupCollected` (TE-03 "נאסף"), `saveSummary`, `addMedia`, `removeMedia`, `saveRecording`, `deleteRecording`, `saveParts`, `close`.
+- `notifications`: `markRead(ids)`, `markAllRead()`, `setPreferences(prefs)` (TE-28, TE-29; the signed-in user's own notifications only).
 
 ## `CommandResult`
 ```ts
@@ -59,7 +65,7 @@ type CommandResult<T = void> =
 - **`app/dev/demo/_data/adapter.ts`** exports `demoDataAccess: DataAccess` over the seeded fixtures.
   - It starts with `import "server-only"`, so a client component that imports it fails the build. Client components receive DTOs or props, never the adapter.
   - It validates and clamps inputs as a server adapter would, bounds every list, and marks every DTO as test data.
-  - Dashboard figures come from `_data/aggregations.ts`, and fixture-to-DTO mapping from `_data/mappers.ts`.
+  - Dashboard figures come from `_data/aggregations.ts`, calendar read models and the profile week figures from `_data/calendar.ts`, and fixture-to-DTO mapping from `_data/mappers.ts`.
 - **`app/dev/demo/_data/params.ts`** provides the build-time `generateStaticParams` values. They are not part of `DataAccess`, because listing every key would be a full-table scan in production.
 - **`app/dev/demo/_components/SimulatedCommands.tsx`** provides `SimulatedCommandsProvider`.
   - It checks input with the same validators and waits 250 ms.
@@ -94,7 +100,8 @@ if (!r.ok) setError(r.error);
 - **Known gap** (Phase A review): non-normalised paths and dynamic `import()` can evade these rules. No such case occurs in the code; normalising paths is an optional hardening.
 
 ## Bounded lists (`docs/security.md`: query bounds)
-- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list` and the visit rows of `technicianDetail`.
+- **Paged lists (`Page<T>`):** default 40, at most 100 (`MAX_PAGE_LIMIT`). These are `calls.list`, `calls.customerHistory`, `reference.products`, `notifications.list`, `visits.doneVisits` and the visit rows of `technicianDetail`.
+- **Calendar lists (`Bounded<T>`):** `CALENDAR_LANE_LIMIT` (30) visits per technician per day, `CALENDAR_WEEK_DAY_LIMIT` (100) per office week column; month views carry counts only; at most one lane per technician (100).
 - **Aggregate lists (`Bounded<T>`)** use fixed caps: `DASHBOARD_LIST_LIMIT` (20) and `OLDEST_FOLLOWUPS_LIMIT` (6). `total` gives the full count, so a screen can say "ועוד X".
 - **Settings lists** (technicians, reasons, places) are capped at 100.
 - **Other bounds:** search text is cut to 100 characters, and an analytics period may cover at most 366 days.

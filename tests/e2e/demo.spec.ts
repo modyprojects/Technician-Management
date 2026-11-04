@@ -163,12 +163,12 @@ test.describe("simulated toast", () => {
     await expect(toast(page)).toHaveCSS("pointer-events", "none");
   });
 
-  test("screens outside the demo say so under their own title", async ({ page }) => {
+  test("office navigation: every sidebar item is a link; \"יומן טכנאים\" opens the calendar", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr");
-    await page.locator(".side").getByRole("button", { name: "יומן טכנאים" }).click();
-    await expect(toast(page)).toContainText("לא בהדגמה");
-    await expect(toast(page)).toContainText("המסך הזה אינו חלק מההדגמה");
-    await expect(toast(page)).not.toContainText(SIMULATED);
+    await expect(page.locator(".side .nav button")).toHaveCount(0);
+    await page.locator(".side").getByRole("link", { name: "יומן טכנאים" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calendar$/);
+    await expect(page.locator(".side").getByRole("link", { name: "יומן טכנאים" })).toHaveAttribute("aria-current", "page");
   });
 });
 
@@ -217,12 +217,17 @@ test.describe("dashboards and access", () => {
 });
 
 test.describe("technician", () => {
-  test("home: bell and completed counter say the screen is not in the demo", async ({ page }) => {
+  test("home: bell, completed counter, calendar and bottom navigation are links", async ({ page }) => {
     await openPage(page, "/dev/demo/tech");
-    await page.getByRole("button", { name: /התראות/ }).click();
-    await expect(toast(page)).toContainText("המסך הזה אינו חלק מההדגמה");
-    await page.getByRole("button", { name: /הושלמו/ }).click();
-    await expect(toast(page)).toContainText("המסך הזה אינו חלק מההדגמה");
+    await expect(page.getByRole("link", { name: /התראות/ })).toHaveAttribute("href", "/dev/demo/tech/notifications");
+    await expect(page.getByRole("link", { name: /הושלמו/ })).toHaveAttribute("href", "/dev/demo/tech/done");
+    await expect(page.getByRole("link", { name: "יומן ›" })).toHaveAttribute("href", "/dev/demo/tech/calendar");
+    const nav = page.getByRole("navigation", { name: "ניווט ראשי" });
+    await expect(nav.locator("button")).toHaveCount(0);
+    await nav.getByRole("link", { name: "פרופיל" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/profile$/);
+    await page.getByRole("navigation", { name: "ניווט ראשי" }).getByRole("link", { name: "יומן" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech\/calendar$/);
   });
 
   test("depart and arrive are simulated and open the work screen", async ({ page }) => {
