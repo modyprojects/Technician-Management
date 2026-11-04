@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { MouseEvent } from "react";
-import { CallStatusPill, type CallStatus } from "@/components/ui/CallStatusPill";
-import { TestBadge, VISIT_SOURCE_LABELS, type VisitSource } from "@/components/ui/TestBadge";
+import { CallStatusPill } from "@/components/ui/CallStatusPill";
+import { TestBadge, VISIT_SOURCE_LABELS } from "@/components/ui/TestBadge";
+import type { CallStatus } from "@/features/calls/data/types";
+import type { VisitSource } from "@/features/visits/data/types";
 
 // Office calls table (docs/demo.html callsTable(), L824-832): one row per service call, newest
 // first; the whole row opens the call card. Presentational: the parent filters, sorts and caps

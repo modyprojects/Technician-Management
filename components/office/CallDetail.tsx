@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CallStatusPill, type CallStatus } from "@/components/ui/CallStatusPill";
-import { StatusPill, type VisitStatus } from "@/components/ui/StatusPill";
+import { CallStatusPill } from "@/components/ui/CallStatusPill";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge } from "@/components/ui/TestBadge";
+import type { CallStatus } from "@/features/calls/data/types";
+import type { VisitStatus } from "@/features/visits/data/types";
 import { VisitTimeline, type RenderRecording, type TimelineVisit } from "./VisitTimeline";
 
 // Office service-call card as a full page (docs/demo.html offCard() L834-859, with the fields of

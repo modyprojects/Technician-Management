@@ -1,23 +1,28 @@
-// FICTITIOUS DATA ONLY: generateStaticParams() values for the demo's dynamic routes.
-// Allowed only under app/dev (G-05). Server-side (uses the seeded calls).
-import { ME } from "./reference";
-import { OFFICE_ROLES } from "./roles";
-import { CALLS } from "./seed";
-import { isOpenVisit } from "./status";
+// FICTITIOUS DATA ONLY: generateStaticParams() values for the demo's dynamic routes, read
+// through the data-access layer (adapter.ts). Allowed only under app/dev (G-05). Server-side.
+import type { VisitRef } from "@/features/visits/data/types";
+import { demoDataAccess } from "./adapter";
+import { DEMO_TECHNICIAN_ID, OFFICE_ROLES } from "./roles";
 import type { OfficeRole } from "./types";
+
+const toParams = (refs: readonly VisitRef[]): { req: string; n: string }[] => refs.map((r) => ({ req: r.req, n: String(r.n) }));
 
 /** /dev/demo/office/[role] */
 export const officeRoleParams = (): { role: OfficeRole }[] => OFFICE_ROLES.map((role) => ({ role }));
 
 /** /dev/demo/office/[role]/calls/[req]: every call for both roles. */
-export const officeCallParams = (): { role: OfficeRole; req: string }[] =>
-  OFFICE_ROLES.flatMap((role) => CALLS.map((c) => ({ role, req: c.req })));
+export async function officeCallParams(): Promise<{ role: OfficeRole; req: string }[]> {
+  const ids = await demoDataAccess.calls.ids();
+  return OFFICE_ROLES.flatMap((role) => ids.map((req) => ({ role, req })));
+}
 
 /** /dev/demo/tech/visit/[req]/[n]: every visit of the demo technician (יורם), cancelled excluded. */
-export const techVisitParams = (): { req: string; n: string }[] =>
-  CALLS.flatMap((c) => c.visits.filter((v) => v.tech === ME && v.status !== "cancel").map((v) => ({ req: c.req, n: String(v.n) })));
+export async function techVisitParams(): Promise<{ req: string; n: string }[]> {
+  return toParams(await demoDataAccess.visits.refs(DEMO_TECHNICIAN_ID));
+}
 
 /** /dev/demo/tech/visit/[req]/[n]/work and /close: the demo technician's open visits only
  *  (closed visits are read-only to technicians, D14). */
-export const techOpenVisitParams = (): { req: string; n: string }[] =>
-  CALLS.flatMap((c) => c.visits.filter((v) => v.tech === ME && isOpenVisit(v)).map((v) => ({ req: c.req, n: String(v.n) })));
+export async function techOpenVisitParams(): Promise<{ req: string; n: string }[]> {
+  return toParams(await demoDataAccess.visits.openRefs(DEMO_TECHNICIAN_ID));
+}

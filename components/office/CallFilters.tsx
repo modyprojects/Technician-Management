@@ -1,4 +1,4 @@
-import type { CallStatus } from "@/components/ui/CallStatusPill";
+import type { CallStatus } from "@/features/calls/data/types";
 
 // Calls-list search and filters (docs/demo.html offCalls(), L816-822): a search box and a
 // technician select on one row, status chips with counts below. Controlled and presentational:

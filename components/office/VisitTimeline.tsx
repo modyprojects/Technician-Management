@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { StatusPill, VISIT_STATUSES, type VisitStatus } from "@/components/ui/StatusPill";
-import { TestBadge, VisitSourceLine, type VisitSource } from "@/components/ui/TestBadge";
+import { StatusPill, VISIT_STATUSES } from "@/components/ui/StatusPill";
+import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
+import type { MediaKind, MediaPhase, VisitSource, VisitStatus } from "@/features/visits/data/types";
 
 // Visit timeline of the office call card (docs/demo.html offCard() visitHtml, L836-846;
 // demo-deviations OF-06): one section per visit, newest first, edged in the visit-status colour,
@@ -36,7 +37,7 @@ export type TimelineVisit = {
   transcript: string;
   /** Recording length ("1:05"), or null when there is no recording. */
   recLabel: string | null;
-  media: { kind: "img" | "vid"; when: "before" | "after" }[];
+  media: { kind: MediaKind; when: MediaPhase }[];
   /** Media and recording are test data (D47, SIM-19). */
   mediaIsTest: boolean;
   parts: string[];

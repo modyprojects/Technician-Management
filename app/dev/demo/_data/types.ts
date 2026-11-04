@@ -1,11 +1,13 @@
 // FICTITIOUS DATA ONLY: types of the demo's fictional records. Allowed only under app/dev (G-05).
 // Field names follow docs/demo.html so its screen code ports one to one; fields marked ADD
 // come from demo-deviations rows the demo lacks.
-import type { CallStatus } from "@/components/ui/CallStatusPill";
-import type { VisitStatus } from "@/components/ui/StatusPill";
-import type { VisitSource } from "@/components/ui/TestBadge";
+// Only the fixture adapter (adapter.ts) and the other _data modules use these types; screens use
+// the DTOs in features/*/data/types (eslint.config.mjs enforces it).
+import type { CallStatus } from "@/features/calls/data/types";
+import type { OfficeRole } from "@/features/reference/data/types";
+import type { VisitSource, VisitStatus } from "@/features/visits/data/types";
 
-export type { CallStatus, VisitSource, VisitStatus };
+export type { CallStatus, OfficeRole, VisitSource, VisitStatus };
 
 export type TechId = "y" | "e" | "s";
 
@@ -34,7 +36,6 @@ export type Product = {
 
 export type Reason = { name: string; on: boolean; w: number };
 
-export type OfficeRole = "mgr" | "cs";
 export type UserRole = "creator" | OfficeRole;
 
 export type User = { name: string; email: string; role: UserRole; phone: string };

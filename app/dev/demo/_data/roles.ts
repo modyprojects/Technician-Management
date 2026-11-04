@@ -5,14 +5,25 @@
 // on the server and in the database (G-04).
 import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
+import {
+  isOfficeRole,
+  OFFICE_ROLE_VALUES,
+  type OfficeRole,
+  type PermissionKey,
+  type TechnicianId,
+} from "@/features/reference/data/types";
+import { ME } from "./reference";
 import { demoHref } from "./routes";
-import type { OfficeRole } from "./types";
+
+export { isOfficeRole };
 
 export type Viewpoint = "tech" | OfficeRole;
 
-export const OFFICE_ROLES: readonly OfficeRole[] = ["mgr", "cs"];
+export const OFFICE_ROLES: readonly OfficeRole[] = OFFICE_ROLE_VALUES;
 
-export const isOfficeRole = (x: string): x is OfficeRole => x === "mgr" || x === "cs";
+/** The technician the demo's technician viewpoint signs in as (G-03: production takes identity
+ *  from the session). Pages pass it to the data-access layer as a filter. */
+export const DEMO_TECHNICIAN_ID: TechnicianId = ME;
 
 /** Viewpoints offered on the landing page (the demo's ROLE map, without the creator). */
 export const VIEWPOINTS: Record<Viewpoint, { label: string; short: string; who: string; color: string }> = {
@@ -28,9 +39,7 @@ export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: s
 };
 
 /** Permission-matrix keys (D33). */
-export type PermKey =
-  | "cal" | "calls" | "card" | "cancel" | "dashGen" | "dashTech" | "dashProd"
-  | "export" | "settings" | "usage" | "products" | "conflicts" | "recordings";
+export type PermKey = PermissionKey;
 
 /** Status of every value below (D51). */
 export const PERMISSION_STATUS = "temporary" as const;

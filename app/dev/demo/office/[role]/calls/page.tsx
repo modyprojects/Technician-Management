@@ -1,28 +1,18 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { CallStatusOption, CallTechOption } from "@/components/office/CallFilters";
+import type { CallsTableRow } from "@/components/office/CallsTable";
+import { CALL_STATUS_ORDER, CALL_STATUSES } from "@/components/ui/CallStatusPill";
+import { callFilterOf, parseCallsListState } from "@/features/calls/data/search-params";
+import type { CallSummary } from "@/features/calls/data/types";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
-import {
-  CALL_STATUS_ORDER,
-  CALL_STATUSES,
-  CALLS,
-  can,
-  callStatus,
-  dayLabel,
-  demoHref,
-  isClosedVisit,
-  isOfficeRole,
-  lastVisit,
-  officeRoleParams,
-  prod,
-  sortCalls,
-  tech,
-  TECHS,
-  VIEWPOINTS,
-  type Call,
-  type OfficeRole,
-} from "../../../_data";
-import { CallsBrowser, type DemoCallRow } from "./_CallsBrowser";
+import { demoDataAccess } from "../../../_data/adapter";
+import { dayLabel } from "../../../_data/dates";
+import { officeRoleParams } from "../../../_data/params";
+import { can, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
+import { demoHref } from "../../../_data/routes";
+import type { OfficeRole } from "@/features/reference/data/types";
+import { CallsBrowser } from "./_CallsBrowser";
 
 export const dynamicParams = false;
 
@@ -36,53 +26,52 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
   return { title: `קריאות · ${VIEWPOINTS[role].label} · הדגמה` };
 }
 
-/** One calls-list row (the demo's callsTable() row): the last visit's technician, date and source. */
-function toRow(c: Call, role: OfficeRole): DemoCallRow {
-  const v = lastVisit(c);
-  const t = tech(v.tech);
-  const status = callStatus(c);
-  // Follow-up reason of the visit that set the call to "המשך טיפול" (its latest closed visit).
-  const closed = c.visits.filter(isClosedVisit);
-  const reason = status === "followup" ? (closed[closed.length - 1]?.reason ?? undefined) : undefined;
+/** The demo's 40-row page ("מציג 40 מתוך …", OF-04). */
+const PAGE_SIZE = 40;
+
+/** One calls-list row (the demo's callsTable() row): the latest visit's technician, date and source. */
+function toRow(c: CallSummary, role: OfficeRole): CallsTableRow {
+  const v = c.latestVisit;
   return {
     req: c.req,
     href: demoHref.call(role, c.req),
-    customer: c.customer,
-    customerNo: c.customerNo,
-    phone: c.phone,
-    city: c.city,
-    product: prod(c.sku).name,
-    sku: c.sku,
-    techId: t.id,
-    tech: { name: t.name, color: t.color },
-    visits: c.visits.length,
+    customer: c.customer.name,
+    customerNo: c.customer.number,
+    city: c.customer.city,
+    product: c.product.name,
+    sku: c.product.sku,
+    tech: { name: v.technician.name, color: v.technician.color },
+    visits: c.visitCount,
     when: `${dayLabel(v.date)} ${v.start}`,
     source: v.source,
-    status,
-    reason,
-    rep: c.rep,
+    status: c.status,
+    reason: c.followupReason ?? undefined,
+    rep: c.representative,
     isTest: c.isTest,
   };
 }
 
 // Office calls list (docs/demo.html offCalls()/callsTable(), L816-832): search, technician
-// filter, status chips with counts (service-call status, OF-17) and the 40-row table; a row opens
-// the call card. Export (OF-14) is pending, so its button only shows the simulated-action notice.
-export default async function OfficeCallsPage({ params }: PageProps<"/dev/demo/office/[role]/calls">) {
+// filter, status chips with counts (service-call status, OF-17) and 40-row pages; a row opens the
+// call card. Reads only through the data-access layer: the URL (?q=&status=&tech=&page=) is the
+// query, filtered and paged by calls.list() (OF-04). Export (OF-14) is pending, so its button
+// only shows the simulated-action notice.
+export default async function OfficeCallsPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/calls">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
 
-  const rows = sortCalls(CALLS).map((c) => toRow(c, role));
+  const state = parseCallsListState(await searchParams);
+  const [page, technicians] = await Promise.all([
+    demoDataAccess.calls.list(callFilterOf(state, PAGE_SIZE)),
+    demoDataAccess.reference.technicians(),
+  ]);
+
   // Counts over every call, as in the demo (they do not follow the search or technician filter).
   const statusOptions: CallStatusOption[] = [
-    { key: "all", label: "הכל", count: rows.length },
-    ...CALL_STATUS_ORDER.map((key) => ({
-      key,
-      label: CALL_STATUSES[key].label,
-      count: rows.filter((r) => r.status === key).length,
-    })),
+    { key: "all", label: "הכל", count: page.allCount },
+    ...CALL_STATUS_ORDER.map((key) => ({ key, label: CALL_STATUSES[key].label, count: page.statusCounts[key] })),
   ];
-  const techOptions: CallTechOption[] = TECHS.map((t) => ({ id: t.id, name: t.name }));
+  const techOptions: CallTechOption[] = technicians.map((t) => ({ id: t.id, name: t.name }));
 
   return (
     <DemoOfficeFrame role={role} active="calls">
@@ -97,7 +86,14 @@ export default async function OfficeCallsPage({ params }: PageProps<"/dev/demo/o
           </button>
         )}
       </div>
-      <CallsBrowser rows={rows} statusOptions={statusOptions} techOptions={techOptions} />
+      <CallsBrowser
+        rows={page.items.map((c) => toRow(c, role))}
+        total={page.total}
+        pageCount={page.pageCount}
+        state={{ ...state, page: page.page }}
+        statusOptions={statusOptions}
+        techOptions={techOptions}
+      />
     </DemoOfficeFrame>
   );
 }

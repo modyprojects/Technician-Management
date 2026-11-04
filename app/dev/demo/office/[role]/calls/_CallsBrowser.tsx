@@ -1,79 +1,99 @@
 "use client";
 
-// FICTITIOUS DATA ONLY (G-05): the calls list's client state for the UI demo (D53). Receives the
-// demo's calls as prepared rows and filters them in the browser, as the demo's callsTable() does.
-// Production searches and pages on the server (OF-04); this file is demo wiring only.
-import { useMemo, useState } from "react";
-import {
-  ALL_TECHS,
-  CallFilters,
-  type CallStatusFilter,
-  type CallStatusOption,
-  type CallTechOption,
-} from "@/components/office/CallFilters";
+// The calls list's interactive controls for the UI demo (D53). The rows come from the server,
+// already filtered and paged by the data-access layer (calls.list); this component only keeps
+// the controls in the URL (?q=&status=&tech=&page=), so the same query works against Supabase
+// later (OF-04). Search is debounced; chips and the technician select update the URL at once.
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
+import { CallFilters, type CallStatusFilter, type CallStatusOption, type CallTechOption } from "@/components/office/CallFilters";
 import { CallsTable, type CallsTableRow } from "@/components/office/CallsTable";
+import { Pager } from "@/components/ui/Pager";
+import { callsListHref, type CallsListState } from "@/features/calls/data/search-params";
+import { normalizeQuery } from "@/features/data-access/common";
 
-/** A table row plus the fields the demo filters on. */
-export type DemoCallRow = CallsTableRow & { techId: string; phone: string };
-
-/** The demo's 40-row cap ("מציג 40 מתוך …"). */
-const MAX_ROWS = 40;
-
-const digitsOf = (s: string): string => s.replace(/\D/g, "");
-
-/**
- * The demo's search (request number, customer, phone, SKU, city) plus customer number (OF-05) and
- * product name. Case-insensitive, so "kt-2041" finds "KT-2041" (PR-07); a phone typed without
- * dashes also matches.
- */
-function matchesSearch(r: DemoCallRow, query: string): boolean {
-  const q = query.trim().toUpperCase();
-  if (!q) return true;
-  if ([r.req, r.customerNo, r.customer, r.phone, r.sku, r.product, r.city].some((x) => x.toUpperCase().includes(q))) {
-    return true;
-  }
-  const digits = digitsOf(q);
-  return /^[\d\s-]+$/.test(q) && digits.length >= 3 && digitsOf(r.phone).includes(digits);
-}
+const SEARCH_DEBOUNCE_MS = 300;
 
 export function CallsBrowser({
   rows,
+  total,
+  pageCount,
+  state,
   statusOptions,
   techOptions,
 }: {
-  /** Every call, newest first. */
-  rows: readonly DemoCallRow[];
+  /** The current page of matching calls, newest first. */
+  rows: readonly CallsTableRow[];
+  /** Matching calls before paging. */
+  total: number;
+  pageCount: number;
+  /** The URL state the server used for `rows`. */
+  state: CallsListState;
   statusOptions: readonly CallStatusOption[];
   techOptions: readonly CallTechOption[];
 }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<CallStatusFilter>("all");
-  const [tech, setTech] = useState<string>(ALL_TECHS);
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pending, startTransition] = useTransition();
 
-  const matches = useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          (status === "all" || r.status === status) &&
-          (tech === ALL_TECHS || r.techId === tech) &&
-          matchesSearch(r, query),
-      ),
-    [rows, status, tech, query],
-  );
+  // Chips and select show the new value at once, while the server renders the new rows.
+  const [shown, setShown] = useOptimistic({ status: state.status, tech: state.tech });
+
+  // The search box keeps what the user types; it follows the URL only when the URL changes
+  // from outside (back / forward), not when it catches up with our own debounced update.
+  const [query, setQuery] = useState(state.q);
+  const [urlQ, setUrlQ] = useState(state.q);
+  const [sentQ, setSentQ] = useState(state.q);
+  if (state.q !== urlQ) {
+    setUrlQ(state.q);
+    if (state.q !== sentQ) {
+      setQuery(state.q);
+      setSentQ(state.q);
+    }
+  }
+
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  function go(next: Partial<CallsListState>) {
+    clearTimeout(timer.current);
+    const target: CallsListState = { q: query, status: shown.status, tech: shown.tech, ...next, page: 1 };
+    setSentQ(normalizeQuery(target.q));
+    startTransition(() => {
+      setShown({ status: target.status, tech: target.tech });
+      router.replace(callsListHref(pathname, target), { scroll: false });
+    });
+  }
+
+  function onQueryChange(next: string) {
+    setQuery(next);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => go({ q: next }), SEARCH_DEBOUNCE_MS);
+  }
+
+  const pageHref = (page: number) => callsListHref(pathname, { ...state, page });
 
   return (
     <>
       <CallFilters
         query={query}
-        onQueryChange={setQuery}
-        tech={tech}
+        onQueryChange={onQueryChange}
+        tech={shown.tech}
         techOptions={techOptions}
-        onTechChange={setTech}
-        status={status}
+        onTechChange={(tech) => go({ tech })}
+        status={shown.status}
         statusOptions={statusOptions}
-        onStatusChange={setStatus}
+        onStatusChange={(status: CallStatusFilter) => go({ status })}
       />
-      <CallsTable rows={matches.slice(0, MAX_ROWS)} total={matches.length} />
+      <div aria-busy={pending} style={{ display: "contents" }}>
+        <CallsTable rows={rows} total={total} />
+      </div>
+      <Pager
+        page={state.page}
+        pageCount={pageCount}
+        prevHref={state.page > 1 ? pageHref(state.page - 1) : null}
+        nextHref={state.page < pageCount ? pageHref(state.page + 1) : null}
+      />
     </>
   );
 }
