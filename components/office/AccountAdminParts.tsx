@@ -5,7 +5,7 @@ import {
   ACCOUNT_REQUEST_KIND_LABELS,
   ACCOUNT_REQUEST_STATUS_LABELS,
   ACCOUNT_ROLE_LABELS,
-  type AccountId,
+  type AccountRef,
   type AccountRequest,
   type AccountRequestStatus,
   type AccountRole,
@@ -42,7 +42,7 @@ export type AccountAdminData = {
   /** Creator: every request (pending first); Manager: the Manager's own requests. */
   requests: Bounded<AccountRequestEntry>;
   /** The signed-in account (production: from the session, G-03); it offers no action on itself. */
-  selfAccountId: AccountId | null;
+  self: AccountRef | null;
 };
 
 /**

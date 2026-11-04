@@ -1,6 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AnalyticsTabs } from "@/components/office/AnalyticsTabs";
+import type { ReactNode } from "react";
+import { SettingsCallTypes } from "@/components/office/SettingsCallTypes";
+import { SettingsMail } from "@/components/office/SettingsMail";
+import { SettingsPlaces } from "@/components/office/SettingsPlaces";
+import { SettingsReasons } from "@/components/office/SettingsReasons";
+import { SettingsReasonsFixedText } from "@/components/office/SettingsReasonsFixedText";
+import { SettingsShell } from "@/components/office/SettingsShell";
+import { SettingsTechs } from "@/components/office/SettingsTechs";
+import { SettingsTemplate } from "@/components/office/SettingsTemplate";
+import type { OfficeRole } from "@/features/reference/data/types";
 import { isSettingsSection, SETTINGS_SECTION_LABELS, type SettingsSection } from "@/features/settings/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
@@ -23,47 +32,60 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 }
 
 /**
- * What each tab will show (docs/demo.html setUsers() ... setTemplate(), L942-976, as amended by
- * demo-deviations SE-01 to SE-16). The screens read through demoDataAccess.settings / .accounts
- * and act through useCommands().settings / .accounts.
+ * The body of one tab, read only through the data-access layer (demoDataAccess.settings /
+ * .reference) and passed to components/office as DTO props; actions run through useCommands()
+ * inside those components (simulated in the UI demo).
  */
-const PLANNED: Record<SettingsSection, readonly string[]> = {
-  users: [
-    "טבלת המשתמשים: שם, מייל, הרשאה, מצב וכניסה אחרונה, עם 🧪 למשתמשי בדיקה",
-    "בקשות של המנהל לחשבונות שירות לקוחות: אישור, או דחייה עם סיבה",
-    "מטריצת ההרשאות למנהל ולשירות לקוחות, עם סימון \"ערך זמני\" עד אישור הבעלים; היוצר קבוע ✓ 🔒",
-  ],
-  techs: [
-    "טבלת הטכנאים: צבע, שם, טלפון, מייל ב-Outlook, מכשיר ופעיל",
-    "\"פעיל\" קובע אם הטכנאי מקבל זימונים חדשים; ההיסטוריה נשמרת",
-    "הוספת טכנאי; שינוי המייל ב-Outlook מודיע ליוצר באפליקציה",
-  ],
-  places: [
-    "טבלת מקומות האיסוף: שם, סוג, כתובת (ל-Waze), טלפון, שעות פתיחה ופעיל",
-    "הוספת מקום; מקום שבשימוש אפשר רק לכבות, ומחיקה רק למקום שלא בשימוש",
-  ],
-  reasons: [
-    "סיבות המשך טיפול לפי הסדר, עם שימוש החודש ומתג פעיל",
-    "הוספת סיבה; מחיקה רק לסיבה שלא בשימוש, וסיבה שבשימוש אפשר רק לכבות",
-    "נוסח אישור \"טופל\": עריכה שומרת גרסה חדשה, וחתימות קודמות לא משתנות",
-  ],
-  types: ["סוגי הקריאה \"תיקון\" ו\"התקנה\": הוספה וכיבוי", "ערכים ראשוניים, לאימות עם שירות הלקוחות"],
-  mail: [
-    "מייל סיום ביקור: תמיד למנהל ולתיבת שירות הלקוחות, בשתי התוצאות (קבוע)",
-    "נמען \"הנציגה המטפלת\", צירוף תמונות ומייל על זימון שלא נקלט: ממתין להחלטה",
-    "התראות לטכנאי באפליקציה: זימון חדש או שינוי ביומן, ביטול ביקור",
-  ],
-  template: [
-    "זיהוי זימון: נושא שמתחיל ב-[קריאת שירות], מתעדכן אוטומטית כשזימון נוצר או משתנה",
-    "מספר פנייה שכבר קיים מצטרף לקריאה כביקור נוסף",
-    "טבלת התוויות עם מתג חובה; \"מספר פנייה\" ו\"מספר לקוח\" תמיד חובה",
-  ],
-};
+async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<ReactNode> {
+  switch (tab) {
+    case "users":
+      // TEMPORARY placeholder: SettingsUsersTab (account administration and the permission
+      // matrix, SE-01 to SE-03) is being built in parallel and replaces this body.
+      return (
+        <ScreenPlaceholder
+          id="set-users-placeholder"
+          heading={SETTINGS_SECTION_LABELS.users}
+          items={[
+            "טבלת המשתמשים: שם, מייל, הרשאה, מצב וכניסה אחרונה, עם 🧪 למשתמשי בדיקה",
+            "בקשות של המנהל לחשבונות שירות לקוחות: אישור, או דחייה עם סיבה",
+            "מטריצת ההרשאות למנהל ולשירות לקוחות, עם סימון \"ערך זמני\" עד אישור הבעלים; היוצר קבוע ✓ 🔒",
+          ]}
+        />
+      );
+    case "techs":
+      return <SettingsTechs technicians={await demoDataAccess.settings.technicians()} />;
+    case "places":
+      return <SettingsPlaces places={await demoDataAccess.settings.places()} />;
+    case "reasons": {
+      const [reasons, approvalText] = await Promise.all([
+        demoDataAccess.settings.reasons(),
+        demoDataAccess.reference.approvalText(),
+      ]);
+      return (
+        <>
+          <SettingsReasons reasons={reasons} />
+          <SettingsReasonsFixedText approvalText={approvalText} />
+        </>
+      );
+    }
+    case "types":
+      return <SettingsCallTypes types={await demoDataAccess.settings.callTypes()} />;
+    case "mail":
+      return <SettingsMail mail={await demoDataAccess.settings.mail()} />;
+    case "template":
+      return <SettingsTemplate template={await demoDataAccess.settings.template()} />;
+  }
+  // Unreachable while `role` is unused by the bodies; kept so a new tab fails the type check.
+  void role;
+  return null;
+}
 
-// Settings (docs/demo.html offSettings(), L935-976): one page per tab. PLACEHOLDER (phase E
-// ports): the tab bar and the access state are real, the tab bodies come next. Which tabs a role
-// sees follows settingsTabsOffered() (the Creator every tab; a matrix role only with `settings`;
-// display only, G-04). Reads only through the data-access layer (reference.permissions).
+// Settings (docs/demo.html offSettings(), L935-976, as amended by demo-deviations SE-01 to SE-16):
+// one page per tab, "הגדרות · <tab>" with the tab column and the body. Which tabs a role sees
+// follows settingsTabsOffered() (the Creator every tab, fixed, D33; a matrix role only where its
+// `settings` value offers the operational tabs, D35; display only, G-04: enforcement is on the
+// server and in the database). A role without the tab gets the "🔒 אין הרשאה" card, and no
+// settings data is read for it. No "מדדי שימוש" (OF-15 PENDING d13).
 export default async function OfficeSettingsPage({ params }: PageProps<"/dev/demo/office/[role]/settings/[tab]">) {
   const { role, tab } = await params;
   if (!isOfficeRole(role) || !isSettingsSection(tab)) notFound();
@@ -95,25 +117,18 @@ export default async function OfficeSettingsPage({ params }: PageProps<"/dev/dem
     );
   }
 
+  const tabs = offered.map((key) => ({
+    key,
+    label: SETTINGS_SECTION_LABELS[key],
+    href: demoHref.settings(role, key),
+    current: key === tab,
+  }));
+
   return (
     <DemoOfficeFrame role={role} active="settings">
-      <div className="ptitle">
-        <div>
-          <h1>הגדרות · {title}</h1>
-          <div className="sub">הדגמה: שינויים כאן מדומים ולא נשמרים</div>
-        </div>
-      </div>
-      <AnalyticsTabs
-        label="לשוניות ההגדרות"
-        tabs={offered.map((key) => ({
-          key,
-          label: SETTINGS_SECTION_LABELS[key],
-          href: demoHref.settings(role, key),
-          on: key === tab,
-          current: key === tab,
-        }))}
-      />
-      <ScreenPlaceholder id="set-placeholder" heading={title} items={PLANNED[tab]} />
+      <SettingsShell title={title} sub="הדגמה: שינויים כאן מדומים ולא נשמרים" tabs={tabs}>
+        {await tabBody(role, tab)}
+      </SettingsShell>
     </DemoOfficeFrame>
   );
 }
