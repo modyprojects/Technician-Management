@@ -483,12 +483,16 @@ test.describe("office calendar", () => {
     await expect(dialog).toBeVisible();
     const req = new URL(page.url()).searchParams.get("req") ?? "";
     await expect(dialog.getByRole("link", { name: /לכרטיס הקריאה המלא/ })).toHaveAttribute("href", `/dev/demo/office/cs/calls/${req}`);
-    // The background is the area outside the panel: its far side from the panel (RTL: the left edge).
+    // RTL: .drawer-bg puts the panel (min(440px, 100%)) at the left edge, so the dimmed background
+    // is the free area to its right. At 390 the panel fills the width and there is no background
+    // to click; at 820 and 1440 there must be one, and a click on it closes the drawer.
     const vp = page.viewportSize();
     const panel = await page.locator(".drawer").boundingBox();
     if (!vp || !panel) throw new Error("no viewport or drawer");
-    if (panel.x > 20) {
-      await page.mouse.click(Math.min(10, panel.x / 2), vp.height / 2);
+    const hasBackground = panel.x + panel.width < vp.width - 20;
+    expect(hasBackground, `dimmed background beside the drawer at ${vp.width}px`).toBe(vp.width > 440);
+    if (hasBackground) {
+      await page.mouse.click(vp.width - 10, vp.height / 2);
       await expect(dialog).toHaveCount(0);
       await expect(page).toHaveURL(/\/office\/cs\/calendar\?view=week$/);
     }
@@ -628,6 +632,7 @@ test.describe("technician notifications and profile", () => {
     await page.getByRole("button", { name: /חיוג למשרד/ }).click();
     await expect(toast(page)).toContainText("לא מתבצעת שיחה");
     await expect(page.getByRole("button", { name: "דיווח" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "התנתקות" })).toBeDisabled();
+    // No sign-out entry: it is not in the demo or the spec (open question to the owner).
+    await expect(page.getByRole("button", { name: "התנתקות" })).toHaveCount(0);
   });
 });

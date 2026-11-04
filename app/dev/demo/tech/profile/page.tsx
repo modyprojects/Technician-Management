@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProfileHeader } from "@/components/tech/ProfileHeader";
 import { ProfilePreferences } from "@/components/tech/ProfilePreferences";
-import { ProfileHelp, ProfileSignOut, ProfileWeek } from "@/components/tech/ProfileSections";
+import { ProfileHelp, ProfileWeek } from "@/components/tech/ProfileSections";
 import { DemoTechFrame } from "../../_components/DemoFrames";
 import { demoDataAccess } from "../../_data/adapter";
 import { TODAY } from "../../_data/dates";
@@ -19,7 +19,9 @@ export const metadata: Metadata = { title: "פרופיל · טכנאי · הדג
 //   demo's morning pickup toggle is removed, TE-28 / TE-29).
 // - "חיוג למשרד": a dial is navigation, not a data action; production uses a `tel:` link, the demo
 //   says what would open (data-sim, DemoToast).
-// - "דיווח על תקלה באפליקציה" (TE-30, d26) and "התנתקות" (Step 2) are disabled placeholders.
+// - "דיווח על תקלה באפליקציה" (TE-30, d26) is a disabled placeholder; the demo says it waits for
+//   the owner's decision. There is no sign-out entry (not in the demo or the spec; asked of the
+//   owner for Step 2).
 export default async function TechProfilePage() {
   const [profile, preferences] = await Promise.all([
     demoDataAccess.profile.technician(DEMO_TECHNICIAN_ID, TODAY),
@@ -33,6 +35,7 @@ export default async function TechProfilePage() {
       <ProfilePreferences initial={preferences} />
       <ProfileHelp
         officePhone={office}
+        reportPendingHint="ממתין להחלטת בעלים (d26)"
         officeDial={
           office && (
             <button
@@ -46,7 +49,6 @@ export default async function TechProfilePage() {
           )
         }
       />
-      <ProfileSignOut />
     </DemoTechFrame>
   );
 }
