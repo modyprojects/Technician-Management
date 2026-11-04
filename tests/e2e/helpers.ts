@@ -172,6 +172,15 @@ export async function horizontalOverflow(page: Page): Promise<string[]> {
   });
 }
 
+/**
+ * The demo pages scroll inside their frame (.stage, .ph-main), never the document itself: returns
+ * how far the document extends below the window (0 when it does not). Absolutely positioned
+ * screen-reader text whose containing block is the page can stretch it into empty space.
+ */
+export async function verticalPageOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 1));
+}
+
 export async function box(page: Page, selector: string) {
   const b = await page.locator(selector).first().boundingBox();
   if (!b) throw new Error(`No box for ${selector}`);

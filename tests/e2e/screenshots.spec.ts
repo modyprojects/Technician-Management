@@ -157,10 +157,17 @@ test.describe("ui-demo-1 review screenshots", () => {
       await shot("tech-work-recording");
 
       // Close as "המשך טיפול" with a reason and the next-visit note (TE-21).
-      await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+      // The work first (a photo after the treatment and a summary), as the close requires.
+      await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+      await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+      await expect(page.getByRole("img", { name: /תמונה 1 אחרי הטיפול/ })).toBeVisible();
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המחסנית הוחלפה, נדרש כיוון נוסף של הפיה.");
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+      await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+      await expect(page).toHaveURL(/\/48205\/2\/close$/);
       await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
       await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
-      await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+      await page.getByLabel(/מה צריך בביקור הבא/).fill("לכוון את הפיה ולבדוק שאין טפטוף.");
       await shot("tech-close-followup");
 
       // Work screen with an "after" photo and a summary, then the close screen with a signature.
@@ -472,10 +479,17 @@ test.describe("ui-demo-5 review screenshots", () => {
       await shot("call-card-corrections");
 
       // The close confirmation: "המשך טיפול" sent (simulated) shows the sync progression.
-      await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+      // The work first (a photo after the treatment and a summary), as the close requires.
+      await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+      await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+      await expect(page.getByRole("img", { name: /תמונה 1 אחרי הטיפול/ })).toBeVisible();
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המחסנית הוחלפה, נדרש כיוון נוסף של הפיה.");
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+      await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+      await expect(page).toHaveURL(/\/48205\/2\/close$/);
       await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
       await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
-      await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+      await page.getByLabel(/מה צריך בביקור הבא/).fill("לכוון את הפיה ולבדוק שאין טפטוף.");
       await page.locator(".bigbtn").last().click();
       await expect(page.getByRole("region", { name: "מה קורה עם הסיום" })).toBeVisible();
       await toastGone();

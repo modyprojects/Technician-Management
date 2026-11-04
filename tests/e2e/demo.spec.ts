@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage } from "./helpers";
+import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage, verticalPageOverflow } from "./helpers";
 
 // UI demo with fictional data (D53, /dev/demo). Runs in the phone (390), tablet (820) and desktop
 // (1440) projects unless a block says otherwise. Every action in the demo is simulated: the tests
@@ -51,6 +51,7 @@ test.describe("demo pages render", () => {
       await expect(strip).toContainText("נתוני בדיקה");
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
       expect(await horizontalOverflow(page)).toEqual([]);
+      expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
       // Let prefetches and hydration finish before reading the console.
       await page.waitForLoadState("networkidle");
       expect(errors).toEqual([]);
@@ -1277,6 +1278,7 @@ test.describe("phase F views render", () => {
       await expect(page.locator(`[data-fixtures="${FIXTURE_SENTINEL}"]`).first()).toBeAttached();
       await expect(page.getByRole("note", { name: "הדגמה עם נתוני בדיקה" })).toBeVisible();
       expect(await horizontalOverflow(page)).toEqual([]);
+      expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
       await page.waitForLoadState("networkidle");
       expect(errors).toEqual([]);
     });
@@ -1691,6 +1693,7 @@ test.describe("phase G views render", () => {
       await expect(page.locator(`[data-fixtures="${FIXTURE_SENTINEL}"]`).first()).toBeAttached();
       await expect(page.getByRole("note", { name: "הדגמה עם נתוני בדיקה" })).toBeVisible();
       expect(await horizontalOverflow(page)).toEqual([]);
+      expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
       await page.waitForLoadState("networkidle");
       expect(errors).toEqual([]);
     });
@@ -2204,10 +2207,17 @@ test.describe("technician sync state (TE-23, TE-24, D06, D46)", () => {
   });
 
   test("the close confirmation shows the sync progression, no step done, and no \"email sent\" claim", async ({ page }) => {
-    await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+    // The work first (a photo after the treatment and a summary), as the close requires.
+    await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+    await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+    await expect(page.getByRole("img", { name: /תמונה 1 אחרי הטיפול/ })).toBeVisible();
+    await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המחסנית הוחלפה, נדרש כיוון נוסף של הפיה.");
+    await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+    await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+    await expect(page).toHaveURL(/\/48205\/2\/close$/);
     await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
     await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
-    await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+    await page.getByLabel(/מה צריך בביקור הבא/).fill("לכוון את הפיה ולבדוק שאין טפטוף.");
     const send = page.locator(".bigbtn").last();
     await expect(send).toBeEnabled();
     await send.click();

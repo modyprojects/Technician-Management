@@ -657,7 +657,9 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 .ob-tool { background: var(--ink); color: var(--on-dark); border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 14px; }
 .ob-box { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 420px; overflow: hidden; }
 .ob-list { min-width: 0; display: flex; flex-direction: column; border-inline-end: 1px solid var(--line); }
-.ob-items { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 70vh; }
+/* position: the containing block of the rows' visually hidden (.sr-only, absolute) text, so it is
+   clipped by this scroller instead of stretching the page below it. */
+.ob-items { position: relative; list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 70vh; }
 .mailitem.ob-item { display: flex; flex-direction: column; gap: 3px; }
 .ob-subject { font-size: 13px; overflow-wrap: anywhere; }
 .ob-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
@@ -691,3 +693,11 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .kv.ob-kv { grid-template-columns: 92px minmax(0, 1fr); }
 }
 /* end outbox-sync */
+/* phase-g-integration */
+/* Screen-reader text in a pill (TestBadge's "נתוני בדיקה", the sync pill's "מצב סנכרון:") or a
+   number (the dashboard bars' segments) is
+   .sr-only, position: absolute. Without a positioned ancestor its containing block is the page, so
+   a pill inside a scroller (.ph-main, .stage, .scrollx, the outbox list) stretched the document
+   below the app frame and the page itself scrolled into empty space. The pill or number contains it. */
+.pill:has(> .sr-only), .num:has(> .sr-only) { position: relative; }
+/* end phase-g-integration */
