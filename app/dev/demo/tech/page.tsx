@@ -15,6 +15,8 @@ import { LiveStatusPill, VisitStatusProvider } from "./_VisitStatus";
 
 export const metadata: Metadata = { title: "היום · טכנאי · הדגמה" };
 
+const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
+
 // Technician home, "היום" (docs/demo.html techHome() L477-516; TE-01 to TE-04, TE-33).
 // Reads only through the data-access layer: visits.techDay(DEMO_TECHNICIAN_ID, TODAY) and
 // notifications.unreadCount(DEMO_TECHNICIAN_ID) (G-03: production takes the technician from the
@@ -52,6 +54,9 @@ export default async function TechHomePage() {
           unread={unread}
           visitsToday={day.stats.open}
           completed={day.stats.completed}
+          // The notifications and "הושלמו היום" screens are not part of this demo (TODO: link them
+          // with notificationsHref / completedHref when they exist).
+          unavailable={{ "data-sim": NOT_IN_DEMO }}
         />
       }
     >
@@ -66,7 +71,7 @@ export default async function TechHomePage() {
               type="button"
               className="chip"
               style={{ padding: "3px 10px", fontSize: 12 }}
-              data-sim="המסך הזה אינו חלק מההדגמה"
+              data-sim={NOT_IN_DEMO}
             >
               יומן ›
             </button>

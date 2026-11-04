@@ -95,19 +95,22 @@ export function TechLanes({
   lanes,
   callHref,
   technicianHref,
+  idPrefix = "od-lane",
 }: {
   lanes: readonly TechnicianLane[];
   /** Call card URL of a request number. */
   callHref: (req: string) => string;
   /** Optional link on the technician's name (the demo's drill-down, matrix key dashTech). */
   technicianHref?: (id: TechnicianId) => string;
+  /** Prefix of the per-technician heading ids; give each instance on one page its own prefix. */
+  idPrefix?: string;
 }) {
   if (!lanes.length) return <div className="empty">אין טכנאים פעילים</div>;
   return (
     <div className="cols3">
       {lanes.map((lane) => {
         const t = lane.technician;
-        const headingId = `od-lane-${t.id}`;
+        const headingId = `${idPrefix}-${t.id}`;
         const donePct = lane.total ? (lane.completed / lane.total) * 100 : 0;
         return (
           <article key={t.id} className="card od-lane" style={{ borderRightColor: t.color }} aria-labelledby={headingId}>

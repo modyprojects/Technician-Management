@@ -181,7 +181,7 @@ export type CloseVisitInput = {
    * The server verifies it (with the text hash a production adapter adds) and keeps that exact text.
    */
   approvalTextVersionId?: string;
-  /** "מה צריך בביקור הבא" (cont only). */
+  /** "מה צריך בביקור הבא"; required for "cont" (TE-21). */
   nextNote?: string;
 };
 

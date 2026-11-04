@@ -14,6 +14,7 @@ import type { VisitRef } from "@/features/visits/data/types";
 import {
   closeVisitError,
   mediaError,
+  mediaIdError,
   partsError,
   recordingError,
   summaryError,
@@ -23,6 +24,9 @@ import { SIMULATED_TITLE, useSimulate } from "./DemoToast";
 
 /** Short artificial delay so pending states are visible, as with a real request. */
 const DELAY_MS = 250;
+
+/** Error for input that a validator could not even read (missing or of the wrong type). */
+const INVALID_INPUT = "קלט לא תקין";
 
 const excerpt = (s: string, max = 60): string => {
   const t = s.trim();
@@ -37,59 +41,110 @@ export function SimulatedCommandsProvider({ children }: { children: ReactNode })
   const simulate = useSimulate();
 
   const commands = useMemo<Commands>(() => {
-    /** Validates, waits, shows the demo toast and returns the simulated result. */
-    async function run<T = void>(errors: (string | null)[], detail: string, data?: T): Promise<CommandResult<T>> {
+    /**
+     * Validates, waits, shows the demo toast and returns the simulated result. Validation, the
+     * toast text and the data are built lazily, in that order, so malformed or missing input
+     * (possible from untyped callers) returns { ok: false } instead of throwing.
+     */
+    async function run<T = void>(
+      validate: () => (string | null)[],
+      detail: () => string,
+      data?: () => T,
+    ): Promise<CommandResult<T>> {
       await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
-      const error = errors.find((e) => e !== null);
+      let error: string | null;
+      let text = "";
+      let value: T | undefined;
+      try {
+        error = validate().find((e) => e !== null) ?? null;
+        if (!error) {
+          text = detail();
+          value = data?.();
+        }
+      } catch {
+        error = INVALID_INPUT;
+      }
       if (error) {
         simulate(`לא בוצע: ${error}`);
         return { ok: false, simulated: true, error };
       }
-      simulate(detail);
-      return data === undefined
+      simulate(text);
+      return value === undefined
         ? { ok: true, simulated: true, message: SIMULATED_TITLE }
-        : { ok: true, simulated: true, message: SIMULATED_TITLE, data };
+        : { ok: true, simulated: true, message: SIMULATED_TITLE, data: value };
     }
 
     return {
       calls: {
         reschedule: (ref, slot) =>
           run(
-            [visitRefError(ref), slotError(slot)],
-            `שינוי מועד לביקור ${ref.n} · פנייה ${ref.req}${slot ? ` · ${slot.date} ${slot.start}–${slot.end}` : ""} · בפועל המועד משתנה בזימון ב-Outlook`,
+            () => [visitRefError(ref), slotError(slot)],
+            () =>
+              `שינוי מועד לביקור ${ref.n} · פנייה ${ref.req}${slot ? ` · ${slot.date} ${slot.start}–${slot.end}` : ""} · בפועל המועד משתנה בזימון ב-Outlook`,
           ),
-        addNote: (req, text) => run([requestNumberError(req), noteError(text)], `הערה לפנייה ${req}: ${excerpt(text)}`),
+        addNote: (req, text) =>
+          run(
+            () => [requestNumberError(req), noteError(text)],
+            () => `הערה לפנייה ${req}: ${excerpt(text)}`,
+          ),
         cancelVisit: (ref, input) =>
-          run([visitRefError(ref), cancelReasonError(input?.reason)], `ביטול ביקור ${ref.n} · פנייה ${ref.req}`),
+          run(
+            () => [visitRefError(ref), cancelReasonError(input?.reason)],
+            () => `ביטול ביקור ${ref.n} · פנייה ${ref.req}`,
+          ),
       },
       visits: {
-        depart: (ref) => run([visitRefError(ref)], `יציאה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בדרך"`),
-        arrive: (ref) => run([visitRefError(ref)], `הגעה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בטיפול"`),
-        saveSummary: (ref, text) => run([visitRefError(ref), summaryError(text)], `שמירת סיכום · ${visitLabel(ref)}`),
-        addMedia: (ref, input) => {
-          const id = `sim-${ref.req}-${ref.n}-${Date.now()}`;
-          return run(
-            [visitRefError(ref), mediaError(input)],
-            `${input.kind === "vid" ? "סרטון" : "תמונה"} ${input.when === "before" ? "לפני" : "אחרי"} הטיפול · ${visitLabel(ref)} · לא הועלה`,
-            { media: { id, kind: input.kind, when: input.when, isTest: true } },
-          );
-        },
+        depart: (ref) =>
+          run(
+            () => [visitRefError(ref)],
+            () => `יציאה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בדרך"`,
+          ),
+        arrive: (ref) =>
+          run(
+            () => [visitRefError(ref)],
+            () => `הגעה ללקוח · ${visitLabel(ref)} · הסטטוס היה משתנה ל"בטיפול"`,
+          ),
+        saveSummary: (ref, text) =>
+          run(
+            () => [visitRefError(ref), summaryError(text)],
+            () => `שמירת סיכום · ${visitLabel(ref)}`,
+          ),
+        addMedia: (ref, input) =>
+          run(
+            () => [visitRefError(ref), mediaError(input)],
+            () =>
+              `${input.kind === "vid" ? "סרטון" : "תמונה"} ${input.when === "before" ? "לפני" : "אחרי"} הטיפול · ${visitLabel(ref)} · לא הועלה`,
+            () => ({
+              media: { id: `sim-${ref.req}-${ref.n}-${Date.now()}`, kind: input.kind, when: input.when, isTest: true },
+            }),
+          ),
         removeMedia: (ref, mediaId) =>
-          run([visitRefError(ref), mediaId ? null : "קובץ לא תקין"], `הסרת קובץ · ${visitLabel(ref)}`),
+          run(
+            () => [visitRefError(ref), mediaIdError(mediaId)],
+            () => `הסרת קובץ · ${visitLabel(ref)}`,
+          ),
         saveRecording: (ref, input) =>
           run(
-            [visitRefError(ref), recordingError(input?.seconds)],
-            `הקלטה ${recLabel(input?.seconds ?? 0)} · ${visitLabel(ref)} · לא הועלתה`,
+            () => [visitRefError(ref), recordingError(input?.seconds)],
+            () => `הקלטה ${recLabel(input.seconds)} · ${visitLabel(ref)} · לא הועלתה`,
           ),
-        deleteRecording: (ref) => run([visitRefError(ref)], `מחיקת הקלטה · ${visitLabel(ref)}`),
+        deleteRecording: (ref) =>
+          run(
+            () => [visitRefError(ref)],
+            () => `מחיקת הקלטה · ${visitLabel(ref)}`,
+          ),
         saveParts: (ref, parts) =>
-          run([visitRefError(ref), partsError(parts)], `חלפים (${parts.length}) · ${visitLabel(ref)}`),
+          run(
+            () => [visitRefError(ref), partsError(parts)],
+            () => `חלפים (${parts.length}) · ${visitLabel(ref)}`,
+          ),
         close: (ref, input) =>
           run(
-            [visitRefError(ref), closeVisitError(input)],
-            input.outcome === "done"
-              ? `סיום ביקור · טופל · נחתם ע"י ${excerpt(input.signerName ?? "", 40)} · ${visitLabel(ref)} · לא נשלח מייל`
-              : `סיום ביקור · המשך טיפול – ${input.reason ?? ""} · ${visitLabel(ref)} · לא נשלח מייל`,
+            () => [visitRefError(ref), closeVisitError(input)],
+            () =>
+              input.outcome === "done"
+                ? `סיום ביקור · טופל · נחתם ע"י ${excerpt(input.signerName ?? "", 40)} · ${visitLabel(ref)} · לא נשלח מייל`
+                : `סיום ביקור · המשך טיפול – ${input.reason ?? ""} · ${visitLabel(ref)} · לא נשלח מייל`,
           ),
       },
     };

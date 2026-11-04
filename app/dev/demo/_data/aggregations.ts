@@ -92,7 +92,8 @@ export function officeOverview(date: IsoDate): OfficeOverview {
       awaitingScheduling: metric(statuses.filter((s) => s === "awaiting").length, "count"),
     },
     lanes: technicianLanes(today),
-    attention: capped(attention(date, ["awaiting", "followup"])),
+    // Awaiting-scheduling calls first, so the cap never hides them behind older follow-ups.
+    attention: capped([...attention(date, ["awaiting"]), ...attention(date, ["followup"])]),
   };
 }
 

@@ -5,12 +5,13 @@ import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { KpiGrid, type KpiTile } from "@/components/office/KpiGrid";
 import { TechLanes } from "@/components/office/TechLanes";
 import { WorkQueueCalls } from "@/components/office/WorkQueueCalls";
-import { offersAnyDashboard } from "@/features/reference/data/permissions";
+import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { demoDataAccess } from "../../_data/adapter";
 import { TODAY } from "../../_data/dates";
 import { demoHref } from "../../_data/routes";
 import { HomeTitle, homeLinks } from "./_HomeParts";
+import { analyticsHref } from "./analytics/_state";
 
 const TEST_NOTE_ID = "od-test-note";
 
@@ -89,14 +90,21 @@ export async function ManagerHome({ role }: { role: OfficeRole }) {
         <DashboardStatusBar visits={overview.lanes.flatMap((lane) => lane.visits)} />
       </DashboardSection>
       <DashboardSection id="od-field" title="עכשיו בשטח" hint="לחיצה על ביקור פותחת את כרטיס הקריאה">
-        <TechLanes lanes={overview.lanes} callHref={links.call} />
+        <TechLanes
+          lanes={overview.lanes}
+          callHref={links.call}
+          // The technician drill-down, only when the matrix offers it (display only, G-04).
+          technicianHref={
+            offers(permissions, "dashTech") ? (id) => analyticsHref(demoHref.analytics(), { tab: "tech", tech: id }) : undefined
+          }
+        />
       </DashboardSection>
       <DashboardSection
         id="od-attention"
         flush
         title="דורשות טיפול"
         count={overview.attention.total}
-        hint="המשך טיפול ללא ביקור חדש, וקריאות שכל הביקורים בהן בוטלו · הוותיקות קודם"
+        hint="קריאות שכל הביקורים בהן בוטלו, והמשך טיפול ללא ביקור חדש · הממתינות לשיבוץ קודם, ובכל קבוצה הוותיקות קודם"
       >
         <WorkQueueCalls
           list={overview.attention}

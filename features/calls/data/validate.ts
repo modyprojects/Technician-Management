@@ -47,6 +47,7 @@ export function cancelReasonError(reason: string | undefined): string | null {
 
 export function slotError(slot: VisitSlot | undefined): string | null {
   if (slot === undefined) return null;
+  if (typeof slot !== "object" || slot === null) return "מועד לא תקין";
   if (!isIsoDate(slot.date) || !isHourMinute(slot.start) || !isHourMinute(slot.end)) return "מועד לא תקין";
   return slot.end > slot.start ? null : "שעת הסיום חייבת להיות אחרי שעת ההתחלה";
 }

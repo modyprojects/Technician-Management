@@ -113,7 +113,7 @@ export type OfficeOverview = {
     awaitingScheduling: Metric;
   };
   lanes: TechnicianLane[];
-  /** Calls that need the office, oldest first (at most DASHBOARD_LIST_LIMIT). */
+  /** Calls that need the office: awaiting scheduling first, then follow-ups; oldest first within each (at most DASHBOARD_LIST_LIMIT). */
   attention: Bounded<CallAttentionItem>;
 };
 
