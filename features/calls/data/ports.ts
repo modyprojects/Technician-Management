@@ -3,7 +3,7 @@
 // by Supabase adapters that run on the server under the caller's session (RLS).
 import type { CommandResult, Page, PageRequest } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
-import type { CallDetail, CallFilter, CallsPage, CallSummary } from "./types";
+import type { BackFromFieldPage, BackFromFieldQuery, CallDetail, CallFilter, CallsPage, CallSummary } from "./types";
 
 export interface CallsQueries {
   /** Calls list, newest first (latest visit date and start), filtered and paged (OF-04). */
@@ -12,6 +12,13 @@ export interface CallsQueries {
   get(req: string): Promise<CallDetail | null>;
   /** Other calls of the same customer (same phone or customer number), newest first, paged (default 40, at most 100). */
   customerHistory(req: string, page?: PageRequest): Promise<Page<CallSummary>>;
+  /**
+   * "חזרו מהשטח" (OF-16): calls whose latest closed visit is "המשך טיפול" and that have no open
+   * visit (service-call status "followup", D38), one row per call (that visit), oldest first,
+   * optionally for one technician, paged (default 40, at most 100). Which matrix key gates the
+   * screen is open decision #15 (d23).
+   */
+  backFromField(query: BackFromFieldQuery): Promise<BackFromFieldPage>;
 }
 
 /**

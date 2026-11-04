@@ -7,7 +7,7 @@ import { isOpenVisitStatus } from "@/features/visits/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
 import { officeCallParams } from "../../../../_data/params";
-import { isOfficeRole } from "../../../../_data/roles";
+import { customersOffered, isOfficeRole } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { CallActions } from "./_CallActions";
 import { callDetailData } from "./_callDetailData";
@@ -42,7 +42,7 @@ function playRecording(v: TimelineVisit) {
 // Office service-call card (demo offCard(), screens 2-4): customer, call and product details,
 // assignment, visit timeline and the header actions (a simulated dial; cancel pending d08).
 // Reads only through the data-access layer (calls.get, calls.customerHistory,
-// reference.permissions). What each role sees follows the role's matrix values (D33, temporary
+// reference.permissions). The customer section links to the customer card (OF-16, `calls`). What each role sees follows the role's matrix values (D33, temporary
 // per D51); this only shapes the demo screen (G-04).
 export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/office/[role]/calls/[req]">) {
   const { role, req } = await params;
@@ -59,6 +59,7 @@ export default async function OfficeCallPage({ params }: PageProps<"/dev/demo/of
       <CallDetail
         call={callDetailData(c, customerCalls.items, role)}
         backHref={demoHref.calls(role)}
+        customerHref={customersOffered(permissions) ? demoHref.customer(role, c.customer.id) : undefined}
         showReport={offers(permissions, "card")}
         renderRecording={offers(permissions, "recordings") ? playRecording : undefined}
         actions={

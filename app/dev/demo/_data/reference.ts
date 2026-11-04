@@ -39,12 +39,45 @@ export const PRODUCTS: readonly Product[] = [
   { sku: "BS-220", name: "כיור אמבטיה + סיפון", brand: "פלורה", sup: "מ.ס. יבוא", w: 1, issues: ["נזילה מהסיפון"] },
 ];
 
+/**
+ * ADD (PR-01 to PR-04, D19): products the ingestion created from an invitation's SKU and name,
+ * brand and supplier empty at creation ("לא הוזן", PR-04, OF-07). TB-75 shows a brand added later
+ * through "מוצרים" (PR-06) with the supplier still empty. Kept out of PRODUCTS, whose order and
+ * weights drive the seeded calls (seed.ts); only the repeat-customer calls use them.
+ */
+export const AUTO_PRODUCTS: readonly Product[] = [
+  { sku: "MX-410", name: "ברז נשלף שחור מט", brand: "", sup: "", w: 0, issues: ["הנשלף לא ננעל"] },
+  { sku: "TB-75", name: "סוללת אמבטיה לקיר", brand: "טרה-סאן", sup: "", w: 0, issues: ["טפטוף מהסוללה"] },
+];
+
+/** Every product: the demo's list and the products created from invitations. */
+export const CATALOGUE: readonly Product[] = [...PRODUCTS, ...AUTO_PRODUCTS];
+
 /** Product by SKU. */
 export function prod(sku: string): Product {
-  const p = PRODUCTS.find((x) => x.sku === sku);
+  const p = CATALOGUE.find((x) => x.sku === sku);
   if (!p) throw new Error(`Unknown SKU ${sku}`);
   return p;
 }
+
+/** A brand or supplier (ADD, PR-06: product reference data with ids; deactivated, never deleted). */
+export type ProductOptionRecord = { id: string; name: string; on: boolean };
+
+/** Brands: the demo's brand names, plus one inactive brand. */
+export const BRANDS: readonly ProductOptionRecord[] = [
+  { id: "br-aqua", name: "אקווה-ליין", on: true },
+  { id: "br-nova", name: "נובה", on: true },
+  { id: "br-terra", name: "טרה-סאן", on: true },
+  { id: "br-flora", name: "פלורה", on: true },
+  { id: "br-hydro", name: "הידרו-פלוס", on: false },
+];
+
+/** Suppliers: the demo's supplier names. */
+export const SUPPLIERS: readonly ProductOptionRecord[] = [
+  { id: "su-ms", name: "מ.ס. יבוא", on: true },
+  { id: "su-galtech", name: "גל-טק סחר", on: true },
+  { id: "su-ar", name: "א.ר. אינסטלציה", on: true },
+];
 
 /** Follow-up reasons ("סיבות המשך טיפול"), in Settings order. */
 export const REASONS: readonly Reason[] = [

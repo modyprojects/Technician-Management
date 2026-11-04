@@ -32,6 +32,7 @@ import { CommandsProvider } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
+import { productOptionError, productUpdateError, productVersionError } from "@/features/products/data/validate";
 import { technicianColorCss } from "@/features/reference/data/types";
 import { PERMISSION_LABELS, TECH_NOTIFICATION_LABELS, type TechnicianSetting } from "@/features/settings/data/types";
 import {
@@ -102,6 +103,15 @@ export type SimulatedServerState = {
   accounts?: Readonly<Record<string, { name: string; email: string; role: AccountRole; active: boolean }>>;
   /** The signed-in account (production: from the session, G-03). */
   self?: AccountRef | null;
+  /**
+   * "מוצרים" (PR-06): the products on the screen by SKU (stored version, name for the toast) and
+   * the brands and suppliers by id (an edit may choose only an existing, active one).
+   */
+  products?: {
+    items: Readonly<Record<string, { version: number; name: string }>>;
+    brands: Readonly<Record<string, { active: boolean }>>;
+    suppliers: Readonly<Record<string, { active: boolean }>>;
+  };
 };
 
 const EMPTY_STATE: SimulatedServerState = {};
@@ -426,6 +436,21 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                 },
               };
             },
+          ),
+      },
+      products: {
+        // PR-06 (matrix key `products`): only the products page nests the state; elsewhere every
+        // check below fails (deny by default).
+        update: (input) =>
+          run(
+            () => [
+              productUpdateError(input),
+              productVersionError(input.expectedVersion, state.products?.items[input.sku]),
+              productOptionError(input.brandId, input.brandId ? state.products?.brands[input.brandId] : undefined, "מותג"),
+              productOptionError(input.supplierId, input.supplierId ? state.products?.suppliers[input.supplierId] : undefined, "ספק"),
+            ],
+            () =>
+              `עריכת מוצר · ${input.sku} · ${excerpt(input.name ?? state.products?.items[input.sku]?.name ?? "", 40)}`,
           ),
       },
     };

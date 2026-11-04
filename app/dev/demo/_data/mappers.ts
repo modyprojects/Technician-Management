@@ -14,6 +14,7 @@ import type {
   VisitHistoryItem,
   VisitRecord,
 } from "@/features/visits/data/types";
+import { customerIdOf } from "./customers";
 import { toMin } from "./dates";
 import { lastVisit, type CallVisit } from "./queries";
 import { PLACES, prod, tech, TECHS, userByName } from "./reference";
@@ -123,7 +124,7 @@ export function callDetail(c: Call): CallDetailDto {
     type: c.type,
     warranty: c.warranty,
     status: callStatus(c),
-    customer: customerDto(c),
+    customer: { ...customerDto(c), id: customerIdOf(c.customerNo) },
     product: productDto(c.sku),
     problem: c.desc,
     techNote: c.techNote,

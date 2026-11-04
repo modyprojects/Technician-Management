@@ -15,6 +15,8 @@ export function homeLinks(role: OfficeRole) {
     calls: (): string => demoHref.calls(role),
     /** The calls list filtered by one service-call status (?status=…). */
     callsWith: (status: CallStatus): string => callsListHref(demoHref.calls(role), { q: "", status, tech: ALL, page: 1 }),
+    /** "חזרו מהשטח" (OF-16): every follow-up that still needs a new visit. */
+    backFromField: (): string => demoHref.backFromField(role),
   };
 }
 

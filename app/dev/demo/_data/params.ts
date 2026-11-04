@@ -5,6 +5,7 @@
 // data through demoDataAccess.
 import "server-only";
 import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
+import { CUSTOMERS } from "./customers";
 import { CALLS } from "./queries";
 import { ME } from "./reference";
 import { OFFICE_ROLES } from "./roles";
@@ -30,6 +31,12 @@ export function officeSettingsParams(): { role: OfficeRole; tab: SettingsSection
 /** /dev/demo/office/[role]/calls/[req]: every call for every office role. */
 export function officeCallParams(): { role: OfficeRole; req: string }[] {
   return OFFICE_ROLES.flatMap((role) => CALLS.map((c) => ({ role, req: c.req })));
+}
+
+/** /dev/demo/office/[role]/customers/[id]: every customer for every office role (a role without
+ *  `calls` gets the "אין הרשאה" state, not a 404). */
+export function officeCustomerParams(): { role: OfficeRole; id: string }[] {
+  return OFFICE_ROLES.flatMap((role) => CUSTOMERS.map((x) => ({ role, id: x.id })));
 }
 
 /** /dev/demo/tech/visit/[req]/[n]: every visit of the demo technician (יורם), cancelled excluded. */
