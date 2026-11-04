@@ -33,6 +33,9 @@ import { ownValue, type CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
 import { productEditError } from "@/features/products/data/validate";
+import { REVIEW_DECISION_LABELS } from "@/features/review/data/types";
+import { reviewResolutionError, type ReviewResolveStored } from "@/features/review/data/validate";
+import { syncNowError, syncRetryError, type DeviceQueueStored } from "@/features/sync/data/validate";
 import { technicianColorCss } from "@/features/reference/data/types";
 import { PERMISSION_LABELS, TECH_NOTIFICATION_LABELS, type TechnicianSetting } from "@/features/settings/data/types";
 import {
@@ -48,7 +51,13 @@ import {
   technicianIdError,
   templateLabelRequiredError,
 } from "@/features/settings/data/validate";
-import type { VisitRef } from "@/features/visits/data/types";
+import {
+  CORRECTABLE_FIELD_LABELS,
+  TIME_CORRECTION_FIELDS,
+  visitRefKey,
+  type VisitCorrection,
+  type VisitRef,
+} from "@/features/visits/data/types";
 import {
   closeVisitError,
   mediaError,
@@ -57,7 +66,9 @@ import {
   pickupCollectedError,
   recordingError,
   summaryError,
+  visitCorrectionError,
   visitRefError,
+  type VisitCorrectionStored,
 } from "@/features/visits/data/validate";
 import { SIMULATED_TITLE, useSimulate } from "./DemoToast";
 
@@ -104,6 +115,12 @@ export type SimulatedServerState = {
   /** The signed-in account (production: from the session, G-03). */
   self?: AccountRef | null;
   /**
+   * The signed-in user's name only, for a screen that must not carry account ids (phase E P1:
+   * account ids only on the account screens): the call card's closed-visit corrections show who
+   * corrected by name. Production: the stored record carries the caller from the session.
+   */
+  signedInName?: string;
+  /**
    * "מוצרים" (PR-06): the products on the screen by SKU (stored version, name for the toast) and
    * the brands and suppliers by id (an edit may choose only an existing, active one).
    */
@@ -112,6 +129,22 @@ export type SimulatedServerState = {
     brands: Readonly<Record<string, { active: boolean }>>;
     suppliers: Readonly<Record<string, { active: boolean }>>;
   };
+  /**
+   * "פריטים לבדיקה" (D44): the items on the screen by id, with what a resolution is checked against
+   * (version, status, offered decisions and fields, the note rule and whether the viewer may
+   * resolve it: D14 cases Manager and Creator, others `conflicts`).
+   */
+  review?: Readonly<Record<string, ReviewResolveStored>>;
+  /**
+   * "תיקון ביקור סגור" (OF-10, D14): the closed visits on the call card by visitRefKey ("req/n"), with their
+   * version, current values, correctable fields, active reasons and whether the viewer may correct.
+   */
+  corrections?: Readonly<Record<string, VisitCorrectionStored>>;
+  /**
+   * The technician device's work queue (TE-24, D46): state per operation id. Production checks
+   * this on the device itself (the queue is local); the demo technician pages pass it here.
+   */
+  deviceQueue?: DeviceQueueStored;
 };
 
 const EMPTY_STATE: SimulatedServerState = {};
@@ -226,6 +259,35 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
               input.outcome === "done"
                 ? `סיום ביקור · טופל · נחתם ע"י ${excerpt(input.signerName ?? "", 40)} · ${visitLabel(ref)} · לא נשלח מייל`
                 : `סיום ביקור · המשך טיפול – ${input.reason ?? ""} · ${visitLabel(ref)} · לא נשלח מייל`,
+          ),
+        // OF-10 (D14): only the call card nests the state; elsewhere every check fails (deny by default).
+        correct: (input) =>
+          run(
+            () => [visitCorrectionError(input, ownValue(state.corrections, visitRefKey(input?.visitRef)))],
+            () => `תיקון ביקור סגור · ${CORRECTABLE_FIELD_LABELS[input.field]} · ${visitLabel(input.visitRef)} · המקור נשמר`,
+            (): { correction: VisitCorrection } => {
+              const stored = ownValue(state.corrections, visitRefKey(input.visitRef));
+              return {
+                correction: {
+                  id: remember(simId("correction")),
+                  ref: { req: input.visitRef.req, n: input.visitRef.n },
+                  field: input.field,
+                  target: TIME_CORRECTION_FIELDS.includes(input.field) ? "time-report" : "report",
+                  before: stored?.current[input.field] ?? null,
+                  after: Array.isArray(input.newValue)
+                    ? input.newValue.map((p) => String(p).trim()).filter(Boolean)
+                    : typeof input.newValue === "string"
+                      ? input.newValue.trim()
+                      : null,
+                  by: state.self ?? { id: "", name: state.signedInName ?? "" },
+                  at: new Date().toISOString(),
+                  reason: input.reason.trim(),
+                  versionBefore: input.expectedVersion,
+                  versionAfter: input.expectedVersion + 1,
+                  isTest: true,
+                },
+              };
+            },
           ),
       },
       notifications: {
@@ -452,6 +514,31 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
             ],
             () =>
               `עריכת מוצר · ${input.sku} · ${excerpt(input.name ?? ownValue(state.products?.items, input.sku)?.name ?? "", 40)}`,
+          ),
+      },
+      review: {
+        // D44: only the review item page nests the state; elsewhere every check fails (deny by default).
+        resolve: (input) =>
+          run(
+            () => [reviewResolutionError(input, ownValue(state.review, input?.id))],
+            () => `פריט לבדיקה · ${REVIEW_DECISION_LABELS[input.decision]} · שתי הגרסאות נשמרות`,
+          ),
+      },
+      sync: {
+        // TE-24 (D06: manual sync; no background jobs, D25). The technician pages nest the device
+        // queue; elsewhere both fail (deny by default).
+        now: () =>
+          run(
+            () => [syncNowError(state.deviceQueue)],
+            () => "סנכרון עכשיו · שום דבר לא נשלח לשרת",
+            () => ({
+              attempted: Object.values(state.deviceQueue ?? {}).length,
+            }),
+          ),
+        retry: (input) =>
+          run(
+            () => [syncRetryError(input, ownValue(state.deviceQueue, input?.opId))],
+            () => "ניסיון חוזר · שום דבר לא נשלח לשרת",
           ),
       },
     };

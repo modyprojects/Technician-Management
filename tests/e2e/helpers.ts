@@ -80,6 +80,21 @@ export const DEMO_PAGES = [
   "/dev/demo/office/mgr/products",
   "/dev/demo/office/cs/products",
   "/dev/demo/office/creator/products",
+  // Phase G: review items (open, resolved, no access), closed-visit corrections on the call card
+  // (Creator, customer service), the mock outbox (a /dev tool) and a closed visit with device sync
+  // state at both technician addresses.
+  "/dev/demo/office/mgr/review",
+  "/dev/demo/office/cs/review",
+  "/dev/demo/office/creator/review",
+  "/dev/demo/office/mgr/review/rv-6",
+  "/dev/demo/office/cs/review/rv-1",
+  "/dev/demo/office/creator/review/rv-7",
+  "/dev/demo/office/mgr/review/rv-3",
+  "/dev/demo/office/creator/calls/47948",
+  "/dev/demo/office/cs/calls/47969",
+  "/dev/demo/outbox",
+  "/dev/demo/tech/done/47963/1",
+  "/dev/demo/tech/visit/47963/1",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */
@@ -155,6 +170,15 @@ export async function horizontalOverflow(page: Page): Promise<string[]> {
     }
     return problems;
   });
+}
+
+/**
+ * The demo pages scroll inside their frame (.stage, .ph-main), never the document itself: returns
+ * how far the document extends below the window (0 when it does not). Absolutely positioned
+ * screen-reader text whose containing block is the page can stretch it into empty space.
+ */
+export async function verticalPageOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => Math.max(0, document.documentElement.scrollHeight - window.innerHeight - 1));
 }
 
 export async function box(page: Page, selector: string) {

@@ -7,10 +7,13 @@ import type { CallCommands, CallsQueries } from "@/features/calls/data/ports";
 import type { CustomersQueries } from "@/features/customers/data/ports";
 import type { DashboardQueries } from "@/features/dashboards/data/ports";
 import type { NotificationCommands, NotificationsQueries } from "@/features/notifications/data/ports";
+import type { OutboxQueries } from "@/features/outbox/data/ports";
 import type { ProductCommands, ProductsQueries } from "@/features/products/data/ports";
 import type { ProfileQueries } from "@/features/profile/data/ports";
 import type { ReferenceQueries } from "@/features/reference/data/ports";
+import type { ReviewCommands, ReviewQueries } from "@/features/review/data/ports";
 import type { SettingsCommands, SettingsQueries } from "@/features/settings/data/ports";
+import type { DeviceSyncQueries, SyncCommands } from "@/features/sync/data/ports";
 import type { VisitCommands, VisitsQueries } from "@/features/visits/data/ports";
 
 export type { Bounded, CommandResult, Page, PageRequest } from "./common";
@@ -29,6 +32,12 @@ export type DataAccess = {
   customers: CustomersQueries;
   products: ProductsQueries;
   intake: IntakeQueries;
+  /** "פריטים לבדיקה" (D39, D44; matrix key `conflicts`). */
+  review: ReviewQueries;
+  /** The mock outbox viewer (/dev only, X-06): read-only. */
+  outbox: OutboxQueries;
+  /** The technician device's work queue (TE-23, TE-24; production: the client-side offline module, D46). */
+  sync: DeviceSyncQueries;
 };
 
 /** Write side. Client components get it from useCommands() (features/data-access/commands-context). */
@@ -39,4 +48,6 @@ export type Commands = {
   settings: SettingsCommands;
   accounts: AccountCommands;
   products: ProductCommands;
+  review: ReviewCommands;
+  sync: SyncCommands;
 };

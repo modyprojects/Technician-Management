@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TEST_DATA_LABEL, TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
 import type { ClosedVisitDetail, MediaItem, MediaPhase } from "@/features/visits/data/types";
@@ -18,7 +19,13 @@ import { VisitHeader } from "./VisitHeader";
 //   badges on a test call, product, recording and on each test photo or video (SIM-15, SIM-17,
 //   SIM-19). Never the field times (departure, arrival, end: TE-25 PENDING, office only; the DTO
 //   has none). The demo shows no visit date here, so neither does this view.
-// Presentational: a ClosedVisitDetail DTO and the back link; no actions at all.
+// - Added: the visit's sync state on the device (TE-23, TE-24), passed by the page as `sync`
+//   (SyncVisitPanel) when the device still holds or confirmed work of the visit. Its "נסה שוב" and
+//   "סנכרן עכשיו" act on the device's queue only; the visit itself stays read-only.
+// - TE-23 wording: the demo's "🔒 הביקור נשלח" becomes "🔒 הביקור נסגר בשרת" (the closure is what
+//   the server holds); a file of the visit can still be waiting or failing on the device, which the
+//   sync panel under it says, so the note never claims that everything was sent.
+// Presentational: a ClosedVisitDetail DTO and the back link; no actions of its own.
 
 const PHASES: readonly [MediaPhase, string][] = [
   ["before", "לפני הטיפול"],
@@ -81,7 +88,7 @@ function MediaSection({ title, items }: { title: string; items: readonly MediaIt
   );
 }
 
-export function DoneVisitView({ visit }: { visit: ClosedVisitDetail }) {
+export function DoneVisitView({ visit, sync }: { visit: ClosedVisitDetail; sync?: ReactNode }) {
   const { product: p, customer: cu } = visit;
   const summary = visit.summary.trim();
   const transcript = visit.transcript.trim();
@@ -90,8 +97,10 @@ export function DoneVisitView({ visit }: { visit: ClosedVisitDetail }) {
   return (
     <>
       <div className="note" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        🔒 הביקור נשלח. אפשר לצפות בפרטים, אבל לא לערוך אותם.
+        🔒 הביקור נסגר בשרת. אפשר לצפות בפרטים, אבל לא לערוך אותם.
       </div>
+
+      {sync}
 
       {visit.status === "cont" && (
         <section
@@ -153,7 +162,7 @@ export function DoneVisitView({ visit }: { visit: ClosedVisitDetail }) {
               הקלטה <span className="num">{recordingLabel(rec)}</span>
             </span>
             {visit.isTest && <TestBadge />}
-            <span>· אי אפשר להשמיע אותה אחרי שהביקור נשלח</span>
+            <span>· אי אפשר להשמיע אותה אחרי שהביקור נסגר בשרת</span>
           </div>
         )}
         {!summary && !transcript && rec === 0 && <div className="sub">אין סיכום</div>}

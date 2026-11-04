@@ -1,6 +1,6 @@
 // Visit DTOs: what the technician screens (home, visit card, work, close) and the office visit
 // timeline read. Pure types and enums (no data). See features/data-access/common.ts.
-import type { HourMinute, IsoDate, TestMarker } from "@/features/data-access/common";
+import type { Bounded, HourMinute, IsoDate, IsoTimestamp, TestMarker } from "@/features/data-access/common";
 import type { Customer } from "@/features/customers/data/types";
 import type { Product, TechnicianRef } from "@/features/reference/data/types";
 
@@ -25,6 +25,9 @@ export type VisitSource = "outlook" | "simulator";
 
 /** A visit's identity: request number and visit number within the call. */
 export type VisitRef = { req: string; n: number };
+
+/** A visit's key in maps of visits ("48213/1"). Safe on malformed input (never throws). */
+export const visitRefKey = (ref: VisitRef | undefined): string => `${ref?.req}/${ref?.n}`;
 
 export type MediaKind = "img" | "vid";
 export type MediaPhase = "before" | "after";
@@ -206,4 +209,102 @@ export type AddMediaInput = {
   fileName?: string;
   mimeType?: string;
   sizeBytes?: number;
+};
+
+// ---------------------------------------------------------------------------------------------
+// Audited corrections of a server-closed visit (OF-10, D14, D45, D43; docs/database-schema.md
+// `visit_corrections`, `visit_time_reports`). Manager and Creator only, a fixed capability (D33:
+// never a matrix key); Customer Service and technicians never correct a closed visit.
+
+/**
+ * Fields of a server-closed visit that a correction may change. The report fields (summary, parts,
+ * follow-up reason, next-visit note) are corrected in `visit_corrections` with the change set and
+ * the versions before and after; field times are corrected by a new time report (`source`
+ * "correction", D45). Originals are never overwritten. Follow-up reason and next-visit note apply
+ * only to a visit closed as "המשך טיפול".
+ */
+export const CORRECTABLE_VISIT_FIELDS = ["summary", "parts", "followupReason", "nextNote", "departAt", "arriveAt", "endAt"] as const;
+export type CorrectableVisitField = (typeof CORRECTABLE_VISIT_FIELDS)[number];
+
+export const isCorrectableVisitField = (value: unknown): value is CorrectableVisitField =>
+  typeof value === "string" && (CORRECTABLE_VISIT_FIELDS as readonly string[]).includes(value);
+
+/** Field times among the correctable fields (a correction adds a time report, D45). */
+export const TIME_CORRECTION_FIELDS: readonly CorrectableVisitField[] = ["departAt", "arriveAt", "endAt"];
+
+/** Fields that only a visit closed as "המשך טיפול" has. */
+export const FOLLOWUP_CORRECTION_FIELDS: readonly CorrectableVisitField[] = ["followupReason", "nextNote"];
+
+/** Hebrew labels of the correctable fields. */
+export const CORRECTABLE_FIELD_LABELS: Readonly<Record<CorrectableVisitField, string>> = {
+  summary: "סיכום הטיפול",
+  parts: "חלפים שהוחלפו",
+  followupReason: "סיבת המשך טיפול",
+  nextNote: "מה צריך בביקור הבא",
+  departAt: "שעת יציאה",
+  arriveAt: "שעת הגעה",
+  endAt: "שעת סיום",
+};
+
+/**
+ * Never correctable: the approval text preserved at signing (D43), the signer name and the
+ * signature (`visit_signatures` rows are immutable). A correction naming one of them is rejected.
+ */
+export const UNCORRECTABLE_VISIT_FIELDS = ["signedText", "signerName", "signature"] as const;
+
+/** A corrected value: text (summary, reason, note), a list (parts), "HH:MM" (field times), or null (not set). */
+export type CorrectionValue = string | readonly string[] | null;
+
+/** Correctable values of a visit, every field present (null where the visit has none). */
+export type CorrectableValues = Readonly<Record<CorrectableVisitField, CorrectionValue>>;
+
+/** One audited correction (append-only). */
+export type VisitCorrection = TestMarker & {
+  id: string;
+  ref: VisitRef;
+  field: CorrectableVisitField;
+  /** "report": `visit_corrections`; "time-report": a new `visit_time_reports` row (D45). */
+  target: "report" | "time-report";
+  /** The value before this correction (the original for the first one). */
+  before: CorrectionValue;
+  after: CorrectionValue;
+  /** Manager or Creator (D14). */
+  by: { id: string; name: string };
+  /** Server time of the correction. */
+  at: IsoTimestamp;
+  /** Mandatory reason (OF-10). */
+  reason: string;
+  versionBefore: number;
+  versionAfter: number;
+};
+
+/** Cap of the corrections listed per visit (newest first); `total` gives the rest. */
+export const VISIT_CORRECTIONS_LIMIT = 50;
+
+/**
+ * A server-closed visit's correctable values and its corrections ("תיקונים"): the values as the
+ * technician closed it (`original`, never overwritten), the current values (the latest
+ * correction, else the original) and the history, newest first.
+ */
+export type VisitCorrectionHistory = TestMarker &
+  VisitRef & {
+    /** Row version (a correction sends the version it started from, D44). */
+    version: number;
+    status: "done" | "cont";
+    original: CorrectableValues;
+    current: CorrectableValues;
+    /** Fields this visit allows correcting (follow-up fields only for "המשך טיפול"). */
+    correctable: readonly CorrectableVisitField[];
+    corrections: Bounded<VisitCorrection>;
+  };
+
+/** "תיקון ביקור סגור" (OF-10). */
+export type VisitCorrectionInput = {
+  visitRef: VisitRef;
+  field: CorrectableVisitField;
+  newValue: CorrectionValue;
+  /** Mandatory reason (OF-10, D14). */
+  reason: string;
+  /** The version the correction started from. */
+  expectedVersion: number;
 };

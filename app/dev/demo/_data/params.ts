@@ -8,6 +8,7 @@ import { SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settin
 import { CUSTOMERS } from "./customers";
 import { CALLS } from "./queries";
 import { ME } from "./reference";
+import { REVIEW_ITEMS } from "./review";
 import { OFFICE_ROLES } from "./roles";
 import { isClosedVisit, isOpenVisit } from "./status";
 import type { Call, OfficeRole, Visit } from "./types";
@@ -37,6 +38,12 @@ export function officeCallParams(): { role: OfficeRole; req: string }[] {
  *  `calls` gets the "אין הרשאה" state, not a 404). */
 export function officeCustomerParams(): { role: OfficeRole; id: string }[] {
   return OFFICE_ROLES.flatMap((role) => CUSTOMERS.map((x) => ({ role, id: x.id })));
+}
+
+/** /dev/demo/office/[role]/review/[id]: every review item for every office role (a role without
+ *  `conflicts` gets the "אין הרשאה" state, not a 404). */
+export function officeReviewParams(): { role: OfficeRole; id: string }[] {
+  return OFFICE_ROLES.flatMap((role) => REVIEW_ITEMS.map((x) => ({ role, id: x.id })));
 }
 
 /** /dev/demo/tech/visit/[req]/[n]: every visit of the demo technician (יורם), cancelled excluded. */
