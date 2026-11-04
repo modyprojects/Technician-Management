@@ -5,7 +5,9 @@ import { backFromFieldHref, type BackFromFieldState } from "@/features/calls/dat
 import { customersListHref, type CustomersListState } from "@/features/customers/data/search-params";
 import type { CustomerId } from "@/features/customers/data/types";
 import type { IsoDate } from "@/features/data-access/common";
+import { outboxHref, type OutboxViewState } from "@/features/outbox/data/search-params";
 import { productsListHref, type ProductsListState } from "@/features/products/data/search-params";
+import { reviewListHref, type ReviewListState } from "@/features/review/data/search-params";
 import type { SettingsSection } from "@/features/settings/data/types";
 import type { OfficeRole } from "./types";
 
@@ -54,6 +56,19 @@ export const demoHref = {
   /** "מוצרים" (PR-06, matrix key `products`): `?q&page` (features/products/data/search-params). */
   products: (role: OfficeRole, state?: Partial<ProductsListState>): string =>
     productsListHref(`${DEMO_BASE}/office/${role}/products`, state),
+  /**
+   * "פריטים לבדיקה" (D39, D44; matrix key `conflicts`): `?status=open|resolved|all&page=`
+   * (features/review/data/search-params); the default view (open items, page 1) is left out.
+   */
+  review: (role: OfficeRole, state?: Partial<ReviewListState>): string =>
+    reviewListHref(`${DEMO_BASE}/office/${role}/review`, state),
+  /** One review item: both versions per field and the resolution (D44). */
+  reviewItem: (role: OfficeRole, id: string): string => `${DEMO_BASE}/office/${role}/review/${encodeURIComponent(id)}`,
+  /**
+   * Developer tool, not an app screen (X-06): the mock completion-email outbox, `?page&id`
+   * (features/outbox/data/search-params). Linked only from the landing page's tools section.
+   */
+  outbox: (state?: Partial<OutboxViewState>): string => outboxHref(`${DEMO_BASE}/outbox`, state),
   /** Technician home (today). */
   tech: (): string => `${DEMO_BASE}/tech`,
   /** Technician visit card (details, previous visits). */

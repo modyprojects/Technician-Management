@@ -16,6 +16,7 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
+import type { ReviewAuthority } from "@/features/review/data/types";
 import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
@@ -55,6 +56,7 @@ export type OfficeNavKey =
   | "customers"
   | "unparsed"
   | "back"
+  | "review"
   | "analytics"
   | "products"
   | "users"
@@ -90,6 +92,29 @@ function hebrewList(items: readonly string[]): string {
 export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה זמנית: ${hebrewList(
   OFFICE_ROLES.filter(workQueueScreensOffered).map((r) => VIEWPOINTS[r].short),
 )} · ${pendingDecisionHint(`#${WORK_QUEUE_SCREENS_DECISION.number}`)}`;
+
+/**
+ * "פריטים לבדיקה" (D39, D44): matrix key `conflicts` (Manager on, Customer Service off by default;
+ * the Creator fixed). Display only (G-04): the server reads `review_items` with `card` and checks
+ * every resolution itself (docs/database-schema.md §8.3).
+ */
+export const reviewItemsOffered = (permissions: RolePermissions): boolean => offers(permissions, "conflicts");
+
+/**
+ * D14 audited corrections of a server-closed visit ("תיקון ביקור סגור", OF-10) and any resolution
+ * that changes a server-closed or cancelled visit (D44): Manager and Creator only, a FIXED
+ * capability (D33: never a matrix key). Customer Service and technicians never get it. Display
+ * only; the server checks the caller's role in the database.
+ */
+export const closedVisitCorrectionsOffered = (role: OfficeRole): boolean => role === "mgr" || role === "creator";
+
+/**
+ * Whether the role's screen offers resolving an item (D44): an item that changes a server-closed or
+ * cancelled visit follows the fixed D14 rule; every other item follows `conflicts`. Display only.
+ */
+export function reviewResolutionOffered(role: OfficeRole, permissions: RolePermissions, authority: ReviewAuthority): boolean {
+  return authority === "closed-visit" ? closedVisitCorrectionsOffered(role) : offers(permissions, "conflicts");
+}
 
 /** "לקוחות" and the customer card: matrix key `calls` (spec office screens). Display only. */
 export const customersOffered = (permissions: RolePermissions): boolean => offers(permissions, "calls");
@@ -144,7 +169,10 @@ export const officeHomeLabel = (permissions: RolePermissions): string => (offers
  * נקלטו" and "חזרו מהשטח" after "קריאות", "מוצרים" after "דשבורד". Display only: it hides menu
  * items, it does not protect routes (G-04): each page checks what it offers itself.
  * - "לקוחות": with `calls`. "זימונים שלא נקלטו" and "חזרו מהשטח": every office role, a TEMPORARY
- *   fixed rule (open #15, d23; workQueueScreensOffered). "מוצרים": with `products`.
+ *   fixed rule (open #15, d23; workQueueScreensOffered). "פריטים לבדיקה" (D39, D44): with
+ *   `conflicts`, right after the two work queues (which stay adjacent: they share the #15 rule).
+ *   "מוצרים": with `products`.
+ * - The mock outbox (X-06) is a /dev developer tool, never a sidebar item.
  * - "משתמשים" (account administration, D34): the Manager only (a fixed capability, SE-03); the
  *   Creator administers accounts on Settings › משתמשים והרשאות.
  * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; a matrix role only
@@ -162,6 +190,7 @@ export function officeNav(role: OfficeRole, permissions: RolePermissions): (Offi
     items.push({ key: "unparsed", label: "זימונים שלא נקלטו", href: demoHref.unparsed(role) });
     items.push({ key: "back", label: "חזרו מהשטח", href: demoHref.backFromField(role) });
   }
+  if (reviewItemsOffered(permissions)) items.push({ key: "review", label: "פריטים לבדיקה", href: demoHref.review(role) });
   if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics(role) });
   if (productsOffered(permissions)) items.push({ key: "products", label: "מוצרים", href: demoHref.products(role) });
   if (accountAdminScope(role) === "cs-tech") items.push({ key: "users", label: "משתמשים", href: demoHref.users(role) });

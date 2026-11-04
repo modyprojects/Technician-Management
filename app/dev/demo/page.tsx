@@ -27,6 +27,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "מסך עבודה", sub: "תמונות, הקלטה, סיכום וחלפים · פנייה 48213", href: demoHref.work("48213", 1) },
       { label: "סיום ביקור וחתימה", sub: "טופל או המשך טיפול · פנייה 48213", href: demoHref.close("48213", 1) },
       { label: `ביקור שנסגר · ${callName("47800")}`, sub: "פנייה 47800 · צפייה בלבד, עם אישור הלקוח", href: demoHref.techDoneVisit("47800", 1) },
+      { label: `ביקור שנסגר אתמול · ${callName("47963")}`, sub: "פנייה 47963 · מצב הסנכרון במכשיר", href: demoHref.techDoneVisit("47963", 1) },
       { label: "היומן שלי", sub: "יומי, שבועי וחודשי", href: demoHref.techCalendar() },
       { label: "הושלמו היום", sub: "הביקורים שנסגרו היום · צפייה בלבד", href: demoHref.techDone() },
       { label: "התראות", sub: "חדשות וקודמות · סימון כנקרא", href: demoHref.techNotifications() },
@@ -51,6 +52,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: `כרטיס לקוח · ${callName("48213")}`, sub: "כל הקריאות של הלקוח ומוצר שחזר", href: demoHref.customer("mgr", "cu-298747") },
       { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון · מייל לנציגה ממתין להחלטה", href: demoHref.unparsed("mgr") },
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש · סינון לפי טכנאי", href: demoHref.backFromField("mgr") },
+      { label: "פריטים לבדיקה", sub: "שינויים מזימונים ומהמכשיר שמחכים להחלטה", href: demoHref.review("mgr") },
       { label: "דשבורד", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics("mgr") },
       { label: "מוצרים", sub: "לפי מק״ט · עריכת שם, מותג וספק (מדומה)", href: demoHref.products("mgr") },
       { label: "משתמשים", sub: "חשבונות שירות לקוחות וטכנאים · בקשות לאישור היוצר", href: demoHref.users("mgr") },
@@ -66,6 +68,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "לקוחות", sub: "חיפוש לפי שם, מספר לקוח, טלפון או עיר", href: demoHref.customers("cs") },
       { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון", href: demoHref.unparsed("cs") },
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש", href: demoHref.backFromField("cs") },
+      { label: "פריטים לבדיקה", sub: "אין הרשאה לתפקיד הזה", href: demoHref.review("cs") },
       { label: "דשבורד", sub: "אין הרשאה לתפקיד הזה", href: demoHref.analytics("cs") },
       { label: "מוצרים", sub: "אין הרשאה לתפקיד הזה", href: demoHref.products("cs") },
     ],
@@ -77,6 +80,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "לקוחות", sub: "חיפוש לפי שם, מספר לקוח, טלפון או עיר", href: demoHref.customers("creator") },
       { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון", href: demoHref.unparsed("creator") },
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש", href: demoHref.backFromField("creator") },
+      { label: "פריטים לבדיקה", sub: "שינויים מזימונים ומהמכשיר שמחכים להחלטה", href: demoHref.review("creator") },
       { label: "מוצרים", sub: "לפי מק״ט · עריכת שם, מותג וספק (מדומה)", href: demoHref.products("creator") },
       { label: "הגדרות · משתמשים והרשאות", sub: "משתמשים, בקשות לאישור ומטריצת ההרשאות", href: demoHref.settings("creator", "users") },
       { label: "הגדרות · טכנאים", sub: "צבע, טלפון, מייל ב-Outlook, פעיל", href: demoHref.settings("creator", "techs") },
@@ -91,8 +95,13 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
 
 const ORDER: Viewpoint[] = ["tech", "mgr", "cs", "creator"];
 
+/** Developer tools (not app screens, X-06): never in the office sidebar. */
+const TOOLS: ScreenLink[] = [
+  { label: "דואר מדומה", sub: "מיילי סיום ביקור שבתור הדואר · שום מייל לא נשלח", href: demoHref.outbox() },
+];
+
 export default async function DemoLandingPage() {
-  const SCREENS = screens(await callNames(["48213", "48205", "48140", "47800", "47969", "48230"]));
+  const SCREENS = screens(await callNames(["48213", "48205", "48140", "47800", "47963", "47969", "48230"]));
   return (
     <DemoPage>
       <main className="mx-auto flex max-w-[1100px] flex-col gap-4 p-4 sm:p-6">
@@ -152,6 +161,27 @@ export default async function DemoLandingPage() {
             );
           })}
         </div>
+        <section className="card" aria-labelledby="demo-tools" style={{ overflow: "hidden" }}>
+          <div className="sec" style={{ paddingBottom: 10 }}>
+            <h2 id="demo-tools" style={{ margin: 0 }}>
+              כלי פיתוח
+            </h2>
+            <div className="sub">לא חלק מהאפליקציה</div>
+          </div>
+          <nav aria-label="כלי פיתוח" style={{ borderTop: "1px solid var(--line2)" }}>
+            {TOOLS.map((link) => (
+              <Link key={link.href} href={link.href} className="li">
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontSize: 14 }}>{link.label}</b>
+                  <div className="sub">{link.sub}</div>
+                </span>
+                <span aria-hidden="true" style={{ color: "var(--accent)", fontWeight: 700 }}>
+                  ‹
+                </span>
+              </Link>
+            ))}
+          </nav>
+        </section>
       </main>
     </DemoPage>
   );

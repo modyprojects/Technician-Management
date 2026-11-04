@@ -1,14 +1,20 @@
 // What the simulated commands of one office screen check against stored data, as the server
 // would (SimulatedServerState): read through the data-access layer, scoped to that screen. Only
 // the Settings tabs that delete (places, reasons), the account screens (Settings › "משתמשים
-// והרשאות", "ניהול משתמשים") and "מוצרים" (products, brands, suppliers) receive it; every other
-// demo page gets the empty state, so no other page carries account or request ids. The real
-// server checks these itself, in the database, under the caller's session.
+// והרשאות", "ניהול משתמשים"), "מוצרים" (products, brands, suppliers), a review item ("פריטים
+// לבדיקה") and the call card's closed-visit corrections receive it; every other demo page gets the
+// empty state, so no other page carries account or request ids. The real server checks these
+// itself, in the database, under the caller's session.
 import type { AccountAdminData } from "@/components/office/AccountAdminParts";
 import type { ProductListItem } from "@/features/products/data/types";
+import type { OfficeRole } from "@/features/reference/data/types";
+import type { ReviewItemDetail } from "@/features/review/data/types";
 import type { SettingsSection } from "@/features/settings/data/types";
+import { visitRefKey, type VisitCorrectionHistory } from "@/features/visits/data/types";
 import type { SimulatedServerState } from "../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../_data/adapter";
+import { closedVisitCorrectionsOffered } from "../../_data/roles";
+import { signedInAccount } from "./users/_accounts";
 
 /** Account administration: the accounts and requests in the viewer's scope, and the viewer. */
 export function accountAdminState(admin: AccountAdminData | null): SimulatedServerState {
@@ -50,5 +56,48 @@ export async function productsState(products: readonly ProductListItem[]): Promi
       brands: Object.fromEntries(brands.items.map((b) => [b.id, { active: b.active }])),
       suppliers: Object.fromEntries(suppliers.items.map((x) => [x.id, { active: x.active }])),
     },
+  };
+}
+
+/**
+ * "פריטים לבדיקה" (D44): the item on the page, with what its resolution is checked against.
+ * `canResolve` comes from the role helpers (reviewResolutionOffered: D14 cases Manager and Creator,
+ * others `conflicts`); display only, the server checks the caller itself.
+ */
+export function reviewState(item: ReviewItemDetail, canResolve: boolean): SimulatedServerState {
+  return {
+    review: {
+      [item.id]: {
+        version: item.version,
+        status: item.status,
+        decisions: [...item.decisions],
+        choosable: item.fields.filter((f) => f.choosable).map((f) => f.key),
+        conflicts: item.fields.filter((f) => f.conflict).map((f) => f.key),
+        noteRequired: item.noteRequired,
+        canResolve,
+      },
+    },
+  };
+}
+
+/**
+ * "תיקון ביקור סגור" (OF-10, D14): the call card's closed visits (from visits.corrections), the
+ * active follow-up reasons and the signed-in user, so a simulated correction with a stale version,
+ * no change, an unknown reason or a field the visit does not allow fails as on the server. Only
+ * Manager and Creator may correct (closedVisitCorrectionsOffered; a fixed capability, D33).
+ */
+export async function correctionsState(role: OfficeRole, histories: readonly VisitCorrectionHistory[]): Promise<SimulatedServerState> {
+  const canCorrect = closedVisitCorrectionsOffered(role);
+  if (!canCorrect || histories.length === 0) return {};
+  const [reasons, self] = await Promise.all([demoDataAccess.reference.reasons(), signedInAccount(role)]);
+  const active = reasons.filter((r) => r.active).map((r) => r.name);
+  return {
+    corrections: Object.fromEntries(
+      histories.map((h) => [
+        visitRefKey(h),
+        { version: h.version, status: h.status, current: h.current, correctable: [...h.correctable], canCorrect, reasons: active },
+      ]),
+    ),
+    self,
   };
 }

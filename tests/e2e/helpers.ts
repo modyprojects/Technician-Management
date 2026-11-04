@@ -80,6 +80,15 @@ export const DEMO_PAGES = [
   "/dev/demo/office/mgr/products",
   "/dev/demo/office/cs/products",
   "/dev/demo/office/creator/products",
+  // Phase G: review items, the mock outbox (a /dev tool) and a closed visit with device sync state.
+  "/dev/demo/office/mgr/review",
+  "/dev/demo/office/cs/review",
+  "/dev/demo/office/creator/review",
+  "/dev/demo/office/mgr/review/rv-6",
+  "/dev/demo/office/cs/review/rv-1",
+  "/dev/demo/office/creator/review/rv-7",
+  "/dev/demo/outbox",
+  "/dev/demo/tech/done/47963/1",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */
