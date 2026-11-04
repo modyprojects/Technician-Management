@@ -13,7 +13,8 @@ const LINK_LOOK: CSSProperties = {
   color: "var(--accent)",
   fontWeight: 700,
   whiteSpace: "nowrap",
-  padding: "4px 0",
+  // At least 24px tall (WCAG 2.5.8).
+  padding: "5px 0",
 };
 
 /** "Waze ›" to a pickup place (demo "wazePlace", L1114). */

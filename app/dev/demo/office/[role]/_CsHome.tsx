@@ -44,7 +44,7 @@ export async function CsHome({ role }: { role: OfficeRole }) {
         {jumps.map((j) => (
           <a key={j.id} className="chip" href={`#${j.id}`}>
             {j.label}{" "}
-            <span className="num" style={{ opacity: 0.6 }}>
+            <span className="num" style={{ color: "var(--muted)" }}>
               {j.count}
             </span>
           </a>

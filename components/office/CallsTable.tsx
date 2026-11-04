@@ -159,7 +159,11 @@ export function CallsTable({
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
                   <SourceIcon source={r.source} /> {r.when}
-                  {r.whenCancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
+                  {r.whenCancelled && (
+                    <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
+                      <span className="oc-sep"> · </span>בוטל
+                    </span>
+                  )}
                 </td>
                 <td className={SHORT}>
                   <CallStatusPill

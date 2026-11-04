@@ -15,6 +15,7 @@ export const DEMO_PAGES = [
   "/dev/demo/office/mgr/calls/48205",
   "/dev/demo/office/mgr/calls/48140",
   "/dev/demo/office/mgr/calls/48230",
+  "/dev/demo/office/mgr/calls/47969",
   "/dev/demo/office/cs/calls/48205",
   "/dev/demo/office/mgr/analytics",
   "/dev/demo/office/cs/analytics",

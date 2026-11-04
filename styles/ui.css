@@ -235,7 +235,13 @@ a.stat { text-decoration: none; }
   .oc-custno-col { display: none; }
   .oc-custno-sub { display: block; }
   .oc-reason-inline { display: none; }
-  .oc-reason-sub { display: block; white-space: normal; font-size: 12px; margin-top: 3px; }
+  /* min-content width: the reason wraps to the pill's width instead of widening the column. */
+  .oc-reason-sub { display: block; white-space: normal; font-size: 12px; margin-top: 3px; width: min-content; min-width: 100%; }
+  /* "בוטל" under the time, so it does not widen the column either. */
+  .oc-when-cancel { display: block; }
+  .oc-when-cancel .oc-sep { display: none; }
+  /* The customer number stays on one line (it gives the customer column its width). */
+  .oc-custno-sub { white-space: nowrap; }
 }
 /* end office-calls */
 

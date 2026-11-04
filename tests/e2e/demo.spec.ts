@@ -112,32 +112,63 @@ test.describe("call card", () => {
     await expect(visits.getByRole("article", { name: "ביקור 2" })).toBeVisible();
   });
 
-  test("manager can open the cancel confirmation; customer service has no cancel", async ({ page }) => {
+  test("cancel is a disabled placeholder pending d08 (OF-09); customer service has no cancel", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr/calls/48205");
     const cancel = page.getByRole("button", { name: "ביטול ביקור", exact: true });
     await expect(cancel).toBeVisible();
-    await cancel.click();
-    const confirm = page.getByRole("group", { name: "אישור ביטול ביקור" });
-    await expect(confirm).toBeVisible();
-    await confirm.getByRole("button", { name: "כן, לבטל" }).click();
-    await expect(toast(page)).toContainText(SIMULATED);
-    await expect(toast(page)).toContainText("ביטול ביקור 2 · פנייה 48205");
+    await expect(cancel).toBeDisabled();
+    await expect(page.getByText("ממתין להחלטת בעלים (d08)")).toBeVisible();
 
     await openPage(page, "/dev/demo/office/cs/calls/48205");
     await expect(page.getByRole("heading", { level: 1 })).not.toBeEmpty();
     await expect(page.getByRole("button", { name: "ביטול ביקור", exact: true })).toHaveCount(0);
-    await expect(page.getByText("ביטול ביקור: למנהל בלבד")).toBeVisible();
+    await expect(page.getByText("ביטול ביקור: אין הרשאה לתפקיד הזה")).toBeVisible();
   });
 
-  test("adding a note is simulated", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/cs/calls/48205");
-    await page.getByRole("button", { name: "הוספת הערה", exact: true }).click();
-    const form = page.getByRole("form", { name: "הוספת הערה לקריאה" });
-    await expect(form.getByRole("button", { name: "שמירת הערה" })).toBeDisabled();
-    await form.getByRole("textbox").fill("הערת בדיקה");
-    await form.getByRole("button", { name: "שמירת הערה" }).click();
+  test("no actions beyond the demo and the deviations (no reschedule, no office note)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/48205");
+    await expect(page.getByRole("button", { name: "שינוי מועד" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "הוספת הערה" })).toHaveCount(0);
+    await page.getByRole("button", { name: "חיוג לטכנאי" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
-    await expect(toast(page)).toContainText("הערה לפנייה 48205: הערת בדיקה");
+  });
+
+  test("back button and the demo's header line", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/48205");
+    await expect(page.locator(".ptitle .sub").first()).toContainText("נציגה מטפלת:");
+    const details = page.locator("section", { has: page.getByRole("heading", { name: "פרטי הקריאה" }) });
+    await expect(details).toContainText("סוג קריאה");
+    await expect(details).toContainText("באחריות");
+    await page.getByRole("link", { name: "חזרה לקריאות" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calls$/);
+  });
+});
+
+test.describe("simulated toast", () => {
+  test("never blocks a tap and stays above the technician footer", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+    await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+    await expect(toast(page)).toBeVisible();
+    const hit = await page.evaluate(() => {
+      const button = document.querySelector<HTMLElement>(".ph-foot .bigbtn");
+      if (!button) return "no footer button";
+      const r = button.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return el?.closest(".toast") ? "toast" : el?.closest(".ph-foot") ? "footer" : String(el?.className);
+    });
+    expect(hit).toBe("footer");
+    const toastBox = await toast(page).boundingBox();
+    const footBox = await page.locator(".ph-foot").boundingBox();
+    expect(toastBox && footBox && toastBox.y + toastBox.height <= footBox.y + 1).toBe(true);
+    await expect(toast(page)).toHaveCSS("pointer-events", "none");
+  });
+
+  test("screens outside the demo say so under their own title", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr");
+    await page.locator(".side").getByRole("button", { name: "יומן טכנאים" }).click();
+    await expect(toast(page)).toContainText("לא בהדגמה");
+    await expect(toast(page)).toContainText("המסך הזה אינו חלק מההדגמה");
+    await expect(toast(page)).not.toContainText(SIMULATED);
   });
 });
 
@@ -177,7 +208,7 @@ test.describe("dashboards and access", () => {
     await openPage(page, "/dev/demo/office/cs/analytics");
     await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
     await expect(page.locator(".kpis")).toHaveCount(0);
-    await expect(page.locator(".side").getByRole("link", { name: "דשבורדים" })).toHaveCount(0);
+    await expect(page.locator(".side").getByRole("link", { name: /דשבורד/ })).toHaveCount(0);
     // Query strings do not open a dashboard either.
     await openPage(page, "/dev/demo/office/cs/analytics?tab=tech&tech=y");
     await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
@@ -204,6 +235,53 @@ test.describe("technician", () => {
     await page.getByRole("button", { name: "הגעתי · התחלת טיפול" }).click();
     await expect(toast(page)).toContainText("הגעה ללקוח");
     await expect(page).toHaveURL(/\/dev\/demo\/tech\/visit\/48213\/1\/work$/);
+  });
+
+  test("pickup ticks go through the commands and are simulated (TE-03)", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const card = page.getByRole("region", { name: "מה לאסוף לפני יציאה" });
+    const box = card.getByRole("checkbox").first();
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(box).toBeChecked();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("סימון נאסף");
+    await expect(card).toContainText("1 מתוך");
+  });
+
+  test("statuses follow the technician between screens; a sent close leads home", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const next = page.getByRole("region", { name: "הביקור הבא" });
+    await next.getByRole("button", { name: /יוצא · Waze/ }).click();
+    await expect(toast(page)).toContainText("יציאה ללקוח");
+    await next.getByRole("link", { name: /פרטי קריאה/ }).click();
+    await expect(page).toHaveURL(/\/tech\/visit\/\d+\/\d+$/);
+    // Client navigation keeps the depart: the visit card shows "בדרך".
+    await expect(page.getByText("הסטטוס: בדרך ללקוח")).toBeVisible();
+  });
+
+  test("after a sent close the back link goes to the day, and the home shows the visit closed", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+    await expect(page.getByRole("link", { name: "חזרה לטיפול" })).toBeVisible();
+    await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
+    await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
+    await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא חלק חלופי");
+    // The work is not ready (no "after" photo), so the send stays disabled: add it first.
+    await page.getByRole("link", { name: "לטיפול ›" }).click();
+    await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+    await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("נבדק, נדרש חלק.");
+    await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+    await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+    await expect(page).toHaveURL(/\/48213\/1\/close$/);
+    const send = page.locator(".ph-foot .bigbtn");
+    await expect(send).toHaveText("שליחה · המשך טיפול");
+    await expect(send).toBeEnabled();
+    await send.click();
+    await expect(page.getByRole("heading", { name: /סיום הביקור · ↻ המשך טיפול/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "חזרה לטיפול" })).toHaveCount(0);
+    await page.locator(".ph-head").getByRole("link", { name: "חזרה להיום", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/tech$/);
+    await expect(page.getByRole("region", { name: "הביקור הבא" })).toContainText("נסגר");
   });
 
   test("a closed visit is read-only", async ({ page }) => {
