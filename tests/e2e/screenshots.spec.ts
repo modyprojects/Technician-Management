@@ -268,6 +268,11 @@ test.describe("ui-demo-2 review screenshots", () => {
         await shot(name);
       }
 
+      // "הושלמו היום" with rows: the fixtures have none on the demo's date, so the showcase shows
+      // the list with sample DTOs (rows, 🧪 badges, pager).
+      await openPage(page, "/dev/showcase");
+      await page.locator("#showcase-done-list").screenshot({ path: path.join(OUT_DEMO_2, `${size.width}-showcase-done-list.png`) });
+
       // The drawer is a fixed overlay: a viewport shot, opened from a block as the user would.
       await openPage(page, "/dev/demo/office/mgr/calendar");
       await page.locator('a.ocal-ev[data-cal-visit]').first().click();
