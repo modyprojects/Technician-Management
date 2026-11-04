@@ -61,16 +61,63 @@ import {
   type PermissionCell,
   type PendingSetting,
 } from "@/features/settings/data/types";
-import type { ClosedVisitDetail, FieldTimeKey, TechDay, VisitDetail, VisitRef } from "@/features/visits/data/types";
+import {
+  CORRECTABLE_VISIT_FIELDS,
+  FOLLOWUP_CORRECTION_FIELDS,
+  TIME_CORRECTION_FIELDS,
+  VISIT_CORRECTIONS_LIMIT,
+  type ClosedVisitDetail,
+  type CorrectableValues,
+  type CorrectableVisitField,
+  type CorrectionValue,
+  type FieldTimeKey,
+  type TechDay,
+  type VisitCorrection,
+  type VisitCorrectionHistory,
+  type VisitDetail,
+  type VisitRef,
+} from "@/features/visits/data/types";
 import { visitRefError } from "@/features/visits/data/validate";
+import {
+  OUTBOX_RECIPIENT_LABELS,
+  type OutboxEmail,
+  type OutboxRecipient,
+  type OutboxRelease,
+  type OutboxSummary,
+} from "@/features/outbox/data/types";
+import { isOutboxId } from "@/features/outbox/data/validate";
+import {
+  type ReviewField,
+  type ReviewItemDetail,
+  type ReviewItemSummary,
+  type ReviewSource,
+  type ReviewStatus,
+  type ReviewValue,
+} from "@/features/review/data/types";
+import { isReviewItemId, normalizeReviewListQuery } from "@/features/review/data/validate";
+import {
+  DEVICE_SYNC_VISITS_LIMIT,
+  QUEUED_OPERATION_STATES,
+  VISIT_OPERATIONS_LIMIT,
+  visitSyncState,
+  type DeviceOperation,
+  type DeviceSyncSnapshot,
+  type DeviceSyncState,
+  type QueuedOperationState,
+  type VisitDeviceSync,
+} from "@/features/sync/data/types";
 import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
 import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
+import { correctionsOf, VISIT_BASE_VERSION, visitValue, type DemoCorrection } from "./corrections";
 import { CUSTOMERS, customerIdOf, customerProducts, findCustomer, openedOn, type DemoCustomer } from "./customers";
 import { daysBetween, TODAY } from "./dates";
 import { UNPARSED_INVITATIONS, type DemoUnparsedInvitation, type DemoUnparsedProblem } from "./intake";
 import { calendarVisitDetail, callDetail, callSummary, historyItem, productDto, techDayVisit, techRef, visitDetail } from "./mappers";
 import { CATALOGUE_BY_SKU, findCatalogueProduct, type DemoCatalogueProduct } from "./products";
 import { NOTIFICATION_PREFERENCES, NOTIFICATIONS } from "./notifications";
+import { findOutboxRow, OUTBOX_ROWS, type DemoOutboxRow } from "./outbox";
+import { REVIEW_ITEMS, type DemoReviewField, type DemoReviewItem } from "./review";
+import { DEVICE_QUEUES, type DemoDeviceOperation, type DemoDeviceQueue } from "./sync";
 import { CALLS, customerCalls, findCall, findVisit, lastVisit, previousVisits, sortCalls, visitsForTechOnDate } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
 import { ACCOUNT_REQUESTS, ACCOUNTS, accountById, type DemoAccount, type DemoAccountRequest } from "./accounts";
@@ -84,6 +131,7 @@ import {
   prod,
   REASONS,
   SUPPLIERS,
+  tech,
   TECH_IDS,
   TECHS,
   USERS,
@@ -393,6 +441,191 @@ function backFromFieldItem({ c, v }: { c: Call; v: Visit }, asOf: IsoDate): Back
   };
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// "פריטים לבדיקה" (review.ts): both versions per field as stored (D44).
+
+const sameValue = (a: ReviewValue | CorrectionValue, b: ReviewValue | CorrectionValue): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** A field conflicts when both sides changed it since its base, to different values (D44). */
+function reviewField(f: DemoReviewField): ReviewField {
+  const conflict = !sameValue(f.base, f.current) && !sameValue(f.base, f.incoming) && !sameValue(f.current, f.incoming);
+  return { key: f.key, label: f.label, base: f.base, current: f.current, incoming: f.incoming, conflict, choosable: f.choosable === true };
+}
+
+function reviewSource(s: DemoReviewItem["source"]): ReviewSource {
+  if (s.kind === "invitation") return { kind: "invitation", source: s.source, subject: invitationText(s.subject) };
+  const t = techRef(s.tech);
+  return { kind: "device", technician: { id: t.id, name: t.name, color: t.color }, operationId: s.operationId, deviceSentAt: s.deviceSentAt };
+}
+
+const reviewStatusOf = (x: DemoReviewItem): ReviewStatus => (x.resolution ? "resolved" : "open");
+
+function reviewSummary(x: DemoReviewItem): ReviewItemSummary {
+  const c = findCall(x.req);
+  const v = x.n === null ? undefined : c?.visits.find((visit) => visit.n === x.n);
+  const fields = x.fields.map(reviewField);
+  return {
+    id: x.id,
+    kind: x.kind,
+    status: reviewStatusOf(x),
+    source: reviewSource(x.source),
+    call: { req: x.req, customerName: c?.customer ?? "", isTest: TEST },
+    visit: v ? { n: v.n, status: v.status } : null,
+    receivedAt: x.receivedAt,
+    fieldCount: fields.length,
+    conflictCount: fields.filter((f) => f.conflict).length,
+    authority: x.authority,
+    resolution: x.resolution
+      ? { ...x.resolution, by: { ...x.resolution.by }, fieldChoices: x.resolution.fieldChoices ? { ...x.resolution.fieldChoices } : null }
+      : null,
+    isTest: TEST,
+  };
+}
+
+function reviewDetail(x: DemoReviewItem): ReviewItemDetail {
+  return {
+    ...reviewSummary(x),
+    version: x.version,
+    fields: x.fields.map(reviewField),
+    appliedWithNotification: (x.applied ?? []).map((a) => ({ ...a })),
+    decisions: x.resolution ? [] : [...x.decisions],
+    // D14: a resolution that changes a server-closed or cancelled visit is audited with its reason.
+    noteRequired: x.authority === "closed-visit",
+    completionEmailKey: x.completionEmailKey ?? null,
+  };
+}
+
+/** Newest first (server receipt time). */
+const REVIEW_NEWEST_FIRST = [...REVIEW_ITEMS].sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
+
+// ---------------------------------------------------------------------------------------------
+// Audited corrections of closed visits (corrections.ts; CALLS already carries the current values).
+
+const correctableValues = (v: Visit): Record<CorrectableVisitField, CorrectionValue> =>
+  Object.fromEntries(CORRECTABLE_VISIT_FIELDS.map((f) => [f, visitValue(v, f)])) as Record<CorrectableVisitField, CorrectionValue>;
+
+function visitCorrection(x: DemoCorrection, i: number): VisitCorrection {
+  return {
+    id: x.id,
+    ref: { req: x.req, n: x.n },
+    field: x.field,
+    target: TIME_CORRECTION_FIELDS.includes(x.field) ? "time-report" : "report",
+    before: x.before,
+    after: x.after,
+    by: { ...x.by },
+    at: x.at,
+    reason: x.reason,
+    versionBefore: VISIT_BASE_VERSION + i,
+    versionAfter: VISIT_BASE_VERSION + i + 1,
+    isTest: TEST,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Mock outbox (outbox.ts): the completion email as the outbox row holds it (EM-01 to EM-05, D09).
+
+const OUTBOX_MANAGER = USERS.find((u) => u.role === "mgr");
+
+/** D09: the Manager and the customer-service mailbox, fixed; d10 decides the Manager's scope and the rep. */
+function outboxRecipients(c: Call): OutboxRecipient[] {
+  const rep = USERS.find((u) => u.name === c.rep);
+  return [
+    ...(OUTBOX_MANAGER ? [{ role: "manager" as const, name: OUTBOX_MANAGER.name, email: OUTBOX_MANAGER.email, fixed: true, pending: "d10" as const }] : []),
+    { role: "service-mailbox", name: OUTBOX_RECIPIENT_LABELS["service-mailbox"], email: COMPLETION_MAILBOX, fixed: true, pending: null },
+    ...(rep ? [{ role: "handling-rep" as const, name: rep.name, email: rep.email, fixed: false, pending: "d10" as const }] : []),
+  ];
+}
+
+/** The summary the email carries: the written summary, else the approved transcript (D12). */
+const approvedSummary = (v: Visit): string => v.summary.trim() || v.transcript.trim();
+
+/** EM-05: only after server acceptance and an approved summary; a voice-only closure waits (open #3, d06). */
+const outboxRelease = (v: Visit): OutboxRelease =>
+  approvedSummary(v) ? { state: "ready" } : { state: "held", reason: "awaiting-approved-summary", pending: pending("d06") };
+
+function outboxSummary(r: DemoOutboxRow): OutboxSummary {
+  const { c, v } = r;
+  const outcome = v.status === "done" ? "done" : "cont";
+  return {
+    id: r.id,
+    idempotencyKey: r.idempotencyKey,
+    event: "visit-completion",
+    outcome,
+    subject: `${outcome === "done" ? "✓ טופל" : "↻ המשך טיפול"} · פנייה ${c.req} · ${c.customer} · ${c.city}`,
+    req: c.req,
+    n: v.n,
+    createdAt: r.createdAt,
+    release: outboxRelease(v).state,
+    delivery: "blocked-test-data",
+    isTest: TEST,
+  };
+}
+
+function outboxEmail(r: DemoOutboxRow): OutboxEmail {
+  const { c, v } = r;
+  const summary = outboxSummary(r);
+  const p = prod(c.sku);
+  return {
+    ...summary,
+    recipients: outboxRecipients(c),
+    identifiers: { req: c.req, task: v.task, customerNumber: c.customerNo, visitNumber: v.n },
+    banner: { outcome: summary.outcome, text: summary.outcome === "done" ? "הקריאה טופלה ונסגרה" : `המשך טיפול · ${v.reason ?? ""}` },
+    followUp: summary.outcome === "cont" ? { nextVisitNumber: v.n + 1, reason: v.reason ?? "", nextNote: v.nextNote } : null,
+    customer: { name: c.customer, phone: c.phone, address: `${c.street}, ${c.city}` },
+    product: { name: p.name, sku: p.sku },
+    technician: { name: tech(v.tech).name },
+    summary: approvedSummary(v),
+    recordingSeconds: v.rec,
+    parts: [...v.parts],
+    // D43: the approval text preserved at signing, never the current Settings text.
+    signature: summary.outcome === "done" && v.signer && v.signedText ? { signerName: v.signer, signedText: v.signedText } : null,
+    media: { count: v.media.length, attachment: pending("d11") },
+    cardLink: { req: c.req },
+    releaseDetail: outboxRelease(v),
+    provider: pending("d12"),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Device work queue (sync.ts): TE-23 states per visit.
+
+const EMPTY_QUEUE: DemoDeviceQueue = { lastSyncAt: null, operations: [], confirmed: [] };
+
+function deviceOperation(o: DemoDeviceOperation): DeviceOperation {
+  return {
+    opId: o.opId,
+    ref: { req: o.req, n: o.n },
+    kind: o.kind,
+    media: o.media ? { ...o.media } : null,
+    state: o.state,
+    savedAt: o.savedAt,
+    attempts: o.attempts,
+    lastAttemptAt: o.lastAttemptAt,
+    error: o.error,
+    sizeBytes: o.sizeBytes,
+    isTest: TEST,
+  };
+}
+
+function visitDeviceSync(queue: DemoDeviceQueue, req: string, n: number): VisitDeviceSync | null {
+  const ops = queue.operations.filter((o) => o.req === req && o.n === n).sort((a, b) => Date.parse(a.savedAt) - Date.parse(b.savedAt));
+  const confirmed = queue.confirmed.find((x) => x.req === req && x.n === n);
+  if (!ops.length && !confirmed) return null;
+  const operations = boundedOf(ops, VISIT_OPERATIONS_LIMIT);
+  return {
+    req,
+    n,
+    state: visitSyncState(ops),
+    operations: { ...operations, items: operations.items.map(deviceOperation) },
+    confirmedAt: confirmed?.at ?? null,
+    isTest: TEST,
+  };
+}
+
+/** Failed first, then syncing, pending, saved on device, and the sent ones last. */
+const SYNC_ORDER: readonly DeviceSyncState[] = ["failed", "syncing", "pending", "saved-on-device", "sent"];
+
 export const demoDataAccess: DataAccess = {
   calls: {
     async list(filter): Promise<CallsPage> {
@@ -489,6 +722,28 @@ export const demoDataAccess: DataAccess = {
       delete detail.arriveAt;
       delete detail.endAt;
       return { ...detail, editable: false };
+    },
+    async corrections(ref): Promise<VisitCorrectionHistory | null> {
+      if (!validRef(ref)) return null;
+      const found = findVisit(ref.req, ref.n);
+      if (!found || !isClosedVisit(found.v)) return null;
+      const list = correctionsOf(ref.req, ref.n);
+      const current: CorrectableValues = correctableValues(found.v);
+      // The original of a field is the "before" of its first correction; otherwise the current value.
+      const original = { ...current };
+      for (const x of [...list].reverse()) original[x.field] = x.before;
+      const corrections = boundedOf(list.map(visitCorrection).reverse(), VISIT_CORRECTIONS_LIMIT);
+      return {
+        req: ref.req,
+        n: ref.n,
+        version: VISIT_BASE_VERSION + list.length,
+        status: found.v.status === "done" ? "done" : "cont",
+        original,
+        current,
+        correctable: CORRECTABLE_VISIT_FIELDS.filter((f) => found.v.status === "cont" || !FOLLOWUP_CORRECTION_FIELDS.includes(f)),
+        corrections,
+        isTest: TEST,
+      };
     },
   },
 
@@ -728,6 +983,62 @@ export const demoDataAccess: DataAccess = {
     async unparsedInvitations(page) {
       const result = pageOf(UNPARSED_NEWEST_FIRST, page?.page, page?.limit);
       return { ...result, items: result.items.map(unparsedInvitation) };
+    },
+  },
+
+  review: {
+    async list(query) {
+      const f = normalizeReviewListQuery(query);
+      const counts: Record<ReviewStatus, number> = { open: 0, resolved: 0 };
+      for (const x of REVIEW_ITEMS) counts[reviewStatusOf(x)] += 1;
+      const page = pageOf(
+        f.status ? REVIEW_NEWEST_FIRST.filter((x) => reviewStatusOf(x) === f.status) : REVIEW_NEWEST_FIRST,
+        f.page,
+        f.limit,
+      );
+      return { ...page, items: page.items.map(reviewSummary), counts };
+    },
+    async get(id) {
+      if (!isReviewItemId(id)) return null;
+      const x = REVIEW_ITEMS.find((item) => item.id === id);
+      return x ? reviewDetail(x) : null;
+    },
+  },
+
+  outbox: {
+    async list(query) {
+      const page = pageOf(OUTBOX_ROWS, query?.page, query?.limit);
+      return { ...page, items: page.items.map(outboxSummary) };
+    },
+    async get(id) {
+      if (!isOutboxId(id)) return null;
+      const row = findOutboxRow(id);
+      return row ? outboxEmail(row) : null;
+    },
+  },
+
+  sync: {
+    async device(techId): Promise<DeviceSyncSnapshot | null> {
+      if (!isTechId(techId)) return null;
+      const queue = DEVICE_QUEUES[techId] ?? EMPTY_QUEUE;
+      const counts = Object.fromEntries(QUEUED_OPERATION_STATES.map((st) => [st, 0])) as Record<QueuedOperationState, number>;
+      for (const o of queue.operations) counts[o.state] += 1;
+      const keys = [...new Set([...queue.operations, ...queue.confirmed].map((x) => `${x.req}/${x.n}`))];
+      const visits = keys
+        .map((k) => {
+          const [req = "", n = "0"] = k.split("/");
+          return visitDeviceSync(queue, req, Number(n));
+        })
+        .filter((x): x is VisitDeviceSync => x !== null)
+        .sort(
+          (a, b) =>
+            SYNC_ORDER.indexOf(a.state) - SYNC_ORDER.indexOf(b.state) || (b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? ""),
+        );
+      return { technicianId: techId, lastSyncAt: queue.lastSyncAt, counts, visits: boundedOf(visits, DEVICE_SYNC_VISITS_LIMIT), isTest: TEST };
+    },
+    async visit(techId, ref) {
+      if (!isTechId(techId) || !validRef(ref)) return null;
+      return visitDeviceSync(DEVICE_QUEUES[techId] ?? EMPTY_QUEUE, ref.req, ref.n);
     },
   },
 
