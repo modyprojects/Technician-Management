@@ -16,7 +16,11 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # A guard against a hung job, not a target. Typical runs take about 7-13 minutes (most of it in
+    # the end-to-end tests at 390 / 820 / 1440); Playwright's own global timeout (18 minutes in CI,
+    # playwright.config.ts) stays well below this so a hung test run still reports and uploads its
+    # report.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
