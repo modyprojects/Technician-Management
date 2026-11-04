@@ -26,6 +26,9 @@ export type VisitSource = "outlook" | "simulator";
 /** A visit's identity: request number and visit number within the call. */
 export type VisitRef = { req: string; n: number };
 
+/** A visit's key in maps of visits ("48213/1"). Safe on malformed input (never throws). */
+export const visitRefKey = (ref: VisitRef | undefined): string => `${ref?.req}/${ref?.n}`;
+
 export type MediaKind = "img" | "vid";
 export type MediaPhase = "before" | "after";
 
