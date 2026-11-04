@@ -67,6 +67,8 @@ test.describe("/dev gate", () => {
       "/dev/demo/office/cs/back-from-field?tech=e&page=2",
       "/dev/demo/office/cs/unparsed?page=2",
       "/dev/demo/office/creator/products?q=kt-2041",
+      "/dev/demo/office/mgr/review?status=resolved&page=2",
+      "/dev/demo/outbox?page=2&id=ob-47969-1",
     ]) {
       const variants: Record<string, string>[] = [{}, { RSC: "1" }, { RSC: "1", "Next-Router-Prefetch": "1" }];
       for (const headers of variants) {
