@@ -64,6 +64,22 @@ export const DEMO_PAGES = [
   "/dev/demo/office/cs/settings/types",
   "/dev/demo/office/cs/settings/mail",
   "/dev/demo/office/cs/settings/template",
+  // Phase F: customers and the customer card, unparsed invitations, back from field, products.
+  "/dev/demo/office/mgr/customers",
+  "/dev/demo/office/cs/customers",
+  "/dev/demo/office/creator/customers",
+  "/dev/demo/office/mgr/customers/cu-298747",
+  "/dev/demo/office/cs/customers/cu-235395",
+  "/dev/demo/office/creator/customers/cu-179962",
+  "/dev/demo/office/mgr/unparsed",
+  "/dev/demo/office/cs/unparsed",
+  "/dev/demo/office/creator/unparsed",
+  "/dev/demo/office/mgr/back-from-field",
+  "/dev/demo/office/cs/back-from-field",
+  "/dev/demo/office/creator/back-from-field",
+  "/dev/demo/office/mgr/products",
+  "/dev/demo/office/cs/products",
+  "/dev/demo/office/creator/products",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */
