@@ -1,23 +1,52 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ProfileHeader } from "@/components/tech/ProfileHeader";
+import { ProfilePreferences } from "@/components/tech/ProfilePreferences";
+import { ProfileHelp, ProfileSignOut, ProfileWeek } from "@/components/tech/ProfileSections";
 import { DemoTechFrame } from "../../_components/DemoFrames";
-import { Placeholder } from "../../_components/Placeholder";
 import { demoDataAccess } from "../../_data/adapter";
 import { TODAY } from "../../_data/dates";
 import { DEMO_TECHNICIAN_ID } from "../../_data/roles";
+import { demoHref } from "../../_data/routes";
 
 export const metadata: Metadata = { title: "פרופיל · טכנאי · הדגמה" };
 
-// PLACEHOLDER (replaced by the screen): technician profile (docs/demo.html techProfile()
-// L681-693; TE-29, TE-30): profile.technician(DEMO_TECHNICIAN_ID, TODAY) and
-// notifications.preferences(DEMO_TECHNICIAN_ID); the toggles save through
-// useCommands().notifications.setPreferences (simulated).
+// Technician profile, the "פרופיל" tab (docs/demo.html techProfile() L681-693; TE-29, TE-30).
+// Reads only through the data-access layer: profile.technician(DEMO_TECHNICIAN_ID, TODAY) (name,
+// phone, email, this week's figures, office phone) and notifications.preferences(...) (G-03:
+// production takes the technician from the session).
+// - "התראות": the toggles save through useCommands().notifications.setPreferences (simulated; the
+//   demo's morning pickup toggle is removed, TE-28 / TE-29).
+// - "חיוג למשרד": a dial is navigation, not a data action; production uses a `tel:` link, the demo
+//   says what would open (data-sim, DemoToast).
+// - "דיווח על תקלה באפליקציה" (TE-30, d26) and "התנתקות" (Step 2) are disabled placeholders.
 export default async function TechProfilePage() {
-  const profile = await demoDataAccess.profile.technician(DEMO_TECHNICIAN_ID, TODAY);
+  const [profile, preferences] = await Promise.all([
+    demoDataAccess.profile.technician(DEMO_TECHNICIAN_ID, TODAY),
+    demoDataAccess.notifications.preferences(DEMO_TECHNICIAN_ID),
+  ]);
   if (!profile) notFound();
+  const office = profile.officePhone;
   return (
-    <DemoTechFrame activeTab="prof" head={<h1 style={{ fontSize: 22 }}>{profile.technician.name}</h1>}>
-      <Placeholder screen={`פרופיל · ${profile.week.visits} ביקורים השבוע · ${profile.week.done} טופלו`} />
+    <DemoTechFrame activeTab="prof" head={<ProfileHeader profile={profile} backHref={demoHref.tech()} />}>
+      <ProfileWeek week={profile.week} />
+      <ProfilePreferences initial={preferences} />
+      <ProfileHelp
+        officePhone={office}
+        officeDial={
+          office && (
+            <button
+              type="button"
+              className="chip"
+              aria-label={`חיוג למשרד · ${office}`}
+              data-sim={`חיוג למשרד · ${office} · לא מתבצעת שיחה בהדגמה`}
+            >
+              חיוג
+            </button>
+          )
+        }
+      />
+      <ProfileSignOut />
     </DemoTechFrame>
   );
 }
