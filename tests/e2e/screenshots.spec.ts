@@ -157,10 +157,17 @@ test.describe("ui-demo-1 review screenshots", () => {
       await shot("tech-work-recording");
 
       // Close as "המשך טיפול" with a reason and the next-visit note (TE-21).
-      await openPage(page, "/dev/demo/tech/visit/48213/1/close");
+      // The work first (a photo after the treatment and a summary), as the close requires.
+      await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+      await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+      await expect(page.getByRole("img", { name: /תמונה 1 אחרי הטיפול/ })).toBeVisible();
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המחסנית הוחלפה, נדרש כיוון נוסף של הפיה.");
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+      await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+      await expect(page).toHaveURL(/\/48205\/2\/close$/);
       await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
       await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
-      await page.getByLabel(/מה צריך בביקור הבא/).fill("להביא ברז חלופי ולתאם עם הלקוחה מראש.");
+      await page.getByLabel(/מה צריך בביקור הבא/).fill("לכוון את הפיה ולבדוק שאין טפטוף.");
       await shot("tech-close-followup");
 
       // Work screen with an "after" photo and a summary, then the close screen with a signature.
@@ -419,6 +426,109 @@ test.describe("ui-demo-4 review screenshots", () => {
         await expect(page.getByRole("link", { name: "לכרטיס הלקוח · משפחת לוי" })).toBeVisible();
         await shot("call-card-customer-link");
       }
+    });
+  }
+});
+
+// UI demo, phase G (D53): "פריטים לבדיקה" (the list and a D44 conflict item), the call card with
+// the closed-visit correction dialog and its history (OF-10), the /dev mock outbox with an email
+// (X-06), the technician home with the sync banner and the close confirmation with the sync
+// progression (TE-23). docs/demo.html has no review, correction or sync screens; its mail view ("✉
+// מיילים שנשלחו" after a close) is shot for comparison with the outbox.
+const OUT_DEMO_5 = path.resolve("docs/review/ui-demo-5");
+
+test.describe("ui-demo-5 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`phase G screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(240_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_DEMO_5, `${size.width}-${name}.png`);
+      const shot = (name: string, fullPage = true) => appShot(page, file(name), fullPage);
+      const toastGone = () => expect(page.locator(".toast")).toHaveCount(0, { timeout: 8_000 });
+
+      for (const [name, url] of [
+        ["review-list", "/dev/demo/office/mgr/review"],
+        ["review-item-conflict", "/dev/demo/office/mgr/review/rv-6"],
+        ["review-item-closure", "/dev/demo/office/creator/review/rv-7"],
+        ["outbox", "/dev/demo/outbox"],
+        ["outbox-followup", "/dev/demo/outbox?id=ob-47964-1"],
+        ["tech-home-sync", "/dev/demo/tech"],
+        ["tech-done-sync", "/dev/demo/tech/done/47963/1"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name);
+      }
+
+      // The D44 conflict item with "בחירה לפי שדה" chosen (the conflicting field still open).
+      await openPage(page, "/dev/demo/office/mgr/review/rv-6");
+      await page.locator("#review-decision").getByRole("radio", { name: /בחירה לפי שדה/ }).check();
+      await shot("review-item-per-field");
+
+      // The call card: the correction dialog open on a closed visit, then the history with a
+      // simulated correction (nothing is saved).
+      await openPage(page, "/dev/demo/office/mgr/calls/47969");
+      await page.getByRole("button", { name: "תיקון ביקור סגור · ביקור 1" }).click();
+      const dialog = page.getByRole("dialog", { name: /תיקון ביקור סגור/ });
+      await dialog.getByLabel("שדה לתיקון").selectOption("summary");
+      await dialog.getByLabel(/סיבת התיקון/).fill("השלמה לפי שיחה עם הטכנאי");
+      await page.screenshot({ path: file("call-card-correction-dialog") });
+      await dialog.getByRole("button", { name: "ביטול" }).click();
+      await page.locator("#visit-1 .vc").scrollIntoViewIfNeeded();
+      await shot("call-card-corrections");
+
+      // The close confirmation: "המשך טיפול" sent (simulated) shows the sync progression.
+      // The work first (a photo after the treatment and a summary), as the close requires.
+      await openPage(page, "/dev/demo/tech/visit/48205/2/work");
+      await page.getByRole("button", { name: "הוספת תמונה אחרי הטיפול" }).click();
+      await expect(page.getByRole("img", { name: /תמונה 1 אחרי הטיפול/ })).toBeVisible();
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המחסנית הוחלפה, נדרש כיוון נוסף של הפיה.");
+      await page.getByRole("textbox", { name: "סיכום הטיפול" }).blur();
+      await page.getByRole("link", { name: "סיום ביקור ›" }).click();
+      await expect(page).toHaveURL(/\/48205\/2\/close$/);
+      await page.getByRole("button", { name: /↻ המשך טיפול/ }).click();
+      await page.getByRole("region", { name: "המשך טיפול" }).getByRole("button").first().click();
+      await page.getByLabel(/מה צריך בביקור הבא/).fill("לכוון את הפיה ולבדוק שאין טפטוף.");
+      await page.locator(".bigbtn").last().click();
+      await expect(page.getByRole("region", { name: "מה קורה עם הסיום" })).toBeVisible();
+      await toastGone();
+      await shot("tech-close-sync");
+
+      // docs/demo.html: a close, then "✉ מיילים שנשלחו" (the demo bar is hidden; its button is
+      // clicked directly). The demo claims the email was sent; the app's outbox never does (SIM-09).
+      const demoShot = async (name: string) => {
+        await page.addStyleTag({ content: "#toast{display:none!important}" });
+        await page.screenshot({ path: path.join(OUT_DEMO_5, `${size.width}-demo-${name}.png`) });
+      };
+      const openMails = () => page.evaluate(() => (document.querySelector('[data-act="mailsOpen"]') as HTMLElement | null)?.click());
+
+      await demoAs(page, "tech");
+      await page.locator('[data-act="openVisit"][data-req="48205"][data-n="2"]').first().click();
+      await page.locator('[data-act="arrived"]').click();
+      await page.locator('[data-act="sampleMedia"][data-when="after"]').first().click();
+      await page.locator('[data-in="summary"]').fill("הוחלף אטם בברז, נבדק ותקין.");
+      await page.locator("#finishBtn").click();
+      await page.locator('[data-act="closeChoice"][data-v="done"]').click();
+      await page.locator('[data-in="signer"]').fill("אבי כהן");
+      await sign(page, "#sig");
+      await page.locator("#sendBtn").click();
+      await openMails();
+      await expect(page.getByRole("dialog", { name: "מיילים שנשלחו" })).toBeVisible();
+      await demoShot("mails-done");
+
+      await demoAs(page, "tech");
+      await page.locator('[data-act="openVisit"][data-req="48213"][data-n="1"]').first().click();
+      await page.locator('[data-act="arrived"]').click();
+      await page.locator('[data-act="sampleMedia"][data-when="after"]').first().click();
+      await page.locator('[data-in="summary"]').fill("הברז דורש החלפה, הוזמן ברז חלופי.");
+      await page.locator("#finishBtn").click();
+      await page.locator('[data-act="closeChoice"][data-v="cont"]').click();
+      await page.locator('[data-act="closeReason"]').first().click();
+      await page.locator("#sendBtn").click();
+      await openMails();
+      await expect(page.getByRole("dialog", { name: "מיילים שנשלחו" })).toBeVisible();
+      await demoShot("mails-followup");
     });
   }
 });

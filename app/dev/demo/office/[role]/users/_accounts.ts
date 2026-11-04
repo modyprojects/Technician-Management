@@ -16,7 +16,7 @@ import { accountAdminScope, VIEWPOINTS } from "../../../_data/roles";
 const MANAGER_SCOPE_ROLES: readonly AccountRole[] = ["cs", "tech"];
 
 /** The viewpoint's own account (demo stand-in for the session's user, G-03). */
-async function signedInAccount(role: OfficeRole): Promise<AccountRef | null> {
+export async function signedInAccount(role: OfficeRole): Promise<AccountRef | null> {
   const own = await demoDataAccess.accounts.list({ roles: [role], limit: MAX_PAGE_LIMIT });
   const me = own.items.find((a) => a.name === VIEWPOINTS[role].who);
   return me ? { id: me.id, name: me.name } : null;

@@ -500,3 +500,210 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .cu-kpis .kpi { padding: 10px 12px; }
 }
 /* end customer-card */
+
+/* review-corrections */
+/* "פריטים לבדיקה" (D39, D44) and the call card's "תיקונים" / "תיקון ביקור סגור" (OF-10, D14, D45).
+   docs/demo.html has neither, so both are built from its language: .kpis, card + .sec head, .kv,
+   .pill, .note, chips, the ib-* work-item rows and the demo's drawer (.drawer-bg / .drawer). */
+/* List page: counters beside "פתוחים לפי סוג" on a wide screen, stacked below 900px. */
+.rv-top { display: grid; grid-template-columns: minmax(0, 540px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.rv-kinds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rv-kinds li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line2); font-size: 14px; }
+.rv-kinds li:last-child { border-bottom: 0; }
+.rv-kinds-l { min-width: 0; overflow-wrap: anywhere; }
+.rv-kinds-n { flex: none; min-width: 28px; text-align: center; font-weight: 700; background: var(--s-work-bg); color: var(--s-work-fg); border-radius: 999px; padding: 1px 8px; }
+.rv-visit { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rv-conflict-text { color: var(--danger); font-weight: 700; }
+/* Pills: who may decide, and how a field differs. */
+.pill.rv-auth { background: var(--bg); color: var(--ink2); }
+.pill.rv-conflict { background: var(--danger-bg); color: var(--danger-fg); }
+.pill.rv-changed { background: var(--accent-l); color: var(--accent-d); }
+.pill.rv-same { background: var(--bg); color: var(--muted); }
+/* Item page: title row, then "על הפריט" beside the versions and the decision on a wide screen. */
+.rv-title { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; }
+.rv-title h1 { min-width: 0; overflow-wrap: anywhere; }
+.rv-title-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.rv-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
+.rv-notes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.rv-p { margin: 0; }
+.rv-both { margin-top: 10px; }
+.rv-kv-gap { margin-top: 10px; }
+.rv-subject { min-width: 0; overflow-wrap: anywhere; }
+.rv-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--bg); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+/* Both versions per field: base, the system's value and the submitted value side by side; on a
+   narrow card the base runs full width above the two versions. */
+.rv-fields { list-style: none; margin: 0; padding: 0; container-type: inline-size; container-name: rv-fields; }
+.rv-field { padding: 12px 0; border-bottom: 1px solid var(--line2); }
+.rv-field:first-child { padding-top: 0; }
+.rv-field:last-child { border-bottom: 0; }
+.rv-fhead { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.rv-fhead h3 { font-size: 15px; min-width: 0; }
+.rv-vers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.rv-ver { min-width: 0; border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px; background: var(--tint); }
+.rv-ver dt { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+.rv-ver dd { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.rv-ver.rv-base { background: var(--card); border-style: dashed; }
+.rv-ver.rv-diff { border-color: var(--accent); background: var(--accent-l); }
+.rv-field-conflict .rv-cur, .rv-field-conflict .rv-inc { border-color: var(--danger-line); }
+.rv-none { color: var(--muted); }
+.rv-vlist { margin: 0; padding-inline-start: 18px; }
+@container rv-fields (max-width: 520px) {
+  .rv-vers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rv-ver.rv-base { grid-column: 1 / -1; }
+}
+/* Decision form and its result. */
+.rv-form { display: flex; flex-direction: column; gap: 14px; }
+.rv-fs { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.rv-fs > legend { padding: 0; margin-bottom: 6px; font-weight: 700; font-size: 14px; }
+.rv-fs-field { padding-inline-start: 12px; border-inline-start: 3px solid var(--line); }
+.rv-fs-field > legend { font-weight: 600; }
+.rv-opt { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; font-size: 14px; line-height: 1.45; }
+.rv-opt input { margin: 3px 0 0; flex: none; }
+.rv-opt > span { min-width: 0; overflow-wrap: anywhere; }
+.rv-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-l); }
+.rv-opt-hint { display: block; margin-top: 2px; }
+.rv-email { margin: 0; }
+.rv-note { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700; }
+.rv-note textarea { width: 100%; min-width: 0; font-weight: 400; }
+.rv-result { display: flex; flex-direction: column; gap: 10px; }
+.rv-result:focus { outline: none; }
+.rv-result:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.rv-result-h { font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rv-result-p { margin: 0; }
+.rv-locked { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink2); }
+@container stage (max-width: 1100px) {
+  .rv-cols { grid-template-columns: minmax(0, 1fr); }
+}
+@container stage (max-width: 900px) {
+  .rv-top { grid-template-columns: minmax(0, 1fr); }
+}
+/* Call card: a visit is a link target (#visit-<n>); its "תיקונים" part under the report. */
+.vc-anchor { scroll-margin-top: 12px; }
+.vc { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.vc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vc-title { margin: 0; font-family: var(--body); font-size: 14px; font-weight: 700; color: var(--muted); }
+.btn.vc-btn { padding: 6px 12px; font-size: 13px; }
+.vc-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.vc-group { display: flex; flex-direction: column; gap: 6px; background: var(--tint); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.vc-field { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; }
+.pill.vc-pill { background: var(--card); color: var(--ink2); }
+.vc-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 2px 10px; align-items: start; line-height: 1.5; }
+.vc-k { color: var(--muted); font-size: 13px; }
+.vc-v { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; overflow-wrap: anywhere; }
+.vc-orig .vc-v { color: var(--ink2); }
+.vc-meta { display: block; }
+.vc-none { margin: 6px 0 0; }
+/* "תיקון ביקור סגור" dialog in the demo's drawer. */
+.vc-dialog:focus { outline: none; }
+.vc-dialog-title { font-size: 20px; }
+.vc-form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.vc-p { margin: 0; }
+.vc-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.vc-label select, .vc-label textarea, .vc-label input { width: 100%; min-width: 0; font-weight: 400; }
+.vc-kv { background: var(--tint); border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px; }
+.vc-warn { margin: 0; background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-ink); border-radius: 8px; padding: 6px 10px; font-size: 13px; line-height: 1.5; }
+.vc-err { flex-basis: 100%; }
+@container stage (max-width: 520px) {
+  .vc-row { grid-template-columns: minmax(0, 1fr); }
+}
+/* end review-corrections */
+
+/* outbox-sync */
+/* Technician device sync (TE-23, TE-24; D06, D46; UI demo D53): sync pills, the home's
+   pending-operations banner, a visit's sync panel and the close confirmation's progression. New
+   elements in the demo's language (warning card as "לפני הסיום", .pill, .btn), pending the owner's
+   visual approval. */
+/* A visit status pill with the sync pill under it (schedule and "הושלמו היום" rows). */
+.sy-pills { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.sy-banner { padding: 12px 14px; background: var(--warn-bg); border-color: var(--warn-bd); display: flex; flex-direction: column; gap: 10px; }
+.sy-panel { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.sy-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.sy-title { min-width: 0; flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px; }
+.sy-title h2 { font-family: var(--body); font-size: 14px; font-weight: 700; }
+.sy-banner .sy-title h2 { font-size: 15px; color: var(--warn-ink); }
+.sy-visits, .sy-ops { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sy-vline { padding-top: 6px; border-top: 1px solid var(--collect-line); }
+.sy-vhead { display: flex; justify-content: space-between; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+.sy-vtitle { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.sy-op { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line2); }
+.sy-op-main { min-width: 0; flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.sy-op-title { overflow-wrap: anywhere; }
+.sy-op-side { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0 8px; }
+.sy-op-side > .sy-note { flex-basis: 100%; text-align: end; }
+.sy-err { color: var(--danger); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.btn.sy-btn { padding: 6px 12px; font-size: 13px; min-height: 32px; }
+.btn.sy-btn[aria-disabled="true"] { opacity: .6; cursor: progress; }
+.sy-now { display: flex; flex-direction: column; align-items: flex-start; }
+/* Result line of "נסה שוב" / "סנכרן עכשיו": an empty live region takes no space. */
+.sy-note { font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.sy-note:not(:empty) { margin-top: 4px; }
+.sy-note-simulated { color: var(--warn-fg); }
+.sy-note-stored { color: var(--s-done-fg); }
+.sy-note-error { color: var(--danger); }
+.sy-warn { margin: 0; line-height: 1.5; }
+/* Close confirmation: the steps a closure goes through (TE-23). */
+.sy-steps-box { background: var(--tint); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.sy-steps-title { font-family: var(--body); font-size: 13px; font-weight: 700; }
+.sy-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sy-step { display: flex; gap: 10px; align-items: flex-start; }
+.sy-step-n { width: 22px; height: 22px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--card); border: 1px solid var(--control-line); color: var(--muted); }
+.sy-step-done .sy-step-n { background: var(--s-done); border-color: var(--s-done); color: var(--on-dark); }
+.sy-step-body { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+
+/* Mock completion-email outbox (/dev tool, X-06; demo .ol-top L170 and .mailbox / .mailitem
+   L171-173, L186): the tool bar in the demo's dark modal-header colours, the list beside the email,
+   one column at 900px and below. */
+.ob-tool { background: var(--ink); color: var(--on-dark); border-radius: 10px; padding: 10px 16px; font-weight: 700; font-size: 14px; }
+.ob-box { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 420px; overflow: hidden; }
+.ob-list { min-width: 0; display: flex; flex-direction: column; border-inline-end: 1px solid var(--line); }
+/* position: the containing block of the rows' visually hidden (.sr-only, absolute) text, so it is
+   clipped by this scroller instead of stretching the page below it. */
+.ob-items { position: relative; list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 70vh; }
+.mailitem.ob-item { display: flex; flex-direction: column; gap: 3px; }
+.ob-subject { font-size: 13px; overflow-wrap: anywhere; }
+.ob-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pill.ob-delivery { background: var(--s-cancel-bg); color: var(--s-cancel-fg); }
+.pill.ob-held { background: var(--s-go-bg); color: var(--s-go-fg); }
+.ob-pager { padding: 10px 14px; border-top: 1px solid var(--line2); }
+.ob-pane { min-width: 0; }
+.ob-preview { min-width: 0; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.kv.ob-kv { grid-template-columns: 110px minmax(0, 1fr); font-size: 13px; }
+.ob-kv > * { min-width: 0; overflow-wrap: anywhere; }
+.ob-title { margin: 0; font-family: var(--body); font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.ob-rcpts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ob-rcpt-note, .ob-block { display: block; }
+.ob-record { background: var(--tint); border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; }
+.ob-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+.ob-body { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.pill.ob-banner-done { background: var(--s-done-bg); color: var(--s-done-fg); white-space: normal; }
+.pill.ob-banner-cont { background: var(--s-cont-bg); color: var(--s-cont-fg); white-space: normal; }
+.ob-follow { background: var(--warn-bg); border: 1px solid var(--warn-bd); border-radius: 8px; padding: 10px 12px; color: var(--warn-ink); line-height: 1.5; }
+.ob-follow-note { margin-top: 6px; }
+.ob-summary { background: var(--tint); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+.ob-strong { font-weight: 700; }
+.ob-parts { margin: 4px 0 0; padding-inline-start: 20px; }
+@container stage (max-width: 900px) {
+  .ob-box { grid-template-columns: minmax(0, 1fr); }
+  .ob-list { border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .ob-items { max-height: 45vh; }
+}
+@container stage (max-width: 520px) {
+  .ob-preview { padding: 14px; }
+  .kv.ob-kv { grid-template-columns: 92px minmax(0, 1fr); }
+}
+/* end outbox-sync */
+/* phase-g-integration */
+/* Screen-reader text in a pill (TestBadge's "נתוני בדיקה", the sync pill's "מצב סנכרון:") or a
+   number (the dashboard bars' segments) is
+   .sr-only, position: absolute. Without a positioned ancestor its containing block is the page, so
+   a pill inside a scroller (.ph-main, .stage, .scrollx, the outbox list) stretched the document
+   below the app frame and the page itself scrolled into empty space. The pill or number contains it. */
+.pill:has(> .sr-only), .num:has(> .sr-only) { position: relative; }
+/* The scrollers themselves are the containing block of any absolutely positioned descendant that
+   has no positioned ancestor of its own (any .sr-only text), so such text is clipped by the
+   scroller and never stretches the document, whatever element it sits in. */
+.stage, .ph-main, .scrollx { position: relative; }
+/* The call card's "תוקן במשרד" link to a corrected visit's "תיקונים" (OF-10, D14). */
+.pill.vc-mark { background: var(--accent-l); color: var(--accent-d); text-decoration: none; }
+.pill.vc-mark:hover { text-decoration: underline; }
+/* end phase-g-integration */

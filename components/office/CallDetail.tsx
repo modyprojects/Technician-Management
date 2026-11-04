@@ -5,7 +5,7 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge } from "@/components/ui/TestBadge";
 import type { CallStatus } from "@/features/calls/data/types";
 import type { VisitStatus } from "@/features/visits/data/types";
-import { VisitTimeline, type RenderRecording, type TimelineVisit } from "./VisitTimeline";
+import { VisitTimeline, type RenderRecording, type RenderVisitExtra, type TimelineVisit } from "./VisitTimeline";
 
 // Office service-call card as a full page (docs/demo.html offCard() L834-859, with the fields of
 // the calendar drawer drawerHtml() L803-814). Look as in the demo: "› חזרה לקריאות" (L739),
@@ -19,6 +19,9 @@ import { VisitTimeline, type RenderRecording, type TimelineVisit } from "./Visit
 // empty (TE-08); "פתח זימון ב-Outlook" is not shown until Microsoft 365 is connected (OF-08).
 // Additions in the demo's visual language: the assignment card (technician, scheduled visits,
 // pickup) and other calls of the same customer.
+// OF-10 (D14): the caller may add a part at the end of each visit (`renderVisitExtra`): the
+// "תיקונים" history of a closed visit and, for Manager and Creator only, "תיקון ביקור סגור"
+// (components/office/VisitCorrections). The card itself decides nothing about who may correct.
 // Presentational only: the caller passes formatted data and the header actions.
 
 export type CallDetailTech = { name: string; color: string; phone: string };
@@ -92,6 +95,7 @@ export function CallDetail({
   actions,
   showReport,
   renderRecording,
+  renderVisitExtra,
   customerHref,
 }: {
   call: CallDetailData;
@@ -104,6 +108,8 @@ export function CallDetail({
   actions?: ReactNode;
   showReport?: boolean;
   renderRecording?: RenderRecording;
+  /** A part at the end of each visit of the timeline (OF-10 corrections); null for none. */
+  renderVisitExtra?: RenderVisitExtra;
 }) {
   const { customer: cu, product: p } = call;
   const visitCount = call.visits.length === 1 ? "ביקור אחד" : `${call.visits.length} ביקורים`;
@@ -217,7 +223,7 @@ export function CallDetail({
 
           <div className="grid">
             <Assignment a={call.assignment} />
-            <VisitTimeline visits={call.visits} showReport={showReport} renderRecording={renderRecording} />
+            <VisitTimeline visits={call.visits} showReport={showReport} renderRecording={renderRecording} renderExtra={renderVisitExtra} />
           </div>
         </div>
       </div>

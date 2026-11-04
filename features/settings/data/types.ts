@@ -37,12 +37,13 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsSection, string>> 
 
 /**
  * Open owner decisions that some settings and screens wait for (docs/decisions.md, open decisions;
- * the board reference): d08 cancellation, d09 unparsed-invitation mail, d10 completion-mail
- * recipients, d11 media in the completion email, d13 usage screen, d23 the spec v2 screens and the
- * matrix key of "זימונים שלא נקלטו" and "חזרו מהשטח" (open #15), d31 the final KPI definitions
- * (open #20; the customer card's product return window waits for it).
+ * the board reference): d06 transcript approval of a voice-only visit before close and email (open
+ * #3), d08 cancellation, d09 unparsed-invitation mail, d10 completion-mail recipients, d11 media in
+ * the completion email, d12 the email provider and sender domain (open #9), d13 usage screen, d23
+ * the spec v2 screens and the matrix key of "זימונים שלא נקלטו" and "חזרו מהשטח" (open #15), d31
+ * the final KPI definitions (open #20; the customer card's product return window waits for it).
  */
-export type OpenDecisionId = "d08" | "d09" | "d10" | "d11" | "d13" | "d23" | "d31";
+export type OpenDecisionId = "d06" | "d08" | "d09" | "d10" | "d11" | "d12" | "d13" | "d23" | "d31";
 
 /**
  * A setting whose behaviour waits for an open owner decision. Screens show it as a disabled

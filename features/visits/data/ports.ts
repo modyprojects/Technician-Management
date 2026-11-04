@@ -11,6 +11,9 @@ import type {
   MediaItem,
   TechDay,
   TechDayVisit,
+  VisitCorrection,
+  VisitCorrectionHistory,
+  VisitCorrectionInput,
   VisitDetail,
   VisitHistoryItem,
   VisitRef,
@@ -37,6 +40,12 @@ export interface VisitsQueries {
    * closed, or another technician's visit.
    */
   doneVisit(techId: TechnicianId, ref: VisitRef): Promise<ClosedVisitDetail | null>;
+  /**
+   * A server-closed visit's correctable values and audited corrections, newest first (OF-10, D14;
+   * at most VISIT_CORRECTIONS_LIMIT); null when the visit is not found, not visible, or not closed.
+   * Office only: production reads `visit_corrections` with `card` (docs/database-schema.md §8.3).
+   */
+  corrections(ref: VisitRef): Promise<VisitCorrectionHistory | null>;
 }
 
 /**
@@ -63,4 +72,12 @@ export interface VisitCommands {
   saveParts(ref: VisitRef, parts: readonly string[]): Promise<CommandResult>;
   /** Closes the visit: "טופל" with signature, or "המשך טיפול" with a reason. */
   close(ref: VisitRef, input: CloseVisitInput): Promise<CommandResult>;
+  /**
+   * "תיקון ביקור סגור" (OF-10, D14): an audited correction of one field of a server-closed visit
+   * with a mandatory reason; the original stays stored. Manager and Creator only (a fixed
+   * capability, D33); never the signed approval text, the signer or the signature (D43). Field
+   * times add a correction time report (D45). Returns the correction as stored. Rejected per
+   * visitCorrectionError.
+   */
+  correct(input: VisitCorrectionInput): Promise<CommandResult<{ correction: VisitCorrection }>>;
 }
