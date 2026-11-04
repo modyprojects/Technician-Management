@@ -1,6 +1,6 @@
 -- Step 1, PR 1.2: smoke tests for the database test harness (pgTAP).
--- There are no migrations yet. These checks are catalog-wide, so they keep guarding every
--- object that later migrations add (D33, D47, docs/security.md §5).
+-- These checks are catalog-wide, so they keep guarding every object that migrations add
+-- (D33, D47, docs/security.md §5). PR 1.3 added the first two census exemptions (test 6).
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(7);
@@ -43,7 +43,10 @@ select is(
   'every table in public and private has row level security enabled'
 );
 
--- D47: every data table carries a test-data marker. Exemptions must be listed here with a reason.
+-- D47: every data table carries a test-data marker. Exemptions must be listed here with a reason:
+-- - public.permissions: the closed D33 key catalogue (configuration; no test variants).
+-- - public.role_permissions: the D33 matrix values (configuration, TEMPORARY until Step 10, D51;
+--   no test variants). public.test_data_census() lists both as exempt.
 select is(
   (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname in ('public', 'private') and c.relkind in ('r', 'p')
@@ -51,7 +54,7 @@ select is(
         select 1 from pg_attribute a
         where a.attrelid = c.oid and not a.attisdropped
           and a.attname in ('is_test', 'target_is_test'))
-      and c.relname <> all (array[]::text[])),
+      and not (n.nspname = 'public' and c.relname = any (array['permissions', 'role_permissions']))),
   0::bigint,
   'every table in public and private carries a test-data marker (D47) or is an approved exemption'
 );

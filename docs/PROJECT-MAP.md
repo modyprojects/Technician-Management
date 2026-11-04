@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-04 (UI demo with fictional data, phase F, branch `claude/ui-demo-4`, stacked on `claude/ui-demo-3` (PR #8, phase E); PR #5 is merged to `main` as `013fd2f`).
+Last updated: 2026-11-04 (Step 1 / PR 1.3, branch `claude/step1-pr13-access-permissions` from `main` `57a70bf`: Migration 1 prepared and tested locally, **not applied** to any Supabase project).
 
 ## 1. Purpose and how to read it
 
@@ -42,11 +42,13 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative, showcase and every UI-demo route, RSC and prefetch variants), owner review rules, UI demo (`demo.spec.ts`: every demo route and calendar view at 390 / 820 / 1440, search and filters, call card, access by role, simulated actions, signature, calendar navigation and filters, visit drawer, technician calendar views, closed-visit views, notifications, profile, office navigation per role, Settings access and tabs, permission matrix, account administration and requests, every D34 activation path, the add forms' submit flows, operational settings, what the browser receives, phase F navigation per role, customers search and card, products edit and access, unparsed invitations and back from field); `data-validate.spec.ts`: negative tests of the shared validators and list filters (pure logic); `screenshots.spec.ts` runs on demand only |
-| `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
-| `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no table, sequence or function privileges in `public` or `private`, `anon` has no usage on `private`, and every table has RLS and a test-data marker (D47) |
+| `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard, and `rollback.test.mjs` (every migration has a down script whose first statement refuses to run once data exists; `tests/db` runs byte-identical copies) |
+| `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI, each file in a rolled-back transaction: `000_smoke` (catalog-wide: no `anon`/`PUBLIC` privileges, RLS and a test-data marker or listed exemption on every table), `010_hardening` (exact grants, default privileges, SECURITY DEFINER rules, probes), `020_markers`, `030_matrix`, `040_accounts`, `050_account_requests`, `060_audit`, `070_census`, `080_bootstrap`, `090_helpers_rls` (PR 1.3) and `990_rollback` (runs the down script) |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
+| `supabase/migrations/` | Migrations, applied in file-name order by the Supabase CLI (schema and owner-approved reference values only, D47). `20261104120000_access_and_permissions.sql` (PR 1.3): hardening, `private` schema, profiles, technicians, permission matrix (values TEMPORARY, D51), account requests and audited creation intents (D34, two-phase creation), append-only audit with hash chain, helpers, account and matrix RPCs, census, `bootstrap_first_creator` (not run, D49). **Not applied** to the remote project (D52 rule 4) |
+| `supabase/rollback/` | Down scripts, one per migration (`<migration>.down.sql`); never applied by the CLI; each refuses to run once account, request or audit rows exist; tested in `tests/db/990_rollback.test.sql` (refused run and real run) |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
-| `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
+| `scripts/check-migrations.mjs` | Migration guard (D47, D49): parses SQL; statements that run (top level and DO blocks) may insert only approved reference data without test markers, and may not update, delete, merge, truncate, copy data in, create tables or materialized views from queries, or run dynamic SQL; every function body must be dollar-quoted, only the reviewed functions in `ALLOWED_WRITERS` may insert, and no migration may call a data-writing function or use `bootstrap_first_creator` other than in its definition, REVOKE and COMMENT |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
 | `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, migration guard, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
@@ -55,13 +57,13 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `docs/` | Decisions, demo deviations, spec, security, architecture, data-access architecture (`architecture-data-access.md`), database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
 | `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
-| `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16), fictitious data only |
+| `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16); `docs/review/step1-pr13/README.md` is the PR 1.3 database test report, fictitious data only |
 | `docs/user-guides/` | Hebrew user guides (D15): placeholders until features are tested |
 | `docs/history/` | Superseded context; not authoritative |
 | `prompts/` | Claude Code prompts (`STEP-0-PLAN.md`) |
 | `START-HERE.md` | Beginner guide for the owner |
 
-Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `lib/`, `supabase/migrations/`, and the feature logic folders (`features/calendar/ingestion` and its adapters, `features/exports`, `features/transcription`; `features/` holds only data-access ports, URL-state mappers and validators so far, including `features/customers/data` and `features/products/data`).
+Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office)/office/`, `app/api/`, `lib/`, and the feature logic folders (`features/calendar/ingestion` and its adapters, `features/exports`, `features/transcription`; `features/` holds only data-access ports, URL-state mappers and validators so far, including `features/customers/data` and `features/products/data`).
 
 ## 3. Status
 
@@ -74,7 +76,8 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
 | Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified read-only by Claude Code before each merge and after each Production deployment; owner checks periodic; D53) | Step 0 |
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
-| Database schema, RLS, grants, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), test-data marking (D47) | Planned | Step 1, PRs 1.3–1.6 |
+| Access and permissions: hardening, profiles, technicians, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), audit with hash chain, test-data marking and census (D47) | Prepared and tested locally; **not applied** (needs the owner's D50 settings and migration approval) | Step 1, PR 1.3 |
+| Remaining schema, RLS and grants (reference data, customers, products, calls, visits, integrity and offline) | Planned | Step 1, PRs 1.4–1.6 |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
 | Authentication and user administration | Planned | Step 2 |
 | Technician views | Planned | Step 3 |
