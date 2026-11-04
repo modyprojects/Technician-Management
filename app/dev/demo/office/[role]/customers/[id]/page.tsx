@@ -1,16 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CALL_STATUSES } from "@/components/ui/CallStatusPill";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { CustomerCard } from "@/components/office/CustomerCard";
+import { CALL_STATUS_ORDER } from "@/components/ui/CallStatusPill";
+import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { callsListHref } from "@/features/calls/data/search-params";
+import type { CallStatus } from "@/features/calls/data/types";
+import { PRODUCT_RETURN_WINDOW_DAYS } from "@/features/products/data/types";
+import type { OfficeRole } from "@/features/reference/data/types";
 import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
-import { dayLabel, ddmm } from "../../../../_data/dates";
+import { TODAY } from "../../../../_data/dates";
 import { officeCustomerParams } from "../../../../_data/params";
-import { customersOffered, isOfficeRole, officeHomeLabel } from "../../../../_data/roles";
+import { customersOffered, isOfficeRole, officeHomeLabel, productsOffered } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
-import { NoAccessPlaceholder, ScreenPlaceholder } from "../../_Placeholder";
+import { NoAccessPlaceholder } from "../../_Placeholder";
 
 // Every customer for every office role is built: a role without `calls` gets "אין הרשאה".
 export const dynamicParams = false;
@@ -20,16 +23,32 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[role]/customers/[id]">): Promise<Metadata> {
-  const { id } = await params;
+  const { role, id } = await params;
+  if (!isOfficeRole(role)) return {};
+  // A role without `calls` reads no customer data, not even for the page title.
+  const permissions = await demoDataAccess.reference.permissions(role);
+  if (!customersOffered(permissions)) return { title: "כרטיס לקוח · הדגמה" };
   const x = await demoDataAccess.customers.get(id);
   return { title: x ? `${x.name} · לקוח ${x.number} · הדגמה` : "כרטיס לקוח · הדגמה" };
 }
 
-// Customer card (spec office screens, OF-16; matrix key `calls`): the customer's details, every
-// call with its service-call status (D38) and visits, and the products that came back
-// (PRODUCT_RETURN_WINDOW_DAYS, temporary). 🧪 on test customers and products (SIM-16, SIM-17).
-// PHASE F SCAFFOLD: placeholder lists; the screen replaces them. Reads only through the layer:
-// customers.get and reference.permissions (display only, G-04).
+/**
+ * The return window's status line. TEMPORARY: the spec says only "within a short time"; the
+ * definition is the owner's (open decisions #15 / #20, board refs d23 / d31; the KPI definitions
+ * are d31). Shown as pending, never as a decided rule.
+ */
+const RETURN_WINDOW_NOTE = `חלון זמני · ${pendingDecisionHint("d31")}`;
+
+/** The calls list searched by the customer number (OF-05), every status or one. */
+const customerCallsHref = (role: OfficeRole, number: string, status: "all" | CallStatus): string =>
+  callsListHref(demoHref.calls(role), { q: number, status, tech: "all", page: 1 });
+
+// Customer card (spec office screens "Customers and customer card", OF-16; matrix key `calls`):
+// details from the latest invitation and the latest visit's address (D39), counters per
+// service-call status (D38) linked to the calls list, every call of the customer (bounded, newest
+// first) and the products that came back within PRODUCT_RETURN_WINDOW_DAYS (temporary). 🧪 on test
+// customers, calls and products (SIM-15 to SIM-17). An unknown id is a 404. Reads only through
+// the layer: customers.get and reference.permissions (display only, G-04).
 export default async function OfficeCustomerPage({ params }: PageProps<"/dev/demo/office/[role]/customers/[id]">) {
   const { role, id } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -49,65 +68,31 @@ export default async function OfficeCustomerPage({ params }: PageProps<"/dev/dem
   const x = await demoDataAccess.customers.get(id);
   if (!x) notFound();
 
+  // Call cards of the listed calls and of the returns (the earlier call may be outside the bounded list).
+  const reqs = new Set([
+    ...x.calls.items.map((c) => c.req),
+    ...x.products.items.flatMap((p) => p.returns.items.flatMap((r) => [r.req, r.previousReq])),
+  ]);
+  const callHrefs = Object.fromEntries([...reqs].map((req) => [req, demoHref.call(role, req)]));
+  const statusHrefs = Object.fromEntries(
+    (["all", ...CALL_STATUS_ORDER] as const).map((s) => [s, customerCallsHref(role, x.number, s)]),
+  ) as Record<"all" | CallStatus, string>;
+  // "מוצרים" only for roles it is offered to (matrix key `products`; display only).
+  const productHrefs = productsOffered(permissions)
+    ? Object.fromEntries(x.products.items.map((p) => [p.product.sku, demoHref.products(role, { q: p.product.sku })]))
+    : {};
+
   return (
     <DemoOfficeFrame role={role} active="customers">
-      <div>
-        <Link className="btn" href={demoHref.customers(role)} style={{ padding: "6px 12px" }}>
-          <span aria-hidden="true">› </span>
-          חזרה ללקוחות
-        </Link>
-      </div>
-      <div className="ptitle">
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <h1 style={{ fontSize: 26 }}>{x.name}</h1>
-            {x.isTest && <TestBadge />}
-          </div>
-          <div className="sub">
-            מספר לקוח <span className="num">{x.number}</span> ·{" "}
-            <span dir="ltr" className="num">
-              {x.phone}
-            </span>{" "}
-            · {x.latestAddress.street}, {x.latestAddress.city}
-          </div>
-        </div>
-      </div>
-      <div className="grid">
-        <ScreenPlaceholder
-          id="customer-calls"
-          heading="קריאות הלקוח"
-          note="המסך בבנייה (שלב F)"
-          total={x.calls.total}
-          rows={x.calls.items.map((c) => ({
-            key: c.req,
-            href: demoHref.call(role, c.req),
-            primary: `פנייה ${c.req} · ${c.product.name}`,
-            secondary: `${CALL_STATUSES[c.status].label} · ${c.visitCount} ביקורים · ביקור אחרון ${dayLabel(c.latestVisit.date)}`,
-            isTest: c.isTest,
-          }))}
-          footer={
-            x.calls.total > x.calls.items.length ? (
-              <Link className="lnk" href={callsListHref(demoHref.calls(role), { q: x.number, status: "all", tech: "all", page: 1 })}>
-                לכל הקריאות של הלקוח ›
-              </Link>
-            ) : undefined
-          }
-        />
-        <ScreenPlaceholder
-          id="customer-products"
-          heading="מוצרים"
-          note="חזר: קריאה חדשה על אותו מק״ט תוך זמן קצר"
-          total={x.products.total}
-          rows={x.products.items.map((p) => ({
-            key: p.product.sku,
-            primary: `${p.product.name} · ${p.product.sku}${p.cameBack ? " · חזר" : ""}`,
-            secondary: `${p.callCount} קריאות · ${ddmm(p.firstDate)}–${ddmm(p.lastDate)}${p.returns.items
-              .map((r) => ` · ${r.req} אחרי ${r.days} ימים`)
-              .join("")}`,
-            isTest: p.product.isTest,
-          }))}
-        />
-      </div>
+      <CustomerCard
+        customer={x}
+        today={TODAY}
+        backHref={demoHref.customers(role)}
+        callHrefs={callHrefs}
+        statusHrefs={statusHrefs}
+        productHrefs={productHrefs}
+        returnWindow={{ days: PRODUCT_RETURN_WINDOW_DAYS, note: RETURN_WINDOW_NOTE }}
+      />
     </DemoOfficeFrame>
   );
 }

@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ProductRules } from "@/components/office/ProductRules";
+import { ProductSearch } from "@/components/office/ProductSearch";
+import { ProductsTable, type ProductsTableRow } from "@/components/office/ProductsTable";
 import { Pager } from "@/components/ui/Pager";
+import { callsListHref } from "@/features/calls/data/search-params";
 import { parseProductsListState, productListQueryOf } from "@/features/products/data/search-params";
+import { offers } from "@/features/reference/data/permissions";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { SimulatedCommandsProvider } from "../../../_components/SimulatedCommands";
 import { demoDataAccess } from "../../../_data/adapter";
@@ -9,7 +14,7 @@ import { ddmm } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
 import { isOfficeRole, officeHomeLabel, productsOffered, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
-import { NoAccessPlaceholder, ScreenPlaceholder } from "../_Placeholder";
+import { NoAccessPlaceholder } from "../_Placeholder";
 import { productsState } from "../_simulatedState";
 
 // Every office role is built: a role without `products` gets "אין הרשאה" instead of a 404.
@@ -28,23 +33,55 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 /** The demo's 40-row page (OF-04). */
 const PAGE_SIZE = 40;
 
-/** PR-04, OF-07: an empty brand or supplier. */
-const NOT_ENTERED = "לא הוזן";
-
-// "מוצרים" (spec office screens, PR-06, D19; matrix key `products`): every product with its
-// normalized SKU (PR-07), name, brand and supplier ("לא הוזן" when empty), the invitation that
-// created it and 🧪 (SIM-17). Name, brand and supplier are edited through
-// useCommands().products.update (simulated); no import and no delete; invitations never overwrite
-// an existing name. PHASE F SCAFFOLD: the body is a placeholder list; the screen replaces it (the
-// simulated state for its edits is already nested). Reads only through the layer: products.list
-// (?q=&page=) and reference.permissions (display only, G-04).
+// "מוצרים" (spec office screens "Products", PR-06, D19; matrix key `products`): every product by
+// its normalized SKU (PR-07), with name, brand and supplier ("לא הוזן" when empty, PR-04, OF-07),
+// the number of calls, the invitation that created it and 🧪 (SIM-17). Search and paging run on
+// the server (?q=&page=, products.list). Name, brand and supplier are edited inline through
+// useCommands().products.update (simulated, D44 row version); no import and no delete; an
+// invitation never overwrites an existing name (the rules under the table). The edit is offered
+// with `products` (the Creator always, D33); a role without it gets "אין הרשאה" and no product data
+// is read (spec: the screen is defined by its edit capability; product facts stay on the call and
+// customer cards). Reads only through the layer: products.list, products.brands / suppliers and
+// reference.permissions (display only, G-04). The simulated state its edits are checked against
+// (versions, active options) is nested here only (productsState; deny by default elsewhere).
 export default async function OfficeProductsPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/products">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
   const permissions = await demoDataAccess.reference.permissions(role);
   const offered = productsOffered(permissions);
   const state = parseProductsListState(await searchParams);
-  const page = offered ? await demoDataAccess.products.list(productListQueryOf(state, PAGE_SIZE)) : null;
+
+  if (!offered) {
+    return (
+      <DemoOfficeFrame role={role} active="products">
+        <div className="ptitle">
+          <div>
+            <h1>מוצרים</h1>
+          </div>
+        </div>
+        <NoAccessPlaceholder
+          id="products-no-access"
+          text="לתפקיד הזה אין עריכת מוצרים. פרטי המוצר מופיעים בכרטיס הקריאה ובכרטיס הלקוח."
+          backHref={demoHref.officeHome(role)}
+          backLabel={officeHomeLabel(permissions)}
+        />
+      </DemoOfficeFrame>
+    );
+  }
+
+  const [page, brands, suppliers] = await Promise.all([
+    demoDataAccess.products.list(productListQueryOf(state, PAGE_SIZE)),
+    demoDataAccess.products.brands(),
+    demoDataAccess.products.suppliers(),
+  ]);
+  // Links into the calls list and call cards only where the role's screens offer them (`calls`).
+  const withCalls = offers(permissions, "calls");
+  const rows: ProductsTableRow[] = page.items.map((product) => ({
+    product,
+    firstSeenDate: product.firstSeen ? ddmm(product.firstSeen.date) : "",
+    firstSeenHref: withCalls && product.firstSeen ? demoHref.call(role, product.firstSeen.req) : null,
+    callsHref: withCalls ? callsListHref(demoHref.calls(role), { q: product.sku, status: "all", tech: "all", page: 1 }) : null,
+  }));
   const href = (p: number) => demoHref.products(role, { q: state.q, page: p });
 
   return (
@@ -52,43 +89,21 @@ export default async function OfficeProductsPage({ params, searchParams }: PageP
       <div className="ptitle">
         <div>
           <h1>מוצרים</h1>
-          {page && <div className="sub">מוצרים נוצרים מהזימונים לפי מק״ט · זימון לא משנה שם קיים</div>}
+          <div className="sub">מוצרים נוצרים מהזימונים לפי מק״ט · כאן עורכים שם, מותג וספק</div>
         </div>
       </div>
-      {page ? (
-        <SimulatedCommandsProvider state={await productsState(page.items)}>
-          <ScreenPlaceholder
-            id="products-list"
-            heading="כל המוצרים"
-            note="המסך בבנייה (שלב F)"
-            total={page.total}
-            rows={page.items.map((p) => ({
-              key: p.sku,
-              primary: `${p.name} · ${p.sku}`,
-              secondary: `${p.brand || NOT_ENTERED} · ${p.supplier || NOT_ENTERED} · ${p.callCount} קריאות${
-                p.firstSeen ? ` · נוצר מפנייה ${p.firstSeen.req} ב-${ddmm(p.firstSeen.date)}` : ""
-              }`,
-              isTest: p.isTest,
-            }))}
-            footer={
-              <Pager
-                page={page.page}
-                pageCount={page.pageCount}
-                prevHref={page.page > 1 ? href(page.page - 1) : null}
-                nextHref={page.page < page.pageCount ? href(page.page + 1) : null}
-                label="עמודי המוצרים"
-              />
-            }
-          />
-        </SimulatedCommandsProvider>
-      ) : (
-        <NoAccessPlaceholder
-          id="products-no-access"
-          text="לתפקיד הזה אין עריכת מוצרים. פרטי המוצר מופיעים בכרטיס הקריאה ובכרטיס הלקוח."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
-        />
-      )}
+      <ProductSearch action={demoHref.products(role)} query={state.q} clearHref={state.q ? demoHref.products(role) : null} />
+      <SimulatedCommandsProvider state={await productsState(page.items)}>
+        <ProductsTable rows={rows} total={page.total} query={state.q} canEdit={offered} brands={brands.items} suppliers={suppliers.items} />
+      </SimulatedCommandsProvider>
+      <Pager
+        page={page.page}
+        pageCount={page.pageCount}
+        prevHref={page.page > 1 ? href(page.page - 1) : null}
+        nextHref={page.page < page.pageCount ? href(page.page + 1) : null}
+        label="עמודי המוצרים"
+      />
+      <ProductRules />
     </DemoOfficeFrame>
   );
 }

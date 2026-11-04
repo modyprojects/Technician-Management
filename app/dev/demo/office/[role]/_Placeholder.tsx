@@ -1,6 +1,4 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { TestBadge } from "@/components/ui/TestBadge";
 
 // "אין הרשאה" state of the office Settings tabs and "ניהול משתמשים" for a role the screen is not
 // offered to (or a pointer to where the role finds it). Follows CalendarNoAccess /
@@ -48,66 +46,6 @@ export function NoAccessPlaceholder({
           )}
         </div>
       </div>
-    </section>
-  );
-}
-
-/** One row of a placeholder list: a link (or plain text), a secondary line and the 🧪 badge. */
-export type PlaceholderRow = { key: string; href?: string; primary: string; secondary: string; isTest: boolean };
-
-/**
- * Phase F scaffold: a screen whose body is not built yet. It already reads through the layer and
- * lists the first rows (links resolve), so routes, navigation and the data contract can be tested
- * before the screen itself replaces this card. Demo-only (app/dev).
- */
-export function ScreenPlaceholder({
-  id,
-  heading,
-  note,
-  rows,
-  total,
-  footer,
-}: {
-  id: string;
-  heading: string;
-  note: string;
-  rows: readonly PlaceholderRow[];
-  /** Every matching record (rows may be fewer). */
-  total: number;
-  footer?: ReactNode;
-}) {
-  return (
-    <section className="card" aria-labelledby={id} style={{ overflow: "hidden" }}>
-      <div className="sec" style={{ paddingBottom: 0 }}>
-        <h2 id={id}>{heading}</h2>
-        <p className="sub" style={{ margin: "4px 0 8px" }}>
-          {note} · מציג <span className="num">{rows.length}</span> מתוך <span className="num">{total}</span>
-        </p>
-      </div>
-      {rows.length === 0 && <div className="empty">אין רשומות</div>}
-      {rows.map((r) => {
-        const body = (
-          <>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <b style={{ fontSize: 14 }}>{r.primary}</b>
-              <span className="sub" style={{ display: "block" }}>
-                {r.secondary}
-              </span>
-            </span>
-            {r.isTest && <TestBadge />}
-          </>
-        );
-        return r.href ? (
-          <Link key={r.key} href={r.href} prefetch={false} className="li">
-            {body}
-          </Link>
-        ) : (
-          <div key={r.key} className="li">
-            {body}
-          </div>
-        );
-      })}
-      {footer && <div className="sec">{footer}</div>}
     </section>
   );
 }
