@@ -138,17 +138,17 @@ export function CustomersTable({
         {total ? (
           <div className="sub" style={{ padding: "10px 14px" }}>
             מציג <span className="num">{rows.length}</span> מתוך <span className="num">{total}</span>
-            {returnedNote && anyReturned && (
-              <span style={{ display: "block", marginTop: 4 }}>
-                <span aria-hidden="true">↩ </span>
-                ״מוצר חזר״: {returnedNote}
-              </span>
-            )}
           </div>
         ) : (
           <div className="empty">{query ? `לא נמצאו לקוחות עבור "${query}"` : "אין לקוחות"}</div>
         )}
       </div>
+      {returnedNote && anyReturned && (
+        <div className="sub" style={{ padding: "0 14px 10px" }}>
+          <span aria-hidden="true">↩ </span>
+          ״מוצר חזר״: {returnedNote}
+        </div>
+      )}
     </section>
   );
 }

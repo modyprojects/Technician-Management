@@ -1373,7 +1373,10 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
 
     await search.fill("אבי כהן");
     await page.getByRole("button", { name: "חיפוש", exact: true }).click();
-    await expect(page).toHaveURL(/[?&]q=/);
+    // Wait for this search, not the previous one (q=298747 already satisfied a bare /[?&]q=/ and
+    // a total below `before`, so the rows could still be the previous result).
+    await expect(page).toHaveURL((url) => url.searchParams.get("q") === "אבי כהן");
+    await expect(rowsOf(page).first().getByRole("link")).toHaveAttribute("aria-label", /אבי כהן/);
     await expect.poll(totalOf).toBeLessThan(before);
     const names = await rowsOf(page).getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
     expect(names.length).toBeGreaterThan(0);
@@ -1517,7 +1520,8 @@ test.describe("products (PR-04 to PR-07, D19)", () => {
     const brand = form.getByRole("combobox", { name: /^מותג/ });
     const inactive = brand.locator("option", { hasText: "הידרו-פלוס (לא פעיל)" });
     await expect(inactive).toHaveCount(1);
-    await expect(inactive).toBeDisabled();
+    // A disabled <option> (toBeDisabled reads the select's state, not the option's).
+    await expect(inactive).toHaveJSProperty("disabled", true);
     await expect(brand).toHaveValue((await inactive.getAttribute("value")) ?? "");
     // No other inactive option is offered.
     await expect(brand.locator("option", { hasText: "(לא פעיל)" })).toHaveCount(1);
