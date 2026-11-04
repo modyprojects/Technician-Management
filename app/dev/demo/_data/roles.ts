@@ -7,6 +7,7 @@
 // Real enforcement is on the server and in the database (G-04).
 import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
+import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
 import {
   isOfficeRole,
@@ -67,6 +68,9 @@ export type OfficeNavKey =
  * pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION). Display only (G-04).
  */
 export const WORK_QUEUE_SCREENS_DECISION = "d23";
+
+/** The visible line both work-queue screens show while #15 is open (CLAUDE.md: clearly labelled temporary behaviour). */
+export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה (החלטה פתוחה #15): בינתיים שירות לקוחות, מנהל ויוצר · ${pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION)}`;
 
 /** Whether the role's screens offer "זימונים שלא נקלטו" and "חזרו מהשטח" (the temporary rule above). */
 export const workQueueScreensOffered = (role: OfficeRole): boolean => OFFICE_ROLES.includes(role);

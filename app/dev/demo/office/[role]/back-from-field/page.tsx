@@ -5,14 +5,13 @@ import { BackFromFieldList, BackFromFieldTechFilter, LATE_AFTER_DAYS, type BackF
 import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { KpiGrid, type KpiTile } from "@/components/office/KpiGrid";
 import { Pager } from "@/components/ui/Pager";
-import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { ALL, parseBackFromFieldState, type BackFromFieldState } from "@/features/calls/data/search-params";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { TODAY } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, VIEWPOINTS, WORK_QUEUE_SCREENS_DECISION, workQueueScreensOffered } from "../../../_data/roles";
+import { isOfficeRole, officeHomeLabel, VIEWPOINTS, WORK_QUEUE_ACCESS_HINT, workQueueScreensOffered } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 
@@ -31,13 +30,6 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 /** The demo's 40-row page (OF-04). */
 const PAGE_SIZE = 40;
 
-/**
- * Who sees the screen is open decision #15 (board ref d23): TEMPORARY fixed rule for every office
- * role (roles.ts workQueueScreensOffered), labelled as pending (CLAUDE.md: reversible, clearly
- * labelled behaviour). Same line on "זימונים שלא נקלטו".
- */
-const ACCESS_HINT = `הרשאת צפייה (החלטה פתוחה #15): בינתיים שירות לקוחות, מנהל ויוצר · ${pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION)}`;
-
 // "חזרו מהשטח" (spec office screens, OF-16): visits closed as "המשך טיפול" whose call has no next
 // visit (D38 "followup"), oldest first, with reason, technician, date, customer, city, product and
 // summary excerpt; each links to the call card. The row action is a NEW Outlook invitation: until
@@ -45,7 +37,8 @@ const ACCESS_HINT = `הרשאת צפייה (החלטה פתוחה #15): בינת
 // never a fake Outlook link (OF-08 pattern). Reads only through the layer: calls.backFromField
 // with the URL state (?tech=&page=, 40 per page, OF-04). The counters are server queries too:
 // the filtered total, the oldest wait (the first row of page 1, oldest first) and, with a
-// technician filter, the total of every technician (limit 1 each).
+// technician filter, the total of every technician (limit 1 each). Who sees it is open decision
+// #15 (d23): a TEMPORARY fixed rule, labelled on the screen (roles.ts workQueueScreensOffered).
 export default async function OfficeBackFromFieldPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/back-from-field">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -60,7 +53,7 @@ export default async function OfficeBackFromFieldPage({ params, searchParams }: 
           <div className="sub">ביקורים שנסגרו ב&quot;המשך טיפול&quot; ועדיין אין להם ביקור חדש. ביקור חדש נקבע בזימון חדש מ-Outlook.</div>
           <div className="sub">
             <span aria-hidden="true">⏳ </span>
-            {ACCESS_HINT}
+            {WORK_QUEUE_ACCESS_HINT}
           </div>
         </div>
       </div>

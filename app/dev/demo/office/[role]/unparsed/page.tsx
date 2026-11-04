@@ -4,13 +4,12 @@ import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { KpiGrid } from "@/components/office/KpiGrid";
 import { UnparsedInvitationsList } from "@/components/office/UnparsedInvitationsList";
 import { Pager } from "@/components/ui/Pager";
-import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { clampPage } from "@/features/data-access/common";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { notificationTimeLabel } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, VIEWPOINTS, WORK_QUEUE_SCREENS_DECISION, workQueueScreensOffered } from "../../../_data/roles";
+import { isOfficeRole, officeHomeLabel, VIEWPOINTS, WORK_QUEUE_ACCESS_HINT, workQueueScreensOffered } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 
@@ -26,13 +25,6 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
   return { title: `זימונים שלא נקלטו · ${VIEWPOINTS[role].label} · הדגמה` };
 }
 
-/**
- * Who sees the screen is open decision #15 (board ref d23): TEMPORARY fixed rule for every office
- * role (roles.ts workQueueScreensOffered), labelled as pending (CLAUDE.md: reversible, clearly
- * labelled behaviour). Same line on "חזרו מהשטח".
- */
-const ACCESS_HINT = `הרשאת צפייה (החלטה פתוחה #15): בינתיים שירות לקוחות, מנהל ויוצר · ${pendingDecisionHint(WORK_QUEUE_SCREENS_DECISION)}`;
-
 /** Demo-only line under the explanation: Microsoft 365 is not connected, every invitation is simulated (D23, D24, SIM-14). */
 const DEMO_SOURCE_NOTE = "בהדגמה כל הזימונים מגיעים מסימולטור הזימונים (🧪 זימון בדיקה): Microsoft 365 עדיין לא מחובר (D23).";
 
@@ -40,7 +32,8 @@ const DEMO_SOURCE_NOTE = "בהדגמה כל הזימונים מגיעים מסי
 // service could not ingest, with the missing or invalid field; an unknown SKU is never a reason
 // (IN-02, D19). Intake is event-driven (D08). The email to the rep is pending d09 (never shown as
 // sent). Reads only through the layer: intake.unparsedInvitations (?page=, 40 per page, OF-04).
-// No actions: the invitation is fixed in Outlook.
+// No actions: the invitation is fixed in Outlook. Who sees it is open decision #15 (d23): a
+// TEMPORARY fixed rule, labelled on the screen (roles.ts workQueueScreensOffered, WORK_QUEUE_ACCESS_HINT).
 export default async function OfficeUnparsedPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/unparsed">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -61,7 +54,7 @@ export default async function OfficeUnparsedPage({ params, searchParams }: PageP
           <div className="sub">זימונים שמערכת הקליטה לא קלטה, עם השדה החסר או השגוי. התיקון נעשה בזימון עצמו.</div>
           <div className="sub">
             <span aria-hidden="true">⏳ </span>
-            {ACCESS_HINT}
+            {WORK_QUEUE_ACCESS_HINT}
           </div>
         </div>
       </div>

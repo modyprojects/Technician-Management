@@ -9,11 +9,23 @@ import {
   pendingRequestError,
   testAccountEmailError,
 } from "@/features/accounts/data/validate";
+import { backFromFieldHref, parseBackFromFieldState } from "@/features/calls/data/search-params";
 import { normalizeBackFromFieldQuery } from "@/features/calls/data/validate";
+import { customersListHref, parseCustomersListState } from "@/features/customers/data/search-params";
 import { isCustomerId, normalizeCustomerListQuery } from "@/features/customers/data/validate";
 import { filterListValues } from "@/features/data-access/common";
+import { parseProductsListState, productsListHref } from "@/features/products/data/search-params";
 import { isNormalizedSku, normalizeSku } from "@/features/products/data/types";
-import { productOptionError, productUpdateError, productVersionError } from "@/features/products/data/validate";
+import {
+  isProductOptionId,
+  normalizeProductListQuery,
+  PRODUCT_NAME_MAX,
+  productNameError,
+  productOptionError,
+  productUpdateError,
+  productVersionError,
+  skuError,
+} from "@/features/products/data/validate";
 import { reasonDeletable } from "@/features/settings/data/types";
 import {
   placeDeleteError,
@@ -192,5 +204,68 @@ test.describe("phase F validators (PR-06, PR-07, OF-16)", () => {
     expect(normalizeCustomerListQuery({ q: "x".repeat(300), page: -3, limit: 1000 })).toEqual({ q: "x".repeat(100), page: 1, limit: 100 });
     expect(() => normalizeBackFromFieldQuery({ asOf: "2026-02-31" })).toThrow(RangeError);
     expect(normalizeBackFromFieldQuery({ asOf: "2026-10-21", technicianId: "<b>" }).technicianId).toBeUndefined();
+  });
+});
+
+test.describe("phase F negative cases (inputs a screen never sends)", () => {
+  onlyInProject("desktop");
+
+  test("product edit: names, SKUs and option ids outside the rules are rejected, with no decision code", () => {
+    const base = { sku: "KT-2041", expectedVersion: 3 };
+    const errors = [
+      productNameError(""),
+      productNameError(42),
+      productNameError("x".repeat(PRODUCT_NAME_MAX + 1)),
+      skuError(" KT-2041 "),
+      skuError(null),
+      productUpdateError({ ...base, name: "x".repeat(PRODUCT_NAME_MAX + 1) }),
+      productUpdateError({ ...base, expectedVersion: 1.5, name: "ברז" }),
+      productUpdateError({ ...base, expectedVersion: -1, brandId: null }),
+      productUpdateError({ ...base, supplierId: "<script>" }),
+      productUpdateError({ ...base, brandId: "a".repeat(65) }),
+      productUpdateError({ ...base, sku: "", name: "ברז" }),
+    ];
+    for (const e of errors) {
+      expect(e).not.toBeNull();
+      expect(e ?? "").not.toMatch(NO_DECISION_CODE);
+    }
+    expect(productNameError(`  ${"x".repeat(PRODUCT_NAME_MAX)}  `)).toBeNull();
+    expect(productUpdateError({ ...base, supplierId: null, brandId: "br-aqua" })).toBeNull();
+    expect(isProductOptionId("br-aqua")).toBe(true);
+    expect(isProductOptionId("00000000-0000-4000-8000-000000000000")).toBe(true);
+    for (const bad of ["", "../x", "a b", "x".repeat(65), 7, null]) expect(isProductOptionId(bad), String(bad)).toBe(false);
+  });
+
+  test("list queries and URL state: oversized, malformed or unknown values fall back to safe defaults", () => {
+    expect(normalizeProductListQuery({ q: "y".repeat(500), page: Number.NaN, limit: -5 })).toEqual({ q: "y".repeat(100), page: 1, limit: 1 });
+    expect(normalizeProductListQuery(undefined)).toEqual({ q: "", page: 1, limit: 40 });
+    expect(normalizeCustomerListQuery(undefined)).toEqual({ q: "", page: 1, limit: 40 });
+
+    for (const parse of [parseCustomersListState, parseProductsListState]) {
+      expect(parse({ q: ["a", "b"], page: "-2" })).toEqual({ q: "a", page: 1 });
+      expect(parse(new URLSearchParams("q=%20%20&page=abc"))).toEqual({ q: "", page: 1 });
+      expect(parse({ q: "z".repeat(300), page: "3" })).toEqual({ q: "z".repeat(100), page: 3 });
+    }
+    expect(customersListHref("/c", { q: "  ", page: 1 })).toBe("/c");
+    expect(customersListHref("/c", { q: "לוי", page: 2 })).toBe(`/c?q=${encodeURIComponent("לוי")}&page=2`);
+    expect(productsListHref("/p", { q: "kt-2041", page: 0 })).toBe("/p?q=kt-2041");
+
+    expect(parseBackFromFieldState({ tech: "<b>", page: "0" })).toEqual({ tech: "all", page: 1 });
+    expect(parseBackFromFieldState(new URLSearchParams("tech=e&page=2"))).toEqual({ tech: "e", page: 2 });
+    expect(backFromFieldHref("/b", { tech: "../x", page: 1.5 })).toBe("/b");
+    expect(backFromFieldHref("/b", { tech: "e", page: 2 })).toBe("/b?tech=e&page=2");
+  });
+
+  test("customer ids: never a bare path or an oversized key; the back-from-field query clamps paging", () => {
+    for (const bad of ["cu-1/../2", "a".repeat(65), " cu-1", null, 298747]) expect(isCustomerId(bad), String(bad)).toBe(false);
+    expect(isCustomerId("00000000-0000-4000-8000-000000000000")).toBe(true);
+    expect(() => normalizeBackFromFieldQuery({ asOf: "21.10.2026" })).toThrow(RangeError);
+    expect(() => normalizeBackFromFieldQuery(undefined as never)).toThrow(RangeError);
+    expect(normalizeBackFromFieldQuery({ asOf: "2026-10-21", page: 0, limit: 1000 })).toEqual({
+      asOf: "2026-10-21",
+      technicianId: undefined,
+      page: 1,
+      limit: 100,
+    });
   });
 });

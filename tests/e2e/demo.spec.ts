@@ -1248,3 +1248,360 @@ test.describe("what the browser receives (P1, P9)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Phase F (OF-02, OF-16): "לקוחות" and the customer card, "מוצרים", "זימונים שלא נקלטו" and
+// "חזרו מהשטח". Display-only access (G-04); every action simulated.
+
+/** Views of the phase F screens behind query strings (search, paging, filters). */
+const PHASE_F_VIEWS = [
+  "/dev/demo/office/mgr/customers?q=298747",
+  "/dev/demo/office/cs/customers?page=2",
+  "/dev/demo/office/mgr/back-from-field?tech=e",
+  "/dev/demo/office/creator/products?q=kt-2041",
+] as const;
+
+/** The temporary access line of the two work-queue screens (open decision #15, board ref d23). */
+const WORK_QUEUE_HINT = /החלטה פתוחה #15.*ממתין להחלטת בעלים \(d23\)/;
+
+test.describe("phase F views render", () => {
+  for (const path of PHASE_F_VIEWS) {
+    test(`${path}: sentinel, test-data strip, no overflow, no console errors`, async ({ page }) => {
+      const errors = collectErrors(page);
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(200);
+      await openPage(page, path);
+      await expect(page.locator(`[data-fixtures="${FIXTURE_SENTINEL}"]`).first()).toBeAttached();
+      await expect(page.getByRole("note", { name: "הדגמה עם נתוני בדיקה" })).toBeVisible();
+      expect(await horizontalOverflow(page)).toEqual([]);
+      await page.waitForLoadState("networkidle");
+      expect(errors).toEqual([]);
+    });
+  }
+
+  test("an unknown customer is a 404 for every office role", async ({ request }) => {
+    for (const path of [
+      "/dev/demo/office/mgr/customers/cu-000000",
+      "/dev/demo/office/cs/customers/cu-000000",
+      "/dev/demo/office/creator/customers/nope",
+      "/dev/demo/office/xx/customers",
+      "/dev/demo/office/xx/products",
+    ]) {
+      const res = await request.get(path);
+      expect(res.status(), path).toBe(404);
+      expect(await res.text(), path).not.toContain(FIXTURE_SENTINEL);
+    }
+  });
+});
+
+test.describe("office navigation per role (phase F, OF-02)", () => {
+  const NEW_ITEMS = [
+    ["לקוחות", "customers"],
+    ["זימונים שלא נקלטו", "unparsed"],
+    ["חזרו מהשטח", "back-from-field"],
+  ] as const;
+
+  test("customer service, Manager and Creator: customers and both work-queue screens; products only with `products`", async ({ page }) => {
+    for (const role of ["cs", "mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}`);
+      const nav = sideNav(page);
+      for (const [label, path] of NEW_ITEMS) {
+        await expect(nav.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveAttribute(
+          "href",
+          `/dev/demo/office/${role}/${path}`,
+        );
+      }
+      const products = nav.getByRole("link", { name: "מוצרים", exact: true });
+      if (role === "cs") await expect(products).toHaveCount(0);
+      else await expect(products).toHaveAttribute("href", `/dev/demo/office/${role}/products`);
+      // Order: after "קריאות" come the three new screens; "מוצרים" follows "דשבורד".
+      const labels = await nav.getByRole("link").allInnerTexts();
+      const at = (l: string) => labels.findIndex((x) => x.trim() === l);
+      expect(at("קריאות"), role).toBeGreaterThan(-1);
+      expect(at("לקוחות"), role).toBe(at("קריאות") + 1);
+      expect(at("זימונים שלא נקלטו"), role).toBe(at("לקוחות") + 1);
+      expect(at("חזרו מהשטח"), role).toBe(at("זימונים שלא נקלטו") + 1);
+      if (role !== "cs") expect(at("מוצרים"), role).toBe(at("דשבורד") + 1);
+    }
+  });
+
+  test("each new screen marks its own sidebar item as the current page", async ({ page }) => {
+    for (const [label, path] of [...NEW_ITEMS, ["מוצרים", "products"] as const]) {
+      await openPage(page, `/dev/demo/office/mgr/${path}`);
+      await expect(sideNav(page).getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
+    }
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+    await expect(sideNav(page).getByRole("link", { name: "לקוחות", exact: true })).toHaveAttribute("aria-current", "page");
+  });
+
+  test("office homes link to \"חזרו מהשטח\" from the follow-up work queue", async ({ page }) => {
+    for (const role of ["mgr", "cs"] as const) {
+      await openPage(page, `/dev/demo/office/${role}`);
+      const link = page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true });
+      await expect(link, role).toHaveAttribute("href", `/dev/demo/office/${role}/back-from-field`);
+    }
+    await page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/cs\/back-from-field$/);
+    await expect(page.getByRole("heading", { level: 1, name: "חזרו מהשטח" })).toBeVisible();
+  });
+});
+
+test.describe("customers and the customer card (OF-05, OF-16)", () => {
+  const rowsOf = (page: Page) => page.getByRole("table", { name: "לקוחות" }).locator("tbody tr");
+
+  test("search by customer number and by name changes the URL and filters the rows; clear returns to every customer", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers");
+    const search = page.getByRole("searchbox", { name: "חיפוש לקוח" });
+    const shown = page.locator("main").locator("text=/^מציג \\d+ מתוך \\d+$/");
+    const totalOf = async () => Number((await shown.innerText()).match(/מתוך (\d+)/)?.[1]);
+    const before = await totalOf();
+    expect(before).toBeGreaterThan(40);
+    await expect(page.getByRole("navigation", { name: "עמודי הלקוחות" })).toBeVisible();
+
+    await search.fill("298747");
+    await search.press("Enter");
+    await expect(page).toHaveURL(/[?&]q=298747(&|$)/);
+    await expect(rowsOf(page)).toHaveCount(1);
+    await expect(rowsOf(page).first().getByRole("link", { name: "משפחת לוי · לקוח 298747" })).toBeVisible();
+    await expect(rowsOf(page).first().getByText("נתוני בדיקה")).toBeAttached();
+
+    await search.fill("אבי כהן");
+    await page.getByRole("button", { name: "חיפוש", exact: true }).click();
+    await expect(page).toHaveURL(/[?&]q=/);
+    await expect.poll(totalOf).toBeLessThan(before);
+    const names = await rowsOf(page).getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) expect(n).toContain("אבי כהן");
+
+    await page.getByRole("link", { name: "ניקוי החיפוש" }).click();
+    await expect(page).toHaveURL(/\/customers$/);
+    await expect.poll(totalOf).toBe(before);
+  });
+
+  test("a search with no match says so; paging changes the URL", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/customers?q=zzzz");
+    await expect(page.getByText('לא נמצאו לקוחות עבור "zzzz"')).toBeVisible();
+    await openPage(page, "/dev/demo/office/cs/customers");
+    await page.getByRole("navigation", { name: "עמודי הלקוחות" }).getByRole("link", { name: "הבא ‹" }).click();
+    await expect(page).toHaveURL(/[?&]page=2/);
+    await expect(page.getByRole("navigation", { name: "עמודי הלקוחות" })).toContainText("עמוד 2 מתוך");
+  });
+
+  test("the card lists the customer's calls with 🧪, the returned product and links to the call card", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers");
+    await page.getByRole("link", { name: "משפחת לוי · לקוח 298747" }).click();
+    await expect(page).toHaveURL(/\/customers\/cu-298747$/);
+    await expect(page.getByRole("heading", { level: 1, name: "משפחת לוי" })).toBeVisible();
+    await expect(page.locator(".ptitle")).toContainText("מספר לקוח 298747");
+    await expect(page.getByRole("region", { name: "קריאות הלקוח לפי סטטוס" })).toBeVisible();
+    const calls = page.getByRole("table", { name: /קריאות הלקוח/ });
+    await expect(calls.locator("tbody tr")).toHaveCount(3);
+    await expect(calls.locator("tbody tr").first().getByText("נתוני בדיקה").first()).toBeAttached();
+    const products = page.getByRole("region", { name: /מוצרים של הלקוח/ });
+    await expect(products).toContainText("חזר תוך זמן קצר");
+    await expect(products).toContainText("ממתין להחלטת בעלים");
+    await expect(products.getByRole("link", { name: "ברז מטבח נשלף במסך מוצרים" })).toHaveAttribute(
+      "href",
+      "/dev/demo/office/mgr/products?q=KT-2041",
+    );
+    await calls.getByRole("link", { name: "פנייה 48213" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calls\/48213$/);
+  });
+
+  test("customer service sees the card without the products link; a status counter opens the calls list by customer number", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/customers/cu-298747");
+    await expect(page.getByRole("link", { name: /במסך מוצרים/ })).toHaveCount(0);
+    await page.getByRole("region", { name: "קריאות הלקוח לפי סטטוס" }).getByRole("link").first().click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/cs\/calls\?q=298747/);
+  });
+
+  test("the call card's customer link opens the customer card", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls/48213");
+    await page.getByRole("link", { name: "לכרטיס הלקוח · משפחת לוי" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/customers\/cu-298747$/);
+    await expect(page.getByRole("heading", { level: 1, name: "משפחת לוי" })).toBeVisible();
+    await page.getByRole("link", { name: "חזרה ללקוחות", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/customers$/);
+  });
+});
+
+test.describe("products (PR-04 to PR-07, D19)", () => {
+  const productRow = (page: Page, sku: string) =>
+    page.getByRole("table", { name: "מוצרים" }).locator("tbody tr").filter({ has: page.getByText(sku, { exact: true }) });
+
+  test("Manager and Creator are offered the edit; customer service gets \"אין הרשאה\" and no product data", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/products`);
+      await expect(page.getByRole("button", { name: /^עריכה · / }).first(), role).toBeVisible();
+      await expect(productRow(page, "KT-2041")).toContainText("ברז מטבח נשלף");
+    }
+    await openPage(page, "/dev/demo/office/cs/products");
+    await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
+    await expect(page.getByRole("table")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /עריכה/ })).toHaveCount(0);
+    expect(await page.locator("main").innerText()).not.toContain("KT-2041");
+  });
+
+  test("an empty brand or supplier shows \"לא הוזן\"; 🧪 on test products; no import and no delete", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    const mx = productRow(page, "MX-410");
+    await expect(mx).toContainText("לא הוזן");
+    // Brand and supplier columns above 520 px, the line under the name below it: visible either way.
+    await expect(mx.getByText("לא הוזן").filter({ visible: true })).toHaveCount(2);
+    await expect(productRow(page, "TB-75").getByText("לא הוזן").filter({ visible: true })).toHaveCount(1);
+    await expect(mx.getByText("נתוני בדיקה")).toBeAttached();
+    await expect(page.getByRole("button", { name: /ייבוא|מחיקה|מחק/ })).toHaveCount(0);
+    await expect(page.locator("main")).toContainText("אין ייבוא מוצרים ואין מחיקה");
+    await expect(page.locator("main")).toContainText("לא משנה את השם הקיים");
+  });
+
+  test("search by SKU is case-insensitive and in the URL", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    const search = page.getByRole("searchbox");
+    await search.fill("kt-2041");
+    await search.press("Enter");
+    await expect(page).toHaveURL(/[?&]q=kt-2041/);
+    await expect(page.getByRole("table", { name: "מוצרים" }).locator("tbody tr")).toHaveCount(1);
+    await expect(productRow(page, "KT-2041")).toBeVisible();
+  });
+
+  test("edit: an empty name is blocked inline; a change is simulated (toast) and the row is marked not saved", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    await page.getByRole("button", { name: "עריכה · ברז מטבח נשלף (KT-2041)" }).click();
+    const form = page.getByRole("form", { name: "עריכת המוצר KT-2041" });
+    const name = form.getByRole("textbox", { name: "שם מוצר" });
+    await expect(name).toBeFocused();
+    await expect(form).toContainText("לא נערך");
+    await expect(form.getByRole("textbox")).toHaveCount(1);
+
+    await name.fill("   ");
+    await form.getByRole("button", { name: "שמירה" }).click();
+    await expect(form.getByRole("alert")).toHaveText("חסר שם מוצר");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(name).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+
+    await name.fill("ברז מטבח נשלף · דגם 2");
+    await form.getByRole("combobox", { name: /^ספק/ }).selectOption({ label: "לא הוזן" });
+    await form.getByRole("button", { name: "שמירה" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(form).toHaveCount(0);
+    const row = productRow(page, "KT-2041");
+    await expect(row).toContainText("ברז מטבח נשלף · דגם 2");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.locator("main")).toContainText("בהדגמה: פרטי המוצר KT-2041 היו מתעדכנים. לא נשמר.");
+    await expect(page.getByRole("button", { name: "עריכה · ברז מטבח נשלף · דגם 2 (KT-2041)" })).toBeFocused();
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("edit: Escape closes the form and returns focus to its \"עריכה\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/products");
+    const edit = page.getByRole("button", { name: "עריכה · כיור אמבטיה + סיפון (BS-220)" });
+    await edit.click();
+    const form = page.getByRole("form", { name: "עריכת המוצר BS-220" });
+    await expect(form).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await expect(toast(page)).toHaveCount(0);
+  });
+});
+
+test.describe("unparsed invitations (IN-01 to IN-04, OF-16)", () => {
+  test("every problem kind with its label; the rep mail pending d09, never sent; the #15 hint; simulator source", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/unparsed");
+    const main = page.locator("main");
+    await expect(page.getByRole("heading", { level: 1, name: "זימונים שלא נקלטו" })).toBeVisible();
+    await expect(main).toContainText(WORK_QUEUE_HINT);
+    const list = page.getByRole("list", { name: "זימונים שלא נקלטו" });
+    const items = list.locator(":scope > li");
+    await expect(items).toHaveCount(7);
+    for (const kind of ["חסר שדה חובה", "מקום איסוף לא מוכר", "ערך לא תקין"]) {
+      await expect(list.getByText(kind, { exact: true }).first(), kind).toBeVisible();
+    }
+    await expect(list).toContainText("מחסן חולון");
+    await expect(list).toContainText("לא ברשימת מקומות האיסוף בהגדרות");
+    await expect(list).toContainText("צריך להיות:");
+    // An unknown SKU is never a reason (IN-02, D19).
+    await expect(main).toContainText("מק״ט שלא מופיע ברשימת המוצרים אינו סיבה");
+    // Every row: the rep mail is not sent, pending d09 (IN-04).
+    await expect(list.getByText("מייל לנציגה: לא נשלח · ממתין להחלטת בעלים (d09)")).toHaveCount(7);
+    // No line about an email says it was or will be sent ("נשלח" elsewhere is the corrected invitation).
+    const mailLines = (await main.innerText()).split("\n").filter((l) => l.includes("מייל"));
+    expect(mailLines.length).toBeGreaterThanOrEqual(7);
+    for (const l of mailLines) expect(l).not.toMatch(/(?<!לא )(נשלח|יישלח|נשלחים)/);
+    // Source of every invitation: the simulator (SIM-14); event-driven intake, no polling (D08).
+    await expect(list.getByText("🧪 זימון בדיקה")).toHaveCount(7);
+    await expect(main).toContainText("בלי בדיקה תקופתית");
+    // No actions on this screen.
+    await expect(main.getByRole("button")).toHaveCount(0);
+  });
+
+  test("the screen is the same for the Manager and the Creator (temporary rule, #15)", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/unparsed`);
+      await expect(page.locator("main"), role).toContainText(WORK_QUEUE_HINT);
+      await expect(page.getByRole("list", { name: "זימונים שלא נקלטו" }).locator(":scope > li"), role).toHaveCount(7);
+    }
+  });
+});
+
+test.describe("back from field (OF-16, D23, D38)", () => {
+  const items = (page: Page) => page.getByRole("list", { name: "ביקורים שחזרו מהשטח" }).locator(":scope > li");
+
+  test("the technician filter changes the URL, marks the chip and keeps only that technician's calls", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/back-from-field");
+    await expect(page.locator("main")).toContainText(WORK_QUEUE_HINT);
+    const all = await items(page).count();
+    expect(all).toBeGreaterThan(1);
+    const chips = page.getByRole("group", { name: "טכנאי:" });
+    await expect(chips.getByRole("link", { name: "כל הטכנאים" })).toHaveAttribute("aria-current", "true");
+    await chips.getByRole("link", { name: "אדי" }).click();
+    await expect(page).toHaveURL(/[?&]tech=e(&|$)/);
+    await expect(chips.getByRole("link", { name: "אדי" })).toHaveAttribute("aria-current", "true");
+    await expect(chips.getByRole("link", { name: "כל הטכנאים" })).not.toHaveAttribute("aria-current", "true");
+    await expect.poll(() => items(page).count()).toBeLessThan(all);
+    const metas = await items(page).locator(".ib-meta").allInnerTexts();
+    expect(metas.length).toBeGreaterThan(0);
+    for (const m of metas) {
+      expect(m).toContain("אדי");
+      expect(m).not.toMatch(/יורם|שמואל/);
+    }
+    await expect(page.locator("main")).toContainText(/מתוך \d+ בכל הטכנאים/);
+    await chips.getByRole("link", { name: "כל הטכנאים" }).click();
+    await expect(page).toHaveURL(/\/back-from-field$/);
+  });
+
+  test("each row: reason, technician, summary, a call-card link and a disabled Outlook action with the D23 hint", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/back-from-field");
+    const first = items(page).first();
+    await expect(first.locator(".ib-reason")).toContainText("סיבת המשך טיפול");
+    await expect(first).toContainText("סיכום הביקור:");
+    await expect(first).toContainText(/ממתינה \d+ ימים/);
+    const outlook = first.getByRole("button", { name: /^זימון ביקור חדש ב-Outlook/ });
+    await expect(outlook).toBeDisabled();
+    const hintId = await outlook.getAttribute("aria-describedby");
+    expect(hintId).toBeTruthy();
+    await expect(page.locator(`[id="${hintId}"]`)).toContainText("יהיה זמין אחרי חיבור Microsoft 365 (D23)");
+    await expect(page.locator(`[id="${hintId}"]`)).toBeVisible();
+    // Never a fake Outlook link (OF-08 pattern).
+    await expect(page.locator("main").getByRole("link", { name: /Outlook/ })).toHaveCount(0);
+    await expect(page.locator('main a[href*="outlook" i]')).toHaveCount(0);
+    // Every row's Outlook action is disabled.
+    const n = await items(page).count();
+    await expect(page.locator("main").getByRole("button", { name: /^זימון ביקור חדש ב-Outlook/, disabled: true })).toHaveCount(n);
+
+    const card = first.getByRole("link", { name: /^לכרטיס הקריאה \d+/ });
+    const req = ((await card.getAttribute("aria-label")) ?? "").match(/\d+/)?.[0];
+    await card.click();
+    await expect(page).toHaveURL(new RegExp(`/dev/demo/office/cs/calls/${req}$`));
+  });
+
+  test("the oldest wait counter matches the first row (oldest first)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/back-from-field");
+    await expect(page.locator("main")).toContainText(WORK_QUEUE_HINT);
+    const days = Number((await items(page).first().locator(".ib-wait").innerText()).match(/\d+/)?.[0]);
+    await expect(page.getByRole("region", { name: "מוני חזרו מהשטח" })).toContainText(String(days));
+  });
+});
