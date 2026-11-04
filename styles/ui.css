@@ -148,6 +148,10 @@ a.stat { text-decoration: none; }
 .ev { position: absolute; right: 5px; left: 5px; border-radius: 8px; padding: 5px 8px; font-size: 12px; line-height: 1.3; overflow: hidden; text-align: right; border: 0; border-right: 4px solid; }
 .ev b { font-size: 13px; display: block; }
 .ev:hover { filter: brightness(.97); box-shadow: 0 2px 6px rgba(0, 0, 0, .12); }
+/* .ev blocks that are links (calendars, UI demo D53): the demo's blocks are buttons, which centre
+   their content vertically; the .ev-body wrapper keeps the inline flow and is centred the same way. */
+a.ev { display: flex; align-items: center; text-decoration: none; }
+a.ev > .ev-body { min-width: 0; }
 /* Visit drawer (L159-164) and key-value list (L165-166). */
 .drawer-bg { position: fixed; inset: 0; background: var(--scrim); z-index: 60; display: flex; justify-content: flex-end; }
 .drawer { width: min(440px, 100%); height: 100%; background: var(--card); display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0, 0, 0, .25); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -310,3 +314,66 @@ a.ma-stat:hover { border-color: var(--line); }
   .tabs a.ma-tab { padding: 8px 10px; font-size: 14px; }
 }
 /* end manager-analytics */
+
+/* office-calendar */
+/* Office "יומן טכנאים" (UI demo, D53; demo offCal() L752-802, drawerHtml() L803-815). The demo's
+   buttons are real links here (views, previous / today / next, chips, visit blocks, week-day
+   headers, month days); these classes carry the demo's look for them: .seg buttons (L89-91), the
+   .ev blocks, and the inline styles of the week and month views. */
+.ocal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ocal-seg { min-width: 210px; }
+.ocal-seg a { flex: 1; border: 0; background: transparent; padding: 7px; border-radius: 8px; font-weight: 700; color: var(--muted); font-size: 14px; text-align: center; text-decoration: none; }
+.ocal-seg a.on { background: var(--card); color: var(--ink); }
+.ocal-steps { display: flex; gap: 8px; }
+.ocal-filters { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+.ocal-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ocal-legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 12px; font-size: 12px; flex-wrap: wrap; }
+a.ocal-ev { text-decoration: none; }
+/* Screen-reader text (.sr-only, position: absolute) in the week headers, week blocks and month days stays
+   inside its link; otherwise its containing block is <body> and it escapes the .scrollx scroller,
+   so the whole page scrolls sideways on a phone. */
+a.ocal-wk-head, a.ocal-mcell, a.ocal-wk-ev { position: relative; }
+/* Week view (L771-773). */
+.cal.ocal-wk { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); min-width: 760px; }
+.ocal-wk-day { border-right: 1px solid var(--line2); min-height: 420px; }
+.ocal-wk-day.today { background: var(--accent-l); }
+a.ocal-wk-head { display: block; width: 100%; border-bottom: 1px solid var(--line); padding: 10px 12px; text-align: right; font-weight: 700; color: inherit; text-decoration: none; }
+.ocal-wk-day.today a.ocal-wk-head { color: var(--accent); }
+.ocal-wk-list { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+a.ocal-wk-ev { display: block; text-align: right; border-right: 4px solid; border-radius: 7px; padding: 6px 8px; font-size: 12px; line-height: 1.3; text-decoration: none; }
+a.ocal-wk-ev:hover, a.ocal-mcell:hover { filter: brightness(.97); box-shadow: 0 2px 6px rgba(0, 0, 0, .12); }
+a.ocal-mcell.today:hover { box-shadow: 0 0 0 2px var(--accent), 0 2px 6px rgba(0, 0, 0, .12); }
+/* Month view (L779-786). Today's ring is a box-shadow (the demo's 2px outline), so the focus
+   outline stays distinct from it. */
+.ocal-month-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); }
+.ocal-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.ocal-mcell { border: 1px solid var(--line2); border-radius: 8px; min-height: 96px; padding: 6px 8px; text-align: right; display: flex; flex-direction: column; gap: 4px; background: var(--card); color: inherit; text-decoration: none; }
+.ocal-mcell.off { background: var(--tint); color: var(--soft); }
+/* A weekend day of the month is a link: --muted keeps WCAG 1.4.3 contrast on --tint (as CalendarMonth); --soft stays on the inert neighbouring-month cells. */
+a.ocal-mcell.off { color: var(--muted); }
+.ocal-mcell.today { box-shadow: 0 0 0 2px var(--accent); background: var(--card); }
+.ocal-mcell-top { display: flex; justify-content: space-between; width: 100%; }
+.ocal-mcell-n { font-family: var(--display); }
+/* Drawer (L159-164): the title row, and no focus ring on the panel itself (it takes focus when it
+   opens so screen readers announce it; its links and buttons keep their focus ring). */
+.ocal-drawer-title { font-size: 22px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ocal-drawer:focus { outline: none; }
+/* end office-calendar */
+
+/* tech-notifs-profile */
+/* Technician notifications (UI demo, D53; demo techNotifs() L644-656) and profile (techProfile()
+   L681-693). Each notification is a real link to its visit (the demo's buttons, same look); the
+   focus ring sits inside the item, so the card's rounded clipping does not cut it off. .tnp-row is
+   the demo's profile row(). */
+.tnp-list { list-style: none; margin: 0; padding: 0; }
+.tnp-list > li + li { border-top: 1px solid var(--line2); }
+a.tnp-item { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: right; background: var(--card); padding: 12px 14px; color: inherit; text-decoration: none; }
+a.tnp-item.unread { background: var(--accent-l); }
+a.tnp-item:focus-visible { outline-offset: -3px; }
+.tnp-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; font-size: 15px; }
+.tnp-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line2); font-size: 15px; }
+.tnp-row:last-child { border-bottom: 0; }
+@container stage (min-width: 600px) {
+  a.tnp-item { padding-block: 14px; }
+}
+/* end tech-notifs-profile */

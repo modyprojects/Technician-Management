@@ -1,6 +1,7 @@
 // FICTITIOUS DATA ONLY: maps the demo's fixture records to the DTOs of the data-access layer
 // (features/*/data/types). Used only by adapter.ts and aggregations.ts. Allowed only under
 // app/dev (G-05). Every DTO is marked isTest: true (D47).
+import type { CalendarVisit, CalendarVisitDetail } from "@/features/calendar/data/types";
 import type { CallStatus, CallSummary, CallDetail as CallDetailDto } from "@/features/calls/data/types";
 import type { Customer } from "@/features/customers/data/types";
 import type { LaneVisit, TechnicianLane } from "@/features/dashboards/data/types";
@@ -226,4 +227,49 @@ export function technicianLanes(visitsOnDate: readonly CallVisit[]): TechnicianL
       total: vs.length,
     };
   });
+}
+
+/** A visit block on the office and technician calendars. */
+export function calendarVisit({ c, v }: CallVisit): CalendarVisit {
+  const t = tech(v.tech);
+  return {
+    req: c.req,
+    n: v.n,
+    date: v.date,
+    start: v.start,
+    end: v.end,
+    status: v.status,
+    source: v.source,
+    technician: { id: t.id, name: t.name, color: t.color },
+    customerName: c.customer,
+    city: c.city,
+    productName: prod(c.sku).name,
+    isFollowUp: v.n > 1,
+    isTest: TEST,
+  };
+}
+
+/** The office calendar's visit drawer (demo drawerHtml()). */
+export function calendarVisitDetail(c: Call, v: Visit): CalendarVisitDetail {
+  const p = prod(c.sku);
+  return {
+    req: c.req,
+    n: v.n,
+    date: v.date,
+    start: v.start,
+    end: v.end,
+    status: v.status,
+    source: v.source,
+    technician: techRef(v.tech),
+    customer: { name: c.customer, phone: c.phone, address: `${c.street}, ${c.city}`, isTest: TEST },
+    product: { sku: p.sku, name: p.name, isTest: TEST },
+    representative: c.rep,
+    problem: c.desc,
+    departAt: v.departAt,
+    arriveAt: v.arriveAt,
+    endAt: v.endAt,
+    signerName: v.signer,
+    followupReason: v.reason,
+    isTest: TEST,
+  };
 }

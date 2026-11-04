@@ -7,7 +7,7 @@ import "server-only";
 import { CALLS } from "./queries";
 import { ME } from "./reference";
 import { OFFICE_ROLES } from "./roles";
-import { isOpenVisit } from "./status";
+import { isClosedVisit, isOpenVisit } from "./status";
 import type { Call, OfficeRole, Visit } from "./types";
 
 type VisitParams = { req: string; n: string };
@@ -34,4 +34,10 @@ export function techVisitParams(): VisitParams[] {
  *  (closed visits are read-only to technicians, D14). */
 export function techOpenVisitParams(): VisitParams[] {
   return techVisits(isOpenVisit);
+}
+
+/** /dev/demo/tech/done/[req]/[n]: every closed visit of the demo technician ("טופל" / "המשך טיפול";
+ *  read-only, TE-26, D14), any date (the calendar opens past days too). */
+export function techClosedVisitParams(): VisitParams[] {
+  return techVisits(isClosedVisit);
 }

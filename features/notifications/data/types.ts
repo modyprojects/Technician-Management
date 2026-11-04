@@ -15,3 +15,15 @@ export type AppNotification = TestMarker & {
   visit: VisitRef | null;
   read: boolean;
 };
+
+/**
+ * The technician's notification settings (profile, TE-29 and SE-11): in-app only; they persist
+ * per user. No morning pickup reminder (TE-28, D25). The sound plays only while the app is open
+ * (no push).
+ */
+export type NotificationPreferences = {
+  /** "זימון חדש או שינוי ביומן". */
+  newOrChange: boolean;
+  /** "צליל התראה". */
+  sound: boolean;
+};

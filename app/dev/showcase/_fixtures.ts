@@ -1,6 +1,7 @@
 // FICTITIOUS DATA ONLY, copied from the demo's seed data. Allowed only under app/dev (G-05).
 // The sentinel lets the bundle check prove this module is absent from builds after go-live.
 import type { VisitStatus } from "@/components/ui/StatusPill";
+import type { TechDayVisit } from "@/features/visits/data/types";
 
 export const FIXTURE_SENTINEL = "FIXTURE-SENTINEL-TM-STEP0";
 
@@ -82,4 +83,21 @@ export const CALL_ROWS: CallRow[] = [
   { req: "48213", customer: "משפחת לוי", city: "רחובות", product: "ברז מטבח נשלף", sku: "KT-2041", tech: "y", visits: 1, when: "היום 09:00", status: "new", rep: "שיראל" },
   { req: "48198", customer: "דוד פרץ", city: "חולון", product: "כיור אמבטיה + סיפון", sku: "BS-220", tech: "e", visits: 1, when: "היום 08:00", status: "done", rep: "שיראל" },
   { req: "48190", customer: "נועה ברק", city: "מודיעין", product: "מיכל הדחה סמוי", sku: "WC-300", tech: "s", visits: 1, when: "היום 08:00", status: "cont", reason: "ממתין לחלקי חילוף", rep: "שיראל" },
+];
+
+// "הושלמו היום" with rows (R12): the demo fixtures have no visit of the demo technician closed on
+// the demo's date, so the non-empty list (rows, 🧪 badge, pager) is shown here with sample DTOs.
+export const DONE_TODAY: TechDayVisit[] = [
+  {
+    req: "48198", n: 1, task: 1, start: "08:00", end: "09:30", status: "done", source: "simulator", customerName: "דוד פרץ",
+    address: "סוקולוב 3, חולון", city: "חולון", productName: "כיור אמבטיה + סיפון", isFollowUp: false, pickup: null, isTest: true,
+  },
+  {
+    req: "48190", n: 1, task: 2, start: "10:00", end: "11:30", status: "cont", source: "outlook", customerName: "נועה ברק",
+    address: "עמק איילון 12, מודיעין", city: "מודיעין", productName: "מיכל הדחה סמוי", isFollowUp: false, pickup: null, isTest: false,
+  },
+  {
+    req: "48140", n: 3, task: 3, start: "13:00", end: "14:30", status: "done", source: "simulator", customerName: "קבלן ש.ב. בנייה",
+    address: "הנשיא 40, יבנה", city: "יבנה", productName: "ברז מטבח פרח", isFollowUp: true, pickup: null, isTest: true,
+  },
 ];

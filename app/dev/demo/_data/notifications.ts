@@ -3,6 +3,7 @@
 // v1 has no scheduled pickup reminder (demo-deviations TE-28, D25). Client-safe.
 // Times are ISO timestamps: the demo's "אתמול HH:MM" is 20.10.2026 (Israel summer time, +03:00);
 // the screen formats them (dates.ts notificationTimeLabel).
+import type { NotificationPreferences } from "@/features/notifications/data/types";
 import type { DemoNotification, NotificationKind } from "./types";
 
 export const NOTIFICATIONS: readonly DemoNotification[] = [
@@ -20,3 +21,7 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, { icon: string; bg: st
 };
 
 export const unreadCount = (list: readonly DemoNotification[] = NOTIFICATIONS): number => list.filter((x) => !x.read).length;
+
+/** The demo technician's profile toggles (techProfile(): "זימון חדש או שינוי ביומן" on, "צליל התראה" off;
+ *  no morning pickup toggle, TE-28 / TE-29). Also the default for a user who never set them. */
+export const NOTIFICATION_PREFERENCES: NotificationPreferences = { newOrChange: true, sound: false };

@@ -2,13 +2,15 @@
 // app/dev/demo/_components/SimulatedCommands.tsx (commands, simulated) and, later, by Supabase
 // adapters. `techId` arguments are filters, not identity: production takes the technician from
 // the session (G-03) and RLS rejects other technicians' data.
-import type { CommandResult, IsoDate } from "@/features/data-access/common";
+import type { CommandResult, IsoDate, Page, PageRequest } from "@/features/data-access/common";
 import type { TechnicianId } from "@/features/reference/data/types";
 import type {
   AddMediaInput,
+  ClosedVisitDetail,
   CloseVisitInput,
   MediaItem,
   TechDay,
+  TechDayVisit,
   VisitDetail,
   VisitHistoryItem,
   VisitRef,
@@ -25,6 +27,16 @@ export interface VisitsQueries {
    * later visits or open visits.
    */
   history(ref: VisitRef): Promise<VisitHistoryItem[]>;
+  /**
+   * "הושלמו היום" (TE-26): the technician's visits closed on `date` ("טופל" / "המשך טיפול"), by
+   * start time, paged (default 40, at most 100); null for an unknown technician.
+   */
+  doneVisits(techId: TechnicianId, date: IsoDate, page?: PageRequest): Promise<Page<TechDayVisit> | null>;
+  /**
+   * One of the technician's own closed visits, read-only (TE-26, D14); null when not found, not
+   * closed, or another technician's visit.
+   */
+  doneVisit(techId: TechnicianId, ref: VisitRef): Promise<ClosedVisitDetail | null>;
 }
 
 /**

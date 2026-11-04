@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PickupsCard } from "@/components/tech/PickupsCard";
 import { ScheduleList, type ScheduleEntry } from "@/components/tech/ScheduleList";
@@ -15,15 +16,13 @@ import { LiveStatusPill } from "./_VisitStatus";
 
 export const metadata: Metadata = { title: "היום · טכנאי · הדגמה" };
 
-const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
-
 // Technician home, "היום" (docs/demo.html techHome() L477-516; TE-01 to TE-04, TE-33).
 // Reads only through the data-access layer: visits.techDay(DEMO_TECHNICIAN_ID, TODAY) and
 // notifications.unreadCount(DEMO_TECHNICIAN_ID) (G-03: production takes the technician from the
-// session). Header: date, greeting, avatar, bell with the unread count, "ביקורים היום" and
-// "הושלמו". Then the next-visit card ("יוצא · Waze" runs useCommands().visits.depart, TE-02),
+// session). Header: date, greeting, avatar, bell with the unread count (link to the
+// notifications), "ביקורים היום" and "הושלמו ›" (link to "הושלמו היום"). Then the next-visit card ("יוצא · Waze" runs useCommands().visits.depart, TE-02),
 // "מה לאסוף לפני יציאה" grouped by place (TE-03) and "לו"ז היום" (TE-04) linking to each visit
-// card. The visit statuses on this screen follow the depart, arrive and close actions
+// card, with "יומן ›" linking to the calendar. The visit statuses on this screen follow the depart, arrive and close actions
 // (VisitStatusProvider in app/dev/demo/tech/layout.tsx).
 export default async function TechHomePage() {
   const [day, unread] = await Promise.all([
@@ -38,7 +37,8 @@ export default async function TechHomePage() {
     href: demoHref.visit(v.req, v.n),
     status: <LiveStatusPill visit={refOf(v)} status={v.status} />,
   }));
-  const closed: ScheduleEntry[] = day.closed.map((v) => ({ visit: v, href: demoHref.visit(v.req, v.n) }));
+  // A closed visit opens its read-only view (the same view as "הושלמו היום", TE-26, D14).
+  const closed: ScheduleEntry[] = day.closed.map((v) => ({ visit: v, href: demoHref.techDoneVisit(v.req, v.n) }));
   const placeActions = Object.fromEntries(
     day.pickups.map((g) => [g.place, <PlaceWazeButton key={g.place} place={g.place} address={g.placeAddress} />]),
   );
@@ -55,9 +55,8 @@ export default async function TechHomePage() {
           unread={unread}
           visitsToday={day.stats.open}
           completed={day.stats.completed}
-          // The notifications and "הושלמו היום" screens are not part of this demo (TODO: link them
-          // with notificationsHref / completedHref when they exist).
-          unavailable={{ "data-sim": NOT_IN_DEMO }}
+          notificationsHref={demoHref.techNotifications()}
+          completedHref={demoHref.techDone()}
         />
       }
     >
@@ -67,9 +66,9 @@ export default async function TechHomePage() {
         open={open}
         closed={closed}
         calendarAction={
-          <button type="button" className="chip" style={{ padding: "4px 10px", fontSize: 12, minHeight: 24 }} data-sim={NOT_IN_DEMO}>
+          <Link href={demoHref.techCalendar()} className="chip" style={{ padding: "4px 10px", fontSize: 12, minHeight: 24 }}>
             יומן ›
-          </button>
+          </Link>
         }
       />
     </DemoTechFrame>
