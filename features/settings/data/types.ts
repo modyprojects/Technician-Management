@@ -17,14 +17,24 @@ import type {
 
 export type { Bounded };
 
-/** Settings sections: the demo's SETS (L936) plus "types" (call types, SE-16). */
-export const SETTINGS_SECTION_VALUES = ["users", "techs", "places", "reasons", "types", "mail", "template"] as const;
+/**
+ * Settings sections: the demo's SETS (L936) plus "types" (call types, SE-16) and "accounts", the
+ * Manager's account administration under Settings › "משתמשים" (D34 fixed capability, D57 (1); not a
+ * D35 operational section; never governed by `settings`, SE-03).
+ */
+export const SETTINGS_SECTION_VALUES = ["users", "techs", "places", "reasons", "types", "mail", "template", "accounts"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTION_VALUES)[number];
+
+/**
+ * The Creator's Settings tabs (fixed capabilities, D33): every section except "accounts" (the
+ * Creator administers every account on "משתמשים והרשאות", D34).
+ */
+export const CREATOR_SETTINGS_SECTIONS = ["users", "techs", "places", "reasons", "types", "mail", "template"] as const satisfies readonly SettingsSection[];
 
 export const isSettingsSection = (value: unknown): value is SettingsSection =>
   typeof value === "string" && (SETTINGS_SECTION_VALUES as readonly string[]).includes(value);
 
-/** Tab titles (demo SETS; "סוגי קריאה" is new, SE-16). */
+/** Tab titles (demo SETS; "סוגי קריאה" is new, SE-16; "משתמשים" is the Manager's accounts tab, D57 (1)). */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsSection, string>> = {
   users: "משתמשים והרשאות",
   techs: "טכנאים",
@@ -33,6 +43,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsSection, string>> 
   types: "סוגי קריאה",
   mail: "מיילים והתראות",
   template: "תבנית זימון",
+  accounts: "משתמשים",
 };
 
 /**

@@ -18,7 +18,7 @@ import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { TODAY } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
+import { demoLandingBack, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { ANALYTICS_TABS, analyticsHref, monthOf, parseAnalyticsState, type AnalyticsTab } from "./_state";
 
@@ -62,7 +62,7 @@ export default async function OfficeAnalyticsPage({
             <h1>דשבורד</h1>
           </div>
         </div>
-        <AnalyticsNoAccess backHref={demoHref.officeHome(role)} backLabel={role === "mgr" ? "לוח הבקרה" : "בית"} />
+        <AnalyticsNoAccess {...demoLandingBack(role, permissions)} />
       </DemoOfficeFrame>
     );
   }

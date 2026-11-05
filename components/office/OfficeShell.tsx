@@ -9,17 +9,20 @@ export type { OfficeNavItem };
 export function OfficeShell({
   nav,
   activeKey,
+  activeIsCurrent,
   user,
   children,
 }: {
   nav: readonly OfficeNavItem[];
   activeKey: string;
+  /** False when `activeKey` is the item the open screen belongs to, not its own (no aria-current). */
+  activeIsCurrent?: boolean;
   user: { name: string; roleLabel: string; avatarColor: string };
   children: ReactNode;
 }) {
   return (
     <div className="office">
-      <OfficeSidebar nav={nav} activeKey={activeKey} user={user} />
+      <OfficeSidebar nav={nav} activeKey={activeKey} activeIsCurrent={activeIsCurrent} user={user} />
       <main className="work">{children}</main>
     </div>
   );

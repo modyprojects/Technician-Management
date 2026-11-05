@@ -37,7 +37,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
   mgr: {
     intro: "המשרד מהמחשב, מהטאבלט או מהטלפון: מעקב, יומן, קריאות ודשבורד.",
     links: [
-      { label: "לוח בקרה", sub: "מסך הבית של המנהל", href: demoHref.officeHome("mgr") },
+      { label: "דשבורד", sub: "מסך הפתיחה של המנהל · כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics("mgr") },
       { label: "יומן טכנאים", sub: "יום, שבוע וחודש · סינון לפי טכנאי", href: demoHref.officeCalendar("mgr") },
       {
         label: `יומן · חלון ביקור · ${callName("48213")}`,
@@ -53,9 +53,12 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון · מייל לנציגה ממתין להחלטה", href: demoHref.unparsed("mgr") },
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש · סינון לפי טכנאי", href: demoHref.backFromField("mgr") },
       { label: "פריטים לבדיקה", sub: "שינויים מזימונים ומהמכשיר שמחכים להחלטה", href: demoHref.review("mgr") },
-      { label: "דשבורד", sub: "כללי, טכנאים, מוצרים וספקים", href: demoHref.analytics("mgr") },
       { label: "מוצרים", sub: "לפי מק״ט · עריכת שם, מותג וספק (מדומה)", href: demoHref.products("mgr") },
-      { label: "משתמשים", sub: "חשבונות שירות לקוחות וטכנאים · בקשות לאישור היוצר", href: demoHref.users("mgr") },
+      {
+        label: "הגדרות · משתמשים",
+        sub: "חשבונות שירות לקוחות וטכנאים · בקשות לאישור היוצר",
+        href: demoHref.settings("mgr", "accounts"),
+      },
     ],
   },
   cs: {
@@ -76,7 +79,7 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
   creator: {
     intro: "היוצר רואה הכל: הגדרות, מטריצת ההרשאות ואישור בקשות של המנהל.",
     links: [
-      { label: "לוח בקרה", sub: "מסך הבית של היוצר", href: demoHref.officeHome("creator") },
+      { label: "דשבורד", sub: "מסך הפתיחה של היוצר", href: demoHref.analytics("creator") },
       { label: "לקוחות", sub: "חיפוש לפי שם, מספר לקוח, טלפון או עיר", href: demoHref.customers("creator") },
       { label: "זימונים שלא נקלטו", sub: "מה חסר או שגוי בכל זימון", href: demoHref.unparsed("creator") },
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש", href: demoHref.backFromField("creator") },

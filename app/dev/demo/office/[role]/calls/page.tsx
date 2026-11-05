@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { CallStatusOption, CallTechOption } from "@/components/office/CallFilters";
 import type { CallsTableRow } from "@/components/office/CallsTable";
+import { RelatedScreens } from "@/components/office/RelatedScreens";
 import { CALL_STATUS_ORDER, CALL_STATUSES } from "@/components/ui/CallStatusPill";
 import { callFilterOf, parseCallsListState } from "@/features/calls/data/search-params";
 import type { CallSummary } from "@/features/calls/data/types";
@@ -10,7 +11,7 @@ import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { dayLabel } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
+import { callsAreaLinks, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { CallsBrowser } from "./_CallsBrowser";
@@ -57,7 +58,9 @@ function toRow(c: CallSummary, role: OfficeRole): CallsTableRow {
 // filter, status chips with counts (service-call status, OF-17) and 40-row pages; a row opens the
 // call card. Reads only through the data-access layer: the URL (?q=&status=&tech=&page=) is the
 // query, filtered and paged by calls.list() (OF-04). The export button follows the role's matrix
-// value (reference.permissions, display only).
+// value (reference.permissions, display only). Under the title, the "מסכים נוספים" row (D57) links
+// the screens that left the Manager's and the Creator's sidebar, each per its own rule and without
+// counts (callsAreaLinks; nothing for Customer Service, whose sidebar keeps them).
 export default async function OfficeCallsPage({ params, searchParams }: PageProps<"/dev/demo/office/[role]/calls">) {
   const { role } = await params;
   if (!isOfficeRole(role)) notFound();
@@ -92,6 +95,7 @@ export default async function OfficeCallsPage({ params, searchParams }: PageProp
           </button>
         )}
       </div>
+      <RelatedScreens links={callsAreaLinks(role, permissions)} />
       <CallsBrowser
         rows={page.items.map((c) => toRow(c, role))}
         total={page.total}

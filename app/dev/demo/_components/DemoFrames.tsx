@@ -4,19 +4,27 @@ import type { TechTab } from "@/components/tech/TechBottomNav";
 import { TechShell } from "@/components/tech/TechShell";
 import type { OfficeRole } from "@/features/reference/data/types";
 import { demoDataAccess } from "../_data/adapter";
-import { OFFICE_SHELL_USERS, officeNav, TECH_NAV_HREFS, type OfficeNavKey } from "../_data/roles";
+import { OFFICE_SHELL_USERS, officeNav, officeNavParent, TECH_NAV_HREFS, type OfficeNavKey } from "../_data/roles";
 import { DemoPage } from "./DemoPage";
 
 /**
  * DemoPage + OfficeShell with the role's sidebar (real links) and signed-in user. Server
  * Component: the sidebar items follow the role's permission values, read through the layer
  * (reference.permissions; display only, G-04).
+ * `active` is the open screen. When it has no sidebar item of its own (D57: Manager and Creator
+ * reach customers, back from field, review items and products from "קריאות", and the former
+ * "משתמשים" address belongs to "הגדרות"), its parent item is highlighted without aria-current
+ * (officeNavParent). Otherwise nothing is highlighted (Customer Service: as before).
  */
 export async function DemoOfficeFrame({ role, active, children }: { role: OfficeRole; active: OfficeNavKey; children: ReactNode }) {
   const permissions = await demoDataAccess.reference.permissions(role);
+  const nav = officeNav(role, permissions);
+  const inNav = (key: OfficeNavKey | null) => key !== null && nav.some((item) => item.key === key);
+  const parent = inNav(active) ? null : officeNavParent(role, active);
+  const activeKey = parent !== null && inNav(parent) ? parent : active;
   return (
     <DemoPage viewpoint={role}>
-      <OfficeShell nav={officeNav(role, permissions)} activeKey={active} user={OFFICE_SHELL_USERS[role]}>
+      <OfficeShell nav={nav} activeKey={activeKey} activeIsCurrent={activeKey === active} user={OFFICE_SHELL_USERS[role]}>
         {children}
       </OfficeShell>
     </DemoPage>

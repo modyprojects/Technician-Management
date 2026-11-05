@@ -38,6 +38,13 @@ function collectErrors(page: Page): string[] {
 
 const toast = (page: Page) => page.locator(".toast");
 
+/** An account of the Manager or Creator role in a page's payload (escaped or not). */
+const MANAGER_OR_CREATOR_ACCOUNT = /role\\?"\s*:\s*\\?"(creator|mgr)\\?"/;
+
+/** The white MODY logo in a dark header (D57 (6)): one per page. */
+const officeLogo = (page: Page) => page.locator('.side img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+const techLogo = (page: Page) => page.locator('.ph-head .ph-brand img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+
 test.describe("demo pages render", () => {
   for (const path of [...DEMO_PAGES, ...DEMO_VIEWS]) {
     test(`${path}: sentinel, test-data strip, no overflow, no console errors`, async ({ page }) => {
@@ -50,6 +57,10 @@ test.describe("demo pages render", () => {
       await expect(strip).toBeVisible();
       await expect(strip).toContainText("נתוני בדיקה");
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      // D57 (6): one white MODY logo in the screen's dark header; never the dark file, never a light strip.
+      if (path.startsWith("/dev/demo/office/")) await expect(officeLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/tech")) await expect(techLogo(page)).toHaveCount(1);
+      await expect(page.locator('img[src*="mody-logo.png"], .work-brand')).toHaveCount(0);
       expect(await horizontalOverflow(page)).toEqual([]);
       expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
       // Let prefetches and hydration finish before reading the console.
@@ -177,6 +188,8 @@ test.describe("simulated toast", () => {
 
   test("office navigation: every sidebar item is a link; \"יומן טכנאים\" opens the calendar", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr");
+    // D57 (1): the Manager's office home lands on the dashboard.
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/analytics$/);
     await expect(page.locator(".side .nav button")).toHaveCount(0);
     await page.locator(".side").getByRole("link", { name: "יומן טכנאים" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calendar$/);
@@ -185,14 +198,17 @@ test.describe("simulated toast", () => {
 });
 
 test.describe("dashboards and access", () => {
-  test("manager home: KPI tiles, test-data note, awaiting call listed, technician drill-down links", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr");
-    const kpis = page.getByRole("region", { name: "מדדי היום" });
-    await expect(kpis.locator(".kpi")).toHaveCount(6);
-    await expect(page.locator(".od-test-note")).toContainText("נתוני בדיקה");
-    // The awaiting-scheduling call is never hidden behind older follow-ups (sorted first).
-    await expect(page.getByRole("table", { name: "קריאות שדורשות טיפול" })).toContainText("48230");
-    await expect(page.locator('a[href*="/analytics?tab=tech&tech="]').first()).toBeVisible();
+  test("landing (D57 (1)): Manager and Creator are redirected (307) to \"דשבורד\"; Customer Service keeps its home", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      const res = await page.request.get(`/dev/demo/office/${role}`, { maxRedirects: 0 });
+      expect(res.status(), role).toBe(307);
+      expect(res.headers().location, role).toMatch(new RegExp(`/dev/demo/office/${role}/analytics$`));
+    }
+    const cs = await page.request.get("/dev/demo/office/cs", { maxRedirects: 0 });
+    expect(cs.status()).toBe(200);
+    await openPage(page, "/dev/demo/office/creator");
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/analytics$/);
+    await expect(sideNav(page).getByRole("link", { name: "דשבורד", exact: true })).toHaveAttribute("aria-current", "page");
   });
 
   test("customer-service home: work queue with test-data note, no dashboard links", async ({ page }) => {
@@ -696,7 +712,7 @@ const SETTINGS_TABS = ["users", "techs", "places", "reasons", "types", "mail", "
 const sideNav = (page: Page) => page.locator(".side").getByRole("navigation", { name: "ניווט ראשי" });
 
 test.describe("office navigation per role (phase E)", () => {
-  test("Creator has \"הגדרות\" and no \"משתמשים\"; Manager has \"משתמשים\" and no \"הגדרות\"; customer service has neither", async ({
+  test("Creator and Manager have \"הגדרות\" and no \"משתמשים\" item (D57: the Manager's opens Settings › משתמשים); customer service has neither", async ({
     page,
   }) => {
     await openPage(page, "/dev/demo/office/creator");
@@ -704,8 +720,8 @@ test.describe("office navigation per role (phase E)", () => {
     await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/mgr");
-    await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveAttribute("href", "/dev/demo/office/mgr/users");
-    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveCount(0);
+    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveAttribute("href", "/dev/demo/office/mgr/settings/accounts");
+    await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/cs");
     await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
@@ -772,8 +788,8 @@ test.describe("settings access (display only, G-04)", () => {
       const usersLink = page.getByRole("link", { name: "לניהול משתמשים" });
       await openPage(page, `/dev/demo/office/${role}/settings/users`);
       if (role === "mgr") {
-        await expect(usersLink).toHaveAttribute("href", "/dev/demo/office/mgr/users");
-        await expect(page.getByText(/מנוהלים במסך "משתמשים"/)).toBeVisible();
+        await expect(usersLink).toHaveAttribute("href", "/dev/demo/office/mgr/settings/accounts");
+        await expect(page.getByText(/מנוהלים בלשונית "משתמשים"/)).toBeVisible();
       } else {
         await expect(usersLink).toHaveCount(0);
         // Account administration and the matrix are fixed Creator capabilities: no matrix wording.
@@ -792,13 +808,23 @@ test.describe("settings access (display only, G-04)", () => {
     });
   }
 
-  test("customer service has no account administration; the Creator's \"משתמשים\" page points to Settings", async ({ page }) => {
+  test("customer service has no account administration; the Creator's \"משתמשים\" page points to Settings; the Manager's redirects", async ({
+    page,
+  }) => {
     await openPage(page, "/dev/demo/office/cs/users");
     await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
     await expect(page.locator("main table, main form")).toHaveCount(0);
     await openPage(page, "/dev/demo/office/creator/users");
     await page.getByRole("link", { name: "למשתמשים והרשאות" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/settings\/users$/);
+    // D57 (1): the former address of the Manager's account administration redirects (307).
+    const res = await page.request.get("/dev/demo/office/mgr/users", { maxRedirects: 0 });
+    expect(res.status()).toBe(307);
+    expect(res.headers().location).toMatch(/\/dev\/demo\/office\/mgr\/settings\/accounts$/);
+    await openPage(page, "/dev/demo/office/mgr/users");
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/settings\/accounts$/);
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" })).toBeVisible();
   });
 });
 
@@ -907,7 +933,7 @@ test.describe("account administration (SE-01, D34)", () => {
   test("Manager: CS and technician accounts only; \"+ בקשת חשבון שירות לקוחות\" makes a pending request (simulated)", async ({
     page,
   }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
     await expect(accounts.locator("tbody tr")).toHaveCount(8);
     await expect(accounts.getByText("מנהל", { exact: true })).toHaveCount(0);
@@ -948,7 +974,7 @@ test.describe("account administration (SE-01, D34)", () => {
   });
 
   test("Manager: deactivation asks to confirm, is immediate and simulated; a pending request can be cancelled", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     await page.getByRole("button", { name: "השבתת החשבון של שיראל" }).click();
     const confirm = page.getByRole("group", { name: /להשבית את החשבון של שיראל/ });
     await expect(confirm).toContainText("היוצר מקבל התראה באפליקציה");
@@ -1102,7 +1128,7 @@ test.describe("account activation paths (D34 a, c)", () => {
   test("Manager: an inactive Customer Service account without a request offers \"בקשת הפעלת חשבון\" (pending, simulated)", async ({
     page,
   }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
     const ronit = accounts.locator("tbody tr").filter({ hasText: "רונית" });
     await expect(ronit).toContainText("לא פעיל");
@@ -1120,7 +1146,7 @@ test.describe("account activation paths (D34 a, c)", () => {
   });
 
   test("Manager: a deactivated technician account is activated at once (simulated)", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const beni = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "בני" });
     await expect(beni).toContainText("לא פעיל");
     await beni.getByRole("button", { name: "הפעלת החשבון של בני" }).click();
@@ -1184,7 +1210,7 @@ test.describe("add forms (simulated submit flows)", () => {
   });
 
   test("Manager \"+ הוספת טכנאי\": immediate, a technician row with 🧪, not saved", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
     const form = page.getByRole("form", { name: "הוספת טכנאי" });
     await form.getByLabel("שם", { exact: true }).fill("טכנאי חדש");
@@ -1238,10 +1264,28 @@ test.describe("what the browser receives (P1, P9)", () => {
 
   test("no sign-in times anywhere; account and request ids only on the account screens", async ({ page }) => {
     const html = async (path: string) => (await page.request.get(path)).text();
-    const managerUsers = await html("/dev/demo/office/mgr/users");
-    expect(managerUsers).not.toContain("lastSignIn");
-    expect(managerUsers).toContain("acc-shirel");
-    for (const path of ["/dev/demo/tech", "/dev/demo/tech/profile", "/dev/demo/office/mgr", "/dev/demo/office/creator/settings/techs"]) {
+    const managerAccounts = await html("/dev/demo/office/mgr/settings/accounts");
+    expect(managerAccounts).not.toContain("lastSignIn");
+    expect(managerAccounts).toContain("acc-shirel");
+    // The Manager's scope: Customer Service and Technician accounts only (D34). The Creator appears
+    // only as the decider of the Manager's own requests ("הבקשות שלי"), never as an account.
+    expect(managerAccounts).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    // The former address only redirects (D57): its response carries no account or request ids.
+    const redirect = await page.request.get("/dev/demo/office/mgr/users", { maxRedirects: 0 });
+    expect(redirect.status()).toBe(307);
+    const redirectBody = await redirect.text();
+    expect(redirectBody).not.toContain("acc-");
+    expect(redirectBody).not.toContain("areq-");
+    for (const path of [
+      "/dev/demo/tech",
+      "/dev/demo/tech/profile",
+      "/dev/demo/office/mgr",
+      "/dev/demo/office/mgr/analytics",
+      "/dev/demo/office/mgr/analytics?tab=tech",
+      "/dev/demo/office/mgr/analytics?tab=prod",
+      "/dev/demo/office/mgr/calls",
+      "/dev/demo/office/creator/settings/techs",
+    ]) {
       const body = await html(path);
       expect(body, path).not.toContain("acc-creator");
       expect(body, path).not.toContain("acc-shirel");
@@ -1306,46 +1350,75 @@ test.describe("office navigation per role (phase F, OF-02)", () => {
     ["חזרו מהשטח", "back-from-field"],
   ] as const;
 
-  test("customer service, Manager and Creator: customers and both work-queue screens; products only with `products`", async ({ page }) => {
-    for (const role of ["cs", "mgr", "creator"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
+  test("customer service: customers and both work-queue screens after \"קריאות\", no products (unchanged by D57)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs");
+    const nav = sideNav(page);
+    for (const [label, path] of NEW_ITEMS) {
+      await expect(nav.getByRole("link", { name: label, exact: true }), label).toHaveAttribute("href", `/dev/demo/office/cs/${path}`);
+    }
+    await expect(nav.getByRole("link", { name: "מוצרים", exact: true })).toHaveCount(0);
+    // Order: after "קריאות" come the three new screens.
+    const labels = await nav.getByRole("link").allInnerTexts();
+    const at = (l: string) => labels.findIndex((x) => x.trim() === l);
+    expect(at("קריאות")).toBeGreaterThan(-1);
+    expect(at("לקוחות")).toBe(at("קריאות") + 1);
+    expect(at("זימונים שלא נקלטו")).toBe(at("לקוחות") + 1);
+    expect(at("חזרו מהשטח")).toBe(at("זימונים שלא נקלטו") + 1);
+  });
+
+  test("Manager and Creator: exactly the five D57 items; customers, back from field and products only in the \"מסכים נוספים\" row", async ({
+    page,
+  }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/calls`);
       const nav = sideNav(page);
-      for (const [label, path] of NEW_ITEMS) {
-        await expect(nav.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveAttribute(
+      expect((await nav.getByRole("link").allInnerTexts()).map((l) => l.trim()), role).toEqual([
+        "דשבורד",
+        "יומן טכנאים",
+        "קריאות",
+        "זימונים שלא נקלטו",
+        "הגדרות",
+      ]);
+      await expect(nav.getByRole("link", { name: "זימונים שלא נקלטו", exact: true }), role).toHaveAttribute(
+        "href",
+        `/dev/demo/office/${role}/unparsed`,
+      );
+      for (const label of ["לקוחות", "חזרו מהשטח", "פריטים לבדיקה", "מוצרים", "משתמשים", "לוח בקרה"]) {
+        await expect(nav.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveCount(0);
+      }
+      const related = page.getByRole("navigation", { name: "מסכים נוספים" });
+      for (const [label, path] of [...NEW_ITEMS.filter(([, p]) => p !== "unparsed"), ["פריטים לבדיקה", "review"], ["מוצרים", "products"]] as const) {
+        await expect(related.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveAttribute(
           "href",
           `/dev/demo/office/${role}/${path}`,
         );
       }
-      const products = nav.getByRole("link", { name: "מוצרים", exact: true });
-      if (role === "cs") await expect(products).toHaveCount(0);
-      else await expect(products).toHaveAttribute("href", `/dev/demo/office/${role}/products`);
-      // Order: after "קריאות" come the three new screens; "מוצרים" follows "דשבורד".
-      const labels = await nav.getByRole("link").allInnerTexts();
-      const at = (l: string) => labels.findIndex((x) => x.trim() === l);
-      expect(at("קריאות"), role).toBeGreaterThan(-1);
-      expect(at("לקוחות"), role).toBe(at("קריאות") + 1);
-      expect(at("זימונים שלא נקלטו"), role).toBe(at("לקוחות") + 1);
-      expect(at("חזרו מהשטח"), role).toBe(at("זימונים שלא נקלטו") + 1);
-      if (role !== "cs") expect(at("מוצרים"), role).toBe(at("דשבורד") + 1);
     }
   });
 
-  test("each new screen marks its own sidebar item as the current page", async ({ page }) => {
-    for (const [label, path] of [...NEW_ITEMS, ["מוצרים", "products"] as const]) {
-      await openPage(page, `/dev/demo/office/mgr/${path}`);
+  test("each screen highlights its sidebar item: its own as the current page, an entry-row screen \"קריאות\" without aria-current", async ({
+    page,
+  }) => {
+    for (const [label, path] of NEW_ITEMS) {
+      await openPage(page, `/dev/demo/office/cs/${path}`);
       await expect(sideNav(page).getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
     }
-    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
-    await expect(sideNav(page).getByRole("link", { name: "לקוחות", exact: true })).toHaveAttribute("aria-current", "page");
+    await openPage(page, "/dev/demo/office/mgr/unparsed");
+    await expect(sideNav(page).getByRole("link", { name: "זימונים שלא נקלטו", exact: true })).toHaveAttribute("aria-current", "page");
+    for (const path of ["customers", "back-from-field", "products", "customers/cu-298747"]) {
+      await openPage(page, `/dev/demo/office/mgr/${path}`);
+      const calls = sideNav(page).getByRole("link", { name: "קריאות", exact: true });
+      await expect(calls, path).toHaveClass(/(^|\s)on(\s|$)/);
+      await expect(calls, path).not.toHaveAttribute("aria-current");
+      await expect(sideNav(page).locator("[aria-current]"), path).toHaveCount(0);
+    }
   });
 
-  test("office homes link to \"חזרו מהשטח\" from the follow-up work queue", async ({ page }) => {
-    for (const role of ["mgr", "cs"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
-      const link = page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true });
-      await expect(link, role).toHaveAttribute("href", `/dev/demo/office/${role}/back-from-field`);
-    }
-    await page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true }).click();
+  test("the customer-service home links to \"חזרו מהשטח\" from the follow-up work queue", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs");
+    const link = page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true });
+    await expect(link).toHaveAttribute("href", "/dev/demo/office/cs/back-from-field");
+    await link.click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/cs\/back-from-field$/);
     await expect(page.getByRole("heading", { level: 1, name: "חזרו מהשטח" })).toBeVisible();
   });
@@ -1716,25 +1789,26 @@ test.describe("phase G views render", () => {
 test.describe("review items: access per role (matrix key `conflicts`)", () => {
   onlyInProject("desktop");
 
-  test("Manager and Creator have \"פריטים לבדיקה\" after \"חזרו מהשטח\"; customer service has neither the item nor any item data", async ({
+  test("Manager and Creator reach \"פריטים לבדיקה\" from \"קריאות\" (D57, no count); customer service has neither the link nor any item data", async ({
     page,
   }) => {
     for (const role of ["mgr", "creator"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
+      await openPage(page, `/dev/demo/office/${role}/calls`);
       const nav = sideNav(page);
-      await expect(nav.getByRole("link", { name: "פריטים לבדיקה", exact: true }), role).toHaveAttribute(
-        "href",
-        `/dev/demo/office/${role}/review`,
-      );
-      const labels = (await nav.getByRole("link").allInnerTexts()).map((l) => l.trim());
-      expect(labels.indexOf("פריטים לבדיקה"), role).toBe(labels.indexOf("חזרו מהשטח") + 1);
+      await expect(nav.getByRole("link", { name: "פריטים לבדיקה" }), role).toHaveCount(0);
+      const link = page.getByRole("navigation", { name: "מסכים נוספים" }).getByRole("link", { name: "פריטים לבדיקה", exact: true });
+      await expect(link, role).toHaveAttribute("href", `/dev/demo/office/${role}/review`);
       // The mock outbox is a /dev tool: never in the office sidebar (X-06).
       await expect(nav.locator('a[href*="/outbox"]'), role).toHaveCount(0);
     }
-    await openPage(page, "/dev/demo/office/mgr/review");
-    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
-    await openPage(page, "/dev/demo/office/mgr/review/rv-6");
-    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
+    for (const path of ["/dev/demo/office/mgr/review", "/dev/demo/office/mgr/review/rv-6"]) {
+      await openPage(page, path);
+      const calls = sideNav(page).getByRole("link", { name: "קריאות", exact: true });
+      await expect(calls, path).toHaveClass(/(^|\s)on(\s|$)/);
+      await expect(calls, path).not.toHaveAttribute("aria-current");
+    }
+    await openPage(page, "/dev/demo/office/cs/calls");
+    await expect(page.getByRole("navigation", { name: "מסכים נוספים" })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/cs");
     await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה" })).toHaveCount(0);
@@ -2432,5 +2506,229 @@ test.describe("what the browser receives (phase G)", () => {
       const body = await (await page.request.get(path)).text();
       expect(body, path).not.toMatch(/acc-[a-z]/);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// D57 (owner, 2026-11-05): the Manager's and the Creator's five-item navigation with "דשבורד" as
+// the landing, the Manager's Settings › "משתמשים" (D34, never the matrix key `settings`), the
+// "מסכים נוספים" row on "קריאות" (no counts) and the white MODY logo in the existing dark headers.
+// Display only (G-04): every page keeps its own check.
+
+test.describe("D57: the \"מסכים נוספים\" row on \"קריאות\"", () => {
+  test("Manager and Creator: four links, no digits, each at least 24px tall; customer service has no row", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/calls`);
+      const row = page.getByRole("navigation", { name: "מסכים נוספים" });
+      await expect(row, role).toBeVisible();
+      await expect(row.getByRole("link"), role).toHaveText(["לקוחות", "חזרו מהשטח", "פריטים לבדיקה", "מוצרים"]);
+      expect(await row.innerText(), role).not.toMatch(/\d/);
+      for (const link of await row.getByRole("link").all()) {
+        const b = await link.boundingBox();
+        expect(b && b.height >= 24, `${role} ${await link.innerText()}`).toBe(true);
+      }
+      // The row sits between the title and the calls list.
+      const [title, rowBox, search] = await Promise.all([
+        page.locator(".ptitle").first().boundingBox(),
+        row.boundingBox(),
+        page.getByRole("searchbox").or(page.getByRole("textbox")).first().boundingBox(),
+      ]);
+      expect(title && rowBox && rowBox.y >= title.y + title.height - 1, role).toBe(true);
+      expect(rowBox && search && rowBox.y + rowBox.height <= search.y + 1, role).toBe(true);
+      expect(await horizontalOverflow(page), role).toEqual([]);
+    }
+    await openPage(page, "/dev/demo/office/cs/calls");
+    await expect(page.getByRole("navigation", { name: "מסכים נוספים" })).toHaveCount(0);
+  });
+
+  test("a link opens its screen with \"קריאות\" highlighted; the no-access card leads back to \"דשבורד\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls");
+    await page.getByRole("navigation", { name: "מסכים נוספים" }).getByRole("link", { name: "חזרו מהשטח", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/back-from-field$/);
+    await expect(page.getByRole("heading", { level: 1, name: "חזרו מהשטח" })).toBeVisible();
+    await expect(sideNav(page).locator("a.on")).toHaveText("קריאות");
+    // Customer Service's no-access cards lead back to its unchanged home; the Manager's to "דשבורד".
+    await openPage(page, "/dev/demo/office/cs/products");
+    await expect(page.getByRole("link", { name: "חזרה לבית" })).toHaveAttribute("href", "/dev/demo/office/cs");
+    await openPage(page, "/dev/demo/office/mgr/settings/places");
+    await expect(page.getByRole("link", { name: "חזרה לדשבורד" })).toHaveAttribute("href", "/dev/demo/office/mgr/analytics");
+  });
+});
+
+test.describe("D57: the Manager's Settings › \"משתמשים\" (D34 fixed capability)", () => {
+  test("the account administration with no tab bar; \"הגדרות\" is the current page; no overflow", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "לשוניות ההגדרות" })).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "מטריצת ההרשאות" })).toHaveCount(0);
+    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveAttribute("aria-current", "page");
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+});
+
+test.describe("D57: Settings › \"משתמשים\" and the landing, negative access (raw responses)", () => {
+  onlyInProject("desktop");
+
+  const html = async (page: Page, path: string) => (await page.request.get(path)).text();
+
+  test("customer service: \"אין הרשאה\" and no account data; the Creator: a pointer to \"משתמשים והרשאות\" only", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/settings/accounts");
+    await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
+    await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
+    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toMatch(/acc-[a-z]|areq-/);
+
+    await openPage(page, "/dev/demo/office/creator/settings/accounts");
+    await expect(page.getByText("היוצר מנהל את כל החשבונות ומאשר את בקשות המנהל בלשונית משתמשים והרשאות.")).toBeVisible();
+    await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
+    expect(await html(page, "/dev/demo/office/creator/settings/accounts")).not.toMatch(/acc-[a-z]|areq-/);
+    await page.getByRole("link", { name: "למשתמשים והרשאות" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/settings\/users$/);
+  });
+
+  test("the Manager's \"משתמשים\" never carries the matrix or the Creator's account; `settings` stays off", async ({ page }) => {
+    const body = await html(page, "/dev/demo/office/mgr/settings/accounts");
+    expect(body).toContain("acc-shirel");
+    // No Manager or Creator account (D34 scope); the Creator's own Settings tab has them (control).
+    expect(body).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    expect(await html(page, "/dev/demo/office/creator/settings/users")).toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    expect(body).not.toContain("מה כל הרשאה רואה");
+    // The matrix table (its name; the screen's own note may mention the matrix in words).
+    expect(body).not.toContain('aria-label="מטריצת ההרשאות"');
+    expect(body).not.toContain("כל האזנה נרשמת ביומן הביקורת");
+    // The matrix value is unchanged: the Manager's "הגדרות" key is still off (SE-03, D33).
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await expect(page.getByRole("button", { name: "הגדרות למנהל", exact: true })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the landing and the former \"משתמשים\" address answer 307 with the target and no account data", async ({ page }) => {
+    for (const [path, target] of [
+      ["/dev/demo/office/mgr", "/dev/demo/office/mgr/analytics"],
+      ["/dev/demo/office/creator", "/dev/demo/office/creator/analytics"],
+      ["/dev/demo/office/mgr/users", "/dev/demo/office/mgr/settings/accounts"],
+    ] as const) {
+      const res = await page.request.get(path, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(307);
+      expect(new URL(res.headers().location ?? "", "http://x").pathname, path).toBe(target);
+      expect(await res.text(), path).not.toMatch(/acc-[a-z]|areq-|FIXTURE-SENTINEL/);
+    }
+    // Not an office role: still a 404.
+    expect((await page.request.get("/dev/demo/office/tech", { maxRedirects: 0 })).status()).toBe(404);
+  });
+});
+
+test.describe("D57 (6): the white MODY logo in the existing dark headers", () => {
+  /** Width per header: the office sidebar above 900px, its narrow top bar, the technician header. */
+  const expected = (kind: "office" | "tech", viewportWidth: number) => (kind === "tech" ? 88 : viewportWidth > 900 ? 132 : 92);
+
+  for (const [kind, path] of [
+    ["office", "/dev/demo/office/mgr/calls"],
+    ["office", "/dev/demo/office/cs"],
+    ["office", "/dev/showcase/office"],
+    ["tech", "/dev/demo/tech"],
+    ["tech", "/dev/demo/tech/visit/48213/1"],
+    ["tech", "/dev/showcase/tech"],
+  ] as const) {
+    test(`${path}: proportions, size and a dark background behind it`, async ({ page }) => {
+      await openPage(page, path);
+      const img = kind === "office" ? officeLogo(page) : techLogo(page);
+      await expect(img).toHaveCount(1);
+      await expect(img).toBeVisible();
+      await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+      const facts = await img.evaluate((el: HTMLImageElement) => {
+        const r = el.getBoundingClientRect();
+        // The nearest painted background behind the logo (the header itself).
+        let behind = "";
+        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+          const bg = getComputedStyle(n).backgroundColor;
+          if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+            behind = bg;
+            break;
+          }
+        }
+        const style = getComputedStyle(el);
+        return {
+          naturalWidth: el.naturalWidth,
+          naturalHeight: el.naturalHeight,
+          width: r.width,
+          height: r.height,
+          ownBackground: style.backgroundColor,
+          parentBackground: getComputedStyle(el.parentElement as HTMLElement).backgroundColor,
+          filter: style.filter,
+          blend: style.mixBlendMode,
+          behind,
+        };
+      });
+      expect(facts.naturalWidth).toBe(976);
+      expect(facts.naturalHeight).toBe(234);
+      expect(Math.abs(facts.width / facts.height - 976 / 234) / (976 / 234)).toBeLessThan(0.01);
+      expect(facts.width).toBeCloseTo(expected(kind, page.viewportSize()!.width), 0);
+      expect(facts.ownBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(facts.parentBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(facts.filter).toBe("none");
+      expect(facts.blend).toBe("normal");
+      // --ink (#18212B): the existing dark header, never a light strip.
+      expect(facts.behind).toBe("rgb(24, 33, 43)");
+      await expect(page.locator('img[src*="mody-logo.png"], .work-brand')).toHaveCount(0);
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
+  test("at 900px and below the product name stays for screen readers only and the top bar does not grow", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls");
+    const name = page.locator(".side .brand-name");
+    await expect(name).toHaveText("ניהול טכנאים");
+    const narrow = page.viewportSize()!.width <= 900;
+    const box = await name.boundingBox();
+    if (narrow) {
+      expect(box && box.width <= 1 && box.height <= 1).toBe(true);
+      // The logo sits in the nav row: not taller than a nav link.
+      const [logo, link] = await Promise.all([officeLogo(page).boundingBox(), sideNav(page).getByRole("link").first().boundingBox()]);
+      expect(logo && link && logo.height <= link.height).toBe(true);
+    } else {
+      await expect(name).toBeVisible();
+      const logo = await officeLogo(page).boundingBox();
+      expect(logo && box && box.y >= logo.y + logo.height - 1).toBe(true);
+    }
+  });
+
+  test("the technician header: the logo row is at the end side (left in RTL), above the screen's own header", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const [brand, logo, head] = await Promise.all([
+      page.locator(".ph-head > .ph-brand").boundingBox(),
+      techLogo(page).boundingBox(),
+      page.locator(".ph-head > .ph-brand + *").boundingBox(),
+    ]);
+    expect(brand && logo && Math.abs(logo.x - brand.x) <= 1).toBe(true);
+    expect(brand && head && head.y >= brand.y + brand.height - 1).toBe(true);
+    await expect(page.locator(".ph-head > :first-child")).toHaveClass("ph-brand");
+  });
+});
+
+test.describe("D57 (6): the logo file", () => {
+  onlyInProject("desktop");
+
+  test("public/brand/mody-logo-white.png: 976×234, 8-bit RGBA, transparent corner", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { inflateSync } = await import("node:zlib");
+    const png = readFileSync("public/brand/mody-logo-white.png");
+    expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+    expect(png.subarray(12, 16).toString("latin1")).toBe("IHDR");
+    expect(png.readUInt32BE(16)).toBe(976);
+    expect(png.readUInt32BE(20)).toBe(234);
+    expect(png[24]).toBe(8); // bit depth
+    expect(png[25]).toBe(6); // colour type: RGBA
+    expect(png[28]).toBe(0); // not interlaced
+    const idat: Buffer[] = [];
+    for (let at = 8; at < png.length; ) {
+      const length = png.readUInt32BE(at);
+      const type = png.subarray(at + 4, at + 8).toString("latin1");
+      if (type === "IDAT") idat.push(png.subarray(at + 8, at + 8 + length));
+      at += 12 + length;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    // Scanline 0: a filter byte, then RGBA per pixel. For the first pixel of the first row every
+    // PNG filter predicts 0, so the stored byte is the alpha value itself.
+    expect(raw[1 + 3]).toBe(0);
   });
 });

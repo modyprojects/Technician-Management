@@ -1,7 +1,7 @@
 // Reads what account administration shows (SE-01, D34) through the data-access layer
 // (demoDataAccess.accounts) and formats its times for the screen. Server-only (the adapter is
-// server-only). Used by the Manager's "ניהול משתמשים" (./page.tsx) and the Creator's Settings ›
-// "משתמשים והרשאות" (../settings/[tab]/_users.ts).
+// server-only). Used by the Manager's Settings › "משתמשים" (tab "accounts", D57 (1);
+// ../settings/[tab]/page.tsx) and the Creator's Settings › "משתמשים והרשאות" (../settings/[tab]/_users.ts).
 // The signed-in account is the viewpoint's demo user (VIEWPOINTS[role].who); production takes it
 // from the session (G-03), and the server scopes and authorizes every list and action (D34).
 import type { AccountAdminData, AccountRequestEntry } from "@/components/office/AccountAdminParts";

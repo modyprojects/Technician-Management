@@ -12,7 +12,7 @@ import { SimulatedCommandsProvider } from "../../../_components/SimulatedCommand
 import { demoDataAccess } from "../../../_data/adapter";
 import { ddmm } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, productsOffered, VIEWPOINTS } from "../../../_data/roles";
+import { demoLandingBack, isOfficeRole, productsOffered, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 import { productsState } from "../_simulatedState";
@@ -62,8 +62,7 @@ export default async function OfficeProductsPage({ params, searchParams }: PageP
         <NoAccessPlaceholder
           id="products-no-access"
           text="לתפקיד הזה אין עריכת מוצרים. פרטי המוצר מופיעים בכרטיס הקריאה ובכרטיס הלקוח."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
+          {...demoLandingBack(role, permissions)}
         />
       </DemoOfficeFrame>
     );

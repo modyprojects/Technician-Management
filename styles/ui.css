@@ -114,6 +114,16 @@ a.stat { text-decoration: none; }
 .side .me { margin-top: auto; border-top: 1px solid var(--ink3); padding: 12px 6px 0; display: flex; gap: 10px; align-items: center; color: var(--on-dark); }
 .side .me .av { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
 .side .me small { display: block; color: var(--on-dark2); font-size: 12px; }
+/* MODY logo (D57 (6), G-08): the white file in the existing dark headers only, never a new light
+   strip. Proportions and transparency kept: the width is set here and the height follows; no
+   filter, blend mode or background. Office sidebar: the logo at the top, the product name under it. */
+.brand-logo, .brand-logo-tech { display: block; height: auto; max-width: 100%; background: none; }
+.side .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.side .brand-logo { width: 132px; }
+.side .brand-name { font-family: var(--body); font-size: 13px; color: var(--on-dark2); }
+/* Technician header: the logo's own row, at the end side (left in RTL, opposite the titles). */
+.ph-brand { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.ph-brand .brand-logo-tech { width: 88px; }
 .work { flex: 1; min-width: 0; padding-block: 22px; padding-inline: 26px; display: flex; flex-direction: column; gap: 16px; }
 .ptitle { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .ptitle h1 { font-size: 24px; }
@@ -211,6 +221,11 @@ a.ev > .ev-body { min-width: 0; }
   .office { flex-direction: column; }
   .side { width: auto; flex-direction: row; align-items: center; flex-wrap: wrap; padding: 8px 12px; }
   .side .logo { padding: 0 4px; }
+  /* Narrow top bar: the logo is the first item of the row; the product name stays for screen
+     readers only, so the bar does not grow. */
+  .side .brand { flex-direction: row; align-items: center; position: relative; }
+  .side .brand-logo { width: 92px; }
+  .side .brand-name { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .side .nav { flex-direction: row; flex-wrap: wrap; }
   .side .nav button, .side .nav a { padding: 8px 10px; font-size: 14px; }
   .side .me { display: none; }
@@ -248,6 +263,14 @@ a.ev > .ev-body { min-width: 0; }
   .oc-custno-sub { white-space: nowrap; }
 }
 /* end office-calls */
+
+/* office-nav */
+/* "מסכים נוספים" on "קריאות" (D57): one unobtrusive row of text links to the screens that left the
+   Manager's and the Creator's sidebar; no counts (#26 (b)). Each link is at least 24px tall (WCAG 2.5.8). */
+.ma-related { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; row-gap: 2px; margin-top: -6px; }
+.ma-related .lnk { display: inline-flex; align-items: center; min-height: 24px; }
+.ma-related-sep { color: var(--soft); }
+/* end office-nav */
 
 /* office-call-detail */
 /* Office call card columns (UI demo, D53; demo offCard() L851: minmax(0,1fr) minmax(0,1.5fr),
