@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-05 — Owner decisions D56: canary exceptions for `role_permissions`; dashboard service-KPI period
+- **Owner (2026-11-05), recorded as D56:** (1) approved the three canary-rows coverage exceptions of PR #12 for `public.role_permissions` (`approved_by`, `approved_at`, `updated_by`), limited to these columns and to the current migration and test scope, with the D47 and D54 safeguards unchanged; to be reassessed when real approval data exists (Step 10, D51). (2) The Manager dashboard's General-tab service KPIs use the current calendar month in Asia/Jerusalem as their initial aggregation period, shown on the screen (`docs/design/manager-dashboard-spec.md` §4.4 gap).
+- **Not authorized by D56:** merging PR #12 or PR #14, applying any migration, any remote Supabase operation.
+- Branch `claude/owner-decisions-d56` from `main` `ab51643`. Documentation only (`docs/decisions.md`, this log); no code, migration, workflow or protected file. PR #12's own notes ("need the owner's approval before PR #12 merges") are updated on its branch in a separate commit.
+- **Local cleanup (owner, 2026-11-05):** the stale local branch `claude/db-canary-rows` (`0da2530`, never pushed after `a9e7980`) was deleted from the working copy only, after a check that 186 of its 191 files equal `main` and the other 5 are earlier drafts of documents whose final versions are on `main` (PR #13, D54); no remote branch was touched. The local all-refs Gitleaks scan is clean again.
+
 ## 2026-11-05 — Step 2, PR 2.1: authentication foundations (no route, no UI change)
 - **Owner (2026-11-05):** Step 2 proceeds now, alongside Step 1, with the local database only. Owner rules of the same day applied: follow the approved specification and decisions; no unapproved features, integrations or costs; no security mechanism beyond the approved Step 2 plan; only free npm packages named in the plan.
 - Branch `claude/step2-foundations` from `main` `a225091`, then merged with `main` `49d5acc` (D55, PR #15; brand assets, PR #16; documentation and assets only). PR 2.1 of the reviewed Step 2 plan (§2.3, §2.4, §3.1–§3.3, §5.1, §6 row 2.1; plan Q24 and Q25 temporary defaults: no secret key anywhere, no database needed). No remote Supabase operation, no local Supabase stack, no Vercel or GitHub setting, no protected file changed (`proxy.ts` untouched).
