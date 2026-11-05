@@ -31,7 +31,16 @@ import {
 } from "@/features/products/data/types";
 import { normalizeProductListQuery } from "@/features/products/data/validate";
 import type { DataAccess } from "@/features/data-access/types";
-import { isTechnicianVisitFilter, type AnalyticsPeriod } from "@/features/dashboards/data/types";
+import { isDashboardMetricKey } from "@/features/dashboards/data/metric-definitions";
+import { isIsoInstant, jerusalemDate } from "@/features/dashboards/data/time";
+import {
+  DEFAULT_SKU_SORT,
+  DEFAULT_TREND_MONTHS,
+  isSkuSort,
+  isTechnicianVisitFilter,
+  isTrendMonths,
+  type AnalyticsPeriod,
+} from "@/features/dashboards/data/types";
 import {
   ACCOUNT_REQUEST_STATUSES,
   ACCOUNT_ROLE_VALUES,
@@ -107,11 +116,19 @@ import {
   type QueuedOperationState,
   type VisitDeviceSync,
 } from "@/features/sync/data/types";
-import { csQueue, managerAnalytics, officeOverview, technicianDetail } from "./aggregations";
+import {
+  csQueue,
+  dashboardDetail,
+  generalDashboard,
+  officeOverview,
+  productDashboard,
+  technicianDashboard,
+  technicianDetail,
+} from "./aggregations";
 import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
 import { correctionsOf, VISIT_BASE_VERSION, visitValue, type DemoCorrection } from "./corrections";
-import { CUSTOMERS, customerIdOf, customerProducts, findCustomer, openedOn, type DemoCustomer } from "./customers";
-import { daysBetween, TODAY } from "./dates";
+import { callStartDates, CUSTOMERS, customerIdOf, customerProducts, findCustomer, type DemoCustomer } from "./customers";
+import { daysBetween } from "./dates";
 import { UNPARSED_INVITATIONS, type DemoUnparsedInvitation, type DemoUnparsedProblem } from "./intake";
 import { calendarVisitDetail, callDetail, callSummary, historyItem, productDto, techDayVisit, techRef, visitDetail } from "./mappers";
 import { CATALOGUE_BY_SKU, findCatalogueProduct, type DemoCatalogueProduct } from "./products";
@@ -202,6 +219,20 @@ function assertPeriod(period: AnalyticsPeriod): AnalyticsPeriod {
   if (!isIsoDate(period?.from) || !isIsoDate(period?.to) || period.from > period.to) throw new RangeError("Invalid period");
   if (daysBetween(period.from, period.to) > 366) throw new RangeError("Period longer than a year");
   return { from: period.from, to: period.to };
+}
+
+/** The dashboard's `now`: an ISO instant with an offset from the server page (never the URL). */
+function assertNow(now: string): string {
+  if (!isIsoInstant(now)) throw new RangeError("Invalid instant");
+  return now;
+}
+
+/** A Technicians-tab period: valid, at most a year, and never starting after `now`'s date (no future navigation). */
+function assertDashboardPeriod(period: AnalyticsPeriod, now: string): AnalyticsPeriod {
+  const p = assertPeriod(period);
+  const asOf = jerusalemDate(now);
+  if (asOf === null || p.from > asOf) throw new RangeError("Period starts in the future");
+  return p;
 }
 
 const validRef = (ref: VisitRef): boolean => visitRefError(ref) === null;
@@ -311,13 +342,19 @@ function customerDetail(x: DemoCustomer): CustomerDetail {
     .map((p) => ({
       product: productDto(p.sku),
       callCount: p.calls.length,
-      firstDate: openedOn(p.calls[0] as Call),
-      lastDate: openedOn(p.calls[p.calls.length - 1] as Call),
+      // "נפתחה" and "תחילת טיפול" of the first and latest call by opening time (D57 (9)).
+      firstCall: callStartDates(p.calls[0] as Call),
+      latestCall: callStartDates(p.calls[p.calls.length - 1] as Call),
       cameBack: p.returns.length > 0,
       returns: boundedOf(p.returns, CUSTOMER_PRODUCTS_LIMIT),
     }))
-    // Products that came back first, then the latest call first.
-    .sort((a, b) => Number(b.cameBack) - Number(a.cameBack) || b.lastDate.localeCompare(a.lastDate) || a.product.sku.localeCompare(b.product.sku));
+    // Products that came back first, then the latest opened call first.
+    .sort(
+      (a, b) =>
+        Number(b.cameBack) - Number(a.cameBack) ||
+        Date.parse(b.latestCall.openedAt) - Date.parse(a.latestCall.openedAt) ||
+        a.product.sku.localeCompare(b.product.sku),
+    );
   const calls = boundedOf(x.calls, CUSTOMER_CALLS_LIMIT);
   return {
     id: x.id,
@@ -344,6 +381,8 @@ function productMatches(x: DemoCatalogueProduct, q: string): boolean {
 
 function productListItem(x: DemoCatalogueProduct): ProductListItem {
   const p = x.product;
+  // The creating invitation: the earliest opened call and its first visit; "נפתחה" and "תחילת טיפול"
+  // of that call (D57 (9)).
   const first = x.calls[0];
   const firstVisit = first?.visits[0];
   return {
@@ -353,7 +392,7 @@ function productListItem(x: DemoCatalogueProduct): ProductListItem {
     supplier: p.sup,
     brandId: x.brandId,
     supplierId: x.supplierId,
-    firstSeen: first && firstVisit ? { req: first.req, n: firstVisit.n, date: firstVisit.date, source: firstVisit.source, isTest: TEST } : null,
+    firstSeen: first && firstVisit ? { ...callStartDates(first), n: firstVisit.n, source: firstVisit.source, isTest: TEST } : null,
     callCount: x.calls.length,
     version: x.version,
     isTest: TEST,
@@ -792,8 +831,34 @@ export const demoDataAccess: DataAccess = {
     async officeOverview(date) {
       return officeOverview(assertDate(date));
     },
-    async managerAnalytics(period) {
-      return managerAnalytics(assertPeriod(period), TODAY);
+    async generalDashboard(now, opts) {
+      return generalDashboard(assertNow(now), isTrendMonths(opts?.months) ? opts.months : DEFAULT_TREND_MONTHS);
+    },
+    async technicianDashboard(techId, period, now) {
+      if (!isTechId(techId)) return null;
+      assertNow(now);
+      return technicianDashboard(techId, assertDashboardPeriod(period, now), now);
+    },
+    async productDashboard(now, opts) {
+      return productDashboard(assertNow(now), opts?.page, isSkuSort(opts?.sort) ? opts.sort : DEFAULT_SKU_SORT);
+    },
+    async dashboardDetail(query) {
+      // The registry key, the group and the key's tab context are validated again by the formulas
+      // (detailRecords): an unknown, pending or unavailable key or an unknown group gives null.
+      if (!isDashboardMetricKey(query?.key)) return null;
+      const now = assertNow(query.now);
+      if (query.techId !== undefined && !isTechId(query.techId)) return null;
+      const period = query.period === undefined ? undefined : assertDashboardPeriod(query.period, now);
+      if (query.group !== undefined && (typeof query.group !== "string" || query.group.length > 64)) return null;
+      return dashboardDetail({
+        key: query.key,
+        now,
+        period,
+        techId: query.techId,
+        group: query.group,
+        page: query.page,
+        limit: query.limit,
+      });
     },
     async technicianDetail(techId, period, query) {
       if (!isTechId(techId)) return null;

@@ -110,6 +110,13 @@ export type Call = {
   isTest: true;
   /** Ordered by visit number. */
   visits: Visit[];
+  /**
+   * ADD (D57): fictional service_calls.opened_at (the invitation's receipt), ISO with the
+   * Asia/Jerusalem offset. seed.ts sets it in a final pass that draws no random numbers.
+   */
+  openedAt: string;
+  /** ADD (D57): fictional service_calls.resolved_at; null unless the call's D38 status is "resolved". */
+  resolvedAt: string | null;
 };
 
 export type NotificationKind = "new" | "follow" | "change" | "cancel";

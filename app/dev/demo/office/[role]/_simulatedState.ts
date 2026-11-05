@@ -1,10 +1,10 @@
 // What the simulated commands of one office screen check against stored data, as the server
 // would (SimulatedServerState): read through the data-access layer, scoped to that screen. Only
 // the Settings tabs that delete (places, reasons), the account screens (Settings › "משתמשים
-// והרשאות", "ניהול משתמשים"), "מוצרים" (products, brands, suppliers), a review item ("פריטים
-// לבדיקה") and the call card's closed-visit corrections receive it; every other demo page gets the
-// empty state, so no other page carries account or request ids. The real server checks these
-// itself, in the database, under the caller's session.
+// והרשאות" and the Manager's Settings › "משתמשים"), "מוצרים" (products, brands, suppliers), a
+// review item ("פריטים לבדיקה") and the call card's closed-visit corrections receive it; every
+// other demo page gets the empty state, so no other page carries account or request ids. The real
+// server checks these itself, in the database, under the caller's session.
 import type { AccountAdminData } from "@/components/office/AccountAdminParts";
 import type { ProductListItem } from "@/features/products/data/types";
 import type { OfficeRole } from "@/features/reference/data/types";

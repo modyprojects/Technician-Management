@@ -8,7 +8,7 @@ import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { notificationTimeLabel } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, VIEWPOINTS, WORK_QUEUE_ACCESS_HINT, workQueueScreensOffered } from "../../../_data/roles";
+import { demoLandingBack, isOfficeRole, VIEWPOINTS, WORK_QUEUE_ACCESS_HINT, workQueueScreensOffered } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 
@@ -81,8 +81,7 @@ export default async function OfficeUnparsedPage({ params, searchParams }: PageP
         <NoAccessPlaceholder
           id="unparsed-no-access"
           text="לתפקיד הזה אין צפייה בזימונים שלא נקלטו."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
+          {...demoLandingBack(role, permissions)}
         />
       )}
     </DemoOfficeFrame>

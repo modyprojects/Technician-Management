@@ -13,7 +13,7 @@ import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { daysBetween, jerusalemDateTime, notificationTimeLabel, TODAY } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, reviewItemsOffered, VIEWPOINTS } from "../../../_data/roles";
+import { demoLandingBack, isOfficeRole, reviewItemsOffered, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import { NoAccessPlaceholder } from "../_Placeholder";
 
@@ -81,8 +81,7 @@ export default async function OfficeReviewPage({ params, searchParams }: PagePro
         <NoAccessPlaceholder
           id="review-no-access"
           text="לתפקיד הזה אין גישה לפריטים לבדיקה."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
+          {...demoLandingBack(role, permissions)}
         />
       )}
     </DemoOfficeFrame>

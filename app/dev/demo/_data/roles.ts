@@ -12,15 +12,20 @@ import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
 import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import {
   accountAdminScope,
+  callsAreaLinks as sharedCallsAreaLinks,
+  type CallsAreaLink,
   customersOffered,
   officeHomeLabel,
+  officeLanding as sharedOfficeLanding,
   officeNav as sharedOfficeNav,
   type OfficeNavHrefs,
   type OfficeNavKey,
   type OfficeNavLink,
+  officeNavParent,
   productsOffered,
   reviewItemsOffered,
   settingsTabsOffered,
+  SIDEBAR_WORK_SCREEN_ROLES,
   WORK_QUEUE_SCREENS_DECISION,
   workQueueScreensOffered,
 } from "@/features/auth/roles";
@@ -41,13 +46,15 @@ export {
   customersOffered,
   isOfficeRole,
   officeHomeLabel,
+  officeNavParent,
   productsOffered,
   reviewItemsOffered,
   settingsTabsOffered,
+  SIDEBAR_WORK_SCREEN_ROLES,
   WORK_QUEUE_SCREENS_DECISION,
   workQueueScreensOffered,
 };
-export type { OfficeNavKey };
+export type { CallsAreaLink, OfficeNavKey, OfficeNavLink };
 
 export type Viewpoint = "tech" | OfficeRole;
 
@@ -132,6 +139,35 @@ const demoOfficeNavHrefs = (role: OfficeRole): OfficeNavHrefs => ({
  */
 export const officeNav = (role: OfficeRole, permissions: RolePermissions): OfficeNavLink[] =>
   sharedOfficeNav(role, permissions, demoOfficeNavHrefs(role));
+
+/**
+ * The landing item of a demo viewpoint (D57 (1); features/auth/roles.ts officeLanding) with the
+ * demo's addresses: "דשבורד" for Manager and Creator with any dashboard tab, otherwise the office
+ * home. The office home route redirects to it, and every "חזרה ל…" link uses its label and address.
+ * Never null in the demo (every address is built).
+ */
+export function demoOfficeLanding(role: OfficeRole, permissions: RolePermissions): OfficeNavLink {
+  return (
+    sharedOfficeLanding(role, permissions, demoOfficeNavHrefs(role)) ?? {
+      key: "home",
+      label: officeHomeLabel(permissions),
+      href: demoHref.officeHome(role),
+    }
+  );
+}
+
+/**
+ * The "חזרה ל…" link of a no-access card (backHref/backLabel props): the role's landing item, so
+ * its label and address always agree and it never goes through the office home's redirect (D57).
+ */
+export function demoLandingBack(role: OfficeRole, permissions: RolePermissions): { backHref: string; backLabel: string } {
+  const landing = demoOfficeLanding(role, permissions);
+  return { backHref: landing.href, backLabel: landing.label };
+}
+
+/** The "מסכים נוספים" links of a demo viewpoint on "קריאות" (D57; features/auth/roles.ts callsAreaLinks). */
+export const callsAreaLinks = (role: OfficeRole, permissions: RolePermissions): CallsAreaLink[] =>
+  sharedCallsAreaLinks(role, permissions, demoOfficeNavHrefs(role));
 
 /** Technician bottom-navigation links: "היום", "יומן" and "פרופיל". */
 export const TECH_NAV_HREFS: TechNavHrefs = { home: demoHref.tech(), cal: demoHref.techCalendar(), prof: demoHref.techProfile() };
