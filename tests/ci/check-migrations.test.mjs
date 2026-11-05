@@ -99,9 +99,15 @@ test("an INSERT inside a DO block runs during the migration and fails", () => {
   assert.match(problems[0], /INSERT into "customers"/);
 });
 
+const MAIN_RULE = /\(the guard on main rejects this text; this guard is never weaker, rule 9\)$/;
+
 test("a semicolon inside a string or a quoted identifier does not split a statement", () => {
-  // Split on every ";", the text after it would look like a COPY ... FROM statement.
-  assert.deepEqual(checkSql(`insert into public.call_types (label_he) values ('a; copy b from c');`), []);
+  // Split on every ";", the text after it would look like a COPY ... FROM statement. The tokenizer
+  // reads one statement; only rule 9 (the guard on main, which split there) rejects the text.
+  const copyText = checkSql(`insert into public.call_types (label_he) values ('a; copy b from c');`);
+  assert.equal(copyText.length, 1, JSON.stringify(copyText));
+  assert.match(copyText[0], /^migration\.sql: COPY \.\.\. FROM is not allowed in migrations \(the guard on main rejects this text/);
+  assert.equal(lexSql(`insert into public.call_types (label_he) values ('a; copy b from c');`).statements.length, 1);
   assert.deepEqual(checkSql(`insert into public.call_types ("label;he") values ('x');`), []);
   assert.deepEqual(checkSql(`insert into public.call_types (label_he) values ('it''s; fine');`), []);
   // An E'' string is read correctly (its \\' does not end it) but is not a plain constant.
@@ -109,7 +115,13 @@ test("a semicolon inside a string or a quoted identifier does not split a statem
 });
 
 test("nested block comments and comments inside bodies are ignored", () => {
-  assert.deepEqual(checkSql(`/* outer /* inner */ insert into customers values (1); */ select 1;`), []);
+  // PostgreSQL nests block comments: the INSERT is inside the comment. The guard on main did not
+  // nest them and rejected the text, so rule 9 rejects it too; no other rule fires.
+  const nested = `/* outer /* inner */ insert into customers values (1); */ select 1;`;
+  assert.deepEqual(lexSql(nested).tokens.map((t) => t.value), ["select", "1", ";"]);
+  const problems = checkSql(nested);
+  assert.equal(problems.length, 1, JSON.stringify(problems));
+  assert.match(problems[0], MAIN_RULE);
   assert.deepEqual(
     checkSql(`create function f() returns void language sql as $$ -- private.bootstrap_first_creator(x)
       select 1 $$;`),
@@ -759,6 +771,8 @@ test("V1-2: a BEFORE INSERT trigger on a reference table may run only a reviewed
   rejects(`do $$ begin if true then ${triggerOn("public.call_types", "private.tg_bad")} end if; end $$;`, REVIEWED_TRIGGER);
   rejects(`create function private.mk() returns void language plpgsql as $$ begin perform 1; ${triggerOn("public.call_types", "private.tg_bad")} end $$;`,
     /function private\.mk: a BEFORE INSERT trigger on reference table call_types may run only a reviewed function/);
+  // INSTEAD OF INSERT counts as BEFORE (it decides the stored row of a view of that name).
+  rejects(`create trigger t instead of insert on public.call_types for each row execute function private.tg_bad();`, REVIEWED_TRIGGER);
   // Other tables and other timings are not limited by this rule.
   passes(`${triggerOn("public.customers", "private.tg_bad")} create trigger t after insert on public.call_types for each row execute function private.tg_bad();`);
 });
@@ -857,6 +871,10 @@ test("V1-6: CREATE TABLE ... (LIKE ...) fails (it copies a marker default)", () 
   rejects(`create table public.call_types (label_he text not null, like public.profiles including defaults);`, /CREATE TABLE \.\.\. \(LIKE \.\.\.\) is not allowed/);
   rejects(`create table public.x (like public.profiles);`, /CREATE TABLE \.\.\. \(LIKE \.\.\.\) is not allowed/);
   passes(`create table public.x (id int, email text check (email like '%@example.test'));`);
+  // A typed table takes its columns (and an attribute domain's default) from a composite type.
+  rejects(`create type public.ct as (label_he text, made information_schema.time_stamp); create table public.call_types of public.ct;`,
+    /CREATE TABLE \.\.\. OF <type> \(a typed table\) is not allowed/);
+  rejects(`create table public.x of public.ct (label_he with options not null);`, /CREATE TABLE \.\.\. OF <type>/);
 });
 
 test("V1-7: ADD COLUMN on an existing table only with a built-in type or a type the files create", () => {
@@ -875,4 +893,123 @@ test("V1-7: ADD COLUMN on an existing table only with a built-in type or a type 
 
 test("V1-8: a CREATE TABLE at the start of a statement in a DO block does not make the table new", () => {
   rejects(`do $$ begin perform 1; create table public.profiles (id int); end $$; alter table public.profiles drop column role;`, EXISTING_REWRITE);
+});
+
+test("V1-1 ... V1-6: every input of verification round 1 fails (E1-E17 and the four NEW forms)", () => {
+  const calls = `create table public.call_types (id uuid primary key default gen_random_uuid(), label_he text not null,
+    is_test boolean not null default false, data_source text);\n`;
+  const tg = (body) => `${calls}create function private.tg_ct() returns trigger language plpgsql set search_path = '' as $$
+    declare r record; begin ${body} return new; end $$;
+    create trigger ct_bi before insert on public.call_types for each row execute function private.tg_ct();
+    insert into public.call_types (label_he) values ('x');`;
+  const mutation = "mutation { updatepermissionsCollection(set: {label_he: \"Fake label\"}, atMost: 100) { affectedCount } }";
+  for (const [label, sql] of [
+    ["E1", tg(`return jsonb_populate_record(new, '{"is_test": true, "data_source": "simulator"}');`)],
+    ["E2", `${calls}create function private.tg_ct() returns trigger language plpgsql as $$ begin new.is_test := true; return new; end $$;
+      create trigger ct_bi before insert on postgres.public.call_types for each row execute function private.tg_ct();`],
+    ["E3", `${calls}create rule ct_r as on insert to public.call_types do update postgres.public.permissions set label_he = 'Fake label';`],
+    ["E4", `alter table postgres.public.role_permissions drop column allowed;
+      alter table postgres.public.role_permissions add column allowed boolean not null default true;`],
+    ["E5", `select graphql.resolve('${mutation}');`],
+    ["E5b", `${calls}select graphql.resolve('mutation { insertIntocall_typesCollection(objects: [{label_he: "Fake", is_test: true}]) { affectedCount } }');`],
+    ["E6", `create view postgres.public.call_types as select id, name as label_he from public.customers;`],
+    ["E7", `create table postgres.public.call_types (id uuid, label_he text not null, is_test boolean not null default true);`],
+    ["E8", `do $$ declare c refcursor; n int; begin open c for update postgres.public.permissions set label_he = 'Fake label' returning 1; fetch c into n; end $$;`],
+    ["E8b", `do $$ declare c refcursor; n int; begin open c for update public.permissions set label_he = 'Fake label' returning 1; fetch c into n; end $$;`],
+    ["E9", `alter table public.permissions add column note text not null constraint set default 'Fake note';`],
+    ["E10", `create table public.call_types (id uuid, label_he text not null, is_test boolean not null constraint drop default true);`],
+    ["E11", `alter table public.permissions add column is_test boolean not null constraint drop default true;`],
+    ["E12", `create table public.call_types (label_he text not null, like public.profiles including defaults);`],
+    ["E13", `alter table public.permissions add column created_at_2 information_schema.time_stamp;`],
+    ["E14", `select "vault".create_secret('fake-value', 'fake_name');`],
+    ["E15", `set local search_path = vault, public; select create_secret('fake-value-2', 'fake_name_2');`],
+    ["E16", `set local search_path = graphql, public; select resolve('${mutation}');`],
+    ["E17", `select "graphql".resolve('${mutation}');`],
+    ["NEW strict", tg("select true, 'simulator' into strict new.is_test, new.data_source;")],
+    ["NEW get diagnostics", tg("perform 1; get diagnostics new.is_test = row_count;")],
+    ["NEW foreach", tg("foreach new.data_source in array array['simulator'] loop end loop;")],
+    ["NEW for in", tg("for new in select new.id, new.label_he, true, 'simulator' loop end loop;")],
+  ]) {
+    assert.ok(checkSql(sql).length > 0, `${label}: ${sql}`);
+  }
+});
+
+test("V1-2: a reviewed trigger function may not declare a variable named NEW (it would shadow the row)", () => {
+  const options = { allowedReferenceTriggers: new Set(["private.tg_ct()"]) };
+  const definition = (declare) => `create function private.tg_ct() returns trigger language plpgsql set search_path = '' as $$
+    declare ${declare} begin return new; end $$;
+    create trigger ct_bi before insert on public.call_types for each row execute function private.tg_ct();`;
+  const CHANGES = /a reviewed reference-table trigger function may not change the new row \(NEW\)/;
+  rejects(definition(`new public.call_types := jsonb_populate_record(null::public.call_types, '{"label_he": "Fake", "is_test": true}');`), CHANGES, options);
+  rejects(definition(`a int; new record;`), CHANGES, options);
+  rejects(definition(`a int; "new" constant public.call_types := null;`), CHANGES, options);
+  // In an inner block.
+  rejects(`create function private.tg_ct() returns trigger language plpgsql as $$ begin
+      declare new public.call_types; begin return new; end; return null; end $$;
+    create trigger ct_bi before insert on public.call_types for each row execute function private.tg_ct();`, CHANGES, options);
+  passes(definition(`v_row jsonb; v_new_label text;`), options);
+});
+
+test("V1-7: a domain counts as a type the files create only over a built-in type, wherever a domain of that name is created", () => {
+  const ADDED = /ADD COLUMN of type public\.\w+ .* on the existing table public\.permissions/;
+  // A domain over a domain inherits its default: every existing row would get now().
+  rejects(`create domain public.d as information_schema.time_stamp; alter table public.permissions add column c public.d;`, ADDED);
+  rejects(`create domain public.d information_schema.time_stamp; alter table public.permissions add column c public.d;`, ADDED);
+  // The same name created safely and then again as such a domain (also unqualified, also in a DO block).
+  rejects(`create type public.r as enum ('a'); drop type public.r;
+    do $$ begin create domain r as information_schema.time_stamp; end $$;
+    alter table public.permissions add column c public.r;`, ADDED);
+  passes(`create domain public.d as text; create domain public.e as pg_catalog.int4 check (value > 0);
+    alter table public.permissions add column c public.d, add column e public.e;`);
+});
+
+test("V1-7: every column of a reference table has a built-in type or a type the files create", () => {
+  rejects(`create table public.call_types (id uuid, label_he text not null, created information_schema.time_stamp);`,
+    /a column of reference table call_types has type information_schema\.time_stamp/);
+  rejects(`create domain public.d as information_schema.time_stamp; create table public.call_types (id uuid, label_he public.d);`,
+    /a column of reference table call_types has type public\.d/);
+  passes(`create type public.k as enum ('screen', 'data');
+    create table public.call_types (id uuid primary key, label_he text not null, kind public.k, sort_order int not null,
+      is_test boolean not null default false, created_at timestamp with time zone not null default now(),
+      constraint u unique (label_he), check (sort_order >= 0));`);
+});
+
+test("V1-9 / rule 9: what the guard on main rejected is still rejected, text PostgreSQL never runs included", () => {
+  for (const sql of [
+    // The two text-only differences verification round 1 found.
+    `insert into public.call_types (label_he) values ('is_test');`,
+    `select 'insert into call_types (x) values (''seed'')';`,
+    // Further text main read as code: a quoted identifier, a nested comment, COPY after ";" in a string.
+    `create table public."insert into customers" (id int);`,
+    `/* a /* b */ insert into public.visits (id) values (1); */ select 1;`,
+    `comment on table public.a is 'x; copy public.a from stdin';`,
+    // A string in a body that is not a reviewed writer's (its text is read as main read it).
+    `create function private.f() returns text language sql as $$ select 'insert into call_types (x) values (''seed'')' $$;`,
+    // A writer defined inside a DO block is not a top-level reviewed definition: main's reading applies.
+    `do $d$ begin create function private.write_audit(a text, b text, c uuid, d jsonb) returns bigint language sql as $w$
+      insert into public.audit_logs (action) values (a) returning 1 $w$; end $d$;`,
+  ]) {
+    rejects(sql, MAIN_RULE);
+  }
+  // The inputs of main's own tests keep main's result (pass or fail).
+  passes(`create table public.customers (id uuid primary key, data_source text not null check (data_source in ('simulator', 'automated_test')));`);
+  passes(`insert into public.call_types (label_he) values ('תיקון'), ('התקנה');`);
+  passes(`-- insert into customers values (1);\n/* insert into visits values (2); */ select 1;`);
+  for (const sql of [
+    `insert into public.customers (customer_number, name) values ('10001', 'x');`,
+    `INSERT INTO "visits" (id) values ('a');`,
+    `insert into service_calls (id) values ('a');`,
+    `insert into followup_reasons (label_he, is_test) values ('x', true);`,
+    `insert into role_permissions (role) values ('manager'); -- ok\n insert into permissions (key, label_he) values ('k', 'user@example.test');`,
+    `insert into call_types (label_he, data_source) values ('x', 'simulator');`,
+    `copy public.customers from '/tmp/x.csv';`,
+  ]) {
+    assert.ok(checkSql(sql).length > 0, sql);
+  }
+  // Only the reviewed writer bodies are left out of main's reading: the repository passes (its
+  // writers insert into business tables), and the same INSERT in another body fails.
+  assert.deepEqual(checkRepository(repositoryRoot), []);
+  const body = `returns bigint language sql as $$ insert into public.audit_logs (action) values (p_action) returning 1 $$;`;
+  passes(`create function private.write_audit(p_action text, p_target_table text, p_target_id uuid, p_details jsonb) ${body}`);
+  rejects(`create function private.write_audit(p_action text, p_target_table text, p_target_id uuid) ${body}`, /INSERT into "audit_logs" is not allowed/);
 });
