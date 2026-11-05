@@ -1,7 +1,7 @@
 // Tests for scripts/check-migrations.mjs (D47: no test or fictitious data in migrations; D49).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -183,10 +183,13 @@ test("an unterminated dollar quote is reported", () => {
 
 // Fix pass (independent review S1/D1, S14) ----------------------------------------------------------
 
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3 writer functions, pinned to signature and tables", () => {
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3 and PR 1.4 writer functions, pinned to signature and tables", () => {
   assert.deepEqual(
     [...ALLOWED_WRITERS].map(([signature, { tables }]) => `${signature} -> ${tables.join(",")}`).sort(),
     [
+      "private.add_call_type(text) -> public.call_types",
+      "private.add_collection_location(text,text,text,text,text) -> public.collection_locations",
+      "private.add_followup_reason(text) -> public.followup_reasons",
       "private.admin_create_profile(uuid,text,text,text,text,uuid) -> public.profiles",
       "private.admin_create_technician(uuid,text,text,text,text,boolean) -> public.technicians",
       "private.authorize_account_creation(text,text,text) -> public.account_requests",
@@ -196,6 +199,55 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3 writer functions, pinned
     ],
   );
   assert.deepEqual([...ALLOWED_EXTENSIONS], []);
+});
+
+// PR 1.4 (Migration 2): three Settings writers (owner acceptance needed, PR 1.4 approval item 1).
+const pr13Writers = new Map([...ALLOWED_WRITERS].filter(([signature]) => !/^private\.add_/.test(signature)));
+const migration13 = readFileSync(join(repositoryRoot, "supabase", "migrations", "20261104120000_access_and_permissions.sql"), "utf8");
+const migration14 = readFileSync(join(repositoryRoot, "supabase", "migrations", "20261105120000_reference_customers_products.sql"), "utf8");
+
+test("PR 1.4: a Settings writer inserts only with its exact signature and only into its own table", () => {
+  const body = (table) => `language plpgsql security definer as $$ begin insert into public.${table} (label_he, sort_order) values ('x', 1); end $$;`;
+  passes(`create function private.add_call_type(p_label text) returns void ${body("call_types")}`);
+  passes(`create function private.add_followup_reason(p_label text) returns void ${body("followup_reasons")}`);
+  for (const definition of [
+    // Another table than the one listed for it.
+    `create function private.add_call_type(p_label text) returns void ${body("followup_reasons")}`,
+    `create function private.add_followup_reason(p_label text) returns void ${body("call_types")}`,
+    // Another signature, schema or name.
+    `create function private.add_call_type(p_label text, p_sort integer) returns void ${body("call_types")}`,
+    `create function public.add_call_type(p_label text) returns void ${body("call_types")}`,
+    `create function private.add_call_types(p_label text) returns void ${body("call_types")}`,
+    // A writer outside the allowlist inserting into a reference table.
+    `create function private.set_call_type_active(p_id uuid, p_active boolean, p_version integer) returns void ${body("call_types")}`,
+  ]) {
+    rejects(definition, /INSERT into "(call_types|followup_reasons)" is not allowed/);
+  }
+  // Without the three PR 1.4 entries the PR 1.4 migration fails exactly at its three writers.
+  assert.deepEqual(
+    checkFiles([{ name: "a.sql", sql: migration13 }, { name: "b.sql", sql: migration14 }], { allowedWriters: pr13Writers }).sort(),
+    [
+      'b.sql: function private.add_call_type: INSERT into "call_types" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)',
+      'b.sql: function private.add_collection_location: INSERT into "collection_locations" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)',
+      'b.sql: function private.add_followup_reason: INSERT into "followup_reasons" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)',
+    ],
+  );
+});
+
+test("PR 1.4: the migration passes after PR 1.3; calling a Settings writer or marking a D48 row fails", () => {
+  assert.deepEqual(checkFiles([{ name: "a.sql", sql: migration13 }, { name: "b.sql", sql: migration14 }]), []);
+  for (const call of [
+    `select private.add_call_type('x');`,
+    `select * from public.add_followup_reason('x');`,
+    `select public.add_collection_location('x', 'branch', 'y', null, null);`,
+    `select private.delete_followup_reason(null, 1);`,
+  ]) {
+    const problems = checkFiles([{ name: "a.sql", sql: migration13 }, { name: "b.sql", sql: `${migration14}\n${call}` }]);
+    assert.ok(problems.some((p) => /the migration calls/.test(p)), `${call}: ${JSON.stringify(problems)}`);
+  }
+  rejects(`insert into public.call_types (label_he, sort_order, is_test) values ('x', 3, false);`, /test-marker column|test marker/);
+  rejects(`insert into public.followup_reasons (label_he, sort_order, created_by) values ('x', 6, (select id from public.profiles limit 1));`,
+    /plain constants|constant/);
 });
 
 test("an INSERT into a business table inside any other function body fails, as before PR 1.3", () => {

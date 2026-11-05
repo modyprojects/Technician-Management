@@ -66,6 +66,7 @@ Both options:
 7. Email outbox and notifications are clean.
 8. Devices: every pilot device verified empty (new environment identifier or reinstall).
 9. The owner signs off; the result is recorded in `docs/WORKLOG.md`.
+10. **Consequence of PR 1.4's TEMPORARY behaviour (owner questions OQ-4 and OQ-13, `docs/review/step1-pr14/README.md` section 13):** before real reference values are entered, an approved migration removes the pre-go-live marker CHECKs (`CHECK (is_test)` on `brands`, `suppliers` and `collection_locations`; `CHECK (is_test or created_by is null)` on `call_types` and `followup_reasons`). The cleanup or separation plan accounts for two facts: every unique column (`products.sku_normalized`, `customers.customer_number`, the brand, supplier and pickup-place names, both reason and call-type labels, and the three `sort_order` columns) is unique across test and real rows, so a leftover test row blocks or reorders the real one; and test rows in these tables cannot be removed by a migration (the guard forbids DELETE) or by the owner's database role (the delete triggers). A separate Production project built from the same migrations inherits these CHECKs, so it cannot hold real pickup places, brands or suppliers until that migration runs.
 
 By option:
 - Separate project: Vercel Production variables point to the production project; Preview variables still point to the development project.

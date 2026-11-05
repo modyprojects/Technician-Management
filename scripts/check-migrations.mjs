@@ -137,6 +137,11 @@ export const ALLOWED_WRITERS = new Map([
   ["private.admin_create_technician(uuid,text,text,text,text,boolean)", { tables: ["public.technicians"] }],
   ["private.request_account_change(text,uuid,text,text,text)", { tables: ["public.account_requests"] }],
   ["private.bootstrap_first_creator(uuid,text)", { tables: ["public.profiles"] }],
+  // PR 1.4 Settings writers (key settings; TEMPORARY test marking, owner question OQ-4). Accepting
+  // them needs the owner's acceptance (PR 1.4 approval item 1, with PR 1.3 Q1).
+  ["private.add_call_type(text)", { tables: ["public.call_types"] }],
+  ["private.add_followup_reason(text)", { tables: ["public.followup_reasons"] }],
+  ["private.add_collection_location(text,text,text,text,text)", { tables: ["public.collection_locations"] }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.
