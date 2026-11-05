@@ -27,7 +27,7 @@
     - A probe table without RLS made three tests fail.
     - A probe sequence made the sequence test fail.
     - Both show Supabase's default grants to `anon` (tables, sequences), which Migration 1 revokes.
-  - The migration guard (`scripts/check-migrations.mjs`, tests in `tests/ci/check-migrations.test.mjs`) runs in both workflows.
+  - The migration guard (`scripts/check-migrations.mjs`, tests in `tests/ci/check-migrations.test.mjs`) runs in both workflows. `scripts/check-migrations.mjs` is a protected file (D55, `CLAUDE.md`): a PR may still change it, but merging a change that weakens it needs the owner's approval, so review must name any such change.
 - **Roles in every category:** anonymous, signed in without a profile, deactivated, Technician A, Technician B, Customer Service, Manager, Creator and `service_role`, with permission-matrix variations where a key matters (D33).
 - Each category is covered as soon as the tables it needs exist (PRs 1.3–1.6); tables planned for later steps (for example media, transcripts and signature text versions in Step 4) get their tests in that step.
 
