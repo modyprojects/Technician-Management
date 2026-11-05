@@ -44,6 +44,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Two commits so the canary self-test step can see what a pull request changes (HEAD^1 is
+          # the base branch tip of the pull request's merge commit).
+          fetch-depth: 2
 
       - name: Migration guard (D47, no test data in migrations)
         run: node scripts/check-migrations.mjs
@@ -64,7 +67,26 @@ jobs:
       # database only, need no secrets and run on the Node that ubuntu-latest provides (stdlib only).
       # Measured locally: self-test 7.0 min (49 cases), check 1.1 min with zero or one migration.
       # Self-test limit 15 min: about a 2x margin over the measured time (the job limit stays 20).
+      # The self-test runs only when the check's own files change (owner decision D54); it fails
+      # closed: on a push to main, or when the changed files cannot be read, it runs.
+      - name: Detect changes to the canary-rows check's own files
+        id: canary_files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # git diff --quiet exits 0 only when none of these paths changed (renames count as delete
+          # plus add); 1 (changed) or any error (128) keeps "true", so the self-test runs.
+          changed=true
+          if [ "$EVENT_NAME" = "pull_request" ] && git rev-parse -q --verify 'HEAD^2' >/dev/null; then
+            if git diff --quiet --no-renames HEAD^1 HEAD -- scripts/db-canary.mjs tests/db-canary tests/db-canary-selftest .github/workflows/db.yml; then
+              changed=false
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Canary-rows check files changed: $changed"
+
       - name: Canary-rows check self-test (tests/db-canary-selftest)
+        if: steps.canary_files.outputs.changed != 'false'
         timeout-minutes: 15
         run: node scripts/db-canary.mjs --selftest tests/db-canary-selftest
 

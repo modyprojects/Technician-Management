@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-05 (runtime canary-rows check for migrations, branch `claude/db-canary-rows`, based on `main` `bcaa885`).
+Last updated: 2026-11-05 (runtime canary-rows check for migrations, branch `claude/db-canary-check`, PR #13, based on `main` `bcaa885`; D54).
 
 ## 1. Purpose and how to read it
 
@@ -53,7 +53,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
 | `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, migration guard, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
-| `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`), canary-rows self-test and check (`scripts/db-canary.mjs`); no secrets |
+| `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`), canary-rows check on every run and its self-test only when the check's own files change (D54; `scripts/db-canary.mjs`); no secrets |
 | `.github/pull_request_template.md` | PR description and checklist |
 | `docs/` | Decisions, demo deviations, spec, security, architecture, data-access architecture (`architecture-data-access.md`), database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
 | `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
@@ -77,7 +77,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
 | Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified read-only by Claude Code before each merge and after each Production deployment; owner checks periodic; D53) | Step 0 |
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
-| Canary-rows migration check (runtime; complements the migration guard) | Implemented | Step 1, dedicated PR (`claude/db-canary-rows`) |
+| Canary-rows migration check (runtime; complements the migration guard) | Implemented | Step 1, dedicated PR #13 (`claude/db-canary-check`); its files are protected (D54) |
 | Database schema, RLS, grants, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), test-data marking (D47) | Planned | Step 1, PRs 1.3–1.6 |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
 | Authentication and user administration | Planned | Step 2 |
