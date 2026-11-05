@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-04 (UI demo with fictional data, phase G, branch `claude/ui-demo-5`, stacked on `claude/ui-demo-4` (PR #9, phase F); PR #5 is merged to `main` as `013fd2f`).
+Last updated: 2026-11-05 (runtime canary-rows check for migrations, branch `claude/db-canary-rows`, based on `main` `bcaa885`).
 
 ## 1. Purpose and how to read it
 
@@ -42,20 +42,23 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `eslint.config.mjs`, `tsconfig.json`, `postcss.config.mjs` | Lint, strict TypeScript and Tailwind/PostCSS configuration |
 | `playwright.config.ts` | Playwright at 390 / 820 / 1440 px; one build served twice (`/dev` open and closed) |
 | `tests/e2e/` | End-to-end tests: RTL and overflow, breakpoints, demo tokens, security headers, `/dev` gate (positive and negative, showcase and every UI-demo route, RSC and prefetch variants), owner review rules, UI demo (`demo.spec.ts`: every demo route and calendar view at 390 / 820 / 1440, search and filters, call card, access by role, simulated actions, signature, calendar navigation and filters, visit drawer, technician calendar views, closed-visit views, notifications, profile, office navigation per role, Settings access and tabs, permission matrix, account administration and requests, every D34 activation path, the add forms' submit flows, operational settings, what the browser receives, phase F navigation per role, customers search and card, products edit and access, unparsed invitations and back from field, phase G review items (access, both versions, decisions with and without a required note, read-only resolved items), closed-visit corrections, the mock outbox and the technician's sync state; every page also checked for document overflow below the app frame); `data-validate.spec.ts`: negative tests of the shared validators and list filters (pure logic); `screenshots.spec.ts` runs on demand only |
-| `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard |
+| `tests/ci/` | Tests for CI scripts (`node --test`): the migration guard and the pure logic of the canary-rows check (`db-canary.test.mjs`, no Docker) |
 | `tests/db/` | Database tests (pgTAP) run against a local Supabase database in CI: catalog-wide checks that `anon` and `PUBLIC` have no table, sequence or function privileges in `public` or `private`, `anon` has no usage on `private`, and every table has RLS and a test-data marker (D47) |
+| `tests/db-canary/` | Canary fixtures for the canary-rows check (`README.md`: how to write one): `000_base.sql` (fictional, test-marked Auth and Storage rows outside `public`/`private`), one `<version>.sql` per migration whose tables or columns would otherwise fail coverage (rule R6; none yet), `coverage-exceptions.json` (empty; one global file). Outside `tests/db/`, which `supabase test db` runs as pgTAP |
+| `tests/db-canary-selftest/` | Self-test cases for the canary-rows check (49): each case has its own tiny migrations, fixtures and `expect.json` (expected outcome and rule); passing schema changes and failing cases for rules R1 to R7, including one per bypass found in review round 1. Outside `tests/db/` for the same reason |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
 | `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
+| `scripts/db-canary.mjs` | Canary-rows check (D47, runtime): applies the migrations to the local database with and without canary rows and fails when a migration changes, removes, copies or derives data, or writes data into the schema (rules R1 to R7, `docs/testing.md`; a tripwire, not proof against deliberate evasion); `--selftest` runs `tests/db-canary-selftest/`. Local Docker only, Node standard library; design, measurements and review round 1 in `docs/review/db-canary/README.md` |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
 | `.github/workflows/ci.yml` | CI: Gitleaks, lint, typecheck, CI script tests, migration guard, build, bundle check, e2e, dependency audit; read-only token, pinned actions |
-| `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`); no secrets |
+| `.github/workflows/db.yml` | Database tests: runs only when database files change; migration guard, pinned Supabase CLI, local database (`supabase db start`), pgTAP (`supabase test db tests/db`), canary-rows self-test and check (`scripts/db-canary.mjs`); no secrets |
 | `.github/pull_request_template.md` | PR description and checklist |
 | `docs/` | Decisions, demo deviations, spec, security, architecture, data-access architecture (`architecture-data-access.md`), database schema (approved Step 1 design), deployment, testing, design system, integrations, Outlook template, roadmap, thinking ahead, work log, this map |
 | `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
-| `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16; `docs/review/ui-demo-5/` has the demo's mail view only), fictitious data only |
+| `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16; `docs/review/ui-demo-5/` has the demo's mail view only), fictitious data only; `docs/review/db-canary/` holds the canary-rows check's design notes and measurements (no screenshots) |
 | `docs/user-guides/` | Hebrew user guides (D15): placeholders until features are tested |
 | `docs/history/` | Superseded context; not authoritative |
 | `prompts/` | Claude Code prompts (`STEP-0-PLAN.md`) |
@@ -74,6 +77,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Security headers, `/dev` gate, CI, secret scan, bundle check | Implemented | Step 0 |
 | Protected Preview and Production (Vercel Authentication, owner only; D29, D31) | Implemented (Vercel settings; verified read-only by Claude Code before each merge and after each Production deployment; owner checks periodic; D53) | Step 0 |
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
+| Canary-rows migration check (runtime; complements the migration guard) | Implemented | Step 1, dedicated PR (`claude/db-canary-rows`) |
 | Database schema, RLS, grants, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), test-data marking (D47) | Planned | Step 1, PRs 1.3–1.6 |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
 | Authentication and user administration | Planned | Step 2 |

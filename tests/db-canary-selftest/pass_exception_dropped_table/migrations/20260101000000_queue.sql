@@ -1,0 +1,3 @@
+-- A table that no fixture fills (a reasoned coverage exception) ...
+create table public.job_queue (id integer primary key, payload text not null, is_test boolean not null default false);
+alter table public.job_queue enable row level security;

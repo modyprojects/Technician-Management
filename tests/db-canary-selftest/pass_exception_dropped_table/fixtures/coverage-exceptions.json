@@ -1,0 +1,6 @@
+[
+  {
+    "table": "public.job_queue",
+    "reason": "Self-test: filled only by a later background step, then dropped by the next migration."
+  }
+]

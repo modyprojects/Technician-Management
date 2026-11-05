@@ -8,6 +8,9 @@ on:
       - "tests/db/**"
       - "scripts/install-supabase-cli.sh"
       - "scripts/check-migrations.mjs"
+      - "scripts/db-canary.mjs"
+      - "tests/db-canary/**"
+      - "tests/db-canary-selftest/**"
       - ".github/workflows/db.yml"
   push:
     branches: [main]
@@ -16,6 +19,9 @@ on:
       - "tests/db/**"
       - "scripts/install-supabase-cli.sh"
       - "scripts/check-migrations.mjs"
+      - "scripts/db-canary.mjs"
+      - "tests/db-canary/**"
+      - "tests/db-canary-selftest/**"
       - ".github/workflows/db.yml"
 
 # Read-only token; no secrets. The local database uses the CLI's built-in development keys,
@@ -30,7 +36,10 @@ concurrency:
 jobs:
   pgtap:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 20 (was 15) for the canary-rows steps below: measured locally, the database steps take about
+    # 8.5 min (database start 0.3 min, pgTAP under 0.1 min, canary self-test 7.0 min, canary check
+    # 1.1 min); hosted runners are slower and pull the images first.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +59,18 @@ jobs:
 
       - name: pgTAP tests (tests/db)
         run: supabase test db tests/db
+
+      # Runtime canary-rows check (docs/testing.md "Canary rows check"). Both steps reset the LOCAL
+      # database only, need no secrets and run on the Node that ubuntu-latest provides (stdlib only).
+      # Measured locally: self-test 7.0 min (49 cases), check 1.1 min with zero or one migration.
+      # Self-test limit 15 min: about a 2x margin over the measured time (the job limit stays 20).
+      - name: Canary-rows check self-test (tests/db-canary-selftest)
+        timeout-minutes: 15
+        run: node scripts/db-canary.mjs --selftest tests/db-canary-selftest
+
+      - name: Canary-rows check (migrations change no data, D47)
+        timeout-minutes: 10
+        run: node scripts/db-canary.mjs
 
       - name: Stop the local database
         if: always()
