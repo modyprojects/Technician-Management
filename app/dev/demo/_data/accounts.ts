@@ -25,6 +25,8 @@ export type DemoAccount = {
    * the two deactivated ones, 3 for שיראל (ACCOUNT_VERSION). Not all 1, so nothing can hard-code it.
    */
   version: number;
+  /** The invitation alias ("כינוי בזימונים", profiles.invitation_rep_name, unique); null when none. */
+  invitationAlias: string | null;
 };
 
 const ACCOUNT_ID: Record<string, string> = {
@@ -41,8 +43,15 @@ const ACCOUNT_ID: Record<string, string> = {
 const ACCOUNT_VERSION: Readonly<Record<string, number>> = { "acc-shirel": 3 };
 
 /**
- * The office users (USERS), the technicians' accounts (TECHS) and three inactive accounts that
- * show every D34 activation path in the Manager's scope:
+ * Invitation aliases ("כינוי בזימונים") of the Customer Service accounts: the names the invitations
+ * use for them (unique, so another account cannot take one: the routine edit's "alias in use" case).
+ */
+const ACCOUNT_ALIAS: Readonly<Record<string, string>> = { "acc-shirel": "שיראל", "acc-rep2": "הדס" };
+
+/**
+ * The office users (USERS), the technicians' accounts (TECHS), three inactive accounts that show
+ * every D34 activation path in the Manager's scope, and one Technician account without a field
+ * profile (גלעד):
  * - אורית: a deactivated Customer Service account whose reactivation request waits (areq-2);
  * - רונית: a Customer Service account created inactive and never activated, with no request: the
  *   Manager offers "בקשת הפעלת חשבון" (D34 a);
@@ -62,6 +71,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
       deactivatedAt: null,
       technicianId: null,
       version: ACCOUNT_VERSION[id] ?? 1,
+      invitationAlias: ACCOUNT_ALIAS[id] ?? null,
     };
   }),
   ...TECHS.map((t) => ({
@@ -74,6 +84,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     deactivatedAt: null,
     technicianId: t.id,
     version: 1,
+    invitationAlias: null,
   })),
   // Deactivated by the Manager (D34 b); a reactivation request waits for the Creator (below).
   {
@@ -86,6 +97,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     deactivatedAt: "2026-09-01T09:00:00+03:00",
     technicianId: null,
     version: 2,
+    invitationAlias: null,
   },
   // Created inactive ahead of a start date, not activated yet; no request.
   {
@@ -98,6 +110,7 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     deactivatedAt: null,
     technicianId: null,
     version: 1,
+    invitationAlias: null,
   },
   // A former technician, deactivated by the Manager.
   {
@@ -110,6 +123,21 @@ export const ACCOUNTS: readonly DemoAccount[] = [
     deactivatedAt: "2026-08-14T16:30:00+03:00",
     technicianId: null,
     version: 2,
+    invitationAlias: null,
+  },
+  // An immediate creation whose last phase (the technician record) failed (Step 2 plan §3.8 phase
+  // 4): an active Technician account without a field profile, the "פרופיל טכנאי חסר" row ("השלמה").
+  {
+    id: "acc-gilad",
+    name: "גלעד",
+    role: "tech",
+    email: "gilad@example.test",
+    phone: "050-000-0107",
+    active: true,
+    deactivatedAt: null,
+    technicianId: null,
+    version: 1,
+    invitationAlias: null,
   },
 ];
 
@@ -136,7 +164,10 @@ export type DemoAccountRequest = {
   version: number;
 };
 
-/** The Manager's Customer Service requests (D34 a), one per status. */
+/**
+ * The Manager's Customer Service requests (D34 a): one per status, plus an approved creation whose
+ * account was not created (areq-6).
+ */
 export const ACCOUNT_REQUESTS: readonly DemoAccountRequest[] = [
   {
     id: "areq-1",
@@ -209,6 +240,23 @@ export const ACCOUNT_REQUESTS: readonly DemoAccountRequest[] = [
     // Approved (2), then fulfilled: admin_create_profile bound הדס's account to it (3).
     version: 3,
   },
+  // Variant B (Step 2 plan §3.8, TEMPORARY Q15): approved, but creating the account failed after the
+  // approval (phase 2), so no account is bound: the Creator offers "השלמת יצירה" and "ביטול", the
+  // Manager "ביטול הבקשה". Version 2: approved once.
+  {
+    id: "areq-6",
+    kind: "create",
+    accountId: null,
+    target: { name: "נציגת ערב", email: "evening-rep@example.test", role: "cs" },
+    newRole: null,
+    requestedBy: "acc-doron",
+    requestedAt: "2026-10-19T10:00:00+03:00",
+    status: "approved",
+    reason: null,
+    decidedBy: "acc-creator",
+    decidedAt: "2026-10-19T15:10:00+03:00",
+    version: 2,
+  },
 ];
 
 /**
@@ -258,7 +306,7 @@ export const CREATION_INTENTS: readonly DemoCreationIntent[] = [
     name: "טכנאי חדש",
     email: "tech-new@example.test",
     requestedBy: "acc-doron",
-    authorizedAt: "2026-10-22T09:05:00+03:00",
+    authorizedAt: "2026-10-20T09:05:00+03:00",
     version: 1,
   },
   {
@@ -267,7 +315,7 @@ export const CREATION_INTENTS: readonly DemoCreationIntent[] = [
     name: "מנהלת משמרת",
     email: "shift-mgr@example.test",
     requestedBy: "acc-creator",
-    authorizedAt: "2026-10-23T13:40:00+03:00",
+    authorizedAt: "2026-10-19T13:40:00+03:00",
     version: 1,
   },
 ];

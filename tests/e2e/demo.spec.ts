@@ -885,8 +885,9 @@ test.describe("account administration (SE-01, D34)", () => {
   test("Creator: every account with 🧪, own row without actions, no password or email editing", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const users = page.getByRole("table", { name: "משתמשים", exact: true });
-    await expect(users.locator("tbody tr")).toHaveCount(10);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(10);
+    // Step 2 PR 2.3: גלעד (a Technician account without a field profile) is the eleventh account.
+    await expect(users.locator("tbody tr")).toHaveCount(11);
+    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(11);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
     await expect(own.getByRole("button")).toHaveCount(0);
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
@@ -964,7 +965,8 @@ test.describe("account administration (SE-01, D34)", () => {
   }) => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
-    await expect(accounts.locator("tbody tr")).toHaveCount(8);
+    // Step 2 PR 2.3: with גלעד (a Technician account without a field profile).
+    await expect(accounts.locator("tbody tr")).toHaveCount(9);
     await expect(accounts.getByText("מנהל", { exact: true })).toHaveCount(0);
     await expect(accounts.getByText("יוצר", { exact: true })).toHaveCount(0);
     // אורית (inactive Customer Service) already has a pending reactivation request.

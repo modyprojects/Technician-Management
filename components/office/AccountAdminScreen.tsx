@@ -37,7 +37,7 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import { useCommands } from "@/features/data-access/commands-context";
-import { versionAfter, type CommandResult } from "@/features/data-access/common";
+import type { CommandResult } from "@/features/data-access/common";
 import { AccountForm, type AccountFormKind, type AccountFormResult } from "./AccountAdminForms";
 import {
   AccountName,
@@ -50,6 +50,7 @@ import {
   type ActionMessageValue,
 } from "./AccountAdminParts";
 import { AccountAdminRequests } from "./AccountAdminRequests";
+import { accountAfterStateChange, stateInput } from "./AccountAdminRules";
 import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShell";
 
 const SHORT = "col-center col-fit";
@@ -156,9 +157,9 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   function deactivate(a: UserAccount) {
     void act(
       `deactivate-${a.id}`,
-      () => commands.deactivateAccount({ accountId: a.id, expectedVersion: a.version }),
+      () => commands.deactivateAccount(stateInput(a)),
       (r) => {
-        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: false, version: versionAfter(r, x.version) } : x)));
+        setRows((prev) => prev.map((x) => (x.id === a.id ? accountAfterStateChange(x, r, false) : x)));
         markChanged(a.id, r.simulated);
         setConfirm(null);
         setFocusRow(a.id);
@@ -178,11 +179,9 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   function activate(a: UserAccount) {
     void act(
       `activate-${a.id}`,
-      () => commands.activateAccount({ accountId: a.id, expectedVersion: a.version }),
+      () => commands.activateAccount(stateInput(a)),
       (r) => {
-        setRows((prev) =>
-          prev.map((x) => (x.id === a.id ? { ...x, active: true, deactivatedAt: null, version: versionAfter(r, x.version) } : x)),
-        );
+        setRows((prev) => prev.map((x) => (x.id === a.id ? accountAfterStateChange(x, r, true) : x)));
         markChanged(a.id, r.simulated);
         setFocusRow(a.id);
         setMessage({ kind: "ok", text: said(r.simulated, `החשבון של ${a.name} היה מופעל מיד.`, `החשבון של ${a.name} הופעל.`) });

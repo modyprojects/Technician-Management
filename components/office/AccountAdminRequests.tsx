@@ -26,7 +26,7 @@ import {
 } from "@/features/accounts/data/types";
 import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
-import { versionAfter, type CommandResult, type VersionedResult } from "@/features/data-access/common";
+import type { CommandResult, VersionedResult } from "@/features/data-access/common";
 import {
   ActionMessage,
   RequestStatusPill,
@@ -36,6 +36,7 @@ import {
   type AccountRequestEntry,
   type ActionMessageValue,
 } from "./AccountAdminParts";
+import { cancelInput, cancelledEntryLabel, decisionInput, requestEntryAfter } from "./AccountAdminRules";
 import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShell";
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
@@ -87,14 +88,14 @@ export function AccountAdminRequests({
    * The request after a successful action, with the version a stored action returned; `local` (no
    * further action) when it was simulated.
    */
-  function done(entry: AccountRequestEntry, request: AccountRequest, result: CommandResult<VersionedResult>, decidedLabel: string | null) {
+  function done(
+    entry: AccountRequestEntry,
+    request: AccountRequest,
+    result: Extract<CommandResult<VersionedResult>, { ok: true }>,
+    decidedLabel: string | null,
+  ) {
     setFocusRow(entry.request.id);
-    onUpdate({
-      ...entry,
-      request: { ...request, version: versionAfter(result, entry.request.version) },
-      decidedLabel,
-      local: result.simulated,
-    });
+    onUpdate(requestEntryAfter(entry, request, result, decidedLabel));
   }
 
   /** A decision: the Creator is its decider, now. */
@@ -130,12 +131,7 @@ export function AccountAdminRequests({
   function approve(entry: AccountRequestEntry) {
     void act(
       `approve-${entry.request.id}`,
-      () =>
-        accounts.decideAccountRequest({
-          requestId: entry.request.id,
-          expectedVersion: entry.request.version,
-          decision: { outcome: "approve" },
-        }),
+      () => accounts.decideAccountRequest(decisionInput(entry, { outcome: "approve" })),
       (r) => {
         done(entry, decided(entry, { status: "approved" }), r, "עכשיו");
         const title = requestTitle(entry.request);
@@ -157,12 +153,7 @@ export function AccountAdminRequests({
     }
     void act(
       `reject-${entry.request.id}`,
-      () =>
-        accounts.decideAccountRequest({
-          requestId: entry.request.id,
-          expectedVersion: entry.request.version,
-          decision: { outcome: "reject", reason: text },
-        }),
+      () => accounts.decideAccountRequest(decisionInput(entry, { outcome: "reject", reason: text })),
       (r) => {
         done(entry, decided(entry, { status: "rejected", reason: text }), r, "עכשיו");
         setRejecting(null);
@@ -180,11 +171,11 @@ export function AccountAdminRequests({
   function cancel(entry: AccountRequestEntry) {
     void act(
       `cancel-${entry.request.id}`,
-      () => accounts.cancelAccountRequest({ requestId: entry.request.id, expectedVersion: entry.request.version }),
+      () => accounts.cancelAccountRequest(cancelInput(entry)),
       (r) => {
         // An approved creation keeps its decider and time (Migration 1): only a pending one is "now".
         const request = cancelledRequest(entry.request, self, new Date().toISOString());
-        done(entry, request, r, request.cancelledAfterApproval ? entry.decidedLabel : "עכשיו");
+        done(entry, request, r, cancelledEntryLabel(entry, request));
         const title = requestTitle(entry.request);
         setMessage({ kind: "ok", text: said(r.simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
       },

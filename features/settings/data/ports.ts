@@ -36,7 +36,10 @@ export interface SettingsQueries {
    * an open decision (`usage`, d13).
    */
   permissionMatrix(): Promise<PermissionMatrix>;
-  /** Settings › טכנאים, in Settings order (active and inactive). */
+  /**
+   * Settings › טכנאים, in Settings order (active and inactive). Also read by the account screens'
+   * loaders, which pass on only the fields the viewer's edit form shows (Step 2 PR 2.3, Q14).
+   */
   technicians(): Promise<Bounded<TechnicianSetting>>;
   /** Settings › מקומות איסוף, in Settings order, with whether each is referenced. */
   places(): Promise<Bounded<PlaceSetting>>;

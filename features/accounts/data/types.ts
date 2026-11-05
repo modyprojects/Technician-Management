@@ -44,6 +44,12 @@ export type UserAccount = TestMarker & {
   email: string;
   /** Work phone. */
   phone: string;
+  /**
+   * The name invitations use for this person ("כינוי בזימונים"; Migration 1
+   * `profiles.invitation_rep_name`, unique, 1–60 characters); null when none is set. A routine
+   * update (D34 d) changes it.
+   */
+  invitationAlias: string | null;
   /** Deactivated accounts cannot sign in (D34). */
   active: boolean;
   /**
@@ -218,6 +224,12 @@ export type CreatorNotice = TestMarker & {
   at: IsoTimestamp;
   /** Who acted: the requesting Manager, the deactivating Manager, or who changed the email. */
   actor: AccountRef;
+  /**
+   * The acting account's role; null when unknown. Demo: from the fixture account; production: the
+   * actor's profile, which the Creator may read. The card labels a Manager's Outlook-email change
+   * (TEMPORARY, Step 2 plan Q14: in the app only the Creator changes it).
+   */
+  actorRole: AccountRole | null;
   /** The account it is about; `accountId` is null for a pending "create" (no account exists yet). */
   target: { accountId: AccountId | null; name: string; role: AccountRole };
   /** "pending-request" only: the request's kind; null otherwise. */
@@ -377,3 +389,31 @@ export type CreatedAccount = { account: UserAccount };
 export type CreatedTechnician = { account: UserAccount; technician: TechnicianSetting };
 
 export type CreatedAccountRequest = { request: AccountRequest };
+
+// ---------------------------------------------------------------------------------------------
+// Completing an open creation (Step 2 plan §3.8 "Retry"; PR 2.3 "השלמת יצירה" and "השלמה")
+
+/**
+ * "השלמת יצירה": completes an open creation (an approved creation with no account bound yet): the
+ * Creator's on a Manager's approved Customer Service request (Variant B; Q15), or the requester's on
+ * his own creation intent. Email, role and name come from the stored row, never from this input; no
+ * password (Q1). `technician` is required for a Technician creation and refused for any other role.
+ */
+export type CompleteCreationInput = {
+  requestId: AccountRequestId;
+  /** Work phone; null for none (it can be added later, as a routine update). */
+  phone: string | null;
+  technician?: { color: TechnicianColorToken; device: string };
+};
+
+/** The created account and, for a Technician, his Settings › טכנאים row, as stored. */
+export type CompletedCreation = { account: UserAccount; technician: TechnicianSetting | null };
+
+/**
+ * "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4): the field profile of an active
+ * Technician account that has none. The Outlook email is the account's sign-in email as the server
+ * reads it (Q5, Q14), never an input.
+ */
+export type CompleteTechnicianProfileInput = { accountId: AccountId; color: TechnicianColorToken; device: string };
+
+export type CompletedTechnicianProfile = { technician: TechnicianSetting };

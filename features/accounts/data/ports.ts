@@ -1,5 +1,5 @@
 // Account-administration ports (SE-01, D34). Implemented by app/dev/demo/_data/adapter.ts
-// (queries, fictional fixtures), app/dev/demo/_components/SimulatedCommands.tsx (commands,
+// (queries, fictional fixtures), app/dev/demo/_components/simulated-commands.ts (commands,
 // simulated) and, later, by server functions that check authorization in the database under the
 // caller's own session before any Auth admin call (D34). The caller's role comes from the session,
 // never from an argument; a screen only decides what to offer (G-04).
@@ -20,6 +20,10 @@ import type {
   AccountRequestQuery,
   AccountStateInput,
   CancelAccountRequestInput,
+  CompleteCreationInput,
+  CompletedCreation,
+  CompletedTechnicianProfile,
+  CompleteTechnicianProfileInput,
   CreatedAccount,
   CreatedAccountRequest,
   CreatedTechnician,
@@ -58,7 +62,8 @@ export interface AccountsQueries {
    * changes made by anyone but the viewing Creator. Creator only: production denies any other
    * caller (the adapter checks the role itself, because RLS also lets a Manager read his own audit
    * rows). The demo adapter has no session: it returns the demo Creator's view, and only the
-   * Creator's loader calls it (PR 2.3). No read/unread state.
+   * Creator's loader calls it (PR 2.3). No read/unread state. `actorRole` is the acting account's
+   * role.
    */
   creatorNotices(query?: PageRequest): Promise<Page<CreatorNotice>>;
 }
@@ -136,4 +141,24 @@ export interface AccountCommands {
    * notifies the Creator (D34 f).
    */
   updateTechnician(input: UpdateTechnicianInput): Promise<CommandResult<VersionedResult>>;
+  /**
+   * "השלמת יצירה" (Step 2 plan §3.8 "Retry"; the real adapter is PR 2.6): completes an open creation.
+   * Before any Auth admin call the server re-reads the row under the caller's session and requires
+   * it to be approved with no account bound, and either the Creator on a Manager's "create"
+   * request (Variant B; Q15; PR 1.3 Q14) or the requester on his own creation intent
+   * (`direct_create`). Email, role and name come from the row, never from the client. No password
+   * (Q1): the Creator sets the first one with setPassword. Failures follow plan §3.8: a definite
+   * Auth refusal or a binding refusal is reported (the row stays open, or the intent is cancelled
+   * and an orphan Auth user may keep the email taken, Q16); an uncertain one leaves the row open for
+   * another attempt. Carries no version: no Migration 1 function takes one.
+   */
+  completeCreation(input: CompleteCreationInput): Promise<CommandResult<CompletedCreation>>;
+  /**
+   * "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4): creates the field profile of an
+   * active Technician account that has none. Callers: the Creator for any account, the Manager
+   * within his scope (Migration 1 `admin_create_technician`). The Outlook email is the sign-in email
+   * as the server reads it (Q5, Q14), never an input. A second field profile is refused (55000).
+   * Carries no version: no Migration 1 function takes one.
+   */
+  completeTechnicianProfile(input: CompleteTechnicianProfileInput): Promise<CommandResult<CompletedTechnicianProfile>>;
 }

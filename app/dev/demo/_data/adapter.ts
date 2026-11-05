@@ -305,7 +305,11 @@ function accountRef(id: string): AccountRef {
   return { id, name: a?.name ?? "" };
 }
 
+/** An account as the port returns it (with its invitation alias, D34 d). */
 const userAccount = (a: DemoAccount): UserAccount => ({ ...a, technicianMissing: technicianProfileMissing(a), isTest: TEST });
+
+/** The acting account's role (CreatorNotice.actorRole); null when the account is unknown. */
+const actorRoleOf = (id: string): AccountRole | null => accountById(id)?.role ?? null;
 
 const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   id: r.id,
@@ -333,6 +337,7 @@ const requestNotice = (r: DemoAccountRequest): CreatorNotice => ({
   kind: "pending-request",
   at: r.requestedAt,
   actor: accountRef(r.requestedBy),
+  actorRole: actorRoleOf(r.requestedBy),
   target: { accountId: r.accountId, name: r.target.name, role: r.target.role },
   requestKind: r.kind,
   isTest: TEST,
@@ -346,6 +351,7 @@ function eventNotice(e: DemoAccountEvent): CreatorNotice {
     kind: e.kind,
     at: e.at,
     actor: accountRef(e.actorId),
+    actorRole: actorRoleOf(e.actorId),
     target: { accountId: e.targetAccountId, name: target?.name ?? "", role: target?.role ?? "tech" },
     requestKind: null,
     isTest: TEST,

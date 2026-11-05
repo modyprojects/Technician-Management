@@ -13,6 +13,8 @@ import {
   type AccountRef,
   type AccountRequest,
   type AccountRole,
+  type CompletedCreation,
+  type CompletedTechnicianProfile,
   type UserAccount,
 } from "@/features/accounts/data/types";
 import {
@@ -21,7 +23,9 @@ import {
   accountRequestError,
   accountRequestTargetError,
   accountStateCommandError,
+  aliasTakenError,
   cancelRequestError,
+  completeCreationError,
   creatorOnlyError,
   credentialEmailError,
   credentialsCallerError,
@@ -31,6 +35,7 @@ import {
   newTechnicianError,
   passwordError,
   profileUpdateCommandError,
+  technicianProfileCompletionError,
   technicianUpdateCommandError,
   testAccountEmailError,
   type AccountRequestStored,
@@ -128,9 +133,16 @@ export type SimulatedServerState = {
   /** Accounts in the viewer's scope by id, as stored (role, state, version, test marker; D34). */
   accounts?: Readonly<Record<string, AccountStored>>;
   /**
-   * Settings › טכנאים: the technician records on the screen by technician id (version, name, test
-   * marker). A technician this provider created counts as version 1. The tab also passes
-   * `selfRole` ("פעיל" is the Creator's only for now, Q14), never `self` (no account ids there).
+   * Who each open creation in `requests` creates (a creation intent or an approved, unfulfilled
+   * "create" request), by request id: name, email and role from the stored row. "השלמת יצירה"
+   * builds the account from these, never from client values (Step 2 plan §3.8 "Retry").
+   */
+  creationTargets?: Readonly<Record<string, { name: string; email: string; role: AccountRole }>>;
+  /**
+   * The technician records on the screen by technician id (version, name, test marker): Settings ›
+   * טכנאים, and the account screens for their listed Technician accounts ("עריכת פרטים"). A
+   * technician this provider created counts as version 1. Settings › טכנאים also passes `selfRole`
+   * ("פעיל" is the Creator's only for now, Q14), never `self` (no account ids there).
    */
   technicians?: Readonly<Record<string, { version: number; name: string; isTest: boolean }>>;
   /** The signed-in account (production: from the session, G-03). */
@@ -433,7 +445,9 @@ export function buildSimulatedCommands(
     // checks below). Not modelled: Migration 1 also refuses a test-marked Creator's decisions,
     // cancellations of others' requests and credential changes (every demo account is
     // test-marked). Versions never advance here (nothing is stored): a versioned command returns
-    // the version it checked, and a simulated row offers no second action.
+    // the version it checked, and a simulated row offers no second action. "השלמת יצירה"
+    // (completeCreation) and "השלמה" (completeTechnicianProfile) build what they create from the
+    // stored rows (creationTargets, accounts), never from client values (Step 2 plan §3.8).
     accounts: {
       createAccount: (input) =>
         run(
@@ -446,6 +460,7 @@ export function buildSimulatedCommands(
               role: input.role,
               email: input.email.trim(),
               phone: input.phone.trim(),
+              invitationAlias: null,
               active: true,
               deactivatedAt: null,
               technicianId: null,
@@ -509,7 +524,8 @@ export function buildSimulatedCommands(
       cancelAccountRequest: (input) =>
         run(
           () => [cancelRequestError(input, ownValue(state.requests, input?.requestId), viewer)],
-          () => "ביטול הבקשה",
+          // A creation intent is the viewer's own "יצירה שלא הושלמה", not a request.
+          () => (ownValue(state.requests, input.requestId)?.intent ? "ביטול יצירה שלא הושלמה" : "ביטול הבקשה"),
           (): VersionedResult => ({ version: ownValue(state.requests, input.requestId)?.version ?? input.expectedVersion }),
         ),
       deactivateAccount: (input) =>
@@ -548,6 +564,7 @@ export function buildSimulatedCommands(
               role: "tech" as const,
               email: technician.email,
               phone: technician.phone,
+              invitationAlias: null,
               active: true,
               deactivatedAt: null,
               technicianId: technician.id,
@@ -558,7 +575,7 @@ export function buildSimulatedCommands(
           },
         ),
       // D34 e, D50: the Creator only. Nothing is stored, sent or returned; the password never
-      // appears in a message or a toast. No screen calls these in PR 2.2 (dialogs: PR 2.3).
+      // appears in a message or a toast.
       // An unknown account is the database's 22023 (assert_can_change_credentials).
       setPassword: (accountId, password) =>
         run(
@@ -583,10 +600,14 @@ export function buildSimulatedCommands(
           },
           () => `שינוי כתובת מייל · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · לא נשמר`,
         ),
-      // D34 d (Q14 for a Manager's Outlook email and "פעיל"). No screen calls these in PR 2.2.
+      // D34 d (Q14 for a Manager's Outlook email and "פעיל"). An alias another listed account holds
+      // is refused as the database's unique constraint would (23505).
       updateProfile: (input) =>
         run(
-          () => [profileUpdateCommandError(input, ownValue(state.accounts, input?.accountId), viewer)],
+          () => [
+            profileUpdateCommandError(input, ownValue(state.accounts, input?.accountId), viewer),
+            aliasTakenError(input?.invitationAlias, input?.accountId, state.accounts ?? {}),
+          ],
           () =>
             `עדכון פרטים · ${excerpt(input.name ?? ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · נרשם ביומן הביקורת`,
           (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
@@ -596,6 +617,73 @@ export function buildSimulatedCommands(
           () => [technicianUpdateCommandError(input, storedTechnician(input?.technicianId), viewer)],
           () => `עדכון פרטי טכנאי · ${excerpt(input.name ?? storedTechnician(input.technicianId)?.name ?? "", 40)}`,
           (): VersionedResult => ({ version: storedTechnician(input.technicianId)?.version ?? input.expectedVersion }),
+        ),
+      // "השלמת יצירה" (Step 2 plan §3.8 "Retry"): name, email and role come from the stored row
+      // (creationTargets), never from the client; no password (Q1). Nothing is created.
+      completeCreation: (input) =>
+        run(
+          () => [
+            completeCreationError(input, ownValue(state.requests, input?.requestId), viewer),
+            ownValue(state.creationTargets, input?.requestId) ? null : ACTION_MESSAGES.invalid,
+          ],
+          () => `השלמת יצירה · ${excerpt(ownValue(state.creationTargets, input.requestId)?.name ?? "", 40)} · לא נוצר משתמש`,
+          (): CompletedCreation => {
+            const target = ownValue(state.creationTargets, input.requestId);
+            if (!target) throw new Error("unknown creation");
+            const phone = input.phone === null ? "" : input.phone.trim();
+            const technician: TechnicianSetting | null =
+              target.role === "tech" && input.technician
+                ? {
+                    id: remember(simId("tech")),
+                    name: target.name,
+                    color: technicianColorCss(input.technician.color),
+                    phone,
+                    email: target.email,
+                    active: true,
+                    device: input.technician.device.trim(),
+                    version: 1,
+                    isTest: true,
+                  }
+                : null;
+            const account = {
+              id: remember(simId("account")),
+              name: target.name,
+              role: target.role,
+              email: target.email,
+              phone,
+              invitationAlias: null,
+              active: true,
+              deactivatedAt: null,
+              technicianId: technician?.id ?? null,
+              version: 1,
+              isTest: true,
+            };
+            return { account: { ...account, technicianMissing: technicianProfileMissing(account) }, technician };
+          },
+        ),
+      // "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4): the Outlook email is the account's
+      // stored sign-in email (Q14), never an input. Nothing is created.
+      completeTechnicianProfile: (input) =>
+        run(
+          () => [technicianProfileCompletionError(input, ownValue(state.accounts, input?.accountId), viewer)],
+          () => `השלמת פרופיל טכנאי · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)}`,
+          (): CompletedTechnicianProfile => {
+            const stored = ownValue(state.accounts, input.accountId);
+            if (!stored) throw new Error("unknown account");
+            return {
+              technician: {
+                id: remember(simId("tech")),
+                name: stored.name,
+                color: technicianColorCss(input.color),
+                phone: "",
+                email: stored.email,
+                active: true,
+                device: input.device.trim(),
+                version: 1,
+                isTest: true,
+              },
+            };
+          },
         ),
     },
     products: {
