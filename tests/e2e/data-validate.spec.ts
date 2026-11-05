@@ -1,19 +1,50 @@
 import { expect, test } from "@playwright/test";
-import { ACCOUNT_ROLE_VALUES, activationKind, isAccountRole } from "@/features/accounts/data/types";
+import {
+  dbRequestTypeOf,
+  isCreationIntentType,
+  isDbRequestType,
+  requestKindOf,
+} from "@/features/accounts/data/db-codes";
+import {
+  ACCOUNT_REQUEST_KINDS,
+  ACCOUNT_ROLE_VALUES,
+  activationKind,
+  isAccountRole,
+  isNewAccountRole,
+  isOpenCreation,
+  NEW_ACCOUNT_ROLES,
+  technicianProfileMissing,
+  type NewAccountInput,
+} from "@/features/accounts/data/types";
 import {
   accountDecisionError,
   accountRequestError,
   accountRequestTargetError,
   accountStateError,
+  cancelRequestError,
+  CREATOR_ACCOUNT_PENDING,
+  credentialEmailError,
+  credentialsCallerError,
+  expectedVersionError,
+  MANAGER_TECHNICIAN_FIELDS_PENDING,
+  newAccountError,
   newTechnicianError,
+  passwordError,
   pendingRequestError,
+  profileUpdateError,
+  routineUpdateCallerError,
+  staleVersionError,
+  technicianUpdateError,
   testAccountEmailError,
+  type AccountRequestStored,
+  type AccountViewer,
 } from "@/features/accounts/data/validate";
 import { backFromFieldHref, parseBackFromFieldState } from "@/features/calls/data/search-params";
 import { normalizeBackFromFieldQuery } from "@/features/calls/data/validate";
 import { customersListHref, parseCustomersListState } from "@/features/customers/data/search-params";
 import { isCustomerId, normalizeCustomerListQuery } from "@/features/customers/data/validate";
 import { filterListValues, ownValue } from "@/features/data-access/common";
+import { ACTION_MESSAGES, databaseErrorMessage, REQUEST_MESSAGES } from "@/features/data-access/supabase-errors";
 import { parseProductsListState, productsListHref } from "@/features/products/data/search-params";
 import { isNormalizedSku, normalizeSku } from "@/features/products/data/types";
 import {
@@ -55,6 +86,7 @@ import {
   placeDeleteError,
   reasonDeleteError,
   setPermissionError,
+  technicianActiveError,
   templateLabelRequiredError,
 } from "@/features/settings/data/validate";
 import { onlyInProject } from "./helpers";
@@ -122,9 +154,9 @@ test.describe("account validators (D34)", () => {
     expect(accountRequestError({ kind: "role-change", accountId: "acc-x", newRole: "creator" })).not.toBeNull();
     expect(accountRequestError({ kind: "role-change", accountId: "bad id!", newRole: "cs" })).not.toBeNull();
     expect(accountRequestError({ kind: "bogus" } as never)).not.toBeNull();
-    expect(accountRequestError({ kind: "create", name: "נציגה", email: "not-an-email", phone: "050-000-0000" })).not.toBeNull();
+    expect(accountRequestError({ kind: "create", name: "נציגה", email: "not-an-email" })).not.toBeNull();
     expect(accountRequestError({ kind: "role-change", accountId: "acc-x", newRole: "cs" })).toBeNull();
-    expect(accountRequestError({ kind: "create", name: "נציגה", email: "rep@example.test", phone: "050-000-0000" })).toBeNull();
+    expect(accountRequestError({ kind: "create", name: "נציגה", email: "rep@example.test" })).toBeNull();
   });
 
   test("the request's target is checked against its stored role and state", () => {
@@ -139,7 +171,7 @@ test.describe("account validators (D34)", () => {
     expect(accountRequestTargetError("create", undefined)).toBeNull();
   });
 
-  test("decisions: a rejection needs a reason; only a pending request is decided or cancelled", () => {
+  test("decisions: a rejection needs a reason; only a pending request is decided", () => {
     expect(accountDecisionError({ outcome: "reject", reason: "   " })).not.toBeNull();
     expect(accountDecisionError({ outcome: "reject", reason: "x".repeat(301) })).not.toBeNull();
     expect(accountDecisionError({ outcome: "maybe" } as never)).not.toBeNull();
@@ -170,6 +202,209 @@ test.describe("account validators (D34)", () => {
     expect(newTechnicianError(tech)).toBeNull();
     expect(newTechnicianError({ ...tech, color: "url(https://evil.example)" as never })).not.toBeNull();
     expect(newTechnicianError({ ...tech, device: "  " })).not.toBeNull();
+  });
+});
+
+test.describe("PR 2.2 port alignment (Step 2 plan §3.7 a–j)", () => {
+  onlyInProject("desktop");
+
+  test("a. versions: a positive integer; a stale one gets the database's PT409 text", () => {
+    for (const bad of [0, -1, 1.5, "1", Number.NaN, undefined, null, Number.POSITIVE_INFINITY]) {
+      expect(expectedVersionError(bad), String(bad)).toBe("גרסה לא תקינה");
+    }
+    expect(expectedVersionError(1)).toBeNull();
+    expect(expectedVersionError(7)).toBeNull();
+    expect(staleVersionError(2, 3)).toBe(ACTION_MESSAGES.stale);
+    expect(staleVersionError(2, 3)).toBe(databaseErrorMessage({ code: "PT409", message: "version conflict" }));
+    expect(staleVersionError(3, 3)).toBeNull();
+  });
+
+  test("a. Settings › טכנאים \"פעיל\": version checked against the stored technician; unknown is refused", () => {
+    const input = { techId: "y", expectedVersion: 1, active: false };
+    expect(technicianActiveError(input, { version: 1 })).toBeNull();
+    expect(technicianActiveError(input, { version: 2 })).toBe(ACTION_MESSAGES.stale);
+    expect(technicianActiveError(input, undefined)).not.toBeNull();
+    expect(technicianActiveError({ ...input, expectedVersion: 0 }, { version: 1 })).toBe("גרסה לא תקינה");
+    expect(technicianActiveError({ ...input, active: "no" as never }, { version: 1 })).not.toBeNull();
+    expect(technicianActiveError({ ...input, techId: "bad id!" }, { version: 1 })).not.toBeNull();
+    expect(technicianActiveError(undefined as never, { version: 1 })).not.toBeNull();
+  });
+
+  test("f. a new account is Manager, Customer Service or Technician; a Creator is pending the owner (Q9)", () => {
+    const base = { name: "בדיקה", email: "x@example.test", phone: "050-000-0000" };
+    expect(newAccountError({ ...base, role: "creator" } as never)).toBe(CREATOR_ACCOUNT_PENDING);
+    for (const role of ["bogus", "constructor", "manager", "__proto__", "", undefined]) {
+      expect(newAccountError({ ...base, role } as never), String(role)).toBe("תפקיד לא תקין");
+    }
+    for (const role of ["mgr", "cs", "tech"] as const) expect(newAccountError({ ...base, role } satisfies NewAccountInput)).toBeNull();
+    expect([...NEW_ACCOUNT_ROLES].sort()).toEqual(["cs", "mgr", "tech"]);
+    expect(isNewAccountRole("creator")).toBe(false);
+    expect(CREATOR_ACCOUNT_PENDING).not.toMatch(NO_DECISION_CODE);
+  });
+
+  test("h. a Manager's Customer Service create request has no phone; its role rules are unchanged", () => {
+    expect(accountRequestError({ kind: "create", name: "נציגה 4", email: "rep4@example.test" })).toBeNull();
+    expect(accountRequestError({ kind: "create", name: "נציגה 4", email: "" })).not.toBeNull();
+    expect(accountRequestError({ kind: "create", name: "  ", email: "rep4@example.test" })).not.toBeNull();
+    expect(accountRequestError({ kind: "role-change", accountId: "acc-x", newRole: "creator" })).not.toBeNull();
+    expect(accountRequestError({ kind: "role-change", accountId: "acc-x", newRole: "mgr" })).not.toBeNull();
+  });
+
+  test("i. request kinds: role-change <-> role_change; direct_create is a creation intent, never a request", () => {
+    expect(requestKindOf("role_change")).toBe("role-change");
+    for (const v of ["direct_create", "role-change", "constructor", "__proto__", "toString", null, undefined, 1, "CREATE"]) {
+      expect(requestKindOf(v), String(v)).toBeNull();
+    }
+    expect(dbRequestTypeOf("role-change")).toBe("role_change");
+    for (const v of ["role_change", "direct_create", "constructor", "__proto__", null]) expect(dbRequestTypeOf(v), String(v)).toBeNull();
+    for (const kind of ACCOUNT_REQUEST_KINDS) expect(requestKindOf(dbRequestTypeOf(kind))).toBe(kind);
+    expect(isCreationIntentType("direct_create")).toBe(true);
+    expect(isCreationIntentType("create")).toBe(false);
+    expect(isDbRequestType("direct_create")).toBe(true);
+    expect(isDbRequestType("role-change")).toBe(false);
+  });
+
+  test("g. cancel: the requester's pending or open creation; the Creator only an open creation (else he rejects)", () => {
+    const mgr: AccountViewer = { id: "acc-doron", role: "mgr" };
+    const otherMgr: AccountViewer = { id: "acc-other", role: "mgr" };
+    const creator: AccountViewer = { id: "acc-creator", role: "creator" };
+    const cs: AccountViewer = { id: "acc-shirel", role: "cs" };
+    const tech: AccountViewer = { id: "acc-tech-y", role: "tech" };
+    const input = { requestId: "areq-1", expectedVersion: 1 };
+    const stored = (over: Partial<AccountRequestStored>): AccountRequestStored => ({
+      status: "pending",
+      version: 1,
+      requestedBy: "acc-doron",
+      creation: true,
+      fulfilled: false,
+      ...over,
+    });
+    const pending = stored({});
+    const openCreation = stored({ status: "approved", version: 2 });
+    const openInput = { ...input, expectedVersion: 2 };
+    const cannot = REQUEST_MESSAGES.cannotCancel;
+    const forbidden = ACTION_MESSAGES.forbidden;
+
+    expect(cancelRequestError(input, pending, mgr)).toBeNull();
+    expect(cancelRequestError(openInput, openCreation, mgr)).toBeNull();
+    expect(cancelRequestError(openInput, stored({ status: "approved", version: 2, fulfilled: true }), mgr)).toBe(cannot);
+    expect(cancelRequestError(openInput, stored({ status: "approved", version: 2, creation: false }), mgr)).toBe(cannot);
+    expect(cancelRequestError(openInput, stored({ status: "rejected", version: 2 }), mgr)).toBe(cannot);
+    expect(cancelRequestError(openInput, stored({ status: "cancelled", version: 2 }), mgr)).toBe(cannot);
+    expect(cancelRequestError(input, pending, otherMgr)).toBe(forbidden);
+    expect(cancelRequestError(openInput, openCreation, otherMgr)).toBe(forbidden);
+    // The Creator rejects a Manager's pending request with a reason; he never cancels it.
+    expect(cancelRequestError(input, pending, creator)).toBe(forbidden);
+    expect(cancelRequestError(openInput, openCreation, creator)).toBeNull();
+    expect(cancelRequestError(openInput, stored({ status: "approved", version: 2, requestedBy: "acc-creator" }), creator)).toBeNull();
+    expect(cancelRequestError(openInput, stored({ status: "approved", version: 2, creation: false }), creator)).toBe(cannot);
+    for (const viewer of [cs, tech]) {
+      expect(cancelRequestError(input, pending, viewer), viewer.role).toBe(forbidden);
+      expect(cancelRequestError(openInput, openCreation, viewer), viewer.role).toBe(forbidden);
+    }
+    expect(cancelRequestError(input, undefined, mgr)).toBe(forbidden);
+    expect(cancelRequestError(input, pending, null)).toBe(forbidden);
+    expect(cancelRequestError({ ...input, expectedVersion: 3 }, pending, mgr)).toBe(ACTION_MESSAGES.stale);
+    expect(cancelRequestError({ ...input, expectedVersion: 0 }, pending, mgr)).toBe("גרסה לא תקינה");
+    expect(cancelRequestError({ ...input, requestId: "bad id!" }, pending, mgr)).not.toBeNull();
+    expect(cancelRequestError(undefined as never, pending, mgr)).not.toBeNull();
+    // The validator's texts are the database's (55000 "the request cannot be cancelled", 42501).
+    expect(cannot).toBe(databaseErrorMessage({ code: "55000", message: "the request cannot be cancelled" }));
+    expect(forbidden).toBe(databaseErrorMessage({ code: "42501", message: "not authorized" }));
+  });
+
+  test("e. routine updates: the Creator any field; the Manager CS and technicians, never Outlook email or \"פעיל\" (Q14)", () => {
+    const mgr: AccountViewer = { id: "acc-doron", role: "mgr" };
+    const creator: AccountViewer = { id: "acc-creator", role: "creator" };
+    const profile = { accountId: "acc-shirel", expectedVersion: 1 };
+    const techUpdate = { technicianId: "y", expectedVersion: 1 };
+    const techTarget = { id: null, role: "tech" as const };
+    const csTarget = { id: "acc-shirel", role: "cs" as const };
+
+    expect(routineUpdateCallerError(mgr, techTarget, { ...techUpdate, outlookEmail: "y2@example.test" })).toBe(
+      MANAGER_TECHNICIAN_FIELDS_PENDING,
+    );
+    expect(routineUpdateCallerError(mgr, techTarget, { ...techUpdate, active: false })).toBe(MANAGER_TECHNICIAN_FIELDS_PENDING);
+    expect(MANAGER_TECHNICIAN_FIELDS_PENDING).not.toMatch(NO_DECISION_CODE);
+    expect(routineUpdateCallerError(mgr, { id: "acc-mgr2", role: "mgr" }, profile)).toBe(ACTION_MESSAGES.forbidden);
+    expect(routineUpdateCallerError(mgr, { id: "acc-creator", role: "creator" }, profile)).toBe(ACTION_MESSAGES.forbidden);
+    expect(routineUpdateCallerError(mgr, { id: "acc-doron", role: "cs" }, profile)).toBe(ACTION_MESSAGES.forbidden);
+    expect(routineUpdateCallerError(mgr, undefined, profile)).toBe(ACTION_MESSAGES.forbidden);
+    expect(routineUpdateCallerError(mgr, csTarget, { ...profile, name: "שם", phone: "050-000-0000", invitationAlias: "כינוי" })).toBeNull();
+    expect(routineUpdateCallerError(mgr, techTarget, { ...techUpdate, name: "שם", color: "t-e", device: "טאבלט" })).toBeNull();
+    expect(
+      routineUpdateCallerError(creator, techTarget, { ...techUpdate, name: "שם", color: "t-e", device: null, outlookEmail: "a@example.test", active: false }),
+    ).toBeNull();
+    expect(routineUpdateCallerError(creator, { id: "acc-doron", role: "mgr" }, profile)).toBeNull();
+    for (const role of ["cs", "tech"] as const) {
+      expect(routineUpdateCallerError({ id: "acc-x", role }, csTarget, profile), role).toBe(ACTION_MESSAGES.forbidden);
+    }
+    expect(routineUpdateCallerError(null, csTarget, profile)).toBe(ACTION_MESSAGES.forbidden);
+  });
+
+  test("e. routine update fields: name, phone (null clears), alias, colour token, device, Outlook email", () => {
+    const profile = { accountId: "acc-shirel", expectedVersion: 1 };
+    expect(profileUpdateError({ ...profile, name: "  " })).not.toBeNull();
+    expect(profileUpdateError({ ...profile, phone: "abc" })).not.toBeNull();
+    expect(profileUpdateError({ ...profile, phone: null })).toBeNull();
+    expect(profileUpdateError({ ...profile, invitationAlias: "א".repeat(61) })).toBe("הכינוי ארוך מ-60 תווים");
+    expect(profileUpdateError({ ...profile, invitationAlias: "א".repeat(60) })).toBeNull();
+    expect(profileUpdateError({ ...profile, invitationAlias: null })).toBeNull();
+    expect(profileUpdateError({ ...profile, expectedVersion: 0 })).toBe("גרסה לא תקינה");
+    expect(profileUpdateError({ ...profile, accountId: "bad id!" })).not.toBeNull();
+    expect(profileUpdateError(undefined as never)).not.toBeNull();
+    expect(profileUpdateError({ ...profile, name: "שיראל כהן", phone: "050-000-0102" })).toBeNull();
+
+    const tech = { technicianId: "y", expectedVersion: 1 };
+    for (const color of ["var(--t-y)", "url(x)", "t-z"]) {
+      expect(technicianUpdateError({ ...tech, color: color as never }), color).toBe("צבע לא תקין");
+    }
+    expect(technicianUpdateError({ ...tech, device: "x".repeat(41) })).not.toBeNull();
+    expect(technicianUpdateError({ ...tech, device: null })).toBeNull();
+    expect(technicianUpdateError({ ...tech, outlookEmail: "not-an-email" })).not.toBeNull();
+    expect(technicianUpdateError({ ...tech, name: "" })).not.toBeNull();
+    expect(technicianUpdateError({ ...tech, active: "yes" as never })).not.toBeNull();
+    expect(technicianUpdateError({ ...tech, technicianId: "bad id!" })).not.toBeNull();
+    expect(technicianUpdateError({ ...tech, expectedVersion: 1.5 })).toBe("גרסה לא תקינה");
+    expect(technicianUpdateError({ ...tech, name: "יורם", color: "t-s", device: "טאבלט", outlookEmail: "y@example.test", active: true })).toBeNull();
+  });
+
+  test("c. credentials: the Creator only; a non-empty password of at most 72 bytes, never echoed", () => {
+    expect(passwordError("")).toBe("חסרה סיסמה");
+    expect(passwordError(undefined)).toBe("חסרה סיסמה");
+    expect(passwordError(12345678)).toBe("חסרה סיסמה");
+    expect(passwordError("a".repeat(72))).toBeNull();
+    const long = "Zq7".repeat(24) + "!";
+    expect(long.length).toBe(73);
+    expect(passwordError(long)).toBe("הסיסמה ארוכה מדי");
+    // 37 Hebrew letters are 74 UTF-8 bytes.
+    const hebrew = "ס".repeat(37);
+    expect(passwordError(hebrew)).toBe("הסיסמה ארוכה מדי");
+    for (const p of ["", long, hebrew, "a".repeat(72)]) {
+      const message = passwordError(p);
+      if (message && p) expect(message).not.toContain(p);
+    }
+
+    expect(credentialEmailError("a@example.com", { isTest: true })).toBe(testAccountEmailError("a@example.com"));
+    expect(credentialEmailError("a@example.com", { isTest: false })).toBeNull();
+    expect(credentialEmailError("a@example.test", { isTest: true })).toBeNull();
+    expect(credentialEmailError("not-an-email", { isTest: false })).toBe("כתובת מייל לא תקינה");
+    expect(credentialsCallerError("mgr")).toBe(ACTION_MESSAGES.forbidden);
+    expect(credentialsCallerError("cs")).toBe(ACTION_MESSAGES.forbidden);
+    expect(credentialsCallerError(undefined)).toBe(ACTION_MESSAGES.forbidden);
+    expect(credentialsCallerError("creator")).toBeNull();
+  });
+
+  test("j and g. a missing technician profile and an open creation, by their truth tables", () => {
+    expect(technicianProfileMissing({ role: "tech", active: true, technicianId: null })).toBe(true);
+    expect(technicianProfileMissing({ role: "tech", active: false, technicianId: null })).toBe(false);
+    expect(technicianProfileMissing({ role: "tech", active: true, technicianId: "y" })).toBe(false);
+    expect(technicianProfileMissing({ role: "cs", active: true, technicianId: null })).toBe(false);
+
+    expect(isOpenCreation({ kind: "create", status: "approved", account: null })).toBe(true);
+    expect(isOpenCreation({ kind: "create", status: "approved", account: { id: "acc-rep2", name: "הדס" } })).toBe(false);
+    expect(isOpenCreation({ kind: "create", status: "pending", account: null })).toBe(false);
+    expect(isOpenCreation({ kind: "activate", status: "approved", account: null })).toBe(false);
   });
 });
 

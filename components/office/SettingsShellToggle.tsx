@@ -18,7 +18,7 @@ const FAILED = "השינוי לא נשמר. נסה שוב.";
 
 /** Which setting the switch changes. */
 export type SettingsToggleAction =
-  | { kind: "technicianActive"; techId: TechnicianId }
+  | { kind: "technicianActive"; techId: TechnicianId; expectedVersion: number }
   | { kind: "placeActive"; id: SettingId }
   | { kind: "reasonActive"; id: SettingId }
   | { kind: "callTypeActive"; id: SettingId }
@@ -28,7 +28,7 @@ export type SettingsToggleAction =
 function runToggle(settings: Commands["settings"], action: SettingsToggleAction, value: boolean): Promise<CommandResult> {
   switch (action.kind) {
     case "technicianActive":
-      return settings.setTechnicianActive(action.techId, value);
+      return settings.setTechnicianActive({ techId: action.techId, expectedVersion: action.expectedVersion, active: value });
     case "placeActive":
       return settings.setPlaceActive(action.id, value);
     case "reasonActive":

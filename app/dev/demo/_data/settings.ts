@@ -9,6 +9,7 @@ import type { TechNotificationKey, TemplateFieldKey } from "@/features/settings/
 import { TODAY } from "./dates";
 import { CALLS } from "./queries";
 import { CALL_TYPES, PLACES, REASONS, SERVICE_MAILBOX } from "./reference";
+import type { TechId } from "./types";
 
 /** Settings ids of the pickup places, in PLACES order. */
 export const PLACE_IDS: readonly string[] = PLACES.map((_, i) => `place-${i + 1}`);
@@ -28,6 +29,13 @@ export const TECH_DEVICE = "סמארטפון";
 
 /** Technician "פעיל" (eligibility for new invitations, SE-05): every demo technician is active. */
 export const TECH_ACTIVE = true;
+
+/**
+ * The stored version of each technician record (technicians.version). אדי's is 2: his Outlook email
+ * was changed on 18.10 (the Creator's notice ACCOUNT_EVENTS aev-3). Not all 1, so nothing can
+ * hard-code it.
+ */
+export const TECH_VERSIONS: Readonly<Record<TechId, number>> = { y: 1, e: 2, s: 1 };
 
 /** The completion email's customer-service mailbox (D09). */
 export const COMPLETION_MAILBOX = SERVICE_MAILBOX;

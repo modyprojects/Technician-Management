@@ -46,10 +46,15 @@ import {
   ACCOUNT_ROLE_VALUES,
   isAccountRequestStatus,
   isAccountRole,
+  technicianProfileMissing,
   type AccountRef,
   type AccountRequest,
+  type AccountRole,
+  type CreationIntent,
+  type CreatorNotice,
   type UserAccount,
 } from "@/features/accounts/data/types";
+import type { SessionQueries } from "@/features/auth/data/ports";
 import {
   isMatrixRole,
   isOfficeRole,
@@ -148,7 +153,17 @@ import {
   visitsForTechOnDate,
 } from "./queries";
 import { PERMISSION_STATUS, PERMISSIONS } from "./permissions";
-import { ACCOUNT_REQUESTS, ACCOUNTS, accountById, type DemoAccount, type DemoAccountRequest } from "./accounts";
+import {
+  ACCOUNT_EVENTS,
+  ACCOUNT_REQUESTS,
+  ACCOUNTS,
+  accountById,
+  CREATION_INTENTS,
+  type DemoAccount,
+  type DemoAccountEvent,
+  type DemoAccountRequest,
+  type DemoCreationIntent,
+} from "./accounts";
 import {
   BRANDS,
   CATALOGUE,
@@ -178,6 +193,7 @@ import {
   TECH_ACTIVE,
   TECH_DEVICE,
   TECH_NOTIFICATIONS,
+  TECH_VERSIONS,
   TEMPLATE_LABELS,
 } from "./settings";
 import { callStatus, isClosedVisit, isOpenVisit } from "./status";
@@ -286,7 +302,7 @@ function accountRef(id: string): AccountRef {
   return { id, name: a?.name ?? "" };
 }
 
-const userAccount = (a: DemoAccount): UserAccount => ({ ...a, isTest: TEST });
+const userAccount = (a: DemoAccount): UserAccount => ({ ...a, technicianMissing: technicianProfileMissing(a), isTest: TEST });
 
 const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   id: r.id,
@@ -300,8 +316,77 @@ const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   reason: r.reason,
   decidedBy: r.decidedBy ? accountRef(r.decidedBy) : null,
   decidedAt: r.decidedAt,
+  version: r.version,
   isTest: TEST,
 });
+
+/** The demo's Creator account: the viewer of the Creator's notices (the demo has no session). */
+const DEMO_CREATOR_ID = ACCOUNTS.find((a) => a.role === "creator")?.id ?? null;
+
+/** A pending request as a Creator notice (D34 a): who asked, about whom. */
+const requestNotice = (r: DemoAccountRequest): CreatorNotice => ({
+  id: r.id,
+  kind: "pending-request",
+  at: r.requestedAt,
+  actor: accountRef(r.requestedBy),
+  target: { accountId: r.accountId, name: r.target.name, role: r.target.role },
+  requestKind: r.kind,
+  isTest: TEST,
+});
+
+/** An audited account event as a Creator notice (D34 b, f). The audit row holds no email, nor does this. */
+function eventNotice(e: DemoAccountEvent): CreatorNotice {
+  const target = accountById(e.targetAccountId);
+  return {
+    id: e.id,
+    kind: e.kind,
+    at: e.at,
+    actor: accountRef(e.actorId),
+    target: { accountId: e.targetAccountId, name: target?.name ?? "", role: target?.role ?? "tech" },
+    requestKind: null,
+    isTest: TEST,
+  };
+}
+
+/**
+ * The Creator's notices, newest first (Step 2 plan §3.10): pending requests, a Manager's
+ * deactivations, and Outlook-email changes not made by the viewing Creator himself.
+ */
+const CREATOR_NOTICES_NEWEST_FIRST: readonly CreatorNotice[] = [
+  ...ACCOUNT_REQUESTS.filter((r) => r.status === "pending").map(requestNotice),
+  ...ACCOUNT_EVENTS.filter((e) => !(e.kind === "outlook-email-change" && e.actorId === DEMO_CREATOR_ID)).map(eventNotice),
+].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+
+const creationIntent = (x: DemoCreationIntent): CreationIntent => ({
+  id: x.id,
+  role: x.role,
+  name: x.name,
+  email: x.email,
+  requestedBy: accountRef(x.requestedBy),
+  authorizedAt: x.authorizedAt,
+  version: x.version,
+  isTest: TEST,
+});
+
+/** Open creation intents, newest first. */
+const INTENTS_NEWEST_FIRST = [...CREATION_INTENTS].sort((a, b) => Date.parse(b.authorizedAt) - Date.parse(a.authorizedAt));
+
+/**
+ * The demo's session port (features/auth/data, Step 2 plan §3.7 b) for one viewpoint: the
+ * fictional account of that role and name. Null (no access) when there is none or it is inactive:
+ * fail closed, as the real session port. The demo's role comes from the URL (X-02), so this is not
+ * part of `demoDataAccess`; production reads the user's own `profiles` row under the session.
+ */
+export function demoSession(viewpoint: { role: AccountRole; name: string }): SessionQueries {
+  return {
+    async current() {
+      if (!isAccountRole(viewpoint?.role) || typeof viewpoint.name !== "string") return null;
+      const a = ACCOUNTS.find((x) => x.role === viewpoint.role && x.name === viewpoint.name);
+      if (!a || !a.active) return null;
+      return { id: a.id, role: a.role, name: a.name, technicianId: a.technicianId, isTest: TEST };
+    },
+  };
+}
 
 const emptyStatusCounts = (): Record<CallStatus, number> => ({ open: 0, awaiting: 0, followup: 0, resolved: 0 });
 
@@ -937,7 +1022,17 @@ export const demoDataAccess: DataAccess = {
     },
     async technicians() {
       return boundedOf(
-        TECHS.map((t) => ({ id: t.id, name: t.name, color: t.color, phone: t.phone, email: t.email, active: TECH_ACTIVE, device: TECH_DEVICE, isTest: TEST })),
+        TECHS.map((t) => ({
+          id: t.id,
+          name: t.name,
+          color: t.color,
+          phone: t.phone,
+          email: t.email,
+          active: TECH_ACTIVE,
+          device: TECH_DEVICE,
+          version: TECH_VERSIONS[t.id],
+          isTest: TEST,
+        })),
         MAX_PAGE_LIMIT,
       );
     },
@@ -1015,6 +1110,16 @@ export const demoDataAccess: DataAccess = {
       const matches = statuses ? REQUESTS_NEWEST_FIRST.filter((r) => statuses.includes(r.status)) : REQUESTS_NEWEST_FIRST;
       const page = pageOf(matches, query?.page, query?.limit);
       return { ...page, items: page.items.map(accountRequest) };
+    },
+    async openCreations(query) {
+      // The demo has no session: every fictional intent. The loader that shows them (PR 2.3) keeps
+      // the viewer's own before anything reaches a page (production: requested_by = the session).
+      const page = pageOf(INTENTS_NEWEST_FIRST, query?.page, query?.limit);
+      return { ...page, items: page.items.map(creationIntent) };
+    },
+    async creatorNotices(query) {
+      // The demo Creator's view; only the Creator's loader calls it (production denies other callers).
+      return pageOf(CREATOR_NOTICES_NEWEST_FIRST, query?.page, query?.limit);
     },
   },
 

@@ -49,7 +49,7 @@ async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<{ body: 
       // Account administration and the permission matrix (SE-01 to SE-03): ./_users.ts reads them
       // through the layer; offered to the Creator only (settingsTabsOffered).
       const props = await loadSettingsUsers(role);
-      return { body: <SettingsUsersTab {...props} />, state: accountAdminState(props.admin) };
+      return { body: <SettingsUsersTab {...props} />, state: accountAdminState(props.admin, role) };
     }
     case "accounts": {
       // The Manager's account administration (SE-01, D34; D57 (1)): Customer Service and Technician
@@ -62,10 +62,13 @@ async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<{ body: 
       const admin = await loadAccountAdmin(role);
       if (!admin) return { body: null, state: {} };
       // The simulated commands check the accounts and requests in the Manager's scope only.
-      return { body: <AccountAdminScreen {...admin} />, state: accountAdminState(admin) };
+      return { body: <AccountAdminScreen {...admin} />, state: accountAdminState(admin, role) };
     }
-    case "techs":
-      return { body: <SettingsTechs technicians={await demoDataAccess.settings.technicians()} />, state: {} };
+    case "techs": {
+      // The technicians' versions, so a "פעיל" change checks them as the server would (PT409).
+      const [technicians, state] = await Promise.all([demoDataAccess.settings.technicians(), settingsTabState(tab)]);
+      return { body: <SettingsTechs technicians={technicians} />, state };
+    }
     case "places":
       return {
         body: <SettingsPlaces places={await demoDataAccess.settings.places()} />,

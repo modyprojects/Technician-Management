@@ -5,15 +5,17 @@
 // New UI in the demo's visual language (card + rows like its lists, pills like its statuses).
 // - mode "decide" (the Creator, Settings › "משתמשים והרשאות", section "בקשות לאישור"): approve, or
 //   reject with a required reason typed into an inline field (accounts.decideAccountRequest).
-// - mode "own" (the Manager, "ניהול משתמשים", section "הבקשות שלי"): cancel a pending request
-//   (accounts.cancelAccountRequest).
+// - mode "own" (the Manager, Settings › "משתמשים", section "הבקשות שלי"): cancel his own pending
+//   request, or his own approved creation that has no account yet (isOpenCreation;
+//   accounts.cancelAccountRequest). The Creator never cancels a Manager's pending request: he
+//   rejects it with a reason. Each action sends the request's version (`expectedVersion`).
 // Nothing changes while a request is pending; every step is audited; no automatic expiry (D25).
 // The screen reads each result: a SIMULATED one (the UI demo) shows the outcome on its row, marked
 // "לא נשמר · פעולה מדומה", with no further action, and says "בהדגמה … לא נשמר"; a stored one says
 // what was done (TE-23). Display only (G-04): the server decides who may act.
 import { useEffect, useId, useRef, useState } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
-import type { AccountRef, AccountRequest } from "@/features/accounts/data/types";
+import { isOpenCreation, type AccountRef, type AccountRequest } from "@/features/accounts/data/types";
 import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
@@ -105,7 +107,12 @@ export function AccountAdminRequests({
   function approve(entry: AccountRequestEntry) {
     void act(
       `approve-${entry.request.id}`,
-      () => accounts.decideAccountRequest(entry.request.id, { outcome: "approve" }),
+      () =>
+        accounts.decideAccountRequest({
+          requestId: entry.request.id,
+          expectedVersion: entry.request.version,
+          decision: { outcome: "approve" },
+        }),
       (simulated) => {
         done(entry, { status: "approved" }, simulated);
         const title = requestTitle(entry.request);
@@ -127,7 +134,12 @@ export function AccountAdminRequests({
     }
     void act(
       `reject-${entry.request.id}`,
-      () => accounts.decideAccountRequest(entry.request.id, { outcome: "reject", reason: text }),
+      () =>
+        accounts.decideAccountRequest({
+          requestId: entry.request.id,
+          expectedVersion: entry.request.version,
+          decision: { outcome: "reject", reason: text },
+        }),
       (simulated) => {
         done(entry, { status: "rejected", reason: text }, simulated);
         setRejecting(null);
@@ -145,7 +157,7 @@ export function AccountAdminRequests({
   function cancel(entry: AccountRequestEntry) {
     void act(
       `cancel-${entry.request.id}`,
-      () => accounts.cancelAccountRequest(entry.request.id),
+      () => accounts.cancelAccountRequest({ requestId: entry.request.id, expectedVersion: entry.request.version }),
       (simulated) => {
         done(entry, { status: "cancelled" }, simulated);
         const title = requestTitle(entry.request);
@@ -181,6 +193,8 @@ export function AccountAdminRequests({
             const outcome = requestOutcomeText(entry);
             const actionable = r.status === "pending" && !entry.local;
             const isRejecting = rejecting === r.id && actionable && mode === "decide";
+            // The requester cancels a pending request or an approved creation with no account yet.
+            const cancellable = mode === "own" && !entry.local && (r.status === "pending" || isOpenCreation(r));
             const reasonId = `${id}-${r.id}-reason`;
             const reasonErrorId = `${id}-${r.id}-reason-error`;
             return (
@@ -252,7 +266,7 @@ export function AccountAdminRequests({
                       </button>
                     </>
                   )}
-                  {actionable && mode === "own" && (
+                  {cancellable && (
                     <button
                       type="button"
                       className="btn"

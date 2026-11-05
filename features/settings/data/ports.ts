@@ -9,7 +9,7 @@
 // The "טופל" text is read with reference.approvalText() (one source for Settings and the close
 // screen); it is changed with SettingsCommands.setFixedText.
 import type { CommandResult } from "@/features/data-access/common";
-import type { MatrixRole, PermissionKey, TechnicianId } from "@/features/reference/data/types";
+import type { MatrixRole, PermissionKey } from "@/features/reference/data/types";
 import type {
   Bounded,
   CallTypeSetting,
@@ -21,6 +21,7 @@ import type {
   ReasonSetting,
   SettingId,
   TechNotificationKey,
+  TechnicianActiveInput,
   TechnicianSetting,
   TemplateFieldKey,
   TemplateSettings,
@@ -55,8 +56,11 @@ export interface SettingsCommands {
    * a matrix role; a pending cell (PENDING_MATRIX_CELLS) is rejected.
    */
   setPermission(role: MatrixRole, key: PermissionKey, value: boolean): Promise<CommandResult>;
-  /** "פעיל" of a technician: eligibility for new invitations (SE-05), not sign-in. */
-  setTechnicianActive(techId: TechnicianId, active: boolean): Promise<CommandResult>;
+  /**
+   * "פעיל" of a technician: eligibility for new invitations (SE-05), not sign-in. At the version
+   * read (PT409 when it changed).
+   */
+  setTechnicianActive(input: TechnicianActiveInput): Promise<CommandResult>;
   /** "+ הוספת מקום" (SE-06). */
   addPlace(input: NewPlaceInput): Promise<CommandResult<CreatedSetting>>;
   setPlaceActive(id: SettingId, active: boolean): Promise<CommandResult>;

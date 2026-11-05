@@ -1,6 +1,7 @@
 // Input checks for settings commands, shared by every implementation (simulated now, the server
 // later; the server always re-validates, and checks the caller's role and `settings` itself).
 // Each returns a Hebrew error, or null when valid.
+import { expectedVersionError, staleVersionError } from "@/features/accounts/data/validate";
 import { isUuid } from "@/features/data-access/common";
 import { isMatrixRole, isPermissionKey, type TechnicianId } from "@/features/reference/data/types";
 import { isTechnicianId } from "@/features/reference/data/validate";
@@ -11,6 +12,7 @@ import {
   pendingMatrixDecision,
   type NewPlaceInput,
   type SettingId,
+  type TechnicianActiveInput,
 } from "./types";
 
 export const SETTING_NAME_MAX = 60;
@@ -26,6 +28,21 @@ export const settingIdError = (id: SettingId): string | null => (isSettingId(id)
 export const activeFlagError = (active: boolean): string | null => (typeof active === "boolean" ? null : "מצב לא תקין");
 
 export const technicianIdError = (id: TechnicianId): string | null => (isTechnicianId(id) ? null : "טכנאי לא תקין");
+
+/**
+ * "פעיל" of a technician (SE-05) at the version read. `stored` is the technician as stored (its
+ * version), undefined when there is none: refused (deny by default). A stale version gets the
+ * database's PT409 text (staleVersionError).
+ */
+export function technicianActiveError(input: TechnicianActiveInput, stored: { version: number } | undefined): string | null {
+  if (!input || typeof input !== "object") return "קלט לא תקין";
+  return (
+    technicianIdError(input.techId) ??
+    expectedVersionError(input.expectedVersion) ??
+    activeFlagError(input.active) ??
+    (stored ? staleVersionError(input.expectedVersion, stored.version) : "הטכנאי לא נמצא")
+  );
+}
 
 /** A required short name (reason, call type, place). */
 export function settingNameError(name: string, what = "שם"): string | null {

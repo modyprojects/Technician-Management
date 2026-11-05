@@ -18,6 +18,14 @@ export const ACTION_MESSAGES = {
 } as const;
 
 /**
+ * Account-request refusals that the shared validators also return (features/accounts/data/validate.ts),
+ * so the simulated commands and the real adapter show the same text.
+ */
+export const REQUEST_MESSAGES = {
+  cannotCancel: "לא ניתן לבטל את הבקשה.",
+} as const;
+
+/**
  * Sign-in messages (plan §3.4): one message for every credential failure (wrong password, unknown
  * email, inactive account, no profile), one for every service failure (not configured,
  * unreachable, rate-limited, database objects missing). Neither reveals anything about an account.
@@ -94,7 +102,7 @@ const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["the request is not pending", "הבקשה כבר טופלה."],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
   ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
-  ["the request cannot be cancelled", "לא ניתן לבטל את הבקשה."],
+  ["the request cannot be cancelled", REQUEST_MESSAGES.cannotCancel],
   ["requires the Creator's approval", "הפעולה דורשת אישור של היוצר."],
   ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
   ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],

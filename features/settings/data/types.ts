@@ -13,6 +13,7 @@ import type {
   Place,
   Reason,
   Technician,
+  TechnicianId,
 } from "@/features/reference/data/types";
 
 export type { Bounded };
@@ -142,7 +143,15 @@ export type PermissionMatrix = { rows: readonly PermissionMatrixRow[] };
 export type TechnicianSetting = Technician & {
   /** "סמארטפון" (the demo's only value). */
   device: string;
+  /**
+   * The stored version (`technicians.version`), sent back as `expectedVersion` by every edit
+   * (PT409 when it changed). Never hard-coded: always the value read.
+   */
+  version: number;
 };
+
+/** "פעיל" of a technician at the version read (SettingsCommands.setTechnicianActive). */
+export type TechnicianActiveInput = { techId: TechnicianId; expectedVersion: number; active: boolean };
 
 export type SettingId = string;
 
