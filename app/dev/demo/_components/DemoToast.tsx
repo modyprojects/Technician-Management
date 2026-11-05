@@ -12,8 +12,8 @@
 // - The toast never takes clicks (styles/ui.css .toast, pointer-events: none) and, on technician
 //   screens, sits above the footer and bottom navigation, so it never blocks the main buttons.
 import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { SIMULATED_TITLE } from "./simulated-commands";
 
-export const SIMULATED_TITLE = "פעולה מדומה · לא נשמר";
 const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
 /** Title of the "not in the demo" toast: nothing was attempted, so nothing "was not saved". */
 const NOT_IN_DEMO_TITLE = "לא בהדגמה";
