@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/ui/BrandLogo";
 
 /** A navigation item. With `href` it is a real link; without it, a button (Step 0 showcase). */
@@ -9,6 +10,7 @@ export function OfficeSidebar({
   activeKey,
   activeIsCurrent = true,
   user,
+  signOut,
 }: {
   nav: readonly OfficeNavItem[];
   activeKey: string;
@@ -19,6 +21,13 @@ export function OfficeSidebar({
    */
   activeIsCurrent?: boolean;
   user: { name: string; roleLabel: string; avatarColor: string };
+  /**
+   * "יציאה" (Step 2 PR 2.3, Q4 TEMPORARY; AU-02): the caller's sign-out control, the last child of
+   * the user block. The real app (PR 2.5) passes a `<form action={signOut}>` button; the showcase
+   * passes nothing. At 900 px and below only this control stays, at the end of the top bar
+   * (styles/ui.css); without it the block shows nothing there.
+   */
+  signOut?: ReactNode;
 }) {
   return (
     <aside className="side">
@@ -47,10 +56,11 @@ export function OfficeSidebar({
         <span className="av" style={{ background: user.avatarColor }} aria-hidden="true">
           {user.name.slice(0, 1)}
         </span>
-        <span>
+        <span className="me-who">
           {user.name}
           <small>הרשאה: {user.roleLabel}</small>
         </span>
+        {signOut}
       </div>
     </aside>
   );

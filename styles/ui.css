@@ -114,10 +114,15 @@ a.stat { text-decoration: none; }
 .side .me { margin-top: auto; border-top: 1px solid var(--ink3); padding: 12px 6px 0; display: flex; gap: 10px; align-items: center; color: var(--on-dark); }
 .side .me .av { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
 .side .me small { display: block; color: var(--on-dark2); font-size: 12px; }
+/* "יציאה" in the user block (Step 2 PR 2.3, Q4 TEMPORARY; AU-02 PROPOSED): a quiet outlined button
+   at the end of the row, in the sidebar's own colours. */
+.side .me .me-who { min-width: 0; overflow-wrap: anywhere; }
+.side .me .signout { margin-inline-start: auto; flex: none; background: none; border: 1px solid var(--ink3); color: var(--on-dark2); border-radius: 8px; padding: 6px 10px; min-height: 30px; font-size: 12px; font-weight: 700; }
+.side .me .signout:hover, .side .me .signout:focus-visible { color: var(--on-dark); }
 /* MODY logo (D57 (6), G-08): the white file in the existing dark headers only, never a new light
    strip. Proportions and transparency kept: the width is set here and the height follows; no
    filter, blend mode or background. Office sidebar: the logo at the top, the product name under it. */
-.brand-logo, .brand-logo-tech { display: block; height: auto; max-width: 100%; background: none; }
+.brand-logo, .brand-logo-tech, .brand-logo-login { display: block; height: auto; max-width: 100%; background: none; }
 .side .brand { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .side .brand-logo { width: 132px; }
 .side .brand-name { font-family: var(--body); font-size: 13px; color: var(--on-dark2); }
@@ -232,7 +237,11 @@ a.ev > .ev-body { min-width: 0; }
      its own (D57 review UI-08). */
   .side .nav { flex-direction: row; flex-wrap: wrap; flex: 1 1 0; min-width: 0; }
   .side .nav button, .side .nav a { padding: 8px 10px; font-size: 14px; }
-  .side .me { display: none; }
+  /* Only "יציאה" stays, at the end of the logo's row (Step 2 PR 2.3, Q4; AU-02 PROPOSED: the demo
+     hides the whole block here, docs/demo.html L182). Without a sign-out control the block shows
+     nothing. The nav keeps flex: 1 1 0, so it wraps beside the button. */
+  .side .me { margin-top: 0; border-top: 0; padding: 0; flex: none; align-self: flex-start; min-height: 34px; }
+  .side .me .av, .side .me .me-who { display: none; }
   .work { padding-inline: 16px; padding-block: 16px; }
   .cols2, .cols3 { grid-template-columns: minmax(0, 1fr); }
   .bar { grid-template-columns: 110px 1fr 40px; }
@@ -933,3 +942,53 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 .pill.vc-mark { background: var(--accent-l); color: var(--accent-d); text-decoration: none; }
 .pill.vc-mark:hover { text-decoration: underline; }
 /* end phase-g-integration */
+
+/* step2-screens */
+/* Step 2 PR 2.3 prototypes (all PROPOSED, Q26): the sign-in screen (AU-01), the temporary start
+   card (AU-03), the account rows' actions (SE-17 to SE-20) and the account dialogs, in the demo's
+   language (.card, .btn, .chip, .pill, .note, the drawer). */
+/* Sign-in "כניסה": a dark page with the white logo (outside G-08's existing headers: PROPOSED,
+   owner question Q-D) and a white card, centred, 16px side gutter. */
+.login { min-height: 100%; background: var(--ink); display: flex; justify-content: center; align-items: flex-start; padding: 48px 16px 32px; }
+.login-col { width: min(400px, 100%); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.brand-logo-login { width: 132px; }
+.login-product { color: var(--on-dark2); font-size: 14px; }
+.login-card { width: 100%; padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.login-card h1 { font-size: 22px; }
+.login-alert { background: var(--danger-bg); color: var(--danger-fg); border-radius: 8px; padding: 8px 12px; font-size: 14px; font-weight: 700; line-height: 1.5; }
+.login-form { display: flex; flex-direction: column; gap: 12px; }
+.login-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.login-form input { width: 100%; min-width: 0; font-weight: 400; }
+.login-form .btn { width: 100%; min-height: 44px; }
+.login-p { margin: 0; line-height: 1.5; }
+.login-signout { display: flex; }
+.login-states { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; padding-top: 4px; }
+.login-states a { color: var(--on-dark2); padding-block: 4px; }
+.login-states a[aria-current="page"] { color: var(--on-dark); font-weight: 700; }
+/* Temporary start card (Q18). */
+.start-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.start-hello { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.start-hello h2 { margin: 0; font-size: 20px; }
+.start-role { font-weight: 700; }
+.start-p { margin: 0; line-height: 1.5; }
+.sub.start-pending { color: var(--warn-fg); font-weight: 700; }
+.tnp-row.start-row { border-top: 1px solid var(--line2); }
+/* Account rows: the actions cell holds at most two buttons per line (a row with five actions is
+   three lines tall), so the column stays narrow (critique S11). A two-column grid rather than a
+   wrapping flex row: the cell is .col-fit (width 1%), where a wrapping row would shrink to one
+   button per line. The phone table keeps its single-line cells and sideways scroll (G-07). */
+.acct-actions { display: grid; grid-template-columns: repeat(2, max-content); gap: 6px; align-items: center; justify-content: start; }
+.pill.acct-warn { background: var(--warn-bg); color: var(--warn-fg); }
+.acct-pills { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+/* Account dialogs (in the demo's drawer, as "תיקון ביקור סגור": .vc-dialog, .vc-form, .vc-label). */
+.acct-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.acct-notes li { background: var(--accent-l); border: 1px solid var(--note-line); border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--accent-d); line-height: 1.5; }
+.acct-notes li.acct-pending { background: var(--warn-bg); border-color: var(--warn-bd); color: var(--warn-ink); }
+.acct-fieldset { border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px 12px; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.acct-fieldset > legend { font-size: 13px; font-weight: 700; color: var(--muted); padding: 0 4px; }
+.acct-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; color: var(--muted); }
+/* Creator notices ("התראות חשבונות", Q13 demo placement). */
+.acct-notices { list-style: none; margin: 0; padding: 0; }
+.acct-notices > li { padding: 12px 18px; border-top: 1px solid var(--line2); line-height: 1.5; overflow-wrap: anywhere; }
+/* end step2-screens */
+

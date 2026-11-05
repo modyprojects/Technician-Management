@@ -11,8 +11,14 @@
 //   "+ הוספת טכנאי" and a technician's activation are immediate (D34 c); deactivation of a Customer
 //   Service or Technician account is immediate, audited, and the Creator is notified in the app
 //   (D34 b); activating a Customer Service account is a request. "הבקשות שלי" lists the Manager's
-//   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e; the
-//   Creator's credential dialogs come in Step 2 PR 2.3).
+//   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e).
+// Row actions (Step 2 PR 2.3; display rules in features/accounts/data/offers.ts, each mirroring the
+// command's caller check; deny by default without a scope or a signed-in account): "עריכה"
+// ("עריכת פרטים", AccountEditForm), the Creator's "סיסמה" and "מייל" (AccountCredentialForms; never
+// on his own row, TEMPORARY Q22), "השלמה" of "פרופיל טכנאי חסר" (AccountCompletionForms), then the
+// state control. The viewer's own open creation intents ("יצירה שלא הושלמה") head the table with
+// "השלמת יצירה" and "ביטול"; they are not counted among the accounts. Each dialog is the demo's
+// drawer (AccountDialog); closing it returns focus to its opener, a success moves it to the row.
 // Each (de)activation and decision sends the version read (`expectedVersion`); a stale one is
 // refused with the "data changed" message (PT409). After a STORED action the row keeps the version
 // the command returned (versionAfter), so the next action on it is not refused as stale. A stored
@@ -29,15 +35,25 @@
 //   activation beside a pending request); approving an activation or a role change updates the row.
 // - At narrow widths the email and the role pill move under the name (styles/ui.css
 //   .set-col-wide), so status and actions stay in view.
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  credentialActionsOffered,
+  intentCompletionOffered,
+  profileEditOffered,
+  technicianEditFields,
+  technicianProfileCompletionOffered,
+} from "@/features/accounts/data/offers";
 import {
   ACCOUNT_REQUEST_KIND_LABELS,
   activationKind,
   type AccountRequestKind,
+  type CompletedCreation,
   type UserAccount,
 } from "@/features/accounts/data/types";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { CommandResult } from "@/features/data-access/common";
+import type { TechnicianId } from "@/features/reference/data/types";
+import type { TechnicianSetting } from "@/features/settings/data/types";
 import { AccountForm, type AccountFormKind, type AccountFormResult } from "./AccountAdminForms";
 import {
   AccountName,
@@ -45,12 +61,18 @@ import {
   ActionMessage,
   RequestStatusPill,
   RolePill,
+  said,
   type AccountAdminData,
   type AccountRequestEntry,
+  type AccountTechnicianDetails,
   type ActionMessageValue,
+  type CreationIntentEntry,
 } from "./AccountAdminParts";
 import { AccountAdminRequests } from "./AccountAdminRequests";
-import { accountAfterStateChange, stateInput } from "./AccountAdminRules";
+import { accountAfterStateChange, intentCancelInput, stateInput } from "./AccountAdminRules";
+import { CompleteCreationForm, CompleteTechnicianForm } from "./AccountCompletionForms";
+import { EmailForm, PasswordForm } from "./AccountCredentialForms";
+import { AccountEditForm } from "./AccountEditForm";
 import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShell";
 
 const SHORT = "col-center col-fit";
@@ -66,10 +88,21 @@ const OPENERS: Readonly<Record<AccountAdminData["scope"], readonly { kind: Accou
   ],
 };
 
-/** The result line: what a simulated command would have done, or what a stored one did. */
-const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
+/** The row dialogs; each names its row and the button that opened it (focus returns there). */
+type RowDialog =
+  | { kind: "edit" | "password" | "email" | "complete-tech"; accountId: string; opener: string }
+  | { kind: "complete-intent"; intentId: string; opener: string };
 
-export function AccountAdminScreen({ scope, accounts, requests, self }: AccountAdminData) {
+/** One "יצירה שלא הושלמה" row; `cancelled`: cancelled by a SIMULATED command (shown, not saved). */
+type IntentRow = { entry: CreationIntentEntry; cancelled?: boolean };
+
+/** The technician details a created technician record gives the screen (the viewer's view, Q14). */
+function technicianDetailsOf(t: TechnicianSetting, withCreatorFields: boolean): AccountTechnicianDetails {
+  const base: AccountTechnicianDetails = { id: t.id, name: t.name, color: t.color, device: t.device, version: t.version, isTest: t.isTest };
+  return withCreatorFields ? { ...base, outlookEmail: t.email, active: t.active } : base;
+}
+
+export function AccountAdminScreen({ scope, accounts, requests, intents, technicians, self }: AccountAdminData) {
   const { accounts: commands } = useCommands();
   const id = useId();
   const [rows, setRows] = useState<UserAccount[]>(accounts.items);
@@ -82,8 +115,16 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   const [message, setMessage] = useState<ActionMessageValue>(null);
   const running = useRef(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
-  /** The row whose action just finished: it takes focus, since its button is gone. */
-  const [focusRow, setFocusRow] = useState<string | null>(null);
+  const [intentRows, setIntentRows] = useState<IntentRow[]>(() => intents.items.map((entry) => ({ entry })));
+  /** The listed technicians' details, as this screen last saved them (the version to send next). */
+  const [techs, setTechs] = useState<Readonly<Record<TechnicianId, AccountTechnicianDetails>>>(technicians);
+  const [dialog, setDialog] = useState<RowDialog | null>(null);
+  /**
+   * The element to focus after a render: the row whose action just finished (its button is gone),
+   * or the button that opened a dialog that closed. A new object each time, so it always runs.
+   */
+  const [focusTarget, setFocusTarget] = useState<{ id: string } | null>(null);
+  const selfId = self?.id ?? null;
 
   useEffect(() => {
     if (confirm) confirmRef.current?.focus();
@@ -93,10 +134,13 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   const openerId = (kind: AccountFormKind) => `${id}-open-${kind}`;
   const deactivateId = (accountId: string) => `${id}-deact-${accountId}`;
   const rowId = (accountId: string) => `${id}-row-${accountId}`;
+  const intentRowId = (intentId: string) => `${id}-intent-${intentId}`;
+  const dialogOpenerId = (kind: RowDialog["kind"], key: string) => `${id}-${kind}-${key}`;
+  const setFocusRow = (accountId: string) => setFocusTarget({ id: rowId(accountId) });
 
   useEffect(() => {
-    if (focusRow) document.getElementById(`${id}-row-${focusRow}`)?.focus();
-  }, [focusRow, id]);
+    if (focusTarget) document.getElementById(focusTarget.id)?.focus();
+  }, [focusTarget]);
 
   const added = rows.length - accounts.items.length;
   const addedRequests = reqs.length - requests.items.length;
@@ -231,8 +275,96 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
     markChanged(accountId, entry.local === true);
   }
 
+  /** Opens a row dialog; the button that opened it gets focus back when it closes. */
+  function openDialog(next: RowDialog) {
+    setMessage(null);
+    setConfirm(null);
+    setDialog(next);
+  }
+
+  /** Closes the open dialog without a change: focus returns to its opener. */
+  function closeDialog() {
+    if (dialog) setFocusTarget({ id: dialog.opener });
+    setDialog(null);
+  }
+
+  /** A dialog's command succeeded: the dialog closes and its row takes focus. */
+  function dialogDone(focusId: string, text: string) {
+    setDialog(null);
+    setFocusTarget({ id: focusId });
+    setMessage({ kind: "ok", text });
+  }
+
+  const replaceRow = (next: UserAccount) => setRows((prev) => prev.map((x) => (x.id === next.id ? next : x)));
+
+  /** "השלמת יצירה" succeeded: the created account (and technician) join the table. */
+  function addCreated(created: CompletedCreation, simulated: boolean) {
+    const a = created.account;
+    setRows((prev) => [a, ...prev]);
+    markChanged(a.id, simulated);
+    const t = created.technician;
+    if (t) setTechs((prev) => ({ ...prev, [t.id]: technicianDetailsOf(t, scope === "all") }));
+  }
+
+  /** "ביטול" of the viewer's own creation intent (cancelRequestError: the requester cancels his own). */
+  function cancelIntent(entry: CreationIntentEntry) {
+    const intent = entry.intent;
+    void act(
+      `cancel-intent-${intent.id}`,
+      () => commands.cancelAccountRequest(intentCancelInput(intent)),
+      (r) => {
+        // Simulated: the row stays, marked "בוטלה" and not saved; stored: it is gone.
+        setIntentRows((prev) =>
+          r.simulated ? prev.map((x) => (x.entry.intent.id === intent.id ? { ...x, cancelled: true } : x)) : prev.filter((x) => x.entry.intent.id !== intent.id),
+        );
+        // Stored: the row is gone, so focus moves to the card's first "+" button.
+        setFocusTarget({ id: r.simulated ? intentRowId(intent.id) : openerId(OPENERS[scope][0]?.kind ?? "account") });
+        setMessage({ kind: "ok", text: said(r.simulated, `היצירה של ${intent.name} הייתה מבוטלת.`, `היצירה של ${intent.name} בוטלה.`) });
+      },
+    );
+  }
+
+  /** A small row button that opens a dialog. */
+  function rowDialogButton(kind: Exclude<RowDialog["kind"], "complete-intent">, a: UserAccount, label: string, name: string) {
+    const opener = dialogOpenerId(kind, a.id);
+    return (
+      <button
+        key={kind}
+        type="button"
+        id={opener}
+        className="chip"
+        style={ROW_BTN}
+        disabled={busy !== null}
+        aria-label={name}
+        onClick={() => openDialog({ kind, accountId: a.id, opener })}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  /**
+   * A row's actions, in order: "עריכה", "סיסמה", "מייל", "השלמה", then the state control. Each by its
+   * display rule (offers.ts); a row changed by a simulated command offers none.
+   */
   function rowActions(a: UserAccount): ReactNode {
     if (changed.has(a.id)) return <SettingsNotSaved />;
+    const items: ReactNode[] = [];
+    if (profileEditOffered(scope, a, selfId)) items.push(rowDialogButton("edit", a, "עריכה", `עריכה · הפרטים של ${a.name}`));
+    if (credentialActionsOffered(scope, a, selfId)) {
+      items.push(rowDialogButton("password", a, "סיסמה", `סיסמה · הגדרת סיסמה לחשבון של ${a.name}`));
+      items.push(rowDialogButton("email", a, "מייל", `מייל · שינוי כתובת המייל של ${a.name}`));
+    }
+    if (technicianProfileCompletionOffered(scope, a, selfId)) {
+      items.push(rowDialogButton("complete-tech", a, "השלמה", `השלמה · פרופיל הטכנאי של ${a.name}`));
+    }
+    const state = stateAction(a);
+    if (state) items.push(<Fragment key="state">{state}</Fragment>);
+    return items.length > 0 ? <div className="acct-actions">{items}</div> : null;
+  }
+
+  /** The (de)activation control of a row (unchanged rules, D34). */
+  function stateAction(a: UserAccount): ReactNode {
     if (self && a.id === self.id) return null;
     if (scope === "cs-tech" && a.role !== "cs" && a.role !== "tech") return null;
     const pending = pendingFor(a.id);
@@ -292,6 +424,98 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
     );
   }
 
+  /** The open row dialog, read from the current rows (null when none is open). */
+  function renderDialog(): ReactNode {
+    if (!dialog) return null;
+    if (dialog.kind === "complete-intent") {
+      const row = intentRows.find((x) => x.entry.intent.id === dialog.intentId);
+      if (!row) return null;
+      const intent = row.entry.intent;
+      return (
+        <CompleteCreationForm
+          source={{ kind: "intent", intent, label: row.entry.startedLabel }}
+          onClose={closeDialog}
+          onDone={(created, simulated) => {
+            // The intent row becomes the created account's row.
+            setIntentRows((prev) => prev.filter((x) => x.entry.intent.id !== intent.id));
+            addCreated(created, simulated);
+            dialogDone(rowId(created.account.id), said(simulated, `החשבון של ${intent.name} היה נוצר מיד.`, `החשבון של ${intent.name} נוצר.`));
+          }}
+        />
+      );
+    }
+    const a = rows.find((x) => x.id === dialog.accountId);
+    if (!a) return null;
+    switch (dialog.kind) {
+      case "password":
+        return (
+          <PasswordForm
+            account={{ id: a.id, name: a.name, email: a.email }}
+            onClose={closeDialog}
+            onDone={(simulated) => {
+              markChanged(a.id, simulated);
+              dialogDone(rowId(a.id), said(simulated, `הסיסמה של ${a.name} הייתה נקבעת.`, `הסיסמה של ${a.name} נקבעה. היא לא תוצג שוב.`));
+            }}
+          />
+        );
+      case "email":
+        return (
+          <EmailForm
+            account={{ id: a.id, name: a.name, email: a.email, role: a.role, isTest: a.isTest }}
+            onClose={closeDialog}
+            onDone={(email, simulated) => {
+              replaceRow({ ...a, email });
+              markChanged(a.id, simulated);
+              dialogDone(
+                rowId(a.id),
+                said(simulated, `כתובת המייל של ${a.name} הייתה משתנה ל-${email}.`, `כתובת המייל של ${a.name} שונתה ל-${email}.`),
+              );
+            }}
+          />
+        );
+      case "edit": {
+        const technician = a.technicianId !== null ? (techs[a.technicianId] ?? null) : null;
+        return (
+          <AccountEditForm
+            account={a}
+            technician={technician}
+            scope={scope}
+            fields={technicianEditFields(scope, selfId)}
+            onClose={closeDialog}
+            onProfileSaved={(next, simulated) => {
+              replaceRow(next);
+              markChanged(next.id, simulated);
+            }}
+            onTechnicianSaved={(next, simulated) => {
+              setTechs((prev) => ({ ...prev, [next.id]: next }));
+              markChanged(a.id, simulated);
+            }}
+            onDone={(name, simulated) =>
+              dialogDone(
+                rowId(a.id),
+                said(simulated, `הפרטים של ${name} היו מתעדכנים מיד ונרשמים ביומן הביקורת.`, `הפרטים של ${name} עודכנו ונרשמו ביומן הביקורת.`),
+              )
+            }
+          />
+        );
+      }
+      case "complete-tech":
+        return (
+          <CompleteTechnicianForm
+            account={{ id: a.id, name: a.name, email: a.email }}
+            onClose={closeDialog}
+            onDone={(created, simulated) => {
+              const t = created.technician;
+              replaceRow({ ...a, technicianId: t.id, technicianMissing: false });
+              setTechs((prev) => ({ ...prev, [t.id]: technicianDetailsOf(t, scope === "all") }));
+              markChanged(a.id, simulated);
+              dialogDone(rowId(a.id), said(simulated, `פרופיל הטכנאי של ${a.name} היה נוצר מיד.`, `פרופיל הטכנאי של ${a.name} נוצר.`));
+            }}
+          />
+        );
+    }
+  }
+
   const title = scope === "all" ? "משתמשים" : "חשבונות שירות לקוחות וטכנאים";
   const formId = `${id}-form`;
 
@@ -335,7 +559,7 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
             }}
           />
         )}
-        {rows.length === 0 ? (
+        {rows.length === 0 && intentRows.length === 0 ? (
           <div className="empty">אין חשבונות</div>
         ) : (
           // position: relative keeps the 🧪 badge's screen-reader text inside the sideways scroller.
@@ -359,6 +583,76 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
                 </tr>
               </thead>
               <tbody>
+                {intentRows.map(({ entry, cancelled }) => {
+                  const intent = entry.intent;
+                  const offered = !cancelled && intentCompletionOffered(scope, intent, selfId);
+                  return (
+                    <tr key={`intent-${intent.id}`} id={intentRowId(intent.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
+                      <td>
+                        <AccountName name={intent.name} isTest={intent.isTest} />
+                        <span className="set-inline-narrow">
+                          <span className="sub" dir="ltr" style={{ display: "block", textAlign: "right", fontSize: 12, overflowWrap: "anywhere" }}>
+                            {intent.email}
+                          </span>
+                          <span style={{ display: "block", marginTop: 4 }}>
+                            <RolePill role={intent.role} />
+                          </span>
+                        </span>
+                      </td>
+                      <td className="set-col-wide" dir="ltr" style={{ textAlign: "right", color: "var(--muted)" }}>
+                        {intent.email}
+                      </td>
+                      <td className={`${SHORT} set-col-wide`}>
+                        <RolePill role={intent.role} />
+                      </td>
+                      <td className={SHORT}>
+                        {cancelled ? (
+                          <RequestStatusPill status="cancelled" />
+                        ) : (
+                          <>
+                            <span className="pill acct-warn">יצירה שלא הושלמה</span>
+                            <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
+                              התחילה {entry.startedLabel}
+                            </span>
+                          </>
+                        )}
+                      </td>
+                      <td className="col-fit">
+                        {cancelled ? (
+                          <SettingsNotSaved />
+                        ) : (
+                          offered && (
+                            <div className="acct-actions">
+                              <button
+                                type="button"
+                                id={dialogOpenerId("complete-intent", intent.id)}
+                                className="btn pri"
+                                style={ROW_BTN}
+                                disabled={busy !== null}
+                                aria-label={`השלמת יצירה · ${intent.name}`}
+                                onClick={() =>
+                                  openDialog({ kind: "complete-intent", intentId: intent.id, opener: dialogOpenerId("complete-intent", intent.id) })
+                                }
+                              >
+                                השלמת יצירה
+                              </button>
+                              <button
+                                type="button"
+                                className="chip"
+                                style={ROW_BTN}
+                                disabled={busy !== null}
+                                aria-label={`ביטול · היצירה של ${intent.name}`}
+                                onClick={() => cancelIntent(entry)}
+                              >
+                                {busy === `cancel-intent-${intent.id}` ? "מבטל…" : "ביטול"}
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {rows.map((a) => {
                   const pending = scope === "all" ? pendingFor(a.id) : null;
                   return (
@@ -383,6 +677,11 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
                       </td>
                       <td className={SHORT}>
                         <AccountStatePill active={a.active} />
+                        {a.technicianMissing && (
+                          <span className="pill acct-warn" style={{ display: "table", margin: "4px auto 0" }}>
+                            פרופיל טכנאי חסר
+                          </span>
+                        )}
                         {pending && (
                           <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
                             בקשה ממתינה
@@ -442,11 +741,15 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
 
       <AccountAdminRequests
         mode={scope === "all" ? "decide" : "own"}
+        scope={scope}
         entries={reqs}
         total={requests.total + addedRequests}
         self={self}
         onUpdate={onRequestUpdate}
+        onComplete={addCreated}
       />
+
+      {renderDialog()}
 
       <div className="note">
         {scope === "all"

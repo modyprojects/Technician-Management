@@ -8,6 +8,7 @@
 **v1.2 changes (owner answers 2026-11-01):** dev-only side-by-side size view under `/dev` (X-03); technician layout above ~900 px (TE-31); every role at every width (D27); fictitious data in the testing-period Production (G-05, aligned with D31). TE-32 (fixed bottom navigation, proposed by Claude Code) and the desktop alignment of header and navigation content in TE-31 were approved at the owner's Step 0 review on 2026-11-02. Visual review round 1 (2026-11-02): next-visit card actions 50/50 from 600 px (TE-33); table column alignment and sizing (G-07).
 **v1.3 changes (owner decisions D33–D51, 2026-11-03):** permission-matrix values are temporary until the owner approves the final values in Step 10 (SE-02, D51); editable permission matrix, Creator only (SE-02, PR-06); account administration with Creator approval (SE-01, SE-03, SE-05); cancellation stays pending d08 with the `cancel` key (SE-04, OF-09); operational settings and D17-required template labels (SE-06, SE-07, SE-15, new SE-16 call types); previous visits for a follow-up technician (TE-06); approval text preserved at signing (TE-19, TE-26, OF-06, SE-07, EM-01); original recordings (OF-06); service-call status display (OF-04, new OF-17); invitation changes to started visits go to review (IN-06, SIM-03); 🧪 test-data badges (new SIM-15 to SIM-19); offline stores and warnings (TE-23, TE-24).
 **v1.4 (2026-11-05, D57):** rows changed by D57 are APPROVED (owner); rows or parts marked TEMPORARY, PROPOSED or PENDING are not: T1–T8 and T12–T14 (#20), the entry row's count (#26), the former Manager home (#26), simulator placement (#27), and Claude Code's design proposals in OF-19 (PROPOSED, owner feedback pending under D53). Changed: OF-01, OF-02, OF-11, OF-12, OF-13, OF-16 (including D57 (9): "נפתחה" vs "תחילת טיפול"), SE-01, SE-03, SIM-01 (note); new: OF-18, OF-19, OF-20, G-08.
+**v1.5 (proposed, Step 2 PR 2.3):** AU-01 to AU-04 and SE-17 to SE-20 are PROPOSED (Claude Code; owner feedback pending under D53 (6), Step 2 plan Q26); the approved status of every other row is unchanged.
 **Applies to:** `docs/demo.html` ("ניהול טכנאים · דמו חי · גרסה 2").
 
 ## Precedence
@@ -95,6 +96,17 @@ Decision IDs like `d05` refer to the owner's decision board. `docs/decisions.md`
 | TE-32 | At 900 px and below the demo's `.phone{height:100%}` does not resolve, so the bottom navigation follows the content (on a tablet it floats mid-screen) | CHANGE | Header and bottom navigation stay fixed and only the content scrolls, at every width, as the demo's "real app" rule intends | owner 2026-11-02 |
 | TE-33 | Next-visit card: "יוצא · Waze" fills the row and "פרטי קריאה" takes only its content width, at every width | CHANGE | Below 600 px exactly as in the demo. From 600 px (tablet and desktop) both buttons share the row 50/50; Waze stays the primary dark button | owner 2026-11-02 |
 
+## Sign-in, sign-out and start (Step 2)
+
+PROPOSED rows (Step 2 PR 2.3, Q26): prototypes under `/dev/demo` with fictional data; the real screens follow in Step 2 PR 2.5. Every TEMPORARY behaviour below waits for the owner (Step 2 plan §8).
+
+| ID | Demo element | Category | Production behavior (all PROPOSED) | Source |
+|---|---|---|---|---|
+| AU-01 | — (missing) sign-in screen | ADD | "כניסה": "אימייל" and "סיסמה" (both LTR), "כניסה"; one message for every credential failure, one for every service failure; a no-access state with "יציאה"; no sign-up, no "שכחתי סיסמה" (Q2). A dark page with the white logo: outside G-08's existing headers, so PROPOSED. Note: "אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת." | D04, D50, security.md §4, Q2 |
+| AU-02 | — (missing) sign-out | ADD | "יציאה" in the office sidebar's user block; at ≤ 900 px only the button stays, at the end of the top bar (deviates from the demo hiding the block); on the technician profile ("חשבון"); in the no-access state. Visible wording pending (§9) | security.md §6, Q4 |
+| AU-03 | — (missing) role start before the role's screens exist | ADD | The shell, name, role, sign-out and one sentence that the screens come in later steps; only built items in the navigation. **PENDING owner (D57 (1) vs Q18):** whether Manager and Creator see a temporary "בית" or a "דשבורד" screen until the dashboard is wired | Q18, OF-01, D57 |
+| AU-04 | Technician profile (minimal) | ADD | Identity and sign-out only, until the full profile is built | Q4, Q18 |
+
 ## Office (customer service, manager, creator)
 
 | ID | Demo element | Category | Production behavior | Source |
@@ -140,6 +152,10 @@ Decision IDs like `d05` refer to the owner's decision board. `docs/decisions.md`
 | SE-14 | Template: "בדיקת תיבת Outlook · כל 5 דקות" | CHANGE | Replace with "מתעדכן אוטומטית כשזימון נוצר או משתנה". Event-driven, no polling | D08 |
 | SE-15 | Template labels table with required toggles | CHANGE | Add "מספר לקוח" (required). "באחריות" optional. Final label list from O2. Editing is controlled by the matrix key `settings` (D35); the D17-required labels ("מספר פנייה", "מספר לקוח") stay required whatever `settings` allows | d01, O2, D35 |
 | SE-16 | — (missing) call types ("תיקון", "התקנה") are fixed in the demo; no Settings screen | ADD | Call types are editable in Settings under the matrix key `settings` (D35), in the demo's visual language. Initial values "תיקון" and "התקנה", to be validated with customer service (owner task O3, D48) | D35, D48 |
+| SE-17 | — (missing) Creator credential dialogs | ADD | PROPOSED (Step 2 PR 2.3): "הגדרת סיסמה" and "שינוי כתובת מייל" on an account row, Creator only, never on his own row (Q22). The app does not keep the password, show it again, or send it by email or message; test accounts keep `@example.test` (Q17); the Creator hands it over (Q1) | D34 (e), D50, Q1, Q17, Q22 |
+| SE-18 | — (missing) Creator notices | ADD | PROPOSED (Step 2 PR 2.3): "התראות חשבונות" at the top of "משתמשים והרשאות" (Q13): pending requests, a Manager's deactivations, Outlook-email changes by others; no read state | D34 (b), (f), Q13 |
+| SE-19 | — (missing) routine edit | ADD | PROPOSED (Step 2 PR 2.3): "עריכת פרטים": name, work phone, invitation alias "כינוי בזימונים", colour, device; the Creator also Outlook email and "פעיל" (SE-05); a Manager not (Q14) | D34 (d), SE-05, Q14 |
+| SE-20 | — (missing) incomplete creations | ADD | PROPOSED (Step 2 PR 2.3): "יצירה שלא הושלמה" ("השלמת יצירה", "ביטול"); an approved request whose account was not created ("השלמת יצירה" for the Creator, "ביטול"); "פרופיל טכנאי חסר" ("השלמה") | Step 2 plan §3.8, Q15, Q16 |
 
 ## Invitation ingestion (demo simulation → real behavior)
 

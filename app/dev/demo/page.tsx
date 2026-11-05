@@ -85,7 +85,11 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
       { label: "חזרו מהשטח", sub: "המשך טיפול שמחכה לביקור חדש", href: demoHref.backFromField("creator") },
       { label: "פריטים לבדיקה", sub: "שינויים מזימונים ומהמכשיר שמחכים להחלטה", href: demoHref.review("creator") },
       { label: "מוצרים", sub: "לפי מק״ט · עריכת שם, מותג וספק (מדומה)", href: demoHref.products("creator") },
-      { label: "הגדרות · משתמשים והרשאות", sub: "משתמשים, בקשות לאישור ומטריצת ההרשאות", href: demoHref.settings("creator", "users") },
+      {
+        label: "הגדרות · משתמשים והרשאות",
+        sub: "משתמשים, בקשות לאישור, התראות חשבונות ומטריצת ההרשאות",
+        href: demoHref.settings("creator", "users"),
+      },
       { label: "הגדרות · טכנאים", sub: "צבע, טלפון, מייל ב-Outlook, פעיל", href: demoHref.settings("creator", "techs") },
       { label: "הגדרות · מקומות איסוף", sub: "הוספה, כיבוי ומחיקה של מקום שלא בשימוש", href: demoHref.settings("creator", "places") },
       { label: "הגדרות · סיבות המשך טיפול", sub: "סיבות ונוסח אישור \"טופל\"", href: demoHref.settings("creator", "reasons") },
@@ -97,6 +101,23 @@ const screens = (callName: (req: string) => string): Record<Viewpoint, { intro: 
 });
 
 const ORDER: Viewpoint[] = ["tech", "mgr", "cs", "creator"];
+
+/**
+ * Step 2 PR 2.3 prototypes (AU-01 to AU-04 PROPOSED): the sign-in screen in its four states, each
+ * role's temporary start screen (Q18 TEMPORARY) and the technician's minimal profile. They will be
+ * wired to the real sign-in later (PR 2.5).
+ */
+const STEP2_LINKS: ScreenLink[] = [
+  { label: "כניסה · טופס", sub: "אימייל וסיסמה · בלי הרשמה ובלי \"שכחתי סיסמה\"", href: demoHref.login() },
+  { label: "כניסה · פרטים שגויים", sub: "הודעה אחת לכל פרטים שגויים", href: demoHref.login("failed") },
+  { label: "כניסה · כניסה לא זמינה", sub: "הודעה אחת לכל תקלה בשירות", href: demoHref.login("unavailable") },
+  { label: "כניסה · אין גישה", sub: "חשבון בלי גישה למסך, עם יציאה", href: demoHref.login("no-access") },
+  { label: "מסך פתיחה זמני · יוצר", sub: "שם, תפקיד ויציאה · רק מסכים שכבר בנויים", href: demoHref.start("creator") },
+  { label: "מסך פתיחה זמני · מנהל", sub: "שם, תפקיד ויציאה · רק מסכים שכבר בנויים", href: demoHref.start("mgr") },
+  { label: "מסך פתיחה זמני · שירות לקוחות", sub: "שם, תפקיד ויציאה · רק מסכים שכבר בנויים", href: demoHref.start("cs") },
+  { label: "מסך פתיחה זמני · טכנאי", sub: "שם, תפקיד ויציאה · היום ופרופיל", href: demoHref.start("tech") },
+  { label: "פרופיל טכנאי מינימלי", sub: "שם, תפקיד ויציאה מהחשבון", href: demoHref.startProfile() },
+];
 
 /** Developer tools (not app screens, X-06): never in the office sidebar. */
 const TOOLS: ScreenLink[] = [
@@ -164,6 +185,27 @@ export default async function DemoLandingPage() {
             );
           })}
         </div>
+        <section className="card" aria-labelledby="demo-step2" style={{ overflow: "hidden" }}>
+          <div className="sec" style={{ paddingBottom: 10 }}>
+            <h2 id="demo-step2" style={{ margin: 0 }}>
+              שלב 2 · כניסה ומסכי פתיחה
+            </h2>
+            <div className="sub">אב-טיפוס: מסכים שיחוברו לכניסה האמיתית בהמשך</div>
+          </div>
+          <nav aria-label="שלב 2 · כניסה ומסכי פתיחה" style={{ borderTop: "1px solid var(--line2)" }}>
+            {STEP2_LINKS.map((link) => (
+              <Link key={link.href} href={link.href} className="li">
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontSize: 14 }}>{link.label}</b>
+                  <div className="sub">{link.sub}</div>
+                </span>
+                <span aria-hidden="true" style={{ color: "var(--accent)", fontWeight: 700 }}>
+                  ‹
+                </span>
+              </Link>
+            ))}
+          </nav>
+        </section>
         <section className="card" aria-labelledby="demo-tools" style={{ overflow: "hidden" }}>
           <div className="sec" style={{ paddingBottom: 10 }}>
             <h2 id="demo-tools" style={{ margin: 0 }}>

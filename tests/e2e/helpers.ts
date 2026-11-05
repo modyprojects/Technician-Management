@@ -101,6 +101,14 @@ export const DEMO_PAGES = [
   "/dev/demo/office/mgr/settings/accounts",
   "/dev/demo/office/cs/settings/accounts",
   "/dev/demo/office/creator/settings/accounts",
+  // Step 2 PR 2.3 prototypes: the sign-in screen, each role's temporary start screen (Q18) and the
+  // technician's minimal profile.
+  "/dev/demo/login",
+  "/dev/demo/start/creator",
+  "/dev/demo/start/mgr",
+  "/dev/demo/start/cs",
+  "/dev/demo/start/tech",
+  "/dev/demo/start/tech/profile",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */

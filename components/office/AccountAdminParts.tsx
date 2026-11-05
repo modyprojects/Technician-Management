@@ -170,6 +170,12 @@ export function AccountName({ name, isTest, note }: { name: string; isTest: bool
 export type ActionMessageValue = { kind: "ok" | "error"; text: string } | null;
 
 /**
+ * The result line of an action: what a SIMULATED command would have done ("בהדגמה: … לא נשמר.", the
+ * UI demo, G-06), or what a stored one did (TE-23: never claim a save that did not happen).
+ */
+export const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
+
+/**
  * Inline result line of an action. The live region is always rendered (empty when there is no
  * message), so screen readers announce each new result.
  */

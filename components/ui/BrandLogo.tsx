@@ -2,8 +2,9 @@ import Image from "next/image";
 
 /**
  * The MODY logo, white version, for the app's existing dark headers only (D57 (6); G-08): the
- * office sidebar and its narrow top bar, and the technician header. Never on a light background
- * and never in a new light strip; the dark version (`mody-logo.png`) is not used in the app.
+ * office sidebar and its narrow top bar, and the technician header; and, PROPOSED (Step 2 PR 2.3,
+ * AU-01, owner question Q-D), the dark page of the sign-in screen (LoginScreen). Never on a light
+ * background and never in a new light strip; the dark version (`mody-logo.png`) is not used in the app.
  * The file's proportions (976×234) and transparency are kept: the caller's class sets the width,
  * the height follows (`height: auto`), and no filter, blend mode or background is applied.
  * `unoptimized`: served as the static file, no image optimizer (no new route, no cost).

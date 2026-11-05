@@ -73,6 +73,8 @@ test.describe("/dev gate", () => {
       "/dev/demo/office/mgr/analytics?tab=tech&period=custom&from=2026-10-01&to=2026-10-21",
       "/dev/demo/office/mgr/analytics?detail=today.missed",
       "/dev/demo/office/mgr/settings/accounts",
+      // Step 2 PR 2.3: the sign-in prototype's states.
+      "/dev/demo/login?state=no-access",
     ]) {
       const variants: Record<string, string>[] = [{}, { RSC: "1" }, { RSC: "1", "Next-Router-Prefetch": "1" }];
       for (const headers of variants) {

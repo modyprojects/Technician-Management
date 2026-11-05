@@ -7,9 +7,13 @@ import type { CustomerId } from "@/features/customers/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import { outboxHref, type OutboxViewState } from "@/features/outbox/data/search-params";
 import { productsListHref, type ProductsListState } from "@/features/products/data/search-params";
+import type { LoginState } from "@/features/auth/login-state";
 import { reviewListHref, type ReviewListState } from "@/features/review/data/search-params";
 import type { SettingsSection } from "@/features/settings/data/types";
 import type { OfficeRole } from "./types";
+
+/** A demo viewpoint (the technician or an office role); the same union as roles.ts `Viewpoint`. */
+type StartRole = "tech" | OfficeRole;
 
 export const DEMO_BASE = "/dev/demo";
 
@@ -92,4 +96,14 @@ export const demoHref = {
       : `${DEMO_BASE}/tech/notifications`,
   /** Technician profile (TE-29, TE-30). */
   techProfile: (): string => `${DEMO_BASE}/tech/profile`,
+  /**
+   * Step 2 PR 2.3 prototype of the sign-in screen "כניסה" (AU-01, PROPOSED): `?state=failed`,
+   * `unavailable` or `no-access`; the form (the default) leaves the parameter out.
+   */
+  login: (state?: LoginState): string =>
+    state === undefined || state === "form" ? `${DEMO_BASE}/login` : `${DEMO_BASE}/login?state=${state}`,
+  /** Step 2 PR 2.3 prototype of a role's temporary start screen (Q18 TEMPORARY, AU-03). */
+  start: (role: StartRole): string => `${DEMO_BASE}/start/${role}`,
+  /** Step 2 PR 2.3 prototype of the technician's minimal profile (identity and sign-out, AU-04). */
+  startProfile: (): string => `${DEMO_BASE}/start/tech/profile`,
 } as const;

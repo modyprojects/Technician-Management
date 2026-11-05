@@ -6,6 +6,7 @@ import type { OfficeRole } from "@/features/reference/data/types";
 import { demoDataAccess } from "../_data/adapter";
 import { OFFICE_SHELL_USERS, officeNav, officeNavParent, TECH_NAV_HREFS, type OfficeNavKey } from "../_data/roles";
 import { DemoPage } from "./DemoPage";
+import { DemoSignOut } from "./DemoSignOut";
 
 /**
  * DemoPage + OfficeShell with the role's sidebar (real links) and signed-in user. Server
@@ -15,6 +16,8 @@ import { DemoPage } from "./DemoPage";
  * reach customers, back from field, review items and products from "קריאות", and the former
  * "משתמשים" address belongs to "הגדרות"), its parent item is highlighted without aria-current
  * (officeNavParent). Otherwise nothing is highlighted (Customer Service: as before).
+ * Every office demo page has "יציאה" in the sidebar's user block (Step 2 PR 2.3, Q4 TEMPORARY):
+ * simulated (DemoSignOut).
  */
 export async function DemoOfficeFrame({ role, active, children }: { role: OfficeRole; active: OfficeNavKey; children: ReactNode }) {
   const permissions = await demoDataAccess.reference.permissions(role);
@@ -24,7 +27,13 @@ export async function DemoOfficeFrame({ role, active, children }: { role: Office
   const activeKey = parent !== null && inNav(parent) ? parent : active;
   return (
     <DemoPage viewpoint={role}>
-      <OfficeShell nav={nav} activeKey={activeKey} activeIsCurrent={activeKey === active} user={OFFICE_SHELL_USERS[role]}>
+      <OfficeShell
+        nav={nav}
+        activeKey={activeKey}
+        activeIsCurrent={activeKey === active}
+        user={OFFICE_SHELL_USERS[role]}
+        signOut={<DemoSignOut variant="side" />}
+      >
         {children}
       </OfficeShell>
     </DemoPage>

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage, verticalPageOverflow } from "./helpers";
 
 // UI demo with fictional data (D53, /dev/demo). Runs in the phone (390), tablet (820) and desktop
@@ -33,6 +34,10 @@ const DEMO_VIEWS = [
   "/dev/demo/tech/calendar?view=month",
   "/dev/demo/tech/calendar?date=2026-10-19",
   "/dev/demo/tech/done/47800/1?view=week&date=2026-10-21",
+  // Step 2 PR 2.3: the sign-in prototype's other states.
+  "/dev/demo/login?state=failed",
+  "/dev/demo/login?state=unavailable",
+  "/dev/demo/login?state=no-access",
 ] as const;
 
 /** Console errors and uncaught page errors while the test runs. */
@@ -53,6 +58,8 @@ const MANAGER_OR_CREATOR_ACCOUNT = /role\\?"\s*:\s*\\?"(creator|mgr)\\?"/;
 /** The white MODY logo in a dark header (D57 (6)): one per page. */
 const officeLogo = (page: Page) => page.locator('.side img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
 const techLogo = (page: Page) => page.locator('.ph-head .ph-brand img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+/** Step 2 PR 2.3 (AU-01 PROPOSED): the white logo on the sign-in prototype's dark page. */
+const loginLogo = (page: Page) => page.locator('.login img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
 
 test.describe("demo pages render", () => {
   for (const path of [...DEMO_PAGES, ...DEMO_VIEWS]) {
@@ -69,6 +76,10 @@ test.describe("demo pages render", () => {
       // D57 (6): one white MODY logo in the screen's dark header; never the dark file, never a light strip.
       if (path.startsWith("/dev/demo/office/")) await expect(officeLogo(page)).toHaveCount(1);
       if (path.startsWith("/dev/demo/tech")) await expect(techLogo(page)).toHaveCount(1);
+      // Step 2 PR 2.3 prototypes: the office and technician start screens, and the sign-in page's own logo.
+      if (/^\/dev\/demo\/start\/(creator|mgr|cs)$/.test(path)) await expect(officeLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/start/tech")) await expect(techLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/login")) await expect(loginLogo(page)).toHaveCount(1);
       await expect(page.locator('img[src*="mody-logo.png"], .work-brand')).toHaveCount(0);
       expect(await horizontalOverflow(page)).toEqual([]);
       expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
@@ -85,6 +96,10 @@ test.describe("demo pages render", () => {
       "/dev/demo/tech/visit/99999/1",
       "/dev/demo/tech/visit/47800/1/work",
       "/dev/demo/tech/visit/47800/1/close",
+      // Step 2 PR 2.3: an unknown viewpoint, and the minimal profile is the technician's only.
+      "/dev/demo/start/xx",
+      "/dev/demo/start/mgr/profile",
+      "/dev/demo/start/creator/profile",
     ]) {
       const res = await request.get(path);
       expect(res.status(), path).toBe(404);
@@ -712,7 +727,8 @@ test.describe("technician notifications and profile", () => {
     await page.getByRole("button", { name: /חיוג למשרד/ }).click();
     await expect(toast(page)).toContainText("לא מתבצעת שיחה");
     await expect(page.getByRole("button", { name: "דיווח" })).toBeDisabled();
-    // No sign-out entry: it is not in the demo or the spec (open question to the owner).
+    // Step 2 PR 2.3 (Q4 TEMPORARY): sign-out is in "חשבון" (the wording is owner question Q-B; E2).
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: "התנתקות" })).toHaveCount(0);
   });
 });
@@ -882,16 +898,23 @@ test.describe("permission matrix (SE-02, D33, D51)", () => {
 });
 
 test.describe("account administration (SE-01, D34)", () => {
-  test("Creator: every account with 🧪, own row without actions, no password or email editing", async ({ page }) => {
+  test("Creator: every account with 🧪, own row with \"עריכה\" only, credential actions on the other rows only", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const users = page.getByRole("table", { name: "משתמשים", exact: true });
-    // Step 2 PR 2.3: גלעד (a Technician account without a field profile) is the eleventh account.
-    await expect(users.locator("tbody tr")).toHaveCount(11);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(11);
+    // Step 2 PR 2.3: 11 accounts (with גלעד, a Technician account without a field profile) and the
+    // Creator's own open creation intent ("יצירה שלא הושלמה").
+    await expect(users.locator("tbody tr")).toHaveCount(12);
+    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(12);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
-    await expect(own.getByRole("button")).toHaveCount(0);
+    // The own row: only "עריכה" (no state change of himself; no credential dialogs, TEMPORARY Q22).
+    await expect(own.getByRole("button")).toHaveCount(1);
+    await expect(own.getByRole("button")).toHaveAccessibleName(/^עריכה/);
+    // No password field until a dialog opens.
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /סיסמה|שינוי מייל/ })).toHaveCount(0);
+    // "סיסמה" and "מייל" on every other account row (10 accounts), never on the own row.
+    await expect(users.getByRole("button", { name: /^סיסמה · / })).toHaveCount(10);
+    await expect(users.getByRole("button", { name: /^מייל · שינוי כתובת המייל/ })).toHaveCount(10);
+    await expect(own.getByRole("button", { name: /סיסמה|שינוי מייל|מייל ·/ })).toHaveCount(0);
     await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
     const form = page.getByRole("form", { name: "הוספת משתמש" });
     // Step 2 PR 2.2 (Q9, TEMPORARY): a Creator account is not offered; the option says why and is disabled.
@@ -945,8 +968,10 @@ test.describe("account administration (SE-01, D34)", () => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const requests = page.getByRole("list", { name: "בקשות לאישור" });
     const orit = page.getByRole("table", { name: "משתמשים", exact: true }).locator("tbody tr").filter({ hasText: "אורית" });
-    // A pending request is decided here, not by a direct activation on the account row (F12).
-    await expect(orit.getByRole("button")).toHaveCount(0);
+    // A pending request is decided here, not by a direct activation on the account row (F12). Step 2
+    // PR 2.3: the row's only buttons are the routine edit and the Creator's credential dialogs.
+    await expect(orit.getByRole("button")).toHaveText(["עריכה", "סיסמה", "מייל"]);
+    await expect(orit.getByRole("button", { name: /הפעלת|השבתת/ })).toHaveCount(0);
     await expect(orit).toContainText("להחלטה בבקשות");
     await requests.getByRole("button", { name: "אישור: הפעלה מחדש · אורית" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
@@ -965,8 +990,9 @@ test.describe("account administration (SE-01, D34)", () => {
   }) => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
-    // Step 2 PR 2.3: with גלעד (a Technician account without a field profile).
-    await expect(accounts.locator("tbody tr")).toHaveCount(9);
+    // Step 2 PR 2.3: 9 accounts (with גלעד, a Technician account without a field profile) and the
+    // Manager's own open creation intent.
+    await expect(accounts.locator("tbody tr")).toHaveCount(10);
     await expect(accounts.getByText("מנהל", { exact: true })).toHaveCount(0);
     await expect(accounts.getByText("יוצר", { exact: true })).toHaveCount(0);
     // אורית (inactive Customer Service) already has a pending reactivation request.
@@ -1266,16 +1292,17 @@ test.describe("add forms (simulated submit flows)", () => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
     const form = page.getByRole("form", { name: "הוספת טכנאי" });
-    await form.getByLabel("שם", { exact: true }).fill("טכנאי חדש");
+    // Step 2 PR 2.3: not "טכנאי חדש", the name of the Manager's fictional creation intent (aint-1).
+    await form.getByLabel("שם", { exact: true }).fill("טכנאי מתלמד");
     await form.getByLabel("מייל ב-Outlook").fill("new-tech@example.test");
     await form.getByLabel("טלפון", { exact: true }).fill("050-000-0192");
     await form.getByRole("button", { name: "הוספה" }).click();
     await expect(toast(page)).toContainText("הוספת טכנאי");
-    const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי חדש" });
+    const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי מתלמד" });
     await expect(row).toContainText("🧪");
     await expect(row).toContainText("טכנאי");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
-    await expect(page.getByText(/בהדגמה: הטכנאי טכנאי חדש היה נוסף מיד/)).toBeVisible();
+    await expect(page.getByText(/בהדגמה: הטכנאי טכנאי מתלמד היה נוסף מיד/)).toBeVisible();
   });
 
   test("\"שמירת נוסח\": an empty text is blocked inline; a new text is a simulated new version", async ({ page }) => {
@@ -1332,6 +1359,13 @@ test.describe("what the browser receives (P1, P9)", () => {
     for (const path of [
       "/dev/demo/tech",
       "/dev/demo/tech/profile",
+      // Step 2 PR 2.3 prototypes: display text from the session user only.
+      "/dev/demo/login",
+      "/dev/demo/start/creator",
+      "/dev/demo/start/mgr",
+      "/dev/demo/start/cs",
+      "/dev/demo/start/tech",
+      "/dev/demo/start/tech/profile",
       "/dev/demo/office/mgr",
       "/dev/demo/office/mgr/analytics",
       "/dev/demo/office/mgr/analytics?tab=tech",
@@ -1343,6 +1377,7 @@ test.describe("what the browser receives (P1, P9)", () => {
       expect(body, path).not.toContain("acc-creator");
       expect(body, path).not.toContain("acc-shirel");
       expect(body, path).not.toContain("areq-");
+      expect(body, path).not.toMatch(/acc-[a-z]|aint-|aev-/);
     }
   });
 });
@@ -2681,12 +2716,12 @@ test.describe("D57: Settings › \"משתמשים\" and the landing, negative ac
     await openPage(page, "/dev/demo/office/cs/settings/accounts");
     await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
     await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
-    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toMatch(/acc-[a-z]|areq-/);
+    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toMatch(/acc-[a-z]|areq-|aint-|aev-/);
 
     await openPage(page, "/dev/demo/office/creator/settings/accounts");
     await expect(page.getByText("היוצר מנהל את כל החשבונות ומאשר את בקשות המנהל בלשונית משתמשים והרשאות.")).toBeVisible();
     await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
-    expect(await html(page, "/dev/demo/office/creator/settings/accounts")).not.toMatch(/acc-[a-z]|areq-/);
+    expect(await html(page, "/dev/demo/office/creator/settings/accounts")).not.toMatch(/acc-[a-z]|areq-|aint-|aev-/);
     await page.getByRole("link", { name: "למשתמשים והרשאות" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/settings\/users$/);
   });
@@ -2696,6 +2731,10 @@ test.describe("D57: Settings › \"משתמשים\" and the landing, negative ac
     expect(body).toContain("acc-shirel");
     // No Manager or Creator account (D34 scope); the Creator's own Settings tab has them (control).
     expect(body).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    // Step 2 PR 2.3: no Creator notice and not the Creator's creation intent; only his own (aint-1).
+    expect(body).not.toContain("aev-");
+    expect(body).not.toContain("aint-2");
+    expect(body).toContain("aint-1");
     expect(await html(page, "/dev/demo/office/creator/settings/users")).toMatch(MANAGER_OR_CREATOR_ACCOUNT);
     expect(body).not.toContain("מה כל הרשאה רואה");
     // The matrix table (its name; the screen's own note may mention the matrix in words).
@@ -3461,3 +3500,832 @@ test.describe("D57 dashboard: accessibility and layout details (review fixes)", 
     await expect(page.locator(".ma-details > summary")).toBeFocused();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Step 2 PR 2.3 "screens first" (fake data): the sign-in prototype, sign-out placements (Q4), role
+// start screens (Q18), the Creator's credential dialogs and notices, the routine edit and the
+// incomplete creations. Every action is simulated; the password-like values below are fictional
+// test strings that must never appear anywhere the page exposes.
+
+const LOGIN_PW = "Pw-Demo-73915!";
+const SET_PW = "Sim-Pass-4821!";
+
+/** Every console message while the test runs (any type), to check that no secret is logged. */
+function collectConsole(page: Page): string[] {
+  const lines: string[] = [];
+  page.on("console", (msg) => lines.push(msg.text()));
+  return lines;
+}
+
+/** Records the text of every toast shown from now on (a MutationObserver; the toast replaces itself). */
+async function recordToasts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __toasts: string[] };
+    w.__toasts = [];
+    new MutationObserver((records) => {
+      for (const r of records) {
+        for (const n of r.addedNodes) if (n instanceof HTMLElement && n.matches(".toast")) w.__toasts.push(n.innerText);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+}
+const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? []);
+
+/** Where `secret` shows up: page HTML, visible text, URL, storage, input value attributes, toasts, console. */
+async function echoesOf(page: Page, secret: string, consoleLines: readonly string[]): Promise<string[]> {
+  const found: string[] = [];
+  if ((await page.content()).includes(secret)) found.push("page.content()");
+  if ((await page.evaluate(() => document.body.innerText)).includes(secret)) found.push("body.innerText");
+  if (page.url().includes(secret)) found.push("url");
+  const storage = await page.evaluate(() => {
+    const dump = (st: Storage) =>
+      Object.fromEntries(
+        Array.from({ length: st.length }, (_, i) => {
+          const key = st.key(i) ?? "";
+          return [key, st.getItem(key)];
+        }),
+      );
+    return JSON.stringify([dump(localStorage), dump(sessionStorage)]);
+  });
+  if (storage.includes(secret)) found.push("storage");
+  const attributes = await page.evaluate(() => [...document.querySelectorAll("input")].map((i) => i.getAttribute("value") ?? "").join("\n"));
+  if (attributes.includes(secret)) found.push("value attribute");
+  if ((await toast(page).allInnerTexts()).join("\n").includes(secret) || (await toastsSeen(page)).join("\n").includes(secret)) {
+    found.push("toast");
+  }
+  if (consoleLines.some((line) => line.includes(secret))) found.push("console");
+  return found;
+}
+
+/** The narrow test viewport where the drawer takes the whole width (no dimmed background to press). */
+const drawerCoversWidth = (page: Page) => page.viewportSize()!.width <= 440;
+
+/** A press on the dimmed background beside the drawer (the drawer is at the inline end, left in RTL). */
+async function pressBackdrop(page: Page) {
+  const { width } = page.viewportSize()!;
+  await page.mouse.click(width - 12, 240);
+}
+
+const usersTable = (page: Page) => page.getByRole("table", { name: "משתמשים", exact: true });
+const managerTable = (page: Page) => page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
+const rowOf = (table: ReturnType<typeof usersTable>, text: string) => table.locator("tbody tr").filter({ hasText: text });
+
+test.describe("Step 2 login (prototype)", () => {
+  test("the form: LTR email and password with sign-in autocomplete, no names, no sign-up and no reset", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    await expect(page.getByRole("heading", { level: 1, name: "כניסה" })).toBeVisible();
+    const email = page.getByLabel("אימייל", { exact: true });
+    await expect(email).toHaveAttribute("type", "email");
+    await expect(email).toHaveAttribute("dir", "ltr");
+    await expect(email).toHaveAttribute("autocomplete", "username");
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(password).toHaveAttribute("dir", "ltr");
+    await expect(password).toHaveAttribute("autocomplete", "current-password");
+    // No `name` on any input: a submit without JavaScript can never serialize the password.
+    await expect(page.locator(".login input")).toHaveCount(2);
+    await expect(page.locator(".login input[name]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "כניסה", exact: true })).toBeVisible();
+    // No sign-up and no "forgot password" control (Q2); the note's text is not a control.
+    const signUp = /הרשמה|הרשמו|שכחתי|sign ?up|forgot/i;
+    await expect(page.getByRole("link", { name: signUp })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: signUp })).toHaveCount(0);
+    await expect(page.getByText("אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת.")).toBeVisible();
+    // No real route in PR 2.3 (PR 2.5 adds /login).
+    for (const path of ["/dev/demo/signup", "/signup", "/login"]) {
+      expect((await page.request.get(path)).status(), path).toBe(404);
+    }
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("checks in the browser: focus and aria-invalid on the first invalid field; the password is kept after a refusal", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    const email = page.getByLabel("אימייל", { exact: true });
+    const password = page.getByLabel("סיסמה", { exact: true });
+    const submit = page.getByRole("button", { name: "כניסה", exact: true });
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("חסר מייל");
+    await expect(email).toBeFocused();
+    await expect(email).toHaveAttribute("aria-invalid", "true");
+
+    await email.fill("not-an-email");
+    await password.fill(LOGIN_PW);
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("כתובת מייל לא תקינה");
+    // Nothing was sent: the password stays, so only the email needs fixing.
+    expect(await password.inputValue()).toBe(LOGIN_PW);
+
+    await email.fill("user@example.test");
+    await password.fill("");
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("חסרה סיסמה");
+    await expect(password).toBeFocused();
+    await expect(password).toHaveAttribute("aria-invalid", "true");
+    await expect(email).not.toHaveAttribute("aria-invalid", "true");
+    await expect(toast(page)).toHaveCount(0);
+  });
+
+  test("no echo of the password before or after the (simulated) submit", async ({ page }) => {
+    const consoleLines = collectConsole(page);
+    await openPage(page, "/dev/demo/login");
+    await recordToasts(page);
+    const email = page.getByLabel("אימייל", { exact: true });
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await email.fill("user@example.test");
+    await password.fill(LOGIN_PW);
+    // Uncontrolled: typing never reaches the value attribute or the page's HTML (critique S1).
+    expect(await password.getAttribute("value")).toBeNull();
+    expect(await page.content()).not.toContain(LOGIN_PW);
+
+    await page.getByRole("button", { name: "כניסה", exact: true }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("בהדגמה אין חשבונות");
+    expect(await password.inputValue()).toBe("");
+    expect(page.url()).not.toContain(LOGIN_PW);
+    expect(page.url()).not.toContain("password");
+    expect(await echoesOf(page, LOGIN_PW, consoleLines)).toEqual([]);
+    // The email stays.
+    await expect(email).toHaveValue("user@example.test");
+  });
+
+  test("the states: one credentials message with the form, one service message without it, no access with sign-out", async ({ page }) => {
+    await openPage(page, "/dev/demo/login?state=failed");
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
+    await expect(page.getByLabel("אימייל", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("סיסמה", { exact: true })).toHaveValue("");
+
+    await openPage(page, "/dev/demo/login?state=unavailable");
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.service);
+    await expect(page.locator(".login input")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "כניסה", exact: true })).toHaveCount(0);
+
+    await openPage(page, "/dev/demo/login?state=no-access");
+    await expect(page.getByRole("heading", { level: 1, name: "אין גישה" })).toBeVisible();
+    await expect(page.getByText(SIGN_IN_MESSAGES.noAccess)).toBeVisible();
+    await expect(page.locator(".login").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".login input")).toHaveCount(0);
+    await page.getByRole("button", { name: "יציאה מהחשבון" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("יציאה מהחשבון");
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    // Anything else is the form (loginStateOf).
+    for (const query of ["?state=bogus", "?state=__proto__", "?state=failed&state=unavailable", "?state=FAILED"]) {
+      await openPage(page, `/dev/demo/login${query}`);
+      await expect(page.getByRole("heading", { level: 1, name: "כניסה" }), query).toBeVisible();
+      await expect(page.getByLabel("אימייל", { exact: true }), query).toBeVisible();
+      await expect(page.locator(".login").getByRole("alert"), query).toHaveCount(0);
+    }
+  });
+
+  test("the demo's state links switch states and mark the current one", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    const states = page.getByRole("navigation", { name: "מצבי המסך בהדגמה" });
+    await expect(states.getByRole("link")).toHaveText(["טופס", "פרטים שגויים", "כניסה לא זמינה", "אין גישה"]);
+    await expect(states.getByRole("link", { name: "טופס" })).toHaveAttribute("aria-current", "page");
+    await states.getByRole("link", { name: "כניסה לא זמינה" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login\?state=unavailable$/);
+    await expect(states.getByRole("link", { name: "כניסה לא זמינה" })).toHaveAttribute("aria-current", "page");
+    await expect(states.locator('[aria-current="page"]')).toHaveCount(1);
+    await states.getByRole("link", { name: "טופס" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login$/);
+  });
+});
+
+test.describe("Step 2 sign-out placements (Q4)", () => {
+  for (const path of [
+    "/dev/demo/office/mgr/calls",
+    "/dev/demo/office/cs/calls",
+    "/dev/demo/office/creator/calls",
+    "/dev/demo/start/mgr",
+    "/dev/demo/start/cs",
+    "/dev/demo/start/creator",
+  ]) {
+    test(`${path}: one "יציאה" in the sidebar's user block (the end of the top bar at 900 px and below), simulated`, async ({ page }) => {
+      await openPage(page, path);
+      const out = page.getByRole("button", { name: "יציאה מהחשבון" });
+      await expect(out).toHaveCount(1);
+      await expect(out).toHaveText("יציאה");
+      await expect(page.locator(".side .me").getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+      if (page.viewportSize()!.width <= 900) {
+        // One top-bar row: the button is centred on the logo's row (as the logo on the nav's first row).
+        const [logo, button] = await Promise.all([officeLogo(page).boundingBox(), out.boundingBox()]);
+        expect(logo && button && Math.abs(logo.y + logo.height / 2 - (button.y + button.height / 2))).toBeLessThanOrEqual(8);
+        await expect(page.locator(".side .me .me-who")).toBeHidden();
+        await expect(page.locator(".side .me .av")).toBeHidden();
+      } else {
+        await expect(page.locator(".side .me .me-who")).toBeVisible();
+        await expect(page.locator(".side .me .me-who")).toContainText("הרשאה:");
+      }
+      expect(await horizontalOverflow(page)).toEqual([]);
+      const url = page.url();
+      await out.click();
+      await expect(toast(page)).toContainText(SIMULATED);
+      await expect(toast(page)).toContainText("יציאה מהחשבון · בהדגמה אין חשבון מחובר");
+      expect(page.url()).toBe(url);
+    });
+  }
+
+  test("/dev/demo/tech/profile: \"חשבון\" with \"יציאה מהחשבון\" on this device only (simulated)", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/profile");
+    await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
+    const account = page.getByRole("region", { name: "חשבון" });
+    await expect(account).toContainText("יציאה מהחשבון");
+    await expect(account).toContainText("במכשיר הזה בלבד");
+    await account.getByRole("button", { name: "יציאה מהחשבון" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("יציאה מהחשבון");
+  });
+
+  test("/dev/showcase/office: no sign-out (the showcase passes no control)", async ({ page }) => {
+    await openPage(page, "/dev/showcase/office");
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toHaveCount(0);
+    await expect(page.locator(".side .me .signout")).toHaveCount(0);
+  });
+});
+
+test.describe("Step 2 role start screens (Q18)", () => {
+  for (const [role, who, roleLabel, items, settingsHref] of [
+    ["creator", "משתמש יוצר", "יוצר", ["בית", "הגדרות"], "/dev/demo/office/creator/settings/users"],
+    ["mgr", "דורון", "מנהל", ["בית", "הגדרות"], "/dev/demo/office/mgr/settings/accounts"],
+    ["cs", "שיראל", "שירות לקוחות", ["בית"], null],
+  ] as const) {
+    test(`/dev/demo/start/${role}: the landing label, the session user, the pending label and built items only`, async ({ page }) => {
+      await openPage(page, `/dev/demo/start/${role}`);
+      await expect(page.getByRole("heading", { level: 1, name: "בית" })).toBeVisible();
+      const main = page.locator("main.work");
+      await expect(main.getByRole("heading", { level: 2, name: `שלום, ${who}` })).toBeVisible();
+      await expect(main.locator(".start-hello")).toContainText("🧪");
+      await expect(main.getByText(`הרשאה: ${roleLabel}`, { exact: true })).toBeVisible();
+      await expect(main.getByText("מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.")).toBeVisible();
+      await expect(main.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+      await expect(sideNav(page).getByRole("link")).toHaveText([...items]);
+      await expect(sideNav(page).getByRole("link", { name: "בית" })).toHaveAttribute("aria-current", "page");
+      if (settingsHref) {
+        await expect(sideNav(page).getByRole("link", { name: "הגדרות" })).toHaveAttribute("href", settingsHref);
+      } else {
+        await expect(sideNav(page).getByRole("link", { name: "הגדרות" })).toHaveCount(0);
+        await expect(page.locator("main button")).toHaveCount(0);
+      }
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
+  test("/dev/demo/start/tech and the minimal profile: the session user, \"היום\" and \"פרופיל\" only, sign-out", async ({ page }) => {
+    await openPage(page, "/dev/demo/start/tech");
+    await expect(page.getByRole("heading", { level: 1, name: "שלום, יורם" })).toBeVisible();
+    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.getByText("הרשאה: טכנאי", { exact: true })).toBeVisible();
+    await expect(page.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+    const nav = page.locator(".ph-nav");
+    await expect(nav.getByRole("link")).toHaveText(["היום", "פרופיל"]);
+    await expect(nav.getByRole("link", { name: "היום" })).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("main").getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    await nav.getByRole("link", { name: "פרופיל" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/start\/tech\/profile$/);
+    await expect(page.getByRole("heading", { level: 1, name: "יורם" })).toBeVisible();
+    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head")).toContainText("הרשאה: טכנאי");
+    await expect(page.locator(".ph-nav").getByRole("link", { name: "פרופיל" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+    // Identity and sign-out only (plan §4 #11).
+    await expect(page.getByText("ביקורים השבוע")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "התראות" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "עזרה" })).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const back = page.getByRole("link", { name: /^חזרה/ });
+    await expect(back).toHaveAttribute("href", "/dev/demo/start/tech");
+    await back.click();
+    await expect(page).toHaveURL(/\/dev\/demo\/start\/tech$/);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the start pages carry display text only: no account, request, intent or notice ids and no simulated state", async ({ page }) => {
+      for (const path of ["/dev/demo/start/creator", "/dev/demo/start/mgr", "/dev/demo/start/cs", "/dev/demo/start/tech", "/dev/demo/start/tech/profile"]) {
+        const body = await (await page.request.get(path)).text();
+        expect(body, path).toContain(FIXTURE_SENTINEL);
+        for (const marker of ["acc-", "areq-", "aint-", "aev-", "selfRole"]) expect(body, `${path} ${marker}`).not.toContain(marker);
+      }
+    });
+  });
+});
+
+test.describe("Step 2 credentials (Creator only)", () => {
+  test("Creator: a colleague's row offers \"עריכה\", \"סיסמה\", \"מייל\" and the state control", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await expect(rowOf(usersTable(page), "שיראל").getByRole("button")).toHaveText(["עריכה", "סיסמה", "מייל", "השבתה"]);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  });
+
+  test("\"הגדרת סיסמה\": focus, hidden username, notes, checks, trap, Escape, background, and no echo", async ({ page }) => {
+    const consoleLines = collectConsole(page);
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await recordToasts(page);
+    const opener = page.getByRole("button", { name: "סיסמה · הגדרת סיסמה לחשבון של שיראל" });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "הגדרת סיסמה · שיראל" });
+    const field = dialog.getByLabel("סיסמה חדשה");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute("type", "password");
+    await expect(field).toHaveAttribute("autocomplete", "new-password");
+    expect(await field.getAttribute("name")).toBeNull();
+    expect(await field.getAttribute("value")).toBeNull();
+    // A password manager files a save under the target user (critique S10).
+    const username = dialog.locator('input[autocomplete="username"]');
+    await expect(username).toHaveValue("shirel@example.test");
+    await expect(username).toHaveAttribute("tabindex", "-1");
+    await expect(username).toHaveAttribute("readonly", "");
+    await expect(dialog).toContainText("רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה.");
+    await expect(dialog).toContainText("עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.");
+    await expect(dialog).toContainText("חוזק הסיסמה נבדק במערכת ההתחברות.");
+    // No show/hide toggle and no confirmation field (owner question Q-C).
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(1);
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    const save = dialog.getByRole("button", { name: "שמירת הסיסמה" });
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("חסרה סיסמה");
+    await expect(field).toBeFocused();
+    const long = "a".repeat(73);
+    await field.fill(long);
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("הסיסמה ארוכה מדי");
+    expect(await field.inputValue()).toBe(long);
+
+    // Tab stays inside: from the last control to the first, and back.
+    const close = dialog.getByRole("button", { name: "סגירה" });
+    const cancel = dialog.getByRole("button", { name: "ביטול", exact: true });
+    await cancel.focus();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
+
+    // Escape closes; focus returns to the opener.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+
+    if (!drawerCoversWidth(page)) {
+      // An untouched dialog closes on a press on the dimmed background.
+      await opener.click();
+      await expect(dialog).toBeVisible();
+      await pressBackdrop(page);
+      await expect(dialog).toHaveCount(0);
+    }
+
+    await opener.click();
+    await field.fill(SET_PW);
+    expect(await field.getAttribute("value")).toBeNull();
+    expect(await page.content()).not.toContain(SET_PW);
+    if (!drawerCoversWidth(page)) {
+      // Typed: the background no longer closes it.
+      await pressBackdrop(page);
+      await expect(dialog).toBeVisible();
+    }
+    await save.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(/בהדגמה: הסיסמה של שיראל הייתה נקבעת/)).toBeVisible();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("הגדרת סיסמה · שיראל · הסיסמה לא נשמרה ולא נשלחה");
+    const row = rowOf(usersTable(page), "שיראל");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row).toBeFocused();
+    expect(await echoesOf(page, SET_PW, consoleLines)).toEqual([]);
+  });
+
+  test("\"שינוי כתובת מייל\": the current email, example.test only for a test account, no change, the new email on the row", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "מייל · שינוי כתובת המייל של הדס" }).click();
+    const dialog = page.getByRole("dialog", { name: "שינוי כתובת מייל · הדס" });
+    await expect(dialog.locator('[dir="ltr"]').filter({ hasText: "rep2@example.test" })).toBeVisible();
+    await expect(dialog).toContainText("רק היוצר משנה מייל של חשבון. זה המייל לכניסה לאפליקציה.");
+    await expect(dialog).toContainText("חשבון בדיקה: רק כתובות");
+    await expect(dialog).not.toContainText("Outlook");
+    const field = dialog.getByLabel("מייל חדש");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute("dir", "ltr");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const save = dialog.getByRole("button", { name: "שמירת המייל" });
+    await field.fill("hadas@example.com");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await field.fill("REP2@example.test");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+    await field.fill("hadas.new@example.test");
+    await save.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("שינוי כתובת מייל · הדס · לא נשמר");
+    const row = rowOf(usersTable(page), "הדס");
+    await expect(row).toContainText("hadas.new@example.test");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+
+    // A Technician's row: his Outlook email is not changed here (Q14).
+    await page.getByRole("button", { name: "מייל · שינוי כתובת המייל של יורם" }).click();
+    await expect(page.getByRole("dialog", { name: "שינוי כתובת מייל · יורם" })).toContainText(
+      "המייל ב-Outlook של הטכנאי לא משתנה כאן: הוא נערך ב\"עריכת פרטים\".",
+    );
+  });
+
+  test("negative, the Manager: no credential opener, and no edit dialog holds a password or a new email", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const table = managerTable(page);
+    await expect(page.getByRole("button", { name: /^(סיסמה|מייל)( ·|$)/ })).toHaveCount(0);
+    const edits = table.getByRole("button", { name: /^עריכה · / });
+    await expect(edits).toHaveCount(9);
+    for (let i = 0; i < 9; i += 1) {
+      await edits.nth(i).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toHaveAccessibleName(/^עריכת פרטים · /);
+      await expect(page.locator('input[type="password"]')).toHaveCount(0);
+      await expect(dialog.getByLabel("מייל חדש")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: /הגדרת סיסמה|שינוי כתובת מייל/ })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+    }
+    await expect(page.getByText(/הגדרת סיסמה|שינוי כתובת מייל/)).toHaveCount(0);
+  });
+
+  test("negative, Customer Service: \"אין הרשאה\" and no administration action", async ({ page }) => {
+    for (const path of ["/dev/demo/office/cs/settings/accounts", "/dev/demo/office/cs/settings/users"]) {
+      await openPage(page, path);
+      await expect(page.getByRole("heading", { name: "אין הרשאה" }), path).toBeVisible();
+      await expect(page.locator("main").getByRole("button", { name: /עריכה|סיסמה|מייל|השלמה|השלמת יצירה|ביטול|השבתה|הפעלה|^\+/ }), path).toHaveCount(0);
+    }
+  });
+
+  test("the actions cell holds the row's buttons inside it (גלעד: five actions)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const row = rowOf(usersTable(page), "גלעד");
+    const buttons = row.getByRole("button");
+    await expect(buttons).toHaveText(["עריכה", "סיסמה", "מייל", "השלמה", "השבתה"]);
+    const cell = row.locator("td").last();
+    await cell.scrollIntoViewIfNeeded();
+    const td = await cell.boundingBox();
+    for (let i = 0; i < 5; i += 1) {
+      const b = await buttons.nth(i).boundingBox();
+      expect(td && b && b.x >= td.x - 1 && b.x + b.width <= td.x + td.width + 1, `button ${i}`).toBe(true);
+    }
+    // At most two buttons per line: five actions take three lines.
+    const tops = new Set<number>();
+    for (let i = 0; i < 5; i += 1) tops.add(Math.round((await buttons.nth(i).boundingBox())!.y));
+    expect(tops.size).toBe(3);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("Customer Service receives no account state, intent or notice", async ({ page }) => {
+      for (const path of ["/dev/demo/office/cs/settings/accounts", "/dev/demo/office/cs/settings/users"]) {
+        const body = await (await page.request.get(path)).text();
+        for (const marker of ["selfRole", "aint-", "aev-"]) expect(body, `${path} ${marker}`).not.toContain(marker);
+      }
+    });
+  });
+});
+
+test.describe("Step 2 notices (Creator)", () => {
+  test("\"התראות חשבונות\" is the tab's first card: five notices, newest first, each 🧪", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const first = page.locator(".set-body > .card").first();
+    await expect(first.getByRole("heading", { level: 2 })).toHaveText("התראות חשבונות");
+    await expect(first).toContainText("5 התראות");
+    const items = first.getByRole("list", { name: "התראות חשבונות" }).getByRole("listitem");
+    await expect(items).toHaveCount(5);
+    const expected: [string, string, string | null][] = [
+      ["בקשה ממתינה · הפעלה מחדש · אורית", "שירות לקוחות · על ידי דורון · היום 08:45", "להחלטה ב\"בקשות לאישור\""],
+      ["בקשה ממתינה · יצירת חשבון · נציגה 3", "שירות לקוחות · על ידי דורון · אתמול 11:30", "להחלטה ב\"בקשות לאישור\""],
+      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים"],
+      ["השבתה על ידי המנהל · אורית", "שירות לקוחות · על ידי דורון · 01.09 09:00", null],
+      ["השבתה על ידי המנהל · בני", "טכנאי · על ידי דורון · 14.08 16:30", null],
+    ];
+    for (const [i, [one, two, three]] of expected.entries()) {
+      const item = items.nth(i);
+      await expect(item.locator("b")).toHaveText(one);
+      await expect(item.locator(".sub").first()).toHaveText(two);
+      await expect(item.locator(".sub")).toHaveCount(three ? 2 : 1);
+      if (three) await expect(item.locator(".sub").nth(1)).toHaveText(three);
+      await expect(item).toContainText("🧪");
+    }
+    // Decided, cancelled and fulfilled requests are not notices.
+    for (const name of ["שמואל", "נציג זמני", "נציגת ערב", "הדס"]) await expect(first).not.toContainText(name);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("nobody but the Creator receives a notice", async ({ page }) => {
+      const paths = [
+        "/dev/demo/office/mgr/settings/accounts",
+        ...SETTINGS_TABS.map((t) => `/dev/demo/office/cs/settings/${t}`),
+        "/dev/demo/office/cs/settings/accounts",
+        "/dev/demo/start/creator",
+        "/dev/demo/start/mgr",
+        "/dev/demo/start/cs",
+        "/dev/demo/start/tech",
+        "/dev/demo/start/tech/profile",
+      ];
+      for (const path of paths) {
+        const body = await (await page.request.get(path)).text();
+        expect(body, path).not.toContain("aev-");
+        expect(body, path).not.toContain("התראות חשבונות");
+      }
+      // Control: the Creator's tab carries them.
+      const creator = await (await page.request.get("/dev/demo/office/creator/settings/users")).text();
+      expect(creator).toContain("aev-");
+      expect(creator).toContain("התראות חשבונות");
+    });
+  });
+});
+
+test.describe("Step 2 routine edit", () => {
+  test("Creator on יורם: every field with its value; a device change sends one technician update", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של יורם" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · יורם" });
+    await expect(dialog.getByLabel("שם", { exact: true })).toHaveValue("יורם");
+    await expect(dialog.getByLabel("שם", { exact: true })).toBeFocused();
+    await expect(dialog.getByLabel("טלפון עבודה")).toHaveValue("050-000-0001");
+    const alias = dialog.getByLabel("כינוי בזימונים");
+    await expect(alias).toHaveValue("");
+    await expect(alias).toHaveAttribute("maxlength", "60");
+    await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toBeVisible();
+    await expect(dialog.getByLabel("ירוק")).toBeChecked();
+    await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+    await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveValue("yoram@example.test");
+    await expect(dialog.getByRole("switch", { name: "פעיל · מקבל זימונים חדשים" })).toHaveAttribute("aria-checked", "true");
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    await recordToasts(page);
+    await dialog.getByLabel("מכשיר").fill("טאבלט");
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    const seen = await toastsSeen(page);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("עדכון פרטי טכנאי · יורם");
+    await expect(rowOf(usersTable(page), "יורם")).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText(/בהדגמה: הפרטים של יורם היו מתעדכנים מיד ונרשמים ביומן הביקורת/)).toBeVisible();
+  });
+
+  test("Creator's own row: name, phone and alias only", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של משתמש יוצר" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · משתמש יוצר" });
+    await expect(dialog.getByLabel("שם", { exact: true })).toHaveValue("משתמש יוצר");
+    await expect(dialog.getByLabel("טלפון עבודה")).toBeVisible();
+    await expect(dialog.getByLabel("כינוי בזימונים")).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toHaveCount(0);
+    await expect(dialog.locator("input")).toHaveCount(3);
+  });
+
+  test("checks: the error goes to its field; nothing changed is \"אין שינוי לשמור\"; a taken alias is refused", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של יורם" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · יורם" });
+    const save = dialog.getByRole("button", { name: "שמירה" });
+    const name = dialog.getByLabel("שם", { exact: true });
+    await name.fill("");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("חסר שם");
+    await expect(name).toBeFocused();
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await name.fill("יורם");
+    const phone = dialog.getByLabel("טלפון עבודה");
+    await phone.fill("abc");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("מספר טלפון לא תקין");
+    await expect(phone).toBeFocused();
+    await phone.fill("050-000-0001");
+    const outlook = dialog.getByLabel("מייל ב-Outlook");
+    await outlook.fill("a@b.com");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(outlook).toBeFocused();
+    await outlook.fill("yoram@example.test");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // The invitation alias is unique: שיראל holds "שיראל" (23505, simulated over the listed accounts).
+    await page.getByRole("button", { name: "עריכה · הפרטים של הדס" }).click();
+    const hadas = page.getByRole("dialog", { name: "עריכת פרטים · הדס" });
+    await expect(hadas.getByLabel("כינוי בזימונים")).toHaveValue("הדס");
+    await hadas.getByLabel("כינוי בזימונים").fill("שיראל");
+    await hadas.getByRole("button", { name: "שמירה" }).click();
+    await expect(hadas.getByRole("alert")).toHaveText("הערך כבר בשימוש.");
+    await expect(hadas).toBeVisible();
+  });
+
+  test("Manager on אדי: no Outlook email or \"פעיל\" (Q14 line); the colour change sends the technician's version", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "עריכה · הפרטים של אדי" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · אדי" });
+    await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveCount(0);
+    await expect(dialog.getByRole("switch")).toHaveCount(0);
+    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("מייל וסיסמה משנה היוצר בלבד.");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await dialog.getByLabel("כחול").check();
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    // אדי's technician record is version 2: the simulated check passes only with the version read.
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("עדכון פרטי טכנאי · אדי");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test("Manager on שיראל: a name change sends the account's version 3", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "עריכה · הפרטים של שיראל" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · שיראל" });
+    await dialog.getByLabel("שם", { exact: true }).fill("שיראל כהן");
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("עדכון פרטים · שיראל כהן · נרשם ביומן הביקורת");
+    const row = rowOf(managerTable(page), "שיראל כהן");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row).toBeFocused();
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the Manager's payload has no Outlook email and no Manager or Creator account; the Creator's has the Outlook email", async ({ page }) => {
+      const manager = await (await page.request.get("/dev/demo/office/mgr/settings/accounts")).text();
+      expect(manager).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+      expect(manager).not.toContain("outlookEmail");
+      expect(await (await page.request.get("/dev/demo/office/creator/settings/users")).text()).toContain("outlookEmail");
+    });
+  });
+});
+
+test.describe("Step 2 incomplete creations", () => {
+  test("Manager: his own intent heads the table; the Creator's is not there", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const first = managerTable(page).locator("tbody tr").first();
+    await expect(first).toContainText("טכנאי חדש");
+    await expect(first).toContainText("יצירה שלא הושלמה");
+    await expect(first).toContainText("התחילה אתמול 09:05");
+    await expect(first.getByRole("button")).toHaveText(["השלמת יצירה", "ביטול"]);
+    await expect(first.getByRole("button", { name: "השלמת יצירה · טכנאי חדש" })).toBeVisible();
+    await expect(first.getByRole("button", { name: "ביטול · היצירה של טכנאי חדש" })).toBeVisible();
+    await expect(page.getByText("מנהלת משמרת")).toHaveCount(0);
+  });
+
+  test("Manager: \"השלמת יצירה\" of a Technician: the stored row's details, a required colour, the row becomes the account", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "השלמת יצירה · טכנאי חדש" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · טכנאי חדש" });
+    const kv = dialog.locator(".kv");
+    await expect(kv).toContainText("תפקידטכנאי");
+    await expect(kv.locator('[dir="ltr"]')).toHaveText("tech-new@example.test");
+    await expect(kv).toContainText("התחילהאתמול 09:05");
+    await expect(dialog.getByLabel("טלפון")).toHaveValue("");
+    await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const submit = dialog.getByRole("button", { name: "השלמת היצירה" });
+    await submit.click();
+    await expect(dialog.getByRole("alert")).toHaveText("צבע לא תקין");
+    await expect(toast(page)).toHaveCount(0);
+    await dialog.getByLabel("כחול").check();
+    await submit.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · טכנאי חדש · לא נוצר משתמש");
+    const row = rowOf(managerTable(page), "טכנאי חדש");
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toContainText("יצירה שלא הושלמה");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row.getByRole("button")).toHaveCount(0);
+    await expect(page.getByText("בהדגמה: החשבון של טכנאי חדש היה נוצר מיד. לא נשמר.")).toBeVisible();
+    await expect(managerTable(page).locator("tbody tr")).toHaveCount(10);
+  });
+
+  test("Manager: \"ביטול\" of his own intent (simulated): the row stays as \"בוטלה\", not saved", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "ביטול · היצירה של טכנאי חדש" }).click();
+    await expect(toast(page)).toContainText("ביטול יצירה שלא הושלמה");
+    const row = rowOf(managerTable(page), "טכנאי חדש");
+    await expect(row).toContainText("בוטלה");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row.getByRole("button")).toHaveCount(0);
+  });
+
+  test("Creator: his own intent (a Manager) heads the table; completing it asks no colour or device", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const first = usersTable(page).locator("tbody tr").first();
+    await expect(first).toContainText("מנהלת משמרת");
+    await expect(first).toContainText("התחילה 19.10 13:40");
+    await expect(page.getByText("טכנאי חדש")).toHaveCount(0);
+    await first.getByRole("button", { name: "השלמת יצירה · מנהלת משמרת" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · מנהלת משמרת" });
+    await expect(dialog.locator(".kv")).toContainText("תפקידמנהל");
+    await expect(dialog.getByRole("group", { name: "צבע ביומן" })).toHaveCount(0);
+    await expect(dialog.getByLabel("מכשיר")).toHaveCount(0);
+    await expect(dialog).not.toContainText("Outlook");
+    await dialog.getByRole("button", { name: "השלמת היצירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · מנהלת משמרת · לא נוצר משתמש");
+  });
+
+  for (const [who, path] of [
+    ["Creator", "/dev/demo/office/creator/settings/users"],
+    ["Manager", "/dev/demo/office/mgr/settings/accounts"],
+  ] as const) {
+    test(`${who}: גלעד's "פרופיל טכנאי חסר" and "השלמה"`, async ({ page }) => {
+      await openPage(page, path);
+      const row = page.locator("main table tbody tr").filter({ hasText: "גלעד" });
+      await expect(row.getByText("פעיל", { exact: true })).toBeVisible();
+      await expect(row.getByText("פרופיל טכנאי חסר", { exact: true })).toBeVisible();
+      await row.getByRole("button", { name: "השלמה · פרופיל הטכנאי של גלעד" }).click();
+      const dialog = page.getByRole("dialog", { name: "השלמת פרופיל טכנאי · גלעד" });
+      await expect(dialog.locator('.kv [dir="ltr"]')).toHaveText("gilad@example.test");
+      await expect(dialog.locator('.kv input')).toHaveCount(0);
+      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים");
+      await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+      expect(await horizontalOverflow(page)).toEqual([]);
+      await dialog.getByLabel("ירוק").check();
+      await dialog.getByRole("button", { name: "השלמה", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(toast(page)).toContainText("השלמת פרופיל טכנאי · גלעד");
+      await expect(row).not.toContainText("פרופיל טכנאי חסר");
+      await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    });
+  }
+
+  test("Creator: an approved creation with no account (areq-6) offers \"השלמת יצירה\" and \"ביטול\"; pending rows never a cancel", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    const row = requests.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("אושרה");
+    await expect(row).toContainText("החשבון עוד לא נוצר");
+    await expect(row.getByRole("button", { name: "השלמת יצירה: יצירת חשבון · נציגת ערב" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "ביטול: יצירת חשבון · נציגת ערב" })).toBeVisible();
+    // With no rejection form open, the only "ביטול:" is areq-6's.
+    await expect(requests.getByRole("button", { name: /^ביטול:/ })).toHaveCount(1);
+  });
+
+  test("Creator: \"ביטול\" of areq-6 keeps the approval's decider and time (version 2 sent)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    await requests.getByRole("button", { name: "ביטול: יצירת חשבון · נציגת ערב" }).click();
+    await expect(toast(page)).toContainText("ביטול הבקשה");
+    const row = requests.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("אושרה על ידי משתמש יוצר · 19.10 15:10 · בוטלה");
+    await expect(row).not.toContainText("עכשיו");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test("Creator: \"השלמת יצירה\" of areq-6 adds the account row (not saved)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "השלמת יצירה: יצירת חשבון · נציגת ערב" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · נציגת ערב" });
+    await expect(dialog.locator(".kv")).toContainText("תפקידשירות לקוחות");
+    await expect(dialog.locator(".kv")).toContainText("אושרה19.10 15:10");
+    await expect(dialog.getByRole("group", { name: "צבע ביומן" })).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await dialog.getByRole("button", { name: "השלמת היצירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · נציגת ערב · לא נוצר משתמש");
+    const row = rowOf(usersTable(page), "נציגת ערב");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(usersTable(page).locator("tbody tr")).toHaveCount(13);
+    const request = page.getByRole("list", { name: "בקשות לאישור" }).getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(request.getByRole("button")).toHaveCount(0);
+  });
+
+  test("Manager: areq-6 in \"הבקשות שלי\": the Creator completes it; \"ביטול הבקשה\" keeps the approval line", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const mine = page.getByRole("list", { name: "הבקשות שלי" });
+    const row = mine.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("החשבון עוד לא נוצר · היוצר משלים את היצירה");
+    await expect(row.getByRole("button", { name: /השלמת יצירה/ })).toHaveCount(0);
+    await row.getByRole("button", { name: "ביטול הבקשה: יצירת חשבון · נציגת ערב" }).click();
+    await expect(toast(page)).toContainText("ביטול הבקשה");
+    await expect(row).toContainText("אושרה על ידי משתמש יוצר · 19.10 15:10 · בוטלה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the Manager never receives the Creator's intent", async ({ page }) => {
+      const body = await (await page.request.get("/dev/demo/office/mgr/settings/accounts")).text();
+      expect(body).not.toContain("aint-2");
+      expect(body).not.toContain("shift-mgr@");
+      expect(body).not.toContain("מנהלת משמרת");
+    });
+  });
+});
+

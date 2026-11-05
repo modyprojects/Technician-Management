@@ -8,8 +8,11 @@ import type { TechnicianProfile } from "@/features/profile/data/types";
 //   in production); disabled when the office phone is not set. "⚠ דיווח על תקלה באפליקציה" is
 //   PENDING (TE-30, open decision d26: where the report goes), so it is a disabled placeholder
 //   with no logic; the caller may pass the hint under it (the demo names the open decision).
-// No sign-out entry: it is not in docs/demo.html, spec.md or demo-deviations.md (open question to
-// the owner for Step 2). The demo's "גרסה 2.0 · דמו" line is demo chrome (X-01) and is not shown.
+// - ProfileAccount: "חשבון" with "יציאה מהחשבון" (Step 2 PR 2.3, Q4 TEMPORARY; AU-02, AU-04
+//   PROPOSED): the caller's sign-out control (the real app: a `<form action={signOut}>` button,
+//   PR 2.5). "במכשיר הזה בלבד": the sign-out ends this device's session only (plan §3.4, `scope:
+//   "local"`; PROPOSED wording). The pending-data warning before sign-out is Step 4.
+// The demo's "גרסה 2.0 · דמו" line is demo chrome (X-01) and is not shown.
 
 const HEADING_STYLE = { fontFamily: "var(--body)", fontWeight: 700 } as const;
 const PENDING_STYLE = { opacity: 0.55 } as const;
@@ -81,6 +84,27 @@ export function ProfileHelp({
           <button type="button" className="chip" disabled aria-describedby={REPORT_HINT_ID} style={PENDING_STYLE}>
             דיווח
           </button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+export function ProfileAccount({ signOut }: { signOut: ReactNode }) {
+  return (
+    <>
+      <h2 id="profile-account" className="sub" style={HEADING_STYLE}>
+        חשבון
+      </h2>
+      <section className="card" aria-labelledby="profile-account">
+        <div className="tnp-row">
+          <span>
+            יציאה מהחשבון
+            <span className="sub" style={{ display: "block" }}>
+              במכשיר הזה בלבד
+            </span>
+          </span>
+          {signOut}
         </div>
       </section>
     </>
