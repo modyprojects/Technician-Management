@@ -63,7 +63,8 @@ export const byOpening = (a: Call, b: Call): number => Date.parse(a.openedAt) - 
 /**
  * "תחילת טיפול": when the technician started working at the customer, the arrival of the call's
  * first visit (the first recorded arrival by visit number, its current value; a cancelled visit has
- * none). Null before any arrival (screens show "טרם התחיל"; never a fabricated value). D57 (9).
+ * none). Null before any arrival (screens show "טרם התחיל"; never a fabricated value). D57 (9);
+ * reading "the first visit" as the first recorded arrival is TEMPORARY T14 (#20, owner to confirm).
  */
 export function workStartAt(c: Call): string | null {
   const first = [...c.visits].sort((a, b) => a.n - b.n).find((v) => v.arriveAt !== null);

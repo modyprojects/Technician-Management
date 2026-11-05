@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { formatMetric, formatMetricNumber } from "@/components/office/KpiGrid";
 import {
   ANALYTICS_TABS,
   analyticsHref,
@@ -579,6 +580,10 @@ test.describe("manager dashboard formulas: focused rules", () => {
     expect(m.value).toBe(47.5);
     expect(m.durationHours).toBeCloseTo(47.4958, 4);
     expect(shown(m)).toBe("47 שעות");
+    // The KPI tile formats from the unrounded hours too (verify follow-up 2: a tile that used the
+    // rounded value would read "2.0 ימים").
+    expect(formatMetric(m)).toBe("47 שעות");
+    expect(formatMetricNumber(m)).toBe("47");
     // A dialog row carries the unrounded hours too.
     const rows = detailRecords(calls, "service.closeTime", { now: NOW }, TEST_ENV);
     const row = rows?.records === "calls" ? rows.rows[0] : undefined;
