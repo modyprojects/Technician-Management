@@ -35,7 +35,7 @@ export const demoHref = {
   analytics: (role: OfficeRole): string => `${DEMO_BASE}/office/${role}/analytics`,
   /**
    * Settings tab under a role (default "users", "משתמשים והרשאות"). The Creator sees every tab; a
-   * matrix role only where its `settings` value offers it (roles.ts settingsTabsOffered; display only).
+   * matrix role only where its `settings` value offers it (features/auth/roles.ts settingsTabsOffered; display only).
    */
   settings: (role: OfficeRole, section: SettingsSection = "users"): string => `${DEMO_BASE}/office/${role}/settings/${section}`,
   /** "ניהול משתמשים": the Manager's account administration (D34, a fixed capability, SE-03). */

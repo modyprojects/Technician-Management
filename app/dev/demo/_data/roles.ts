@@ -5,10 +5,25 @@
 // No permission values here: the matrix is data (D33, temporary per D51), served by
 // demoDataAccess.reference.permissions(role); officeNav() receives it and only shapes the menu.
 // Real enforcement is on the server and in the database (G-04).
-import type { OfficeNavItem } from "@/components/office/OfficeSidebar";
+// The role rules themselves (what each office role's screens offer, the sidebar order) live in
+// features/auth/roles.ts, shared with the real app (Step 2 plan §3.5); this module re-exports
+// them for the demo pages and adds the demo's addresses and fictional users.
 import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
 import { pendingDecisionHint } from "@/components/ui/pending-hint";
-import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
+import {
+  accountAdminScope,
+  customersOffered,
+  officeHomeLabel,
+  officeNav as sharedOfficeNav,
+  type OfficeNavHrefs,
+  type OfficeNavKey,
+  type OfficeNavLink,
+  productsOffered,
+  reviewItemsOffered,
+  settingsTabsOffered,
+  WORK_QUEUE_SCREENS_DECISION,
+  workQueueScreensOffered,
+} from "@/features/auth/roles";
 import {
   isOfficeRole,
   OFFICE_ROLE_VALUES,
@@ -16,13 +31,23 @@ import {
   type RolePermissions,
   type TechnicianId,
 } from "@/features/reference/data/types";
-import { reviewDecisionOffered, reviewScreenOffered } from "@/features/review/data/permissions";
+import { reviewDecisionOffered } from "@/features/review/data/permissions";
 import type { ReviewItemSummary } from "@/features/review/data/types";
-import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
 import { ME } from "./reference";
 import { demoHref } from "./routes";
 
-export { isOfficeRole };
+export {
+  accountAdminScope,
+  customersOffered,
+  isOfficeRole,
+  officeHomeLabel,
+  productsOffered,
+  reviewItemsOffered,
+  settingsTabsOffered,
+  WORK_QUEUE_SCREENS_DECISION,
+  workQueueScreensOffered,
+};
+export type { OfficeNavKey };
 
 export type Viewpoint = "tech" | OfficeRole;
 
@@ -50,36 +75,6 @@ export const OFFICE_SHELL_USERS: Record<OfficeRole, { name: string; roleLabel: s
   creator: { name: VIEWPOINTS.creator.who, roleLabel: VIEWPOINTS.creator.short, avatarColor: VIEWPOINTS.creator.color },
 };
 
-export type OfficeNavKey =
-  | "home"
-  | "cal"
-  | "calls"
-  | "customers"
-  | "unparsed"
-  | "back"
-  | "review"
-  | "analytics"
-  | "products"
-  | "users"
-  | "settings";
-
-/**
- * TEMPORARY, reversible (open decision #15, board ref d23): which matrix key gates "זימונים שלא
- * נקלטו" and "חזרו מהשטח", and whether both are in the first release, is the owner's decision. Until
- * then the demo offers both to the roles the spec lists (Customer Service, Manager, Creator: every
- * office role) as a fixed rule, never a matrix key, and each screen shows WORK_QUEUE_ACCESS_HINT.
- * The screen shows the decision's number (#15), not its board ref: "d23" next to the approved
- * D23 (Microsoft 365) would read as the same decision. Display only (G-04): the server stays
- * deny-by-default until #15 is decided; this rule is not a grant.
- */
-export const WORK_QUEUE_SCREENS_DECISION = { number: 15, boardRef: "d23" } as const satisfies {
-  number: number;
-  boardRef: OpenDecisionId;
-};
-
-/** Whether the role's screens offer "זימונים שלא נקלטו" and "חזרו מהשטח" (the temporary rule above). */
-export const workQueueScreensOffered = (role: OfficeRole): boolean => OFFICE_ROLES.includes(role);
-
 /** "א", "א וב", "א, ב וג" (Hebrew list). */
 function hebrewList(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
@@ -93,15 +88,6 @@ function hebrewList(items: readonly string[]): string {
 export const WORK_QUEUE_ACCESS_HINT = `הרשאת צפייה זמנית: ${hebrewList(
   OFFICE_ROLES.filter(workQueueScreensOffered).map((r) => VIEWPOINTS[r].short),
 )} · ${pendingDecisionHint(`#${WORK_QUEUE_SCREENS_DECISION.number}`)}`;
-
-/**
- * "פריטים לבדיקה" (D39, D44): matrix key `conflicts` (Manager on, Customer Service off by default;
- * the Creator fixed), and `card`, with which the server reads `review_items` (docs/database-schema.md
- * §8.3; items carry report content). TEMPORARY (owner question, phase G): whether the D14 items stay
- * reachable when `conflicts` or `card` is off; until then the whole screen follows both keys (deny
- * by default). Display only (G-04): the server checks every read and resolution itself.
- */
-export const reviewItemsOffered = (permissions: RolePermissions): boolean => reviewScreenOffered(permissions);
 
 /**
  * D14 audited corrections of a server-closed visit ("תיקון ביקור סגור", OF-10) and any resolution
@@ -124,88 +110,28 @@ export function reviewResolutionOffered(
   return reviewDecisionOffered({ permissions, closedVisitCapability: closedVisitCorrectionsOffered(role), item });
 }
 
-/** "לקוחות" and the customer card: matrix key `calls` (spec office screens). Display only. */
-export const customersOffered = (permissions: RolePermissions): boolean => offers(permissions, "calls");
+/** The demo's addresses of the office sidebar items for a role (every item is built in the demo). */
+const demoOfficeNavHrefs = (role: OfficeRole): OfficeNavHrefs => ({
+  home: demoHref.officeHome(role),
+  cal: demoHref.officeCalendar(role),
+  calls: demoHref.calls(role),
+  customers: demoHref.customers(role),
+  unparsed: demoHref.unparsed(role),
+  back: demoHref.backFromField(role),
+  review: demoHref.review(role),
+  analytics: demoHref.analytics(role),
+  products: demoHref.products(role),
+  users: demoHref.users(role),
+  settings: (tab) => demoHref.settings(role, tab),
+});
 
 /**
- * "מוצרים" (PR-06): matrix key `products` (Manager on, Customer Service off by default; the
- * Creator fixed). The spec defines this screen by its edit capability, so a role without
- * `products` has no products screen (product facts stay on the call and customer cards); a
- * read-only list for `calls` would be a new screen the spec does not list. Display only.
+ * Office sidebar items of a demo viewpoint: the shared rule (features/auth/roles.ts officeNav) over
+ * the role's values, read through demoDataAccess.reference.permissions(role), with the demo's
+ * addresses. Display only (G-04).
  */
-export const productsOffered = (permissions: RolePermissions): boolean => offers(permissions, "products");
-
-/**
- * The Settings tabs a role's screens offer. Display only (G-04): the server checks the Creator
- * role (matrix, accounts, D33/D34) and `settings` (operational settings, D35) itself.
- * - Creator: every tab (fixed capabilities, D33).
- * - A matrix role whose `settings` value is on: the operational settings of D35 (places, reasons
- *   with the "טופל" text, call types, template labels). "משתמשים והרשאות" stays Creator-only (the
- *   matrix is Creator-only, D33; the Manager's account administration is the "משתמשים" screen).
- *   "טכנאים" and "מיילים והתראות" are not D35 operational settings: deny by default until the
- *   owner says otherwise (the Manager manages technician accounts on "משתמשים", D34).
- * - Otherwise none (the default for Manager and Customer Service: `settings` off, SE-03).
- */
-export function settingsTabsOffered(role: OfficeRole, permissions: RolePermissions): readonly SettingsSection[] {
-  if (role === "creator") return SETTINGS_SECTION_VALUES;
-  if (!offers(permissions, "settings")) return [];
-  return ["places", "reasons", "types", "template"];
-}
-
-/**
- * Account administration a role's screens offer (D34, a fixed capability, never a matrix key,
- * SE-03). Display only: the server checks every account action in the database (D34).
- * - "all": the Creator (every account, decides the Manager's requests; on Settings › משתמשים והרשאות).
- * - "cs-tech": the Manager (Customer Service and Technician accounts; requests for Customer Service).
- * - null: Customer Service.
- */
-export function accountAdminScope(role: OfficeRole): "all" | "cs-tech" | null {
-  if (role === "creator") return "all";
-  return role === "mgr" ? "cs-tech" : null;
-}
-
-/**
- * The office home's title: the dashboard home ("לוח בקרה") where the role's matrix value offers
- * `dashGen`, otherwise the work queue ("בית"). Display only (G-04).
- */
-export const officeHomeLabel = (permissions: RolePermissions): string => (offers(permissions, "dashGen") ? "לוח בקרה" : "בית");
-
-/**
- * Office sidebar items, from the role's values (read through
- * demoDataAccess.reference.permissions(role)), in the demo's NAV order (L724-730) with the spec's
- * new screens (OF-02) in the order of the spec's office screens table: "לקוחות", "זימונים שלא
- * נקלטו" and "חזרו מהשטח" after "קריאות", "מוצרים" after "דשבורד". Display only: it hides menu
- * items, it does not protect routes (G-04): each page checks what it offers itself.
- * - "לקוחות": with `calls`. "זימונים שלא נקלטו" and "חזרו מהשטח": every office role, a TEMPORARY
- *   fixed rule (open #15, d23; workQueueScreensOffered). "פריטים לבדיקה" (D39, D44): with
- *   `conflicts`, right after the two work queues (which stay adjacent: they share the #15 rule).
- *   "מוצרים": with `products`.
- * - The mock outbox (X-06) is a /dev developer tool, never a sidebar item.
- * - "משתמשים" (account administration, D34): the Manager only (a fixed capability, SE-03); the
- *   Creator administers accounts on Settings › משתמשים והרשאות.
- * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; a matrix role only
- *   with `settings`), linking to the first offered tab.
- * - "מדדי שימוש" is never in the menu (OF-15 PENDING d13: the usage screen is not built).
- */
-export function officeNav(role: OfficeRole, permissions: RolePermissions): (OfficeNavItem & { key: OfficeNavKey })[] {
-  const items: (OfficeNavItem & { key: OfficeNavKey })[] = [
-    { key: "home", label: officeHomeLabel(permissions), href: demoHref.officeHome(role) },
-  ];
-  if (offers(permissions, "cal")) items.push({ key: "cal", label: "יומן טכנאים", href: demoHref.officeCalendar(role) });
-  items.push({ key: "calls", label: "קריאות", href: demoHref.calls(role) });
-  if (customersOffered(permissions)) items.push({ key: "customers", label: "לקוחות", href: demoHref.customers(role) });
-  if (workQueueScreensOffered(role)) {
-    items.push({ key: "unparsed", label: "זימונים שלא נקלטו", href: demoHref.unparsed(role) });
-    items.push({ key: "back", label: "חזרו מהשטח", href: demoHref.backFromField(role) });
-  }
-  if (reviewItemsOffered(permissions)) items.push({ key: "review", label: "פריטים לבדיקה", href: demoHref.review(role) });
-  if (offersAnyDashboard(permissions)) items.push({ key: "analytics", label: "דשבורד", href: demoHref.analytics(role) });
-  if (productsOffered(permissions)) items.push({ key: "products", label: "מוצרים", href: demoHref.products(role) });
-  if (accountAdminScope(role) === "cs-tech") items.push({ key: "users", label: "משתמשים", href: demoHref.users(role) });
-  const tabs = settingsTabsOffered(role, permissions);
-  if (tabs[0]) items.push({ key: "settings", label: "הגדרות", href: demoHref.settings(role, tabs[0]) });
-  return items;
-}
+export const officeNav = (role: OfficeRole, permissions: RolePermissions): OfficeNavLink[] =>
+  sharedOfficeNav(role, permissions, demoOfficeNavHrefs(role));
 
 /** Technician bottom-navigation links: "היום", "יומן" and "פרופיל". */
 export const TECH_NAV_HREFS: TechNavHrefs = { home: demoHref.tech(), cal: demoHref.techCalendar(), prof: demoHref.techProfile() };
