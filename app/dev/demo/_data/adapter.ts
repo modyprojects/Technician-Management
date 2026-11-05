@@ -120,7 +120,6 @@ import {
   csQueue,
   dashboardDetail,
   generalDashboard,
-  managerAnalytics,
   officeOverview,
   productDashboard,
   technicianDashboard,
@@ -129,7 +128,7 @@ import {
 import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
 import { correctionsOf, VISIT_BASE_VERSION, visitValue, type DemoCorrection } from "./corrections";
 import { CUSTOMERS, customerIdOf, customerProducts, findCustomer, openedOn, type DemoCustomer } from "./customers";
-import { daysBetween, TODAY } from "./dates";
+import { daysBetween } from "./dates";
 import { UNPARSED_INVITATIONS, type DemoUnparsedInvitation, type DemoUnparsedProblem } from "./intake";
 import { calendarVisitDetail, callDetail, callSummary, historyItem, productDto, techDayVisit, techRef, visitDetail } from "./mappers";
 import { CATALOGUE_BY_SKU, findCatalogueProduct, type DemoCatalogueProduct } from "./products";
@@ -823,9 +822,6 @@ export const demoDataAccess: DataAccess = {
   dashboards: {
     async officeOverview(date) {
       return officeOverview(assertDate(date));
-    },
-    async managerAnalytics(period) {
-      return managerAnalytics(assertPeriod(period), TODAY);
     },
     async generalDashboard(now, opts) {
       return generalDashboard(assertNow(now), isTrendMonths(opts?.months) ? opts.months : DEFAULT_TREND_MONTHS);

@@ -55,8 +55,8 @@ export type DashboardTabKey = "gen" | "tech" | "prod";
 
 export type MetricCategory = "approved" | "pendingDefinition" | "approvedDataUnavailable";
 
-/** Units of the registry ("days" belongs only to the deprecated ManagerAnalytics). */
-export type DashboardMetricUnit = Exclude<MetricUnit, "days">;
+/** Units of the registry (every MetricUnit). */
+export type DashboardMetricUnit = MetricUnit;
 
 /** TEMPORARY interpretations under open #20 (spec-final §2.5). T9 is withdrawn (D57 (5)). */
 export type TemporaryInterpretation = "T1" | "T2" | "T3" | "T4" | "T5" | "T6" | "T7" | "T8" | "T12" | "T13";

@@ -532,3 +532,107 @@ test.describe("ui-demo-5 review screenshots", () => {
     });
   }
 });
+
+// Manager dashboard, navigation and the MODY logo (D57; spec-final §12): app screens at 390 / 820 /
+// 1440 and the approved visual reference (docs/design/manager-dashboard-demo.html) for comparison.
+// Fictional, test-marked data only. Run only this block:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "manager-dashboard"
+const OUT_DASH = path.resolve("docs/review/manager-dashboard");
+const DASH_REFERENCE_URL = pathToFileURL(path.resolve("docs/design/manager-dashboard-demo.html")).href;
+
+test.describe("manager-dashboard review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`manager-dashboard screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(300_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_DASH, `${size.width}-${name}.png`);
+      const shot = (name: string, fullPage = true) => appShot(page, file(name), fullPage);
+      const ready = () => expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+      const dash = "/dev/demo/office/mgr/analytics";
+
+      // Set A: the white logo in the existing dark headers.
+      await openPage(page, "/dev/demo/tech");
+      await shot("tech-home-logo", false);
+      await page.locator(".ph-head").screenshot({ path: file("logo-tech-header") });
+      await openPage(page, "/dev/demo/tech/visit/48213/1");
+      await shot("tech-visit-logo", false);
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.locator(size.width > 900 ? ".side .logo" : ".side").screenshot({ path: file("logo-office-sidebar") });
+      await shot("office-calls-logo", false);
+
+      // Set B: navigation (Manager and Creator sidebars with the "מסכים נוספים" row, Customer
+      // Service unchanged, the Manager's Settings › משתמשים and a closed Settings tab).
+      for (const [name, url] of [
+        ["nav-mgr-calls", "/dev/demo/office/mgr/calls"],
+        ["nav-creator-calls", "/dev/demo/office/creator/calls"],
+        ["nav-cs-home", "/dev/demo/office/cs"],
+        ["mgr-settings-accounts", "/dev/demo/office/mgr/settings/accounts"],
+        ["mgr-settings-places-no-access", "/dev/demo/office/mgr/settings/places"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name, false);
+      }
+
+      // Set C: the General tab, its dialog and the 12-month chart with the data table open.
+      await openPage(page, dash);
+      await ready();
+      await shot("dash-general");
+      await openPage(page, `${dash}?detail=today.missed`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("dash-general-dialog", false);
+      await openPage(page, `${dash}?months=12`);
+      await ready();
+      await page.locator(".ma-details > summary").click();
+      await shot("dash-general-12m");
+      // The loading state: the sidebar link prefetches it; the page response is held back.
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.waitForLoadState("networkidle");
+      await page.route(/\/analytics/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await route.continue();
+      });
+      await page.locator(".side").getByRole("link", { name: "דשבורד" }).click();
+      await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+      await page.screenshot({ path: file("dash-loading") });
+      await ready();
+      await page.unroute(/\/analytics/);
+
+      // Set D: Technicians (month, previous month, week, custom range and its error, reports) and
+      // Products & Suppliers (with a supplier's calls in the dialog).
+      for (const [name, url] of [
+        ["dash-tech-month", `${dash}?tab=tech&tech=y`],
+        ["dash-tech-prev", `${dash}?tab=tech&tech=y&offset=-1`],
+        ["dash-tech-week", `${dash}?tab=tech&tech=y&period=week`],
+        ["dash-tech-custom", `${dash}?tab=tech&tech=s&period=custom&from=2026-10-01&to=2026-10-21`],
+        ["dash-tech-custom-error", `${dash}?tab=tech&tech=y&period=custom&from=2026-10-10&to=2026-10-01`],
+        ["dash-tech-reports", `${dash}?tab=tech&tech=y&view=reports`],
+        ["dash-products", `${dash}?tab=prod`],
+      ] as const) {
+        await openPage(page, url);
+        await ready();
+        await shot(name);
+      }
+      await openPage(page, `${dash}?tab=prod&detail=prod.bySupplier&group=${encodeURIComponent("מ.ס. יבוא")}`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("dash-products-dialog", false);
+
+      // The reference, tab by tab, and its dialog ("לא בוצעו במועד").
+      const refShot = async (name: string, fullPage = true) => {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: file(`ref-${name}`), fullPage });
+      };
+      await page.goto(DASH_REFERENCE_URL);
+      await refShot("general");
+      await page.locator('[data-tab="tech"]').click();
+      await refShot("tech");
+      await page.locator('[data-tab="products"]').click();
+      await refShot("products");
+      await page.locator('[data-tab="general"]').click();
+      await page.locator(".kpi", { hasText: "לא בוצעו במועד" }).click();
+      await expect(page.locator("#overlay")).toHaveClass(/open/);
+      await refShot("modal", false);
+    });
+  }
+});

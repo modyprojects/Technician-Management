@@ -5,17 +5,13 @@
 //   dashboardDetail map the fixtures to MetricCall and apply the pure formulas
 //   (features/dashboards/data/formulas.ts), always with scope "test-env" (every fixture is test data).
 // - The office home and work queue (officeOverview, csQueue) and the technician reports
-//   (technicianDetail) are ported from docs/demo.html (L867-935).
-// - managerAnalytics is the pre-D57 dashboard, kept only until the screen switches to the
-//   tab-scoped methods (spec-final §8.5, PR-D); its products part already uses the D57 formulas.
+//   (technicianDetail, "דוחות הביקורים") are ported from docs/demo.html (L867-935).
 import type { CallStatus } from "@/features/calls/data/types";
 import { boundedOf, pageOf, type Bounded, type IsoDate } from "@/features/data-access/common";
 import {
   detailRecords,
   generalMetrics,
-  groupUniqueCalls,
   productMetrics,
-  skuStats as skuRows,
   sortSkuRows,
   technicianMetrics,
   type GroupRow,
@@ -30,7 +26,6 @@ import {
   DASHBOARD_DETAIL_PAGE_LIMIT,
   DASHBOARD_LIST_LIMIT,
   NONE_GROUP_KEY,
-  OLDEST_FOLLOWUPS_LIMIT,
   type AnalyticsPeriod as Period,
   type BarRow,
   type CallAttentionItem,
@@ -40,7 +35,6 @@ import {
   type DashboardDetailRow,
   type DashboardScope,
   type GeneralDashboard,
-  type ManagerAnalytics,
   type Metric,
   type MetricUnit,
   type OfficeOverview,
@@ -54,11 +48,11 @@ import {
   type TechnicianVisitFilter,
   type TrendMonths,
 } from "@/features/dashboards/data/types";
-import { addDays, atJerusalem, daysBetween, shiftWorkDay, weekStart } from "./dates";
+import { atJerusalem, daysBetween, shiftWorkDay } from "./dates";
 import { callStatus, isClosedVisit, isOpenVisit } from "./status";
 import { followupReasonOf, productDto, techRef, technicianLanes } from "./mappers";
 import { ALL_VISITS, avg, CALLS, lastVisit, travelOf, treatOf, type CallVisit } from "./queries";
-import { prod, REASONS, TECH_IDS, TECHS } from "./reference";
+import { prod, REASONS, TECH_IDS } from "./reference";
 import type { Call, TechId, Visit } from "./types";
 
 const metric = (value: number | null, unit: MetricUnit, decimals?: number): Metric =>
@@ -170,82 +164,6 @@ function techStats(id: TechId, closed: readonly CallVisit[], calls: readonly Cal
     avgTravelMinutes: metric(avgOrNull(nonNull(m.map((x) => travelOf(x.v)))), "minutes"),
     avgTreatMinutes: metric(avgOrNull(nonNull(m.map((x) => treatOf(x.v)))), "minutes"),
     visitsPerDay: metric(days ? Math.round((m.length / days) * 10) / 10 : null, "count", 1),
-  };
-}
-
-/**
- * The pre-D57 manager dashboards: כללי / טכנאים / מוצרים וספקים. `asOf` is the demo's today.
- * @deprecated Kept only until the dashboard screen switches to generalDashboard /
- * technicianDashboard / productDashboard (spec-final §8.5, PR-D). Its products part already counts
- * unique calls with the D57 formulas (no visit-based rates, no free-text "תקלה נפוצה").
- */
-export function managerAnalytics(period: Period, asOf: IsoDate): ManagerAnalytics {
-  const visits = ALL_VISITS.filter((x) => inRange(x.v.date, period) && x.v.status !== "cancel");
-  const closed = visits.filter((x) => isClosedVisit(x.v));
-  const calls = callsIn(period);
-
-  const firsts = calls.filter((c) => isClosedVisit(firstVisit(c)));
-  const gaps = calls
-    .filter((c) => c.visits.length > 1)
-    .map((c) => daysBetween(firstVisit(c).date, (c.visits[1] as Visit).date));
-  const followups = attention(asOf, ["followup"]);
-
-  // Sunday–Saturday weeks from the period start up to the week of `asOf` (or the period end).
-  const lastDay = asOf < period.to ? asOf : period.to;
-  const weekly: ManagerAnalytics["general"]["weekly"] = [];
-  for (let s = weekStart(period.from); s <= lastDay; s = addDays(s, 7)) {
-    const e = addDays(s, 6);
-    weekly.push({ weekStart: s, weekEnd: e, visits: ALL_VISITS.filter((x) => x.v.date >= s && x.v.date <= e && x.v.status !== "cancel").length });
-  }
-
-  const reasonCount = (name: string, techId?: TechId): number =>
-    closed.filter((x) => x.v.reason === name && (techId === undefined || x.v.tech === techId)).length;
-
-  return {
-    period,
-    asOf,
-    includesTestData: true,
-    general: {
-      kpis: {
-        visits: metric(visits.length, "count"),
-        firstVisitFixRate: metric(pct(firsts.filter((c) => firstVisit(c).status === "done").length, firsts.length), "percent"),
-        openFollowups: metric(followups.length, "count"),
-        avgTravelMinutes: metric(avgOrNull(nonNull(closed.map((x) => travelOf(x.v)))), "minutes"),
-        avgTreatMinutes: metric(avgOrNull(nonNull(closed.map((x) => treatOf(x.v)))), "minutes"),
-        avgDaysToFollowup: metric(
-          gaps.length ? Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * 10) / 10 : null,
-          "days",
-          1,
-        ),
-      },
-      live: technicianLanes(visitsOn(asOf)),
-      outcomesByTechnician: TECHS.map((t) => ({
-        technician: techRef(t.id),
-        done: closed.filter((x) => x.v.tech === t.id && x.v.status === "done").length,
-        cont: closed.filter((x) => x.v.tech === t.id && x.v.status === "cont").length,
-      })),
-      followupReasons: REASONS.map((r) => ({ key: r.name, label: r.name, value: reasonCount(r.name) })),
-      weekly,
-      oldestFollowups: boundedOf(followups, OLDEST_FOLLOWUPS_LIMIT),
-    },
-    technicians: {
-      stats: TECHS.map((t) => techStats(t.id, closed, calls)),
-      reasonsByTechnician: REASONS.map((r) => {
-        const counts = Object.fromEntries(TECHS.map((t) => [t.id, reasonCount(r.name, t.id)])) as Record<TechId, number>;
-        return { reason: r.name, counts, total: reasonCount(r.name) };
-      }),
-    },
-    products: legacyProducts(calls),
-  };
-}
-
-/** The pre-D57 products tab for the period's calls, counted with the D57 formulas (unique calls). */
-function legacyProducts(calls: readonly Call[]): ManagerAnalytics["products"] {
-  const mc = calls.map(metricCallOf);
-  return {
-    byBrand: groupBars(groupUniqueCalls(mc, "brand", SCOPE), "brand"),
-    bySupplier: groupBars(groupUniqueCalls(mc, "supplier", SCOPE), "supplier"),
-    skus: capped(skuRows(mc, SCOPE).map(skuStatsDto)),
   };
 }
 

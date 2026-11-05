@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { ANALYTICS_TABS } from "@/app/dev/demo/office/[role]/analytics/_state";
+import {
+  ANALYTICS_TABS,
+  analyticsHref,
+  effectiveAnalyticsView,
+  groupFitsMetric,
+  offeredAnalyticsTabs,
+  parseAnalyticsState,
+  reportsColumnsOffered,
+  reportsRowsOffered,
+  selectedTechnician,
+} from "@/app/dev/demo/office/[role]/analytics/_state";
 import {
   closedVisitsIn,
   completedCallsIn,
@@ -563,6 +573,90 @@ test.describe("manager dashboard metric registry (D57 (4))", () => {
     expect(durationDisplay(47.6).text).toBe("2.0 ימים");
     expect(durationDisplay(90.98).text).toBe("3.8 ימים");
     expect(durationDisplay(50.02).text).toBe("2.1 ימים");
+  });
+});
+
+// View and access (display only, G-04) ------------------------------------------------------------
+
+test.describe("manager dashboard view and access (spec-final §6.2, §6.6)", () => {
+  onlyInProject("desktop");
+
+  const perms = (on: readonly PermissionKey[]): RolePermissions => ({
+    role: "mgr",
+    status: "temporary",
+    values: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, on.includes(k)])) as Record<PermissionKey, boolean>,
+  });
+  const view = (query: Record<string, string>, on: readonly PermissionKey[]) =>
+    effectiveAnalyticsView(parseAnalyticsState(query), offeredAnalyticsTabs(perms(on)));
+  const ALL_TABS: PermissionKey[] = ["dashGen", "dashTech", "dashProd"];
+
+  test("without dashTech: view=reports and detail=tech.* are ignored (the first offered tab is shown)", () => {
+    expect(view({ tab: "tech", view: "reports" }, ["dashGen", "dashProd", "calls"])).toEqual({ tab: "gen", view: null, detail: null });
+    expect(view({ tab: "tech", detail: "tech.done" }, ["dashGen", "calls"]).detail).toBeNull();
+    expect(view({ tab: "tech", view: "reports" }, ALL_TABS)).toEqual({ tab: "tech", view: "reports", detail: null });
+    expect(view({}, [])).toEqual({ tab: null, view: null, detail: null });
+    expect(view({}, ["dashProd"]).tab).toBe("prod");
+  });
+
+  test("the dialog opens only for an approved key with records, on its own tab, with a group of the right shape", () => {
+    expect(view({ detail: "today.missed" }, ALL_TABS).detail).toEqual({ key: "today.missed", group: null });
+    expect(view({ detail: "tech.done" }, ALL_TABS).detail).toBeNull();
+    expect(view({ tab: "tech", detail: "tech.done" }, ALL_TABS).detail).toEqual({ key: "tech.done", group: null });
+    // Never over the reports view.
+    expect(view({ tab: "tech", view: "reports", detail: "tech.done" }, ALL_TABS).detail).toBeNull();
+    for (const detail of ["bogus", "tech.planAdherence", "prod.topIssue", "today.progress", "prod.followupRate"]) {
+      expect(view({ tab: detail.startsWith("prod") ? "prod" : detail.startsWith("tech") ? "tech" : "gen", detail }, ALL_TABS).detail, detail).toBeNull();
+    }
+    // Groups: required for grouped keys, refused for ungrouped ones, months as "YYYY-MM".
+    expect(view({ detail: "trend.opened", group: "2026-09" }, ALL_TABS).detail).toEqual({ key: "trend.opened", group: "2026-09" });
+    expect(view({ detail: "trend.opened", group: "BOGUS" }, ALL_TABS).detail).toBeNull();
+    expect(view({ detail: "trend.opened" }, ALL_TABS).detail).toBeNull();
+    expect(view({ detail: "today.done", group: "x" }, ALL_TABS).detail).toBeNull();
+    expect(view({ tab: "prod", detail: "prod.skuCalls", group: "x".repeat(65) }, ALL_TABS).detail).toBeNull();
+    expect(groupFitsMetric("prod.bySupplier", "__none__")).toBe(true);
+    expect(groupFitsMetric("prod.bySupplier", "  ")).toBe(false);
+  });
+
+  test("records need `calls`; report columns need `card`; the recording marker needs `recordings`", () => {
+    expect(detailRowsOffered(perms(ALL_TABS))).toBe(false);
+    expect(reportsRowsOffered(perms(["dashTech"]))).toBe(false);
+    expect(reportsRowsOffered(perms(["dashTech", "calls"]))).toBe(true);
+    expect(reportsColumnsOffered(perms(["dashTech", "calls"]))).toEqual({ documentation: false, signature: false, recording: false });
+    expect(reportsColumnsOffered(perms(["dashTech", "calls", "card"]))).toEqual({ documentation: true, signature: true, recording: false });
+    expect(reportsColumnsOffered(perms(["dashTech", "calls", "card", "recordings"]))).toEqual({ documentation: true, signature: true, recording: true });
+    expect(reportsColumnsOffered(perms(["dashTech", "calls", "recordings"])).recording).toBe(false);
+  });
+
+  test("technician selection: none, unknown, inactive", () => {
+    const list = [
+      { id: "s", active: false },
+      { id: "y", active: true },
+      { id: "e", active: true },
+    ];
+    expect(selectedTechnician([], "y")).toBeNull();
+    expect(selectedTechnician(list, "zz")?.id).toBe("y");
+    expect(selectedTechnician(list, null)?.id).toBe("y");
+    expect(selectedTechnician(list, "s")?.id).toBe("s");
+  });
+
+  test("URL state: malformed values fall back; defaults are left out; only dialog links carry detail", () => {
+    const st = parseAnalyticsState({ tab: "nope", months: "7", period: "decade", sort: "x", spage: "-2", dpage: "abc", detail: "nope" });
+    expect(st).toMatchObject({ tab: "gen", months: 6, period: "month", sort: "calls-desc", spage: 1, dpage: 1, detail: null });
+    // A custom range keeps what was typed; other periods drop from / to.
+    expect(parseAnalyticsState({ period: "week", from: "2026-10-01" }).from).toBeUndefined();
+    expect(parseAnalyticsState({ period: "custom", from: "2026-10-01" }).from).toBe("2026-10-01");
+    const base = "/x";
+    expect(analyticsHref(base, { tab: "gen", months: 6 })).toBe("/x");
+    expect(analyticsHref(base, { tab: "gen", months: 12 })).toBe("/x?months=12");
+    expect(analyticsHref(base, { tab: "tech", tech: "y", period: "month", offset: 0 })).toBe("/x?tab=tech&tech=y");
+    expect(analyticsHref(base, { tab: "tech", tech: "y", period: "week", offset: -1 })).toBe("/x?tab=tech&tech=y&period=week&offset=-1");
+    expect(analyticsHref(base, { tab: "tech", tech: "s", period: "custom", offset: -3, from: "2026-10-01", to: "2026-10-21" })).toBe(
+      "/x?tab=tech&tech=s&period=custom&from=2026-10-01&to=2026-10-21",
+    );
+    expect(analyticsHref(base, { tab: "prod", sort: "calls-asc", spage: 2, detail: "prod.skuCalls", group: "KT-2041", dpage: 3 })).toBe(
+      "/x?tab=prod&spage=2&sort=calls-asc&detail=prod.skuCalls&group=KT-2041&dpage=3",
+    );
+    expect(analyticsHref(base, { tab: "prod", detail: null, group: "KT-2041", dpage: 3 })).toBe("/x?tab=prod");
   });
 });
 

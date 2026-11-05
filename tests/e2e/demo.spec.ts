@@ -12,6 +12,15 @@ const DEMO_VIEWS = [
   "/dev/demo/office/mgr/analytics?tab=tech",
   "/dev/demo/office/mgr/analytics?tab=prod",
   "/dev/demo/office/mgr/analytics?tab=tech&tech=y",
+  // D57 dashboard: chart range, periods, custom range, reports view, dialogs, sort, the Creator.
+  "/dev/demo/office/mgr/analytics?months=12",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=y&period=week",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=s&period=custom&from=2026-10-01&to=2026-10-21",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=y&view=reports",
+  "/dev/demo/office/mgr/analytics?detail=today.missed",
+  "/dev/demo/office/mgr/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041",
+  "/dev/demo/office/mgr/analytics?tab=prod&sort=calls-asc",
+  "/dev/demo/office/creator/analytics?tab=tech",
   "/dev/demo/office/mgr/calls?status=followup",
   // Calendars (OF-03, TE-27): views, another date, a technician filter and the open drawer.
   "/dev/demo/office/mgr/calendar?view=week",
@@ -218,7 +227,7 @@ test.describe("dashboards and access", () => {
     await expect(page.locator('a[href*="/analytics"]')).toHaveCount(0);
   });
 
-  test("manager analytics: tabs, KPI tiles, test-data note and the technician drill-down", async ({ page }) => {
+  test("manager analytics (D57): three tabs, KPI tiles, test-data note and the technician's reports", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr/analytics");
     await expect(page.getByRole("navigation", { name: "לשוניות הדשבורד" }).getByRole("link")).toHaveCount(3);
     await expect(page.locator(".kpis .kpi").first()).toBeVisible();
@@ -227,8 +236,11 @@ test.describe("dashboards and access", () => {
 
     await page.getByRole("navigation", { name: "לשוניות הדשבורד" }).getByRole("link", { name: "טכנאים" }).click();
     await expect(page).toHaveURL(/tab=tech/);
-    await page.getByRole("link", { name: /פירוט הטכנאי/ }).first().click();
-    await expect(page).toHaveURL(/tech=/);
+    const technicians = page.getByRole("group", { name: "טכנאי:" });
+    await expect(technicians.getByRole("link", { name: "יורם" })).toBeVisible();
+    await expect(technicians.getByRole("link", { name: "אדי" })).toBeVisible();
+    await page.getByRole("link", { name: "הצג דוחות ‹" }).click();
+    await expect(page).toHaveURL(/view=reports/);
     await expect(page.locator("table").first()).toBeVisible();
   });
 
@@ -2730,5 +2742,514 @@ test.describe("D57 (6): the logo file", () => {
     // Scanline 0: a filter byte, then RGBA per pixel. For the first pixel of the first row every
     // PNG filter predicts 0, so the stored byte is the alpha value itself.
     expect(raw[1 + 3]).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// D57: the manager dashboard (spec-final §10.2). Demo values at DEMO_NOW (21.10.2026 12:45),
+// computed from the fictional fixtures with the D57 formulas (the unit tests of the formulas are
+// in dashboard-metrics.spec.ts).
+
+const DASH = "/dev/demo/office/mgr/analytics";
+
+/** A dashboard tile by its exact label (a linked tile's label ends with " ›"). */
+const dashTile = (page: Page, label: string) =>
+  page.locator(".ma-kpis .kpi").filter({ has: page.locator(".l", { hasText: new RegExp(`^${label}( ›)?$`) }) });
+const dashValue = (page: Page, label: string) => dashTile(page, label).locator(".v");
+/** The visible label of the Technicians toolbar's period. */
+const periodLabel = (page: Page) => page.locator(".ma-plabel");
+const dialog = (page: Page) => page.getByRole("dialog");
+/** Rows of the open dialog's table. */
+const dialogRows = (page: Page) => dialog(page).locator("tbody tr");
+
+test.describe("D57 dashboard: numbers on screen", () => {
+  onlyInProject("desktop");
+
+  test("General: today, the current month's service metrics, the 30-day highlights and the chart table", async ({ page }) => {
+    await openPage(page, DASH);
+    await expect(dashValue(page, "מתוכננים")).toHaveText("11");
+    await expect(dashValue(page, "בוצעו")).toHaveText("2");
+    await expect(dashValue(page, "טרם בוצעו")).toHaveText("6");
+    await expect(dashValue(page, "לא בוצעו במועד")).toHaveText("3");
+    await expect(dashValue(page, "לא בוצעו במועד")).toHaveCSS("color", "rgb(193, 79, 79)");
+    await expect(page.locator(".ma-progress-pct")).toHaveText("18%");
+    await expect(page.locator(".ma-mini", { hasText: "2 מתוך 11 הושלמו" })).toBeVisible();
+
+    await expect(page.getByText("אוקטובר 2026 · החודש הנוכחי")).toBeVisible();
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("47 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("32 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("71%");
+    await expect(dashValue(page, "זמן סגירת קריאה")).toHaveText("3.8 ימים");
+
+    await expect(page.getByRole("list", { name: "3 ספקים מובילים" }).locator(".ma-bar-val")).toHaveText([/^106/, /^60/, /^25/]);
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-val")).toHaveText([/^50/, /^49/, /^39/, /^25/, /^21/]);
+
+    await page.locator(".ma-details > summary").click();
+    const rows = page.getByRole("table", { name: /מגמת קריאות שירות/ }).locator("tbody tr");
+    await expect(rows).toHaveCount(6);
+    const expected = [
+      ["אפריל 2026", "אין נתונים", "אין נתונים"],
+      ["מאי 2026", "אין נתונים", "אין נתונים"],
+      ["יוני 2026", "אין נתונים", "אין נתונים"],
+      ["יולי 2026", "1", "1"],
+      ["אוגוסט 2026", "2", "2"],
+      ["ספטמבר 2026", "28", "4"],
+    ];
+    for (const [i, cells] of expected.entries()) await expect(rows.nth(i).locator("td")).toHaveText(cells);
+
+    for (const months of [3, 12]) {
+      await openPage(page, `${DASH}?months=${months}`);
+      await page.locator(".ma-details > summary").click();
+      await expect(page.getByRole("table", { name: /מגמת קריאות שירות/ }).locator("tbody tr")).toHaveCount(months);
+    }
+    await expect(page.getByRole("navigation", { name: "טווח הגרף" }).getByRole("link", { name: "12 חודשים" })).toHaveAttribute("aria-current", "true");
+  });
+
+  test("Technicians: יורם by month, week and day; אדי's closure time in hours", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("70");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("52");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("47 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("31 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("71%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("3.9 ימים");
+    await expect(dashValue(page, "עמידה בתכנון")).toHaveText("הגדרה ממתינה");
+
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=week`);
+    await expect(periodLabel(page)).toHaveText("18.10–24.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("24");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("18");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("12");
+
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=day`);
+    await expect(periodLabel(page)).toHaveText("21.10.2026");
+    for (const label of ["זמן טיפול ממוצע", "זמן נסיעה ממוצע", "פתרון בביקור ראשון", "זמן סגירת קריאה ממוצע"]) {
+      await expect(dashValue(page, label), label).toHaveText(/^—\s*אין מספיק נתונים$/);
+      await expect(dashTile(page, label), label).toContainText("אין מספיק נתונים");
+    }
+
+    await openPage(page, `${DASH}?tab=tech&tech=e&period=day`);
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("47 שעות");
+  });
+
+  test("Products & Suppliers: unique calls, warranty and follow-up per SKU, columns and sorting", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const suppliers = page.getByRole("list", { name: "קריאות לפי ספק" });
+    await expect(suppliers.locator(".ma-bar-val")).toHaveText([/^108/, /^61/, /^26/, /^2/]);
+    await expect(suppliers.locator(".ma-bar-name").last()).toHaveText("לא הוזן");
+
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    await expect(table.locator("thead th")).toHaveText(["מק״ט", "מוצר", "מותג", "ספק", "קריאות", "באחריות", "% המשך טיפול", "תקלה נפוצה"]);
+    const row = (sku: string) => table.locator("tbody tr").filter({ has: page.locator("td:first-child", { hasText: new RegExp(`^${sku}$`) }) });
+    // Unique calls, not visits: KT-2041 14% and BT-1120 40% (visit-based rates would be 13% and 35%).
+    await expect(row("KT-2041").locator("td").nth(4)).toHaveText("52");
+    await expect(row("KT-2041").locator("td").nth(5)).toHaveText("87%");
+    await expect(row("KT-2041").locator("td").nth(6)).toHaveText("14%");
+    await expect(row("BT-1120").locator("td").nth(6)).toHaveText("40%");
+    await expect(row("MX-410").locator("td").nth(5)).toHaveText(/^—/);
+
+    const callsHeader = table.locator("thead th").nth(4);
+    await expect(callsHeader).toHaveAttribute("aria-sort", "descending");
+    await callsHeader.getByRole("link").click();
+    await expect(page).toHaveURL(/sort=calls-asc/);
+    await expect(table.locator("thead th").nth(4)).toHaveAttribute("aria-sort", "ascending");
+    // 1 call each: the tie between MX-410 and TB-75 is broken by SKU.
+    await expect(table.locator("tbody tr").first().locator("td").first()).toHaveText("MX-410");
+  });
+});
+
+test.describe("D57 dashboard: scope, no fabrication, colours", () => {
+  test("General: no follow-up or review counters, no work-queue links; computed metrics show numbers", async ({ page }) => {
+    await openPage(page, DASH);
+    const main = page.locator("main");
+    for (const text of ["דורש טיפול", "המשך טיפול פתוחים", "עכשיו בשטח", "דרשו המשך טיפול", "פריטים לבדיקה"]) {
+      await expect(main, text).not.toContainText(text);
+    }
+    await expect(main.locator('a[href*="/review"], a[href*="/back-from-field"], a[href*="/customers"], a[href*="/calls?"]')).toHaveCount(0);
+    await expect(dashValue(page, "לא בוצעו במועד")).not.toHaveText("הגדרה ממתינה");
+    await expect(dashValue(page, "זמן סגירת קריאה")).not.toHaveText("הגדרה ממתינה");
+    await expect(page.getByRole("img", { name: /מגמת קריאות שירות לפי חודש/ })).toBeVisible();
+    await expect(page.locator(".ma-gbar-o").last()).toHaveCSS("background-color", "rgb(70, 119, 213)");
+    await expect(page.locator(".ma-gbar-c").last()).toHaveCSS("background-color", "rgb(105, 117, 134)");
+    await expect(page.locator(".ma-progress .ma-seg-done")).toHaveCSS("background-color", "rgb(70, 119, 213)");
+    await expect(page.locator(".ma-progress .ma-seg-pending")).toHaveCSS("background-color", "rgb(185, 193, 205)");
+    await expect(page.locator(".ma-progress .ma-seg-missed")).toHaveCSS("background-color", "rgb(193, 79, 79)");
+    // 🧪 on the General SKU bars (SIM-17); SKUs are LTR text.
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".pill").first()).toContainText("🧪");
+    for (const sku of await page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-name bdi").all()) {
+      await expect(sku).toHaveAttribute("dir", "ltr");
+    }
+  });
+
+  test("every \"—\" value has an accessible name", async ({ page }) => {
+    for (const path of [`${DASH}?tab=tech&tech=y&period=day`, `${DASH}?tab=prod`]) {
+      await openPage(page, path);
+      const empties = page.locator(".ma-none");
+      expect(await empties.count(), path).toBeGreaterThan(0);
+      for (const el of await empties.all()) await expect(el).toContainText(/אין מספיק נתונים|אין נתונים/);
+    }
+  });
+
+  test("Technicians: three activity tiles in the owner's order, five performance tiles, one technician only", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await expect(page.locator(".ma-kpis-3 .kpi .l")).toHaveText([/^ביקורים מתוכננים/, /^ביקורים שבוצעו/, /^קריאות שנסגרו/]);
+    await expect(page.locator(".ma-kpis-5 .kpi")).toHaveCount(5);
+    await expect(page.locator(".ma-kpis .v", { hasText: "הגדרה ממתינה" })).toHaveCount(1);
+    await expect(dashTile(page, "עמידה בתכנון")).not.toHaveAttribute("href", /./);
+    // No other technician's name outside the technician buttons.
+    const body = await page.locator(".ma-dash").evaluate((el) => {
+      const copy = el.cloneNode(true) as HTMLElement;
+      copy.querySelector(".ma-cgroup-tech")?.remove();
+      return copy.textContent ?? "";
+    });
+    expect(body).not.toContain("אדי");
+    expect(body).not.toContain("שמואל");
+    // At the current period "next" is not a link; a future offset is treated as the current period.
+    await expect(page.getByRole("link", { name: "התקופה הבאה" })).toHaveCount(0);
+    await openPage(page, `${DASH}?tab=tech&tech=y&offset=1`);
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(page.getByRole("link", { name: "התקופה הבאה" })).toHaveCount(0);
+  });
+
+  test("Technicians: an invalid custom range shows the error and falls back to the current month", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=custom&from=2026-10-10&to=2026-10-01`);
+    await expect(page.locator("#ma-range-error")).toHaveText("טווח התאריכים לא תקין: עד היום ולא יותר משנה");
+    await expect(page.locator("#ma-range-error")).toHaveAttribute("role", "alert");
+    await expect(page.getByLabel("מתאריך")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("עד תאריך")).toHaveAttribute("aria-describedby", "ma-range-error");
+    await expect(page.locator(".ma-section .ma-label").first()).toContainText("אוקטובר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+  });
+
+  test("Technicians: the reports view has the visits table, no tiles and no counts on the filter chips", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&view=reports`);
+    await expect(page.getByRole("heading", { name: /דוחות הביקורים של יורם · אוקטובר 2026/ })).toBeVisible();
+    await expect(page.getByRole("table", { name: "הביקורים של יורם" })).toBeVisible();
+    await expect(page.locator(".kpis")).toHaveCount(0);
+    for (const chip of await page.getByRole("navigation", { name: "סינון הביקורים" }).getByRole("link").all()) {
+      await expect(chip).not.toHaveText(/\d/);
+    }
+    await page.getByRole("link", { name: /חזרה למדדי הטכנאי/ }).click();
+    await expect(page).not.toHaveURL(/view=reports/);
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+  });
+
+  test("Products: supplier card first, no date controls, \"תקלה נפוצה\" unavailable, test badges", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const supplier = page.getByRole("heading", { name: "קריאות לפי ספק" });
+    const brand = page.getByRole("heading", { name: "קריאות לפי מותג" });
+    const order = await supplier.evaluate((a, b) => Boolean(a.compareDocumentPosition(b as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await brand.elementHandle());
+    expect(order).toBe(true);
+    await expect(page.locator('input[type="date"], .ma-pill')).toHaveCount(0);
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    const issues = table.locator("tbody tr td:nth-child(8)");
+    await expect(issues).toHaveCount(8);
+    for (const cell of await issues.all()) await expect(cell).toHaveText("לא זמין");
+    await expect(page.locator("main")).not.toContainText("טפטוף");
+    await expect(table.locator("tbody td:first-child", { hasText: "MX-410" })).toHaveCount(1);
+    await expect(table.locator("tbody td:first-child", { hasText: "TB-75" })).toHaveCount(1);
+    await expect(table.locator("tbody tr").first().locator("td").nth(1)).toContainText("🧪");
+    for (const cell of await table.locator("tbody td:first-child").all()) await expect(cell).toHaveAttribute("dir", "ltr");
+  });
+});
+
+test.describe("D57 dashboard: Technicians toolbar (desktop)", () => {
+  onlyInProject("desktop");
+
+  test("order at 1440: technicians right, date navigation centre, periods left; previous right of the label", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    const [tech, date, periods, prev, label, next] = await Promise.all([
+      page.locator(".ma-cgroup-tech").boundingBox(),
+      page.locator(".ma-cgroup-date").boundingBox(),
+      page.locator(".ma-cgroup-period").boundingBox(),
+      page.getByRole("link", { name: "התקופה הקודמת" }).boundingBox(),
+      periodLabel(page).boundingBox(),
+      page.locator(".ma-pnav > :last-child").boundingBox(),
+    ]);
+    if (!tech || !date || !periods || !prev || !label || !next) throw new Error("toolbar not laid out");
+    expect(tech.x).toBeGreaterThan(date.x + date.width);
+    expect(date.x).toBeGreaterThan(periods.x + periods.width);
+    expect(prev.x).toBeGreaterThan(label.x + label.width - 1);
+    expect(next.x + next.width).toBeLessThan(label.x + 1);
+  });
+
+  test("date navigation: the previous month and back", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await page.getByRole("link", { name: "התקופה הקודמת" }).click();
+    await expect(page).toHaveURL(/offset=-1/);
+    await expect(periodLabel(page)).toHaveText("ספטמבר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("1");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("1");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("1");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("48 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("29 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("100%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("2.1 ימים");
+    await page.getByRole("link", { name: "התקופה הבאה" }).click();
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(page).not.toHaveURL(/offset=/);
+  });
+
+  test("custom range: the form navigates without a full reload", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=s&period=custom`);
+    await page.evaluate(() => {
+      (window as unknown as { __maMarker: string }).__maMarker = "kept";
+    });
+    await page.getByLabel("מתאריך").fill("2026-10-01");
+    await page.getByLabel("עד תאריך").fill("2026-10-21");
+    await page.getByRole("button", { name: "הצג" }).click();
+    await expect(page).toHaveURL(/from=2026-10-01&to=2026-10-21/);
+    await expect(page.locator(".ma-section .ma-label").first()).toHaveText("1.10.2026 – 21.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("73");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("53");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("44 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("31 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("69%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("3.9 ימים");
+    expect(await page.evaluate(() => (window as unknown as { __maMarker?: string }).__maMarker)).toBe("kept");
+  });
+
+  test("switching technician keeps the period", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=week`);
+    await page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "אדי" }).click();
+    await expect(page).toHaveURL(/tech=e/);
+    await expect(page).toHaveURL(/period=week/);
+    await expect(periodLabel(page)).toHaveText("18.10–24.10.2026");
+    await expect(page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "אדי" })).toHaveAttribute("aria-current", "true");
+  });
+});
+
+test.describe("D57 dashboard: Technicians toolbar (phone)", () => {
+  onlyInProject("phone");
+
+  test("the three groups stack in DOM order; technicians are direct links; no select; no overflow", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    const [tech, date, periods] = await Promise.all([
+      page.locator(".ma-cgroup-tech").boundingBox(),
+      page.locator(".ma-cgroup-date").boundingBox(),
+      page.locator(".ma-cgroup-period").boundingBox(),
+    ]);
+    if (!tech || !date || !periods) throw new Error("toolbar not laid out");
+    expect(date.y).toBeGreaterThanOrEqual(tech.y + tech.height - 1);
+    expect(periods.y).toBeGreaterThanOrEqual(date.y + date.height - 1);
+    await expect(page.getByRole("group", { name: "טכנאי:" }).locator("a")).toHaveCount(3);
+    await expect(page.locator(".ma-controls select")).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("the chart's visible month labels do not overlap at 6 and 12 months", async ({ page }) => {
+    for (const months of [6, 12]) {
+      await openPage(page, `${DASH}${months === 12 ? "?months=12" : ""}`);
+      const boxes = await page.locator(".ma-mlabel").evaluateAll((els) =>
+        els.filter((el) => getComputedStyle(el).visibility !== "hidden").map((el) => el.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })),
+      );
+      expect(boxes.length, String(months)).toBeGreaterThan(0);
+      const sorted = boxes.sort((a, b) => a.left - b.left);
+      for (let i = 1; i < sorted.length; i++) expect(sorted[i]!.left, `${months} months, label ${i}`).toBeGreaterThanOrEqual(sorted[i - 1]!.right);
+    }
+  });
+});
+
+test.describe("D57 dashboard: details dialog", () => {
+  onlyInProject("desktop");
+
+  test("a tile opens an accessible dialog: focus inside, trapped, Escape / ✕ / backdrop close, focus returns", async ({ page }) => {
+    await openPage(page, DASH);
+    const tile = page.locator('[data-detail-key="today.missed"]');
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toHaveAccessibleName("לא בוצעו במועד · 21.10.2026");
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await expect(dialogRows(page)).toHaveCount(3);
+    await expect(dialogRows(page).locator("td:first-child")).toHaveText(["48213", "48219", "48226"]);
+    for (const row of await dialogRows(page).all()) {
+      await expect(row).toContainText(/נקלט אוטומטית מזימון Outlook|זימון בדיקה/);
+      await expect(row).toContainText("🧪");
+    }
+    // Tab and Shift+Tab stay inside.
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    }
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page).not.toHaveURL(/detail=/);
+    await expect(tile).toBeFocused();
+
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page).getByRole("link", { name: "סגירה" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page).not.toHaveURL(/detail=/);
+
+    // A press that starts inside the panel and ends on the backdrop keeps it open; a click on the backdrop closes it.
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    const panel = await dialog(page).boundingBox();
+    if (!panel) throw new Error("no dialog box");
+    await page.mouse.move(panel.x + panel.width / 2, panel.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(panel.x + panel.width / 2, Math.max(2, panel.y - 30), { steps: 4 });
+    await page.mouse.up();
+    await expect(dialog(page)).toBeVisible();
+    await page.mouse.click(panel.x + panel.width / 2, Math.max(2, panel.y - 30));
+    await expect(dialog(page)).toHaveCount(0);
+  });
+
+  test("a direct load opens the dialog with focus inside", async ({ page }) => {
+    await openPage(page, `${DASH}?detail=today.planned`);
+    await expect(dialog(page)).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await expect(dialogRows(page)).toHaveCount(11);
+  });
+
+  test("a supplier's 108 calls over 3 pages; focus stays inside after paging and returns to the row", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const row = page.locator('[data-detail-key="prod.bySupplier|מ.ס. יבוא"]');
+    await row.click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText("מציג 1–50 מתוך 108 קריאות");
+    await expect(dialogRows(page)).toHaveCount(50);
+    await dialog(page).getByRole("link", { name: "הבא ‹" }).click();
+    await expect(page).toHaveURL(/dpage=2/);
+    await expect(dialog(page)).toContainText("מציג 51–100 מתוך 108 קריאות");
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await dialog(page).getByRole("link", { name: "הבא ‹" }).click();
+    await expect(dialogRows(page)).toHaveCount(8);
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(row).toBeFocused();
+  });
+
+  test("the chart table's September \"נפתחו\" opens 28 calls", async ({ page }) => {
+    await openPage(page, DASH);
+    await page.locator(".ma-details > summary").click();
+    await page.locator('[data-detail-key="trend.opened|2026-09"]').click();
+    await expect(dialog(page)).toHaveAccessibleName("קריאות שנפתחו · ספטמבר 2026");
+    await expect(dialogRows(page)).toHaveCount(28);
+  });
+
+  test("\"% המשך טיפול\" and \"נדרש המשך טיפול\" agree; the current status stays closed (D57 (5))", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod&detail=prod.skuCalls&group=KT-1800`);
+    await expect(dialogRows(page)).toHaveCount(21);
+    const header = await dialog(page).locator("thead th").allTextContents();
+    const col = header.indexOf("נדרש המשך טיפול");
+    expect(col).toBeGreaterThan(0);
+    const yes = dialogRows(page).filter({ has: page.locator(`td:nth-child(${col + 1}):text-is("כן")`) });
+    await expect(yes).toHaveCount(4);
+    expect((await yes.locator("td:first-child").allTextContents()).sort()).toEqual(["47877", "47881", "47882", "47925"]);
+    for (const req of ["47881", "47882"]) {
+      await expect(dialogRows(page).filter({ has: page.locator("td:first-child", { hasText: new RegExp(`^${req}$`) }) })).toContainText("טופלה");
+    }
+    for (const cell of await dialog(page).locator("tbody td[dir=ltr]").all()) await expect(cell).toHaveText("KT-1800");
+  });
+
+  test("no dialog for pending, unavailable, unknown or off-tab keys, or an unknown group", async ({ page }) => {
+    for (const q of [
+      "?tab=tech&detail=tech.planAdherence",
+      "?tab=prod&detail=prod.topIssue",
+      "?detail=bogus",
+      "?detail=tech.done",
+      "?tab=prod&detail=prod.skuCalls&group=BOGUS",
+      "?detail=trend.opened&group=2020-01",
+    ]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".ma-kpis, .ma-two").first(), q).toBeVisible();
+      await expect(dialog(page), q).toHaveCount(0);
+    }
+  });
+});
+
+test.describe("D57 dashboard: what customer service receives (raw responses)", () => {
+  onlyInProject("desktop");
+
+  test("no dashboard data and no dialog for a role without a dashboard tab", async ({ page }) => {
+    for (const path of [
+      "/dev/demo/office/cs/analytics?detail=today.planned",
+      "/dev/demo/office/cs/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041",
+      "/dev/demo/office/cs/analytics?tab=tech&tech=y&view=reports",
+    ]) {
+      const body = await (await page.request.get(path)).text();
+      expect(body, path).toContain("אין הרשאה");
+      // The request URL itself is echoed in the payload, so the SKU's product name stands for it.
+      for (const text of ["48213", "48240", "ברז מטבח נשלף", "ma-dialog", "ma-kpis", "ma-controls"]) expect(body, `${path}: ${text}`).not.toContain(text);
+    }
+  });
+
+  test("the analytics route of a non-office role is 404", async ({ request }) => {
+    expect((await request.get("/dev/demo/office/tech/analytics")).status()).toBe(404);
+  });
+});
+
+test.describe("D57 dashboard: loading and error", () => {
+  onlyInProject("desktop");
+
+  for (const width of [390, 820]) {
+    test(`no layout shift at ${width}px: the skeleton renders inside the unchanged frame`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      // The sidebar link prefetches the dashboard's loading state; wait for it, then slow the page.
+      await page.waitForResponse((r) => r.url().includes("/analytics") && r.request().headers()["next-router-prefetch"] !== undefined, {
+        timeout: 10_000,
+      }).catch(() => undefined);
+      await page.waitForLoadState("networkidle");
+      const frame = () =>
+        page.evaluate(() => ({
+          top: Math.round(document.querySelector("main.work")?.getBoundingClientRect().top ?? -1),
+          side: Math.round(document.querySelector(".side")?.getBoundingClientRect().height ?? -1),
+          links: document.querySelectorAll(".side .nav a").length,
+        }));
+      const before = await frame();
+      await page.route(/\/analytics/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      });
+      await page.locator(".side").getByRole("link", { name: "דשבורד" }).click();
+      const skeleton = page.locator('[aria-busy="true"]');
+      await expect(skeleton).toBeVisible();
+      await expect(skeleton).toContainText("טוען את הדשבורד…");
+      const during = await frame();
+      await expect(page.locator(".ma-dash .ma-kpis").first()).toBeVisible({ timeout: 10_000 });
+      await expect(skeleton).toHaveCount(0);
+      const after = await frame();
+      for (const [a, b] of [
+        [before, during],
+        [during, after],
+      ] as const) {
+        expect(Math.abs(a.top - b.top)).toBeLessThanOrEqual(1);
+        expect(Math.abs(a.side - b.side)).toBeLessThanOrEqual(1);
+      }
+      expect([before.links, during.links, after.links]).toEqual([5, 5, 5]);
+    });
+  }
+
+  test("error.tsx: retry() and a link without search params; never the error's message or digest", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("app/dev/demo/office/[role]/analytics/error.tsx", "utf8");
+    expect(source).toContain('"use client"');
+    expect(source).toContain("retry()");
+    expect(source).toContain("useParams");
+    expect(source).not.toContain("error.message");
+    expect(source).not.toContain("digest");
+    // The frame comes from the segment layout; the page and the loading state never draw a second one.
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/layout.tsx", "utf8")).toContain("DemoOfficeFrame");
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/page.tsx", "utf8")).not.toContain("DemoOfficeFrame");
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/loading.tsx", "utf8")).not.toContain("DemoOfficeFrame");
+  });
+
+  test("exactly one sidebar on every analytics view", async ({ page }) => {
+    for (const q of ["", "?tab=tech&tech=y&view=reports", "?tab=prod&detail=prod.bySupplier&group=__none__"]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".side"), q).toHaveCount(1);
+    }
+    await openPage(page, "/dev/demo/office/cs/analytics");
+    await expect(page.locator(".side")).toHaveCount(1);
   });
 });

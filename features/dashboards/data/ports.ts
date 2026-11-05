@@ -1,7 +1,7 @@
 // Dashboard port. Implemented by app/dev/demo/_data/adapter.ts (aggregations over fictional
 // fixtures) and, later, by server-side Supabase queries. In production, test-marked records are
 // never counted (SIM-08); in test environments they are, and `includesTestData` is true.
-// List sizes are fixed by DASHBOARD_LIST_LIMIT / OLDEST_FOLLOWUPS_LIMIT (./types) or paged.
+// List sizes are fixed by DASHBOARD_LIST_LIMIT, TOP_SUPPLIERS_LIMIT, TOP_SKUS_LIMIT (./types) or paged.
 //
 // The manager dashboard (D57) reads one method per tab plus the details dialog. Rules every
 // implementation keeps (existing decisions; no new mechanism):
@@ -22,7 +22,6 @@ import type {
   DashboardDetail,
   DashboardDetailQuery,
   GeneralDashboard,
-  ManagerAnalytics,
   OfficeOverview,
   ProductDashboard,
   SkuSort,
@@ -35,12 +34,6 @@ import type {
 export interface DashboardQueries {
   /** Office home ("לוח בקרה", Customer Service with dashGen) for `date`. */
   officeOverview(date: IsoDate): Promise<OfficeOverview>;
-  /**
-   * The pre-D57 manager dashboards (matrix keys dashGen / dashTech / dashProd) for `period`.
-   * @deprecated Replaced by generalDashboard / technicianDashboard / productDashboard (D57); removed
-   * once the dashboard screen uses them (spec-final §8.2, PR-D).
-   */
-  managerAnalytics(period: AnalyticsPeriod): Promise<ManagerAnalytics>;
   /**
    * General tab (dashGen) at `now`: today's activity, the current month's service metrics, the
    * 30-day highlights and the trend over `months` completed months (3, 6 or 12; default 6).

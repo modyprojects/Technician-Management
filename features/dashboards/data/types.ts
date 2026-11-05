@@ -23,18 +23,10 @@ import type { DashboardMetricKey } from "./metric-definitions";
 export const DASHBOARD_LIST_LIMIT = 20;
 
 /**
- * "המשך טיפול – הכי ותיקים" shows the demo's 6 rows.
- * @deprecated Only `ManagerAnalytics` uses it; removed with it when the dashboard tabs switch to the
- * tab-scoped methods (D57; spec-final §8.1, PR-D).
- */
-export const OLDEST_FOLLOWUPS_LIMIT = 6;
-
-/**
  * How a number is shown: "12", "67%", "34 דק׳", and a duration in hours that the screen shows as
  * "47 שעות" below 48 hours, otherwise "3.8 ימים" (T7, `durationDisplay` in ./metric-definitions).
- * "days" ("4.5") is produced only by the deprecated `ManagerAnalytics` and goes with it.
  */
-export type MetricUnit = "count" | "percent" | "minutes" | "duration" | "days";
+export type MetricUnit = "count" | "percent" | "minutes" | "duration";
 
 /** States of a metric that carries no number (D57 (4)). */
 export type MetricState = "pendingDefinition" | "unavailable";
@@ -175,7 +167,7 @@ export type CsWorkQueue = {
 /** Dashboard period, inclusive (the demo shows one month: "אוקטובר 2026"). */
 export type AnalyticsPeriod = { from: IsoDate; to: IsoDate };
 
-/** One technician's figures (טכנאים tab). */
+/** One technician's figures for a period (part of TechnicianDetail; the D57 tab reads TechnicianDashboard). */
 export type TechnicianStats = {
   technician: TechnicianRef;
   /** Closed visits. */
@@ -188,57 +180,6 @@ export type TechnicianStats = {
   avgTreatMinutes: Metric;
   /** Closed visits per work day with visits (one decimal). */
   visitsPerDay: Metric;
-};
-
-/**
- * Manager dashboards for a period (the pre-D57 tabs).
- * @deprecated Replaced by GeneralDashboard, TechnicianDashboard and ProductDashboard (D57); kept
- * only until the dashboard screen switches to them (spec-final §8.1, PR-D), so the current screen
- * keeps working meanwhile.
- */
-export type ManagerAnalytics = {
-  period: AnalyticsPeriod;
-  /** The date "today" figures ("עכשיו בשטח", "פתוח X ימים") are measured on. */
-  asOf: IsoDate;
-  includesTestData: boolean;
-  general: {
-    kpis: {
-      /** Visits in the period, scheduled included. */
-      visits: Metric;
-      /** % of visited calls closed on the first visit. */
-      firstVisitFixRate: Metric;
-      /** Calls in "המשך טיפול" without a new visit. */
-      openFollowups: Metric;
-      /** Waze → הגעתי. */
-      avgTravelMinutes: Metric;
-      /** הגעתי → סיום. */
-      avgTreatMinutes: Metric;
-      /** First visit → second visit, average days. */
-      avgDaysToFollowup: Metric;
-    };
-    /** "עכשיו בשטח". */
-    live: TechnicianLane[];
-    /** "ביקורים לפי טכנאי ותוצאה": closed visits split into done and cont. */
-    outcomesByTechnician: { technician: TechnicianRef; done: number; cont: number }[];
-    /** "סיבות להמשך טיפול". */
-    followupReasons: BarRow[];
-    /** "ביקורים לפי שבוע" (Sunday–Saturday weeks overlapping the period). */
-    weekly: { weekStart: IsoDate; weekEnd: IsoDate; visits: number }[];
-    /** "המשך טיפול – הכי ותיקים", oldest first (at most OLDEST_FOLLOWUPS_LIMIT). */
-    oldestFollowups: Bounded<CallAttentionItem>;
-  };
-  technicians: {
-    stats: TechnicianStats[];
-    /** "סיבות להמשך טיפול לפי טכנאי". */
-    reasonsByTechnician: { reason: string; counts: Record<TechnicianId, number>; total: number }[];
-  };
-  products: {
-    /** "קריאות לפי מותג" / "לפי ספק", most calls first (label "" = not entered, OF-12; at most DASHBOARD_LIST_LIMIT). */
-    byBrand: Bounded<BarRow>;
-    bySupplier: Bounded<BarRow>;
-    /** "מק״טים עם הכי הרבה קריאות", most calls first (at most DASHBOARD_LIST_LIMIT). */
-    skus: Bounded<SkuStats>;
-  };
 };
 
 /**
@@ -262,7 +203,7 @@ export type SkuStats = {
   topIssue: SkuTopIssue;
 };
 
-/** A row of the technician drill-down table (dashTechDetail). */
+/** A row of a technician's "דוחות הביקורים" table (dashTech; rows need `calls`, spec-final §6.6). */
 export type TechnicianVisitRow = TestMarker &
   VisitRef & {
     date: IsoDate;
@@ -293,7 +234,7 @@ export type TechnicianDetailQuery = PageRequest & {
   filter?: TechnicianVisitFilter;
 };
 
-/** Technician drill-down ("פירוט הטכנאי"). */
+/** A technician's visit reports ("דוחות הביקורים", dashTech); the screen shows no counts or KPIs from it (D57 (3)). */
 export type TechnicianDetail = {
   stats: TechnicianStats;
   /** The filter applied to `visits`. */
