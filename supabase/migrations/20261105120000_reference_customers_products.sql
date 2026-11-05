@@ -55,15 +55,22 @@ $$;
 -- 1. Tables. RLS on every table (no FORCE), every foreign key ON DELETE RESTRICT, no direct writes
 --    for any API role (no grants). Text rules (TEMPORARY, OQ-8), written out in each CHECK:
 --    TEXT-SAFE  x = btrim(x), a length range, NFC; no C0/C1 control, line or paragraph separator,
---               interlinear annotation (U+FFF9-FFFB) or Default_Ignorable_Code_Point (Unicode
---               DerivedCoreProperties: soft hyphen, zero-width characters, every bidi mark,
---               embedding, override and isolate, variation selectors, fillers, tag characters);
---               and no leading or trailing space other than U+0020 (Zs, U+2800), so a required
---               value never looks blank. Explicit code points written as ARE escapes in ASCII
---               strings (no invisible character in this file), not [[:cntrl:]], which depends on
---               the locale.
---    KEY-SAFE   TEXT-SAFE, plus no space other than U+0020 anywhere and no run of two spaces
---               (unique names and labels: no invisible or lookalike duplicate).
+--               format character (every Unicode 15.1 Cf: soft hyphen, zero-width characters,
+--               every bidi mark, embedding, override and isolate, interlinear annotation, the
+--               prepended concatenation marks, the hieroglyph format controls, tag characters),
+--               other Default_Ignorable_Code_Point (Unicode DerivedCoreProperties: variation
+--               selectors, fillers, the reserved ranges), private-use character, noncharacter of
+--               the BMP, U+FFFC, U+FFFD or the invisible U+1D159; and no leading or trailing
+--               space other than U+0020 (Zs, U+2800). Not caught (owner question OQ-8): a value
+--               that is or starts with a combining mark, and unassigned code points. Explicit
+--               code points written as ARE escapes in ASCII strings (no invisible character in
+--               this file), not [[:cntrl:]], which depends on the locale.
+--    KEY-SAFE   TEXT-SAFE, plus no space other than U+0020 anywhere, no run of two spaces and
+--               NFKC (no compatibility variant: wide Hebrew, fullwidth or mathematical letters,
+--               ligatures). Unique names and labels: no invisible, space-variant or
+--               compatibility-variant duplicate. Not caught (OQ-8): letters of another script
+--               that look alike (Cyrillic and Latin), added Hebrew points or other combining
+--               marks, and case.
 --    ASCII-ID   printable ASCII with single internal spaces (SKU, customer number): rejected,
 --               never normalised, so a lookalike cannot create a second product or customer.
 -- ---------------------------------------------------------------------------------------------
@@ -75,9 +82,10 @@ create table public.brands (
     constraint brands_name_key unique
     constraint brands_name_check check (
       name = btrim(name) and char_length(name) between 1 and 60 and name is nfc normalized
-      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
-      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'),
+      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'
+      and name is nfkc normalized),
   is_active boolean not null default true,
   -- Fails safe (D47); TEMPORARY (OQ-4): no real brand before go-live.
   is_test boolean not null default true,
@@ -98,9 +106,10 @@ create table public.suppliers (
     constraint suppliers_name_key unique
     constraint suppliers_name_check check (
       name = btrim(name) and char_length(name) between 1 and 60 and name is nfc normalized
-      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
-      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'),
+      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'
+      and name is nfkc normalized),
   is_active boolean not null default true,
   -- Fails safe (D47); TEMPORARY (OQ-4): no real supplier before go-live.
   is_test boolean not null default true,
@@ -131,7 +140,7 @@ create table public.products (
   name text not null
     constraint products_name_check check (
       name = btrim(name) and char_length(name) between 1 and 120 and name is nfc normalized
-      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
   brand_id uuid references public.brands (id) on delete restrict,
   supplier_id uuid references public.suppliers (id) on delete restrict,
@@ -171,7 +180,7 @@ create table public.customers (
   name text not null
     constraint customers_name_check check (
       name = btrim(name) and char_length(name) between 1 and 120 and name is nfc normalized
-      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
   -- NOT NULL: TEMPORARY (OQ-10). At least 3 digits, "+" only first, single separators.
   phone text not null
@@ -202,9 +211,10 @@ create table public.call_types (
     constraint call_types_label_he_key unique
     constraint call_types_label_he_check check (
       label_he = btrim(label_he) and char_length(label_he) between 1 and 60 and label_he is nfc normalized
-      and label_he !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and label_he !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and label_he !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
-      and label_he !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and label_he !~ ' {2}'),
+      and label_he !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and label_he !~ ' {2}'
+      and label_he is nfkc normalized),
   sort_order integer not null
     constraint call_types_sort_order_key unique
     constraint call_types_sort_order_check check (sort_order >= 1),
@@ -230,9 +240,10 @@ create table public.followup_reasons (
     constraint followup_reasons_label_he_key unique
     constraint followup_reasons_label_he_check check (
       label_he = btrim(label_he) and char_length(label_he) between 1 and 60 and label_he is nfc normalized
-      and label_he !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and label_he !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and label_he !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
-      and label_he !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and label_he !~ ' {2}'),
+      and label_he !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and label_he !~ ' {2}'
+      and label_he is nfkc normalized),
   sort_order integer not null
     constraint followup_reasons_sort_order_key unique
     constraint followup_reasons_sort_order_check check (sort_order >= 1),
@@ -260,9 +271,10 @@ create table public.collection_locations (
     constraint collection_locations_name_key unique
     constraint collection_locations_name_check check (
       name = btrim(name) and char_length(name) between 1 and 60 and name is nfc normalized
-      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
-      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'),
+      and name !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]' and name !~ ' {2}'
+      and name is nfkc normalized),
   place_type text not null
     constraint collection_locations_place_type_check check (place_type in ('logistics_center', 'branch')),
   sort_order integer not null
@@ -271,18 +283,18 @@ create table public.collection_locations (
   address text not null
     constraint collection_locations_address_check check (
       address = btrim(address) and char_length(address) between 1 and 120 and address is nfc normalized
-      and address !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and address !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and address !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
   phone text
     constraint collection_locations_phone_check check (
       phone = btrim(phone) and char_length(phone) between 1 and 120 and phone is nfc normalized
-      and phone !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and phone !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and phone !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
   opening_hours text
     constraint collection_locations_opening_hours_check check (
       opening_hours = btrim(opening_hours) and char_length(opening_hours) between 1 and 120
       and opening_hours is nfc normalized
-      and opening_hours !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]'
+      and opening_hours !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and opening_hours !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
   is_active boolean not null default true,
   -- Fails safe (D47); TEMPORARY (OQ-4): no real place before go-live.

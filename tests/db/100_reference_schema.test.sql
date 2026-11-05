@@ -89,7 +89,8 @@ as $f$
     (16, 'doubled space (allowed: not a key)', 'מחסן  צפון', true, 'text'),
     (17, 'doubled space', 'מחסן  צפון', false, 'key'),
     -- Integration fix INT-3: no leading or trailing space other than U+0020 on every free-text
-    -- column (a required value never looks blank), not only on keys.
+    -- column, not only on keys (a required value is never only spaces; independent review SEC-2:
+    -- a lone combining mark or an unassigned code point is not caught, OQ-8).
     (18, 'leading no-break space', chr(x'00A0'::int) || 'מחסן', false, 'all'),
     (19, 'trailing no-break space', 'מחסן' || chr(x'00A0'::int), false, 'all'),
     (20, 'leading ideographic space U+3000', chr(x'3000'::int) || 'מחסן', false, 'all'),
@@ -112,7 +113,23 @@ as $f$
     (35, 'one internal no-break space', 'מחסן' || chr(x'00A0'::int) || 'צפון', false, 'key'),
     (36, 'one internal thin space U+2009', 'מחסן' || chr(x'2009'::int) || 'צפון', false, 'key'),
     (37, 'one internal braille pattern blank U+2800', 'מחסן' || chr(x'2800'::int) || 'צפון', false, 'key'),
-    (38, 'one internal ideographic space U+3000', 'מחסן' || chr(x'3000'::int) || 'צפון', false, 'key')
+    (38, 'one internal ideographic space U+3000', 'מחסן' || chr(x'3000'::int) || 'צפון', false, 'key'),
+    -- Independent review SEC-1: a unique name or label is also NFKC, so a compatibility variant
+    -- (wide Hebrew, fullwidth or mathematical letters, ligatures, superscripts) is not a second key
+    -- that looks like an existing one ('תיקון' with the wide tav U+FB28). Free text keeps them.
+    (39, 'wide Hebrew tav U+FB28 (allowed: not a key)', chr(x'FB28'::int) || 'יקון', true, 'text'),
+    (40, 'wide Hebrew tav U+FB28', chr(x'FB28'::int) || 'יקון', false, 'key'),
+    (41, 'wide Hebrew he U+FB23', chr(x'FB23'::int) || 'תקנה', false, 'key'),
+    (42, 'fullwidth Latin capital B U+FF22', chr(x'FF22'::int) || 'ranch', false, 'key'),
+    (43, 'mathematical bold capital B U+1D401', chr(x'1D401'::int) || 'ranch', false, 'key'),
+    (44, 'ligature fi U+FB01', 'O' || chr(x'FB01'::int) || 'ce', false, 'key'),
+    (45, 'superscript two U+00B2', 'מחסן ' || chr(x'00B2'::int), false, 'key'),
+    (46, 'Hebrew geresh and gershayim (NFKC-stable)', 'ת' || chr(x'05F4'::int) || 'א ' || chr(x'05F3'::int), true, 'all'),
+    -- Independent review SEC-2: a value of only a format, private-use or noncharacter code point.
+    (47, 'only an Egyptian hieroglyph format control U+13430', chr(x'13430'::int), false, 'all'),
+    (48, 'only an Arabic number sign U+0600', chr(x'0600'::int), false, 'all'),
+    (49, 'only a private-use character U+E000', chr(x'E000'::int), false, 'all'),
+    (50, 'only a noncharacter U+FDD0', chr(x'FDD0'::int), false, 'all')
   ) c (n, label, val, accepted, scope)
   where c.scope = 'all' or (c.scope = 'key' and p_key) or (c.scope = 'text' and not p_key)
   order by c.n
@@ -140,7 +157,11 @@ create temporary table tm_case (
 -- README §11): every other Default_Ignorable_Code_Point too (combining grapheme joiner, Hangul and
 -- Khmer fillers, Mongolian variation selectors, variation selectors, U+FFF0-FFF8, shorthand and
 -- musical format controls, tag characters and the reserved block up to U+E0FFF), so no invisible
--- character can make a second label that looks like an existing one.
+-- character can make a second label that looks like an existing one. Independent review SEC-2:
+-- every other format character (Cf: the prepended concatenation marks U+0600-0605, U+06DD,
+-- U+070F, U+0890-0891, U+08E2, U+110BD, U+110CD and the hieroglyph format controls
+-- U+13430-1343F), private-use characters (U+E000-F8FF, U+F0000-10FFFF), the noncharacters of the
+-- BMP (U+FDD0-FDEF, U+FFFE, U+FFFF), U+FFFC, U+FFFD and the invisible U+1D159.
 create temporary table tm_forbidden (cp integer primary key, label text not null) on commit drop;
 insert into tm_forbidden values
   (x'0001'::int, 'U+0001 C0 control'), (x'0009'::int, 'U+0009 tab'), (x'000A'::int, 'U+000A line feed'),
@@ -172,7 +193,19 @@ insert into tm_forbidden values
   (x'E0001'::int, 'U+E0001 language tag'), (x'E0020'::int, 'U+E0020 tag space'),
   (x'E0041'::int, 'U+E0041 tag Latin capital letter A'), (x'E007F'::int, 'U+E007F cancel tag'),
   (x'E0100'::int, 'U+E0100 variation selector-17'), (x'E01EF'::int, 'U+E01EF variation selector-256'),
-  (x'E0FFF'::int, 'U+E0FFF reserved default-ignorable');
+  (x'E0FFF'::int, 'U+E0FFF reserved default-ignorable'),
+  (x'0600'::int, 'U+0600 Arabic number sign'), (x'0605'::int, 'U+0605 Arabic number mark above'),
+  (x'06DD'::int, 'U+06DD Arabic end of ayah'), (x'070F'::int, 'U+070F Syriac abbreviation mark'),
+  (x'0890'::int, 'U+0890 Arabic pound mark above'), (x'0891'::int, 'U+0891 Arabic piastre mark above'),
+  (x'08E2'::int, 'U+08E2 Arabic disputed end of ayah'), (x'110BD'::int, 'U+110BD Kaithi number sign'),
+  (x'110CD'::int, 'U+110CD Kaithi number sign above'), (x'13430'::int, 'U+13430 Egyptian hieroglyph vertical joiner'),
+  (x'1343F'::int, 'U+1343F Egyptian hieroglyph end walled enclosure'), (x'E000'::int, 'U+E000 private use'),
+  (x'F8FF'::int, 'U+F8FF private use'), (x'FDD0'::int, 'U+FDD0 noncharacter'), (x'FDEF'::int, 'U+FDEF noncharacter'),
+  (x'FFFC'::int, 'U+FFFC object replacement character'), (x'FFFD'::int, 'U+FFFD replacement character'),
+  (x'FFFE'::int, 'U+FFFE noncharacter'), (x'FFFF'::int, 'U+FFFF noncharacter'),
+  (x'1D159'::int, 'U+1D159 musical symbol null notehead'), (x'F0000'::int, 'U+F0000 supplementary private use A'),
+  (x'FFFFD'::int, 'U+FFFFD supplementary private use A'), (x'100000'::int, 'U+100000 supplementary private use B'),
+  (x'10FFFF'::int, 'U+10FFFF noncharacter (private-use plane)');
 
 -- ---------------------------------------------------------------------------------------------
 -- 1. The D48 initial values (fresh database, before any fixture)
@@ -477,87 +510,87 @@ values ('00000000-0000-4000-8000-000000000107', 'מחסן בדיקה', 'logistic
 select results_eq(
   $$ select f.label, pg_temp.tm_text('brands.name', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 brands_name_check'::text from tm_forbidden f order by f.cp $$,
-  'brands.name: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'brands.name: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('suppliers.name', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 suppliers_name_check'::text from tm_forbidden f order by f.cp $$,
-  'suppliers.name: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'suppliers.name: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('products.name', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 products_name_check'::text from tm_forbidden f order by f.cp $$,
-  'products.name: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'products.name: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('customers.name', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 customers_name_check'::text from tm_forbidden f order by f.cp $$,
-  'customers.name: every control, separator, bidi and other default-ignorable (invisible) character is rejected (an RLM from Outlook text too)');
+  'customers.name: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected (an RLM from Outlook text too)');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('call_types.label_he', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 call_types_label_he_check'::text from tm_forbidden f order by f.cp $$,
-  'call_types.label_he: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'call_types.label_he: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('followup_reasons.label_he', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 followup_reasons_label_he_check'::text from tm_forbidden f order by f.cp $$,
-  'followup_reasons.label_he: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'followup_reasons.label_he: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('collection_locations.name', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 collection_locations_name_check'::text from tm_forbidden f order by f.cp $$,
-  'collection_locations.name: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'collection_locations.name: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('collection_locations.address', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 collection_locations_address_check'::text from tm_forbidden f order by f.cp $$,
-  'collection_locations.address: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'collection_locations.address: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('collection_locations.phone', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 collection_locations_phone_check'::text from tm_forbidden f order by f.cp $$,
-  'collection_locations.phone: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'collection_locations.phone: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 select results_eq(
   $$ select f.label, pg_temp.tm_text('collection_locations.opening_hours', 'אב' || chr(f.cp) || 'גד') from tm_forbidden f order by f.cp $$,
   $$ select f.label, '23514 collection_locations_opening_hours_check'::text from tm_forbidden f order by f.cp $$,
-  'collection_locations.opening_hours: every control, separator, bidi and other default-ignorable (invisible) character is rejected');
+  'collection_locations.opening_hours: every control, separator, format, bidi and other default-ignorable character, private-use character and noncharacter is rejected');
 
 select results_eq(
   $$ select c.label, pg_temp.tm_text('brands.name', c.val) from pg_temp.tm_shape_cases(60, true) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 brands_name_check' end from pg_temp.tm_shape_cases(60, true) c $$,
-  'brands.name (KEY-SAFE, 1-60): trim, length and NFC; no space but U+0020, never doubled; no blank-looking edge');
+  'brands.name (KEY-SAFE, 1-60): trim, length, NFC and NFKC (no compatibility variant); no space but U+0020, never doubled; no space-like edge');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('suppliers.name', c.val) from pg_temp.tm_shape_cases(60, true) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 suppliers_name_check' end from pg_temp.tm_shape_cases(60, true) c $$,
-  'suppliers.name (KEY-SAFE, 1-60): trim, length and NFC; no space but U+0020, never doubled; no blank-looking edge');
+  'suppliers.name (KEY-SAFE, 1-60): trim, length, NFC and NFKC (no compatibility variant); no space but U+0020, never doubled; no space-like edge');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('call_types.label_he', c.val) from pg_temp.tm_shape_cases(60, true) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 call_types_label_he_check' end from pg_temp.tm_shape_cases(60, true) c $$,
-  'call_types.label_he (KEY-SAFE, 1-60): trim, length and NFC; no space but U+0020, never doubled; no blank-looking edge');
+  'call_types.label_he (KEY-SAFE, 1-60): trim, length, NFC and NFKC (no compatibility variant); no space but U+0020, never doubled; no space-like edge');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('followup_reasons.label_he', c.val) from pg_temp.tm_shape_cases(60, true) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 followup_reasons_label_he_check' end from pg_temp.tm_shape_cases(60, true) c $$,
-  'followup_reasons.label_he (KEY-SAFE, 1-60): trim, length and NFC; no space but U+0020, never doubled; no blank-looking edge');
+  'followup_reasons.label_he (KEY-SAFE, 1-60): trim, length, NFC and NFKC (no compatibility variant); no space but U+0020, never doubled; no space-like edge');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('collection_locations.name', c.val) from pg_temp.tm_shape_cases(60, true) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 collection_locations_name_check' end from pg_temp.tm_shape_cases(60, true) c $$,
-  'collection_locations.name (KEY-SAFE, 1-60): trim, length and NFC; no space but U+0020, never doubled; no blank-looking edge');
+  'collection_locations.name (KEY-SAFE, 1-60): trim, length, NFC and NFKC (no compatibility variant); no space but U+0020, never doubled; no space-like edge');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('products.name', c.val) from pg_temp.tm_shape_cases(120, false) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 products_name_check' end from pg_temp.tm_shape_cases(120, false) c $$,
-  'products.name (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020, so never blank-looking');
+  'products.name (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020; compatibility variants allowed');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('customers.name', c.val) from pg_temp.tm_shape_cases(120, false) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 customers_name_check' end from pg_temp.tm_shape_cases(120, false) c $$,
-  'customers.name (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020, so never blank-looking');
+  'customers.name (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020; compatibility variants allowed');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('collection_locations.address', c.val) from pg_temp.tm_shape_cases(120, false) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 collection_locations_address_check' end
      from pg_temp.tm_shape_cases(120, false) c $$,
-  'collection_locations.address (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020, so never blank-looking');
+  'collection_locations.address (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020; compatibility variants allowed');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('collection_locations.phone', c.val) from pg_temp.tm_shape_cases(120, false) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 collection_locations_phone_check' end
      from pg_temp.tm_shape_cases(120, false) c $$,
-  'collection_locations.phone (TEXT-SAFE display text, 1-120; empty or blank-looking is rejected, absent is NULL)');
+  'collection_locations.phone (TEXT-SAFE display text, 1-120; empty or space-only is rejected, absent is NULL)');
 select results_eq(
   $$ select c.label, pg_temp.tm_text('collection_locations.opening_hours', c.val) from pg_temp.tm_shape_cases(120, false) c $$,
   $$ select c.label, case when c.accepted then 'ok' else '23514 collection_locations_opening_hours_check' end
      from pg_temp.tm_shape_cases(120, false) c $$,
-  'collection_locations.opening_hours (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020, so never blank-looking');
+  'collection_locations.opening_hours (TEXT-SAFE, 1-120): trim, length and NFC; no leading or trailing space but U+0020; compatibility variants allowed');
 
 -- ---------------------------------------------------------------------------------------------
 -- 6. SKU (D19, PR-05, PR-07): ASCII-ID, rejected and never normalised; one product per SKU

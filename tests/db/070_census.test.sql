@@ -4,7 +4,7 @@
 -- bucket rows), and the D48 initial values are the only new rows on a fresh database.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(21);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -78,6 +78,12 @@ select results_eq(
   $$ select c.relname::text collate "default" from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname in ('public', 'private') and c.relkind in ('r', 'p') order by c.relname::text collate "C" $$,
   'the census covers exactly the tables in public and private');
+-- The coverage check reads distinct table names (customers and products have one row per source),
+-- so a table listed twice is caught here instead (independent review TEST-3).
+select is(
+  (select count(*) from public.test_data_census()),
+  (select count(*) from (select distinct c.table_name, c.bucket from public.test_data_census() c) d),
+  'the census lists each table and bucket once (no duplicate row)');
 select results_eq(
   $$ select table_name from public.test_data_census() where marker = 'exempt' order by table_name collate "C" $$,
   $$ values ('permissions'), ('role_permissions') $$,

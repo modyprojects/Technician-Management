@@ -11,7 +11,7 @@
 -- Service, `products` and `dashProd` on for Manager only, `settings` off for both.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(52);
+select plan(53);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. b3 and d2 are deactivated during the
 -- file; f1 is an Auth user without a profile. Every data row is fictional test data (D47):
@@ -505,10 +505,46 @@ select is(pg_temp.tm_visible(),
 -- update_product (OQ-1) or the brand and supplier RPCs (OQ-3) are built, they become the only
 -- allowed matches and these checks are updated with them.
 -- =================================================================================================
+-- tm_writes_ref: whether a body writes one of the four tables. Double quotes and the spaces around
+-- dots are removed first, so a quoted or spaced name ("public"."products", public . brands) is
+-- found too (independent review SEC-4); the text is also read with its comments removed (a comment
+-- between two keywords), and either reading counts, so removing comments can never hide a match.
+create function pg_temp.tm_writes_ref(p_src text)
+returns boolean
+language sql
+immutable
+as $f$
+  select bool_or(regexp_replace(regexp_replace(x.src, '"', '', 'g'), '\s*\.\s*', '.', 'g')
+                 ~* '(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?(public\.)?(products|customers|brands|suppliers)\M')
+  from (values (p_src),
+               (regexp_replace(regexp_replace(p_src, '/\*.*?\*/', ' ', 'g'), '--[^\n]*', ' ', 'g'))) x (src)
+$f$;
+select results_eq(
+  $$ select v.label, pg_temp.tm_writes_ref(v.src) from (values
+       (1, 'plain', 'insert into public.products (x) values (1)'),
+       (2, 'quoted schema and table', 'insert into "public"."products" (x) values (1)'),
+       (3, 'quoted schema', 'update "public".customers set name = 1'),
+       (4, 'spaces around the dot', 'insert into public . brands (name) values (1)'),
+       (5, 'ONLY and a quoted table', 'delete from only "suppliers" where true'),
+       (6, 'merge', 'merge into public.products p using x on true when matched then do nothing'),
+       (7, 'truncate table, quoted', 'truncate table "public"."customers"'),
+       (8, 'block comment between the keywords', 'insert /* note */ into public.products (x) values (1)'),
+       (9, 'line comment between the keywords', 'insert -- note' || chr(10) || 'into public.brands (name) values (1)'),
+       (10, 'upper case across lines', 'UPDATE' || chr(10) || '  PUBLIC.' || chr(10) || 'Products SET name = 1'),
+       (11, 'a read only (negative control)', 'select p.name from public.products p'),
+       (12, 'another table with the same prefix (negative control)', 'insert into public.products_archive (x) values (1)'),
+       (13, 'a Settings table (negative control)', 'update public.call_types set is_active = false')
+     ) v (n, label, src) order by v.n $$,
+  $$ values ('plain', true), ('quoted schema and table', true), ('quoted schema', true), ('spaces around the dot', true),
+            ('ONLY and a quoted table', true), ('merge', true), ('truncate table, quoted', true),
+            ('block comment between the keywords', true), ('line comment between the keywords', true),
+            ('upper case across lines', true), ('a read only (negative control)', false),
+            ('another table with the same prefix (negative control)', false), ('a Settings table (negative control)', false) $$,
+  'positive and negative controls: the structural write check finds quoted, spaced and commented forms (review SEC-4)');
 select is_empty(
   $$ select p.oid::regprocedure::text from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
-       and p.prosrc ~* '(insert\s+into|update|delete\s+from|merge\s+into|truncate(\s+table)?)\s+(only\s+)?(public\.)?"?(products|customers|brands|suppliers)\M' $$,
+       and pg_temp.tm_writes_ref(p.prosrc) $$,
   'no function inserts into, updates, deletes from, merges into or truncates products, customers, brands or suppliers');
 select is_empty(
   $$ select p.oid::regprocedure::text from pg_proc p

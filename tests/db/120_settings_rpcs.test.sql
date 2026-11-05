@@ -5,7 +5,8 @@
 --
 -- Covered: every RPC for every caller (anon, signed in without a profile, deactivated,
 -- Technician, Customer Service and Manager with and without the `settings` key, Creator,
--- service_role); stored values and returned {id, is_test}; versions (PT409) and no-change calls;
+-- service_role); stored values and returned {id, is_test}; the caller recorded in updated_by by
+-- every set-active body (independent review TEST-1); versions (PT409) and no-change calls;
 -- unknown and tampered ids; test callers never touch real (D48) rows; input validation; the
 -- 100-row cap; the last-active-reason rule (DEMO l.1158); the conditional deletes (initial
 -- reasons, rows in use, deletes that remove no row); the advisory locks that serialise the
@@ -22,7 +23,7 @@
 -- therefore also proves that no error carries a DETAIL or HINT (no row data reaches the client).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(81);
+select plan(87);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. a8 is a real-marked active Manager
 -- (PR 1.3 Q3 reading); a9 and b2 are deactivated; f1 is an Auth user without a profile.
@@ -630,7 +631,12 @@ select results_eq(
        (15, 'D48 label plus an invisible tag character', 'תיקון' || chr(x'E0001'::int)),
        (16, 'D48 label plus a variation selector', 'התקנה' || chr(x'FE0F'::int)),
        (17, 'test label with a no-break space', 'סוג' || chr(160) || 'בדיקה'),
-       (18, 'only a Hangul filler', chr(x'3164'::int))
+       (18, 'only a Hangul filler', chr(x'3164'::int)),
+       (19, 'D48 label with a wide tav (U+FB28)', chr(x'FB28'::int) || 'יקון'),
+       (20, 'D48 label with a wide he (U+FB23)', chr(x'FB23'::int) || 'תקנה'),
+       (21, 'label plus a noncharacter', 'סוג' || chr(x'FDD0'::int)),
+       (22, 'label plus an object replacement character', 'סוג' || chr(x'FFFC'::int)),
+       (23, 'label plus the invisible U+1D159', 'סוג' || chr(x'1D159'::int))
      ) v (n, k, label) order by v.n $$,
   $$ values ('null', '22023 invalid input'), ('empty', '22023 invalid input'), ('blank', '22023 invalid input'),
             ('61 characters', '22023 invalid input'), ('RLM inside', '22023 invalid input'), ('LRM at the end', '22023 invalid input'),
@@ -641,8 +647,11 @@ select results_eq(
             ('duplicate of a test label', '23505 the value is already in use'),
             ('D48 label plus an invisible tag character', '22023 invalid input'),
             ('D48 label plus a variation selector', '22023 invalid input'),
-            ('test label with a no-break space', '22023 invalid input'), ('only a Hangul filler', '22023 invalid input') $$,
-  'add_call_type: invalid labels → 22023 (also an invisible or no-break-space lookalike of an existing label, INT-2), duplicates → 23505, never with a DETAIL or HINT (TEMPORARY OQ-8 text rules)');
+            ('test label with a no-break space', '22023 invalid input'), ('only a Hangul filler', '22023 invalid input'),
+            ('D48 label with a wide tav (U+FB28)', '22023 invalid input'), ('D48 label with a wide he (U+FB23)', '22023 invalid input'),
+            ('label plus a noncharacter', '22023 invalid input'), ('label plus an object replacement character', '22023 invalid input'),
+            ('label plus the invisible U+1D159', '22023 invalid input') $$,
+  'add_call_type: invalid labels → 22023 (also an invisible, no-break-space or compatibility-variant lookalike of an existing label, INT-2, review SEC-1), duplicates → 23505, never with a DETAIL or HINT (TEMPORARY OQ-8 text rules)');
 select is(pg_temp.tm_try($$ insert into pg_temp.tm_ids select 'ct_60', r.id, r.is_test from public.add_call_type(repeat('ס', 60)) r returning is_test $$),
   'ok true', 'add_call_type: a 60-character label is accepted');
 select results_eq(
@@ -652,15 +661,17 @@ select results_eq(
        (4, 'RLM inside', 'סיבה' || chr(8207) || 'חדשה'), (5, 'line separator', 'סיבה' || chr(8232) || 'חדשה'),
        (6, 'duplicate of a D48 label', 'לקוח לא נמצא'), (7, 'duplicate of a test label', ' סיבת בדיקה'),
        (8, 'D48 label with a no-break space', 'לקוח' || chr(160) || 'לא נמצא'),
-       (9, 'D48 label plus a combining grapheme joiner', 'לקוח לא נמצא' || chr(x'034F'::int))
+       (9, 'D48 label plus a combining grapheme joiner', 'לקוח לא נמצא' || chr(x'034F'::int)),
+       (10, 'D48 label with a wide lamed (U+FB25)', chr(x'FB25'::int) || 'קוח לא נמצא')
      ) v (n, k, label) order by v.n $$,
   $$ values ('null', '22023 invalid input'), ('blank', '22023 invalid input'), ('61 characters', '22023 invalid input'),
             ('RLM inside', '22023 invalid input'), ('line separator', '22023 invalid input'),
             ('duplicate of a D48 label', '23505 the value is already in use'),
             ('duplicate of a test label', '23505 the value is already in use'),
             ('D48 label with a no-break space', '22023 invalid input'),
-            ('D48 label plus a combining grapheme joiner', '22023 invalid input') $$,
-  'add_followup_reason: invalid labels → 22023 (also a lookalike of a D48 label, INT-2), duplicates → 23505, never with a DETAIL or HINT');
+            ('D48 label plus a combining grapheme joiner', '22023 invalid input'),
+            ('D48 label with a wide lamed (U+FB25)', '22023 invalid input') $$,
+  'add_followup_reason: invalid labels → 22023 (also an invisible, space or compatibility-variant lookalike of a D48 label, INT-2, review SEC-1), duplicates → 23505, never with a DETAIL or HINT');
 select results_eq(
   $$ select v.k, pg_temp.tm_try($q$ select r.id from public.add_collection_location($q$ || quote_nullable(v.a) || ', '
        || quote_nullable(v.b) || ', ' || quote_nullable(v.c) || ', ' || quote_nullable(v.d) || ', ' || quote_nullable(v.e) || $q$) r $q$)
@@ -684,7 +695,12 @@ select results_eq(
        (17, 'address of only a no-break space', 'מקום ריק', 'branch', chr(160), null, null),
        (18, 'phone of only an ideographic space', 'מקום ריק', 'branch', 'רחוב חדש 1', chr(12288), null),
        (19, 'opening hours of only a no-break space', 'מקום ריק', 'branch', 'רחוב חדש 1', null, chr(160)),
-       (20, 'name of only a braille pattern blank', chr(x'2800'::int), 'branch', 'רחוב חדש 1', null, null)
+       (20, 'name of only a braille pattern blank', chr(x'2800'::int), 'branch', 'רחוב חדש 1', null, null),
+       (21, 'name with a fullwidth letter', 'Br' || chr(x'FF41'::int) || 'nch', 'branch', 'רחוב חדש 1', null, null),
+       (22, 'name with a mathematical bold letter', chr(x'1D401'::int) || 'ranch', 'branch', 'רחוב חדש 1', null, null),
+       (23, 'address of only a hieroglyph format control', 'מקום ריק', 'branch', chr(x'13430'::int), null, null),
+       (24, 'address of only a private-use character', 'מקום ריק', 'branch', chr(x'E000'::int), null, null),
+       (25, 'name of only an Arabic number sign', chr(x'0600'::int), 'branch', 'רחוב חדש 1', null, null)
      ) v (n, k, a, b, c, d, e) order by v.n $$,
   $$ values ('unknown place type', '22023 invalid input'), ('place type in another case', '22023 invalid input'),
             ('Hebrew place type label', '22023 invalid input'), ('no place type', '22023 invalid input'),
@@ -695,8 +711,12 @@ select results_eq(
             ('double space in the name', '22023 invalid input'),
             ('duplicate name', '23505 the value is already in use'), ('duplicate name after trimming', '23505 the value is already in use'),
             ('address of only a no-break space', '22023 invalid input'), ('phone of only an ideographic space', '22023 invalid input'),
-            ('opening hours of only a no-break space', '22023 invalid input'), ('name of only a braille pattern blank', '22023 invalid input') $$,
-  'add_collection_location: place type outside the closed list (TEMPORARY OQ-6), missing or blank-looking name or address (INT-3), lengths and text rules → 22023; duplicates → 23505; no DETAIL or HINT');
+            ('opening hours of only a no-break space', '22023 invalid input'), ('name of only a braille pattern blank', '22023 invalid input'),
+            ('name with a fullwidth letter', '22023 invalid input'), ('name with a mathematical bold letter', '22023 invalid input'),
+            ('address of only a hieroglyph format control', '22023 invalid input'),
+            ('address of only a private-use character', '22023 invalid input'),
+            ('name of only an Arabic number sign', '22023 invalid input') $$,
+  'add_collection_location: place type outside the closed list (TEMPORARY OQ-6), missing or space-only name or address (INT-3), a compatibility variant in the name (review SEC-1), a value of only a format or private-use character (review SEC-2), lengths and text rules → 22023; duplicates → 23505; no DETAIL or HINT');
 select is(pg_temp.tm_try($$ insert into pg_temp.tm_ids select 'p_2', r.id, r.is_test
      from public.add_collection_location('סניף שני', 'branch', '  רחוב שני 2  ', '', '  ') r returning is_test $$),
   'ok true', 'add_collection_location: a valid place with empty optional fields is accepted');
@@ -935,7 +955,77 @@ select is(
   'K: one created audit row per accepted add, none for the refused ones');
 
 -- =================================================================================================
--- L. The audit chain still verifies after every Settings action.
+-- L. Every set-active body records its caller in updated_by and bumps the version (DEV-1, D47
+--    traceability; the t30 one-way trigger reads updated_by). Independent review TEST-1: three rows
+--    the Creator created in K are changed by a test Manager, then by the Creator.
+-- =================================================================================================
+insert into pg_temp.tm_ids (k, id, is_test)
+select 'ct_f1', c.id, c.is_test from public.call_types c where c.label_he = 'סוג מילוי 1'
+union all
+select 'r_f1', r.id, r.is_test from public.followup_reasons r where r.label_he = 'סיבת מילוי 1'
+union all
+select 'p_f1', l.id, l.is_test from public.collection_locations l where l.name = 'מקום מילוי 1';
+create function pg_temp.tm_traced()
+returns table (k text, active boolean, created_by text, updated_by text, version integer)
+language sql
+as $f$
+  select t.k, x.active, right(x.created_by::text, 2), right(x.updated_by::text, 2), x.version
+  from pg_temp.tm_ids t
+  cross join lateral (
+    select c.is_active, c.created_by, c.updated_by, c.version from public.call_types c where c.id = t.id
+    union all
+    select r.is_active, r.created_by, r.updated_by, r.version from public.followup_reasons r where r.id = t.id
+    union all
+    select l.is_active, l.created_by, l.updated_by, l.version from public.collection_locations l where l.id = t.id
+  ) x (active, created_by, updated_by, version)
+  where t.k in ('ct_f1', 'r_f1', 'p_f1')
+  order by t.k collate "C"
+$f$;
+select pg_temp.tm_mark();
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.admin_set_role_permission('manager', 'settings', true, 3, null), 4, 'the Creator turns settings on for Managers again');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq(
+  $$ select v.k, pg_temp.tm_try(v.q) from (values
+       (1, 'call type', $q$ select public.set_call_type_active((select t.id from pg_temp.tm_ids t where t.k = 'ct_f1'), false, 1) $q$),
+       (2, 'reason', $q$ select public.set_followup_reason_active((select t.id from pg_temp.tm_ids t where t.k = 'r_f1'), false, 1) $q$),
+       (3, 'place', $q$ select public.set_collection_location_active((select t.id from pg_temp.tm_ids t where t.k = 'p_f1'), false, 1) $q$)
+     ) v (n, k, q) order by v.n $$,
+  $$ values ('call type', 'ok 2'), ('reason', 'ok 2'), ('place', 'ok 2') $$,
+  'a test Manager with settings deactivates a test call type, reason and place that the Creator created');
+reset role;
+select results_eq($$ select * from pg_temp.tm_traced() $$,
+  $$ values ('ct_f1', false, 'c1', 'a1', 2), ('p_f1', false, 'c1', 'a1', 2), ('r_f1', false, 'c1', 'a1', 2) $$,
+  'each set-active body records the test Manager in updated_by and bumps the version; created_by is unchanged');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq(
+  $$ select v.k, pg_temp.tm_try(v.q) from (values
+       (1, 'call type', $q$ select public.set_call_type_active((select t.id from pg_temp.tm_ids t where t.k = 'ct_f1'), true, 2) $q$),
+       (2, 'reason', $q$ select public.set_followup_reason_active((select t.id from pg_temp.tm_ids t where t.k = 'r_f1'), true, 2) $q$),
+       (3, 'place', $q$ select public.set_collection_location_active((select t.id from pg_temp.tm_ids t where t.k = 'p_f1'), true, 2) $q$)
+     ) v (n, k, q) order by v.n $$,
+  $$ values ('call type', 'ok 3'), ('reason', 'ok 3'), ('place', 'ok 3') $$,
+  'the Creator reactivates them');
+reset role;
+select results_eq($$ select * from pg_temp.tm_traced() $$,
+  $$ values ('ct_f1', true, 'c1', 'c1', 3), ('p_f1', true, 'c1', 'c1', 3), ('r_f1', true, 'c1', 'c1', 3) $$,
+  'each set-active body records the Creator in updated_by after his change');
+select results_eq(
+  $$ select * from pg_temp.tm_audit() $$,
+  $$ values ('call_type.deactivated', 'ct_f1', true, 'a1', '{}'::jsonb),
+            ('followup_reason.deactivated', 'r_f1', true, 'a1', '{}'::jsonb),
+            ('collection_location.deactivated', 'p_f1', true, 'a1', '{}'::jsonb),
+            ('call_type.activated', 'ct_f1', true, 'c1', '{}'::jsonb),
+            ('followup_reason.activated', 'r_f1', true, 'c1', '{}'::jsonb),
+            ('collection_location.activated', 'p_f1', true, 'c1', '{}'::jsonb) $$,
+  'L: one audit row per change, with the same actor as updated_by');
+
+-- =================================================================================================
+-- M. The audit chain still verifies after every Settings action.
 -- =================================================================================================
 select is(private.audit_chain_verify(), null::bigint, 'the audit chain verifies');
 

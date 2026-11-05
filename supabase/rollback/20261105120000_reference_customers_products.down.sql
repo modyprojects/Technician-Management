@@ -19,7 +19,7 @@
 -- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
 -- refuses to run when the history table exists without one.
 -- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
--- on the empty tables, three prove that it refuses to run.
+-- on the empty tables; the others prove that each refusal condition stops it.
 
 do $down$
 declare
