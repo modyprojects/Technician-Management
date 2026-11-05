@@ -63,8 +63,9 @@ a.xbtn { display: inline-flex; align-items: center; justify-content: center; col
 .phone { width: 100%; height: 100%; background: var(--bg); overflow: hidden; display: flex; flex-direction: column; }
 .ph-head { background: var(--ink); color: var(--on-dark); padding: max(12px, env(safe-area-inset-top, 0px)) 16px 14px; flex: none; }
 .ph-head a, .ph-back { color: var(--on-dark3); font-size: 14px; background: none; border: 0; padding: 4px 0; }
-/* Focus ring on the dark header and sidebar: the accent outline is under 3:1 on --ink (WCAG 1.4.11). */
-.ph-head :focus-visible, .side :focus-visible { outline-color: var(--on-dark); }
+/* Focus ring on the dark header, the sidebar and the sign-in page's links outside its white card
+   (Step 2 PR 2.3): the accent outline is under 3:1 on --ink (WCAG 1.4.11). */
+.ph-head :focus-visible, .side :focus-visible, .login-states :focus-visible { outline-color: var(--on-dark); }
 .ph-main { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .ph-foot { padding: 12px 14px 16px; background: var(--card); border-top: 1px solid var(--line); flex: none; }
 .ph-nav { height: auto; padding-block: 8px max(8px, env(safe-area-inset-bottom, 0px)); background: var(--card); border-top: 1px solid var(--line); display: flex; justify-content: space-around; align-items: center; flex: none; }
@@ -119,6 +120,10 @@ a.stat { text-decoration: none; }
 .side .me .me-who { min-width: 0; overflow-wrap: anywhere; }
 .side .me .signout { margin-inline-start: auto; flex: none; background: none; border: 1px solid var(--ink3); color: var(--on-dark2); border-radius: 8px; padding: 6px 10px; min-height: 30px; font-size: 12px; font-weight: 700; }
 .side .me .signout:hover, .side .me .signout:focus-visible { color: var(--on-dark); }
+/* Wide layout: the sidebar is as tall as the page, so its user block (and "יציאה") stays at the
+   bottom of the window instead of the end of a long page (review UI-1; AU-02 PROPOSED: the demo's
+   block scrolls with the page). The narrow top bar below keeps it in the flow. */
+.side .me { position: sticky; bottom: 0; background: var(--ink); padding-bottom: 12px; }
 /* MODY logo (D57 (6), G-08): the white file in the existing dark headers only, never a new light
    strip. Proportions and transparency kept: the width is set here and the height follows; no
    filter, blend mode or background. Office sidebar: the logo at the top, the product name under it. */
@@ -240,7 +245,7 @@ a.ev > .ev-body { min-width: 0; }
   /* Only "יציאה" stays, at the end of the logo's row (Step 2 PR 2.3, Q4; AU-02 PROPOSED: the demo
      hides the whole block here, docs/demo.html L182). Without a sign-out control the block shows
      nothing. The nav keeps flex: 1 1 0, so it wraps beside the button. */
-  .side .me { margin-top: 0; border-top: 0; padding: 0; flex: none; align-self: flex-start; min-height: 34px; }
+  .side .me { margin-top: 0; border-top: 0; padding: 0; flex: none; align-self: flex-start; min-height: 34px; position: static; background: none; }
   .side .me .av, .side .me .me-who { display: none; }
   .work { padding-inline: 16px; padding-block: 16px; }
   .cols2, .cols3 { grid-template-columns: minmax(0, 1fr); }
@@ -669,8 +674,9 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
   .set-tabs { width: auto; flex-direction: row; overflow-x: auto; padding: 2px; scrollbar-width: thin; }
   .set-tabs a { flex: none; white-space: nowrap; }
 }
-/* Narrow tables: a secondary column (an account's email, a technician's Outlook email) moves under
-   the name, so the status and action columns stay in view without scrolling sideways. */
+/* Narrow tables: a secondary column (an account's email, role and state; a technician's Outlook
+   email) moves under the name, so the action column (and a short status column) stays in view
+   without scrolling sideways. */
 .set-inline-narrow { display: none; }
 @container stage (max-width: 520px) {
   .set-col-wide { display: none; }
@@ -976,10 +982,10 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 /* Account rows: the actions cell holds at most two buttons per line (a row with five actions is
    three lines tall), so the column stays narrow (critique S11). A two-column grid rather than a
    wrapping flex row: the cell is .col-fit (width 1%), where a wrapping row would shrink to one
-   button per line. The phone table keeps its single-line cells and sideways scroll (G-07). */
+   button per line. At ≤ 520 px the email, role and state move under the name (.set-col-wide), so
+   the actions stay in view without the sideways scroll (review UI-3). */
 .acct-actions { display: grid; grid-template-columns: repeat(2, max-content); gap: 6px; align-items: center; justify-content: start; }
 .pill.acct-warn { background: var(--warn-bg); color: var(--warn-fg); }
-.acct-pills { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
 /* Account dialogs (in the demo's drawer, as "תיקון ביקור סגור": .vc-dialog, .vc-form, .vc-label). */
 .acct-notes { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .acct-notes li { background: var(--accent-l); border: 1px solid var(--note-line); border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--accent-d); line-height: 1.5; }

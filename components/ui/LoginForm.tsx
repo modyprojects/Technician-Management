@@ -89,7 +89,7 @@ export function LoginForm({ onSubmit }: { onSubmit: (values: { email: string; pa
         />
       </label>
       {error && (
-        <span id={errorId} role="alert" className="set-err login-err">
+        <span id={errorId} role="alert" className="set-err">
           {error.text}
         </span>
       )}

@@ -912,6 +912,22 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     }
     // Every scope, both self states, every target role: the loops really ran.
     expect(checked).toBeGreaterThan(250);
+    // The one documented difference (review AUTH-N2): an INACTIVE Technician account without a field
+    // profile (fixture בני). The command allows "השלמה" (Migration 1 does not require an active
+    // account); the screen offers it only for active accounts (technicianMissing is
+    // technicianProfileMissing, which needs `active`), a subset of what the command allows.
+    const inactive = { role: "tech" as const, active: false, technicianId: null };
+    const beniRow = { id: "acc-beni", role: "tech" as const, technicianMissing: technicianProfileMissing(inactive) };
+    expect(beniRow.technicianMissing).toBe(false);
+    for (const viewer of [{ id: "acc-creator", role: "creator" }, { id: "acc-doron", role: "mgr" }] as const) {
+      expect(technicianProfileCompletionOffered(accountAdminScope(viewer.role), beniRow, viewer.id), viewer.role).toBe(false);
+      const stored = accountStoredOf("tech", null, { active: false });
+      expect(technicianProfileCompletionError({ accountId: "acc-beni", ...techValues }, stored, viewer), viewer.role).toBeNull();
+    }
+    // Clauses that consistent data never reaches, pinned directly (review N-2): the Manager's own row
+    // offers no edit even if it read as a Technician's, and only a Technician row offers "השלמה".
+    expect(profileEditOffered("cs-tech", { id: "acc-doron", role: "tech" }, "acc-doron")).toBe(false);
+    expect(technicianProfileCompletionOffered("cs-tech", { role: "cs", technicianMissing: true }, "acc-doron")).toBe(false);
     // The rules with the demo's real viewers (§4): what each sees.
     expect(technicianEditFields("all", "acc-creator")).toEqual(["name", "color", "device", "outlookEmail", "active"]);
     expect(technicianEditFields("cs-tech", "acc-doron")).toEqual(["name", "color", "device"]);
@@ -1003,6 +1019,8 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     };
     expect(aliasTakenError("שיראל", "acc-rep2", accounts)).toBe(ACTION_MESSAGES.duplicate);
     expect(aliasTakenError("  שיראל ", "acc-rep2", accounts)).toBe("הערך כבר בשימוש.");
+    // The stored alias is compared trimmed too (review N-1).
+    expect(aliasTakenError("שיראל", "acc-rep2", { "acc-shirel": { invitationAlias: " שיראל " } })).toBe(ACTION_MESSAGES.duplicate);
     expect(ACTION_MESSAGES.duplicate).toBe(databaseErrorMessage({ code: "23505", message: "duplicate key value" }));
     expect(aliasTakenError("שיראל", "acc-shirel", accounts)).toBeNull();
     expect(aliasTakenError("הדס", "acc-rep2", accounts)).toBeNull();
@@ -1128,6 +1146,14 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     expect(await restricted(provider, "components/office/__probe.tsx")).toBeGreaterThan(0);
     // Control: the demo itself may use its own components.
     expect(await restricted(toast, "app/dev/demo/__probe.tsx")).toBe(0);
+    // NO_APP_IMPORTS on its own (review S-2): a route module that no FIXTURE_PATTERNS entry matches,
+    // so only the owner's "shared code never imports app/" rule refuses it in shared code.
+    const appModule = 'import RootLayout from "@/app/layout";\nexport const probe = RootLayout;\n';
+    for (const file of ["components/office/__probe.tsx", "features/__probe.ts", "lib/__probe.ts"]) {
+      expect(await restricted(appModule, file), file).toBeGreaterThan(0);
+    }
+    // Control: routes may import app/.
+    expect(await restricted(appModule, "app/__probe/page.tsx")).toBe(0);
 
     // 2 and 3. A TypeScript AST scan of every source file outside app/dev (comments are never seen).
     const files: string[] = [];
@@ -1147,22 +1173,23 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
 
     const SIM_IDENTIFIERS = new Set(["useSimulate", "SimulatedCommandsProvider", "buildSimulatedCommands"]);
     const DEMO_MODULE = /(^|\/)dev\/demo\/(_components|_data)(\/|$)/;
-    const findings: string[] = [];
-    for (const file of files) {
-      const source = ts.createSourceFile(
-        file,
-        fs.readFileSync(path.join(root, file), "utf8"),
-        ts.ScriptTarget.Latest,
-        true,
-        file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-      );
+    const isDataset = (node: ts.Node) => ts.isPropertyAccessExpression(node) && node.name.text === "dataset";
+    /** Every simulation marker and demo import in one source file (comments are never seen). */
+    const markersIn = (file: string, text: string): string[] => {
+      const found: string[] = [];
+      const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
       const visit = (node: ts.Node) => {
-        if (ts.isJsxAttribute(node) && node.name.getText(source) === "data-sim") findings.push(`${file}: data-sim attribute`);
-        if (ts.isPropertyAccessExpression(node) && node.name.text === "sim" && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "dataset") {
-          findings.push(`${file}: .dataset.sim`);
+        if (ts.isJsxAttribute(node) && node.name.getText(source) === "data-sim") found.push(`${file}: data-sim attribute`);
+        if (ts.isPropertyAccessExpression(node) && node.name.text === "sim" && isDataset(node.expression)) found.push(`${file}: .dataset.sim`);
+        // dataset["sim"] (review N-4).
+        if (ts.isElementAccessExpression(node) && isDataset(node.expression) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === "sim") {
+          found.push(`${file}: dataset["sim"]`);
         }
-        if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text === "data-sim") findings.push(`${file}: "data-sim"`);
-        if (ts.isIdentifier(node) && SIM_IDENTIFIERS.has(node.text)) findings.push(`${file}: ${node.text}`);
+        // Any string or template text that holds the attribute's name, e.g. a selector (review N-4).
+        if ((ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) && node.text.includes("data-sim")) {
+          found.push(`${file}: "data-sim" in a string`);
+        }
+        if (ts.isIdentifier(node) && SIM_IDENTIFIERS.has(node.text)) found.push(`${file}: ${node.text}`);
         // 3. Real routes import no demo module (a general ban on app/dev imports is plan P-5, not built).
         if (file.startsWith("app/")) {
           const dynamicArg = ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined;
@@ -1172,12 +1199,27 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
               : dynamicArg && ts.isStringLiteral(dynamicArg)
                 ? dynamicArg.text
                 : null;
-          if (specifier !== null && DEMO_MODULE.test(specifier)) findings.push(`${file}: imports ${specifier}`);
+          if (specifier !== null && DEMO_MODULE.test(specifier)) found.push(`${file}: imports ${specifier}`);
         }
         ts.forEachChild(node, visit);
       };
       visit(source);
-    }
+      return found;
+    };
+    // The scanner itself: each marker form is found; comments and the honest wording are not.
+    const probes: [string, string][] = [
+      ['export const A = () => <b data-sim="x" />;', "data-sim attribute"],
+      ["export const a = (el: HTMLElement) => el.dataset.sim;", ".dataset.sim"],
+      ['export const a = (el: HTMLElement) => el.dataset["sim"];', 'dataset["sim"]'],
+      ['export const s = "[data-sim]";', '"data-sim" in a string'],
+      ["export const s = (v: string) => `button[data-sim=${v}]`;", '"data-sim" in a string'],
+      ['import { x } from "@/app/dev/demo/_data/adapter";\nexport const y = x;', "imports @/app/dev/demo/_data/adapter"],
+      ["export const f = useSimulate;", "useSimulate"],
+    ];
+    for (const [code, marker] of probes) expect(markersIn("app/__probe/x.tsx", code).join("\n"), code).toContain(marker);
+    expect(markersIn("components/__probe.tsx", '// data-sim useSimulate\nexport const t = "בהדגמה · לא נשמר";\n')).toEqual([]);
+
+    const findings = files.flatMap((file) => markersIn(file, fs.readFileSync(path.join(root, file), "utf8")));
     expect(findings).toEqual([]);
     // 4. The honest demo wording ("בהדגמה …") stays allowed in shared components: it is shown only
     // for a result marked `simulated` (G-06), so it is not a marker this scan looks for.
@@ -1269,9 +1311,18 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     expect(error(await as("cs").completeTechnicianProfile({ accountId: "acc-gilad", ...techValues }))).toBe(forbidden);
     expect(error(await as("mgr").completeTechnicianProfile({ accountId: "acc-mgr2", ...techValues }))).toBe(forbidden);
     details.length = 0;
-    const gilad = await as("mgr").completeTechnicianProfile({ accountId: "acc-gilad", color: "t-e", device: "סמארטפון" });
+    // The device is stored trimmed (review N-1).
+    const gilad = await as("mgr").completeTechnicianProfile({ accountId: "acc-gilad", color: "t-e", device: " סמארטפון " });
     if (!gilad.ok || !gilad.data) throw new Error("no data");
-    expect(gilad.data.technician).toMatchObject({ name: "גלעד", email: "gilad@example.test", color: "var(--t-e)", active: true, version: 1, isTest: true });
+    expect(gilad.data.technician).toMatchObject({
+      name: "גלעד",
+      email: "gilad@example.test",
+      color: "var(--t-e)",
+      device: "סמארטפון",
+      active: true,
+      version: 1,
+      isTest: true,
+    });
     expect(details).toEqual(["השלמת פרופיל טכנאי · גלעד"]);
     expect(error(await as("creator").completeTechnicianProfile({ accountId: "acc-gilad", ...techValues, outlookEmail: "x@example.test" } as never))).toBe(
       "קלט לא תקין",
@@ -1350,6 +1401,8 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     expect(requestOutcomeLine(cancelledApproved, cancelledEntryLabel(approved, cancelledApproved))).toBe("אושרה על ידי משתמש יוצר · 19.10 15:10 · בוטלה");
     const cancelledPending = cancelledRequest(pendingEntry.request, { id: "acc-doron", name: "דורון" }, "2026-10-21T12:00:00+03:00");
     expect(cancelledEntryLabel(pendingEntry, cancelledPending)).toBe("עכשיו");
+    // A pending request's cancellation is "now" even when its entry carries a label (review N-1).
+    expect(cancelledEntryLabel({ ...pendingEntry, decidedLabel: "19.10 15:10" }, cancelledPending)).toBe("עכשיו");
 
     // Routine edit: only the changed fields, trimmed, empty → null, the version read; nothing → null.
     const values = { name: "שיראל", phone: "050-000-0102", invitationAlias: "שיראל" };
@@ -1363,6 +1416,8 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     });
     expect(profilePatch(shirel, { ...values, name: "" })).toEqual({ accountId: "acc-shirel", expectedVersion: 3, name: "" });
     expect(profilePatch({ ...shirel, invitationAlias: null }, { ...values, invitationAlias: "  " })).toBeNull();
+    // An account without a phone ("" as completeCreation returns it) edited without touching it (review N-1).
+    expect(profilePatch({ ...shirel, phone: "" }, { ...values, phone: "" })).toBeNull();
 
     const eddie: AccountTechnicianDetails = { id: "e", name: "אדי", color: "var(--t-e)", device: "סמארטפון", version: 2, isTest: true };
     const eddieAll: AccountTechnicianDetails = { ...eddie, outlookEmail: "eddie@example.test", active: true };
@@ -1381,6 +1436,12 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     expect(technicianPatch(eddie, { color: null }, allFields)).toBeNull();
     expect(technicianPatch(eddie, { color: "var(--t-s)" as never }, allFields)).toBeNull();
     expect(technicianPatch(eddie, { name: " אדי לוי " }, [])).toBeNull();
+    // Colour and device too are dropped outside the viewer's fields (review N-1).
+    expect(technicianPatch(eddie, { color: "t-s", device: "טאבלט" }, [])).toBeNull();
+    // A Creator-only value that was never read (details without it) is never "changed": no "פעיל" off
+    // and no blank Outlook email (review N-3).
+    expect(technicianPatch(eddie, { active: false, outlookEmail: "" }, allFields)).toBeNull();
+    expect(technicianPatch(eddie, { device: "טאבלט", active: false }, allFields)).toEqual({ technicianId: "e", expectedVersion: 2, device: "טאבלט" });
 
     const profile = { accountId: "acc-shirel", expectedVersion: 3, name: "שיראל כהן", phone: null };
     expect(accountAfterProfileUpdate(shirel, profile, stored(4))).toEqual({ ...shirel, name: "שיראל כהן", phone: "", version: 4 });
@@ -1388,6 +1449,18 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     const techUpdate = { technicianId: "e", expectedVersion: 2, color: "t-s" as const, device: null };
     expect(technicianAfterUpdate(eddie, techUpdate, stored(3))).toEqual({ ...eddie, color: "var(--t-s)", device: "", version: 3 });
     expect(technicianAfterUpdate(eddie, techUpdate, simulated).version).toBe(2);
+    // The alias, the Outlook email and "פעיל" after a save (review S-1): a later save compares with them.
+    expect(accountAfterProfileUpdate(shirel, { accountId: "acc-shirel", expectedVersion: 3, invitationAlias: null }, stored(4))).toEqual({
+      ...shirel,
+      invitationAlias: null,
+      version: 4,
+    });
+    expect(accountAfterProfileUpdate(shirel, { accountId: "acc-shirel", expectedVersion: 3, invitationAlias: "שירה" }, simulated)).toMatchObject({
+      invitationAlias: "שירה",
+      version: 3,
+    });
+    const creatorUpdate = { technicianId: "e", expectedVersion: 2, outlookEmail: "eddie2@example.test", active: false };
+    expect(technicianAfterUpdate(eddieAll, creatorUpdate, stored(3))).toEqual({ ...eddieAll, outlookEmail: "eddie2@example.test", active: false, version: 3 });
     // The Manager's details never gain the Creator-only keys.
     expect(Object.keys(technicianAfterUpdate(eddie, techUpdate, stored(3))).sort()).toEqual(["color", "device", "id", "isTest", "name", "version"]);
 

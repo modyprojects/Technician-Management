@@ -33,8 +33,10 @@
 // action the changed row takes focus (its button is gone).
 // - An inactive account with a pending request: the Creator decides it in "בקשות לאישור" (no direct
 //   activation beside a pending request); approving an activation or a role change updates the row.
-// - At narrow widths the email and the role pill move under the name (styles/ui.css
-//   .set-col-wide), so status and actions stay in view.
+// - At narrow widths (≤ 520 px) the email, the role pill and the state move under the name
+//   (styles/ui.css .set-col-wide / .set-inline-narrow), so every row action stays in view without
+//   scrolling sideways (review UI-3: the actions cell holds up to five buttons since PR 2.3).
+// - Each row button's accessible name starts with its visible word (WCAG 2.5.3, label in name).
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   credentialActionsOffered,
@@ -100,6 +102,51 @@ type IntentRow = { entry: CreationIntentEntry; cancelled?: boolean };
 function technicianDetailsOf(t: TechnicianSetting, withCreatorFields: boolean): AccountTechnicianDetails {
   const base: AccountTechnicianDetails = { id: t.id, name: t.name, color: t.color, device: t.device, version: t.version, isTest: t.isTest };
   return withCreatorFields ? { ...base, outlookEmail: t.email, active: t.active } : base;
+}
+
+/**
+ * An account row's state: "פעיל" / "לא פעיל", "פרופיל טכנאי חסר" and "בקשה ממתינה". `narrow`: the
+ * copy under the name at ≤ 520 px (the "מצב" column is hidden there, .set-col-wide), start-aligned;
+ * otherwise centred in its column.
+ */
+function AccountState({ active, technicianMissing, pending, narrow = false }: { active: boolean; technicianMissing: boolean; pending: boolean; narrow?: boolean }) {
+  const line = { display: "block", marginTop: narrow ? 4 : 3 } as const;
+  return (
+    <>
+      {narrow ? (
+        <span style={line}>
+          <AccountStatePill active={active} />
+        </span>
+      ) : (
+        <AccountStatePill active={active} />
+      )}
+      {technicianMissing && (
+        <span className="pill acct-warn" style={narrow ? { display: "table", marginTop: 4 } : { display: "table", margin: "4px auto 0" }}>
+          פרופיל טכנאי חסר
+        </span>
+      )}
+      {pending && (
+        <span className="sub" style={{ ...line, fontSize: 12, marginTop: 3 }}>
+          בקשה ממתינה
+        </span>
+      )}
+    </>
+  );
+}
+
+/** A "יצירה שלא הושלמה" row's state, or "בוטלה" once cancelled; `narrow` as AccountState. */
+function IntentState({ cancelled, startedLabel, narrow = false }: { cancelled: boolean; startedLabel: string; narrow?: boolean }) {
+  const pill = cancelled ? <RequestStatusPill status="cancelled" /> : <span className="pill acct-warn">יצירה שלא הושלמה</span>;
+  return (
+    <>
+      {narrow ? <span style={{ display: "block", marginTop: 4 }}>{pill}</span> : pill}
+      {!cancelled && (
+        <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
+          התחילה {startedLabel}
+        </span>
+      )}
+    </>
+  );
 }
 
 export function AccountAdminScreen({ scope, accounts, requests, intents, technicians, self }: AccountAdminData) {
@@ -376,7 +423,7 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
           className="chip"
           style={{ ...ROW_BTN, color: "var(--danger)" }}
           disabled={busy !== null}
-          aria-label={`השבתת החשבון של ${a.name}`}
+          aria-label={`השבתה · החשבון של ${a.name}`}
           onClick={() => {
             setMessage(null);
             setConfirm(a);
@@ -401,7 +448,7 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
           className="chip"
           style={ROW_BTN}
           disabled={busy !== null}
-          aria-label={`הפעלת החשבון של ${a.name}`}
+          aria-label={`הפעלה · החשבון של ${a.name}`}
           onClick={() => activate(a)}
         >
           {busy === `activate-${a.id}` ? "מפעיל…" : "הפעלה"}
@@ -574,7 +621,7 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
                   <th scope="col" className={`${SHORT} set-col-wide`}>
                     הרשאה
                   </th>
-                  <th scope="col" className={SHORT}>
+                  <th scope="col" className={`${SHORT} set-col-wide`}>
                     מצב
                   </th>
                   <th scope="col" className="col-fit">
@@ -597,6 +644,7 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
                           <span style={{ display: "block", marginTop: 4 }}>
                             <RolePill role={intent.role} />
                           </span>
+                          <IntentState cancelled={cancelled === true} startedLabel={entry.startedLabel} narrow />
                         </span>
                       </td>
                       <td className="set-col-wide" dir="ltr" style={{ textAlign: "right", color: "var(--muted)" }}>
@@ -605,17 +653,8 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
                       <td className={`${SHORT} set-col-wide`}>
                         <RolePill role={intent.role} />
                       </td>
-                      <td className={SHORT}>
-                        {cancelled ? (
-                          <RequestStatusPill status="cancelled" />
-                        ) : (
-                          <>
-                            <span className="pill acct-warn">יצירה שלא הושלמה</span>
-                            <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
-                              התחילה {entry.startedLabel}
-                            </span>
-                          </>
-                        )}
+                      <td className={`${SHORT} set-col-wide`}>
+                        <IntentState cancelled={cancelled === true} startedLabel={entry.startedLabel} />
                       </td>
                       <td className="col-fit">
                         {cancelled ? (
@@ -667,6 +706,7 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
                           <span style={{ display: "block", marginTop: 4 }}>
                             <RolePill role={a.role} />
                           </span>
+                          <AccountState active={a.active} technicianMissing={a.technicianMissing} pending={pending !== null} narrow />
                         </span>
                       </td>
                       <td className="set-col-wide" dir="ltr" style={{ textAlign: "right", color: "var(--muted)" }}>
@@ -675,18 +715,8 @@ export function AccountAdminScreen({ scope, accounts, requests, intents, technic
                       <td className={`${SHORT} set-col-wide`}>
                         <RolePill role={a.role} />
                       </td>
-                      <td className={SHORT}>
-                        <AccountStatePill active={a.active} />
-                        {a.technicianMissing && (
-                          <span className="pill acct-warn" style={{ display: "table", margin: "4px auto 0" }}>
-                            פרופיל טכנאי חסר
-                          </span>
-                        )}
-                        {pending && (
-                          <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
-                            בקשה ממתינה
-                          </span>
-                        )}
+                      <td className={`${SHORT} set-col-wide`}>
+                        <AccountState active={a.active} technicianMissing={a.technicianMissing} pending={pending !== null} />
                       </td>
                       <td className="col-fit">{rowActions(a)}</td>
                     </tr>

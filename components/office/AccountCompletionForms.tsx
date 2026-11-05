@@ -13,7 +13,11 @@
 // On the real screens an email the viewer cannot read shows "—" (TEMPORARY Q5). Each runs one
 // command and returns what it created as stored; the caller shows it. A cancelled intent may leave
 // an orphan sign-in user (TEMPORARY Q16): not shown here, reported to the owner.
-import { useId, useRef, useState, type FormEvent } from "react";
+// After a refused or failed command focus stays in the dialog (review AUTH-N1, UI-4): the form is
+// re-enabled with flushSync first (focus() on a disabled control does nothing), then focus goes to
+// the submit button (the message is about no field).
+import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import {
   ACCOUNT_ROLE_LABELS,
   DEFAULT_TECHNICIAN_DEVICE,
@@ -40,6 +44,14 @@ const sourceTarget = (source: CreationSource): { id: string; name: string; email
     ? { id: source.intent.id, name: source.intent.name, email: source.intent.email, role: source.intent.role }
     : { id: source.request.id, ...source.request.target };
 
+/**
+ * A message about no field: focus stays where it is in the form, or comes back to the submit button
+ * (after a command, the control that had focus was disabled, and focus fell outside the dialog).
+ */
+function keepFocusInForm(form: RefObject<HTMLFormElement | null>, submit: RefObject<HTMLButtonElement | null>) {
+  if (!form.current?.contains(document.activeElement)) submit.current?.focus();
+}
+
 /** The technician part of a completion: colour and device fields, shared by both forms. */
 function useTechnicianFields() {
   const [color, setColor] = useState<TechnicianColorToken | null>(null);
@@ -65,6 +77,8 @@ export function CompleteCreationForm({
   const phoneRef = useRef<HTMLInputElement>(null);
   const deviceRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
   const [phone, setPhone] = useState("");
   const t = useTechnicianFields();
   const [dirty, setDirty] = useState(false);
@@ -76,6 +90,7 @@ export function CompleteCreationForm({
     if (field === "phone") phoneRef.current?.focus();
     else if (field === "device") deviceRef.current?.focus();
     else if (field === "color") colorRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    else keepFocusInForm(formRef, submitRef);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -108,7 +123,8 @@ export function CompleteCreationForm({
     } catch {
       failure = DIALOG_FAILED;
     } finally {
-      setBusy(false);
+      // Re-enabled now, so the focus fail() moves reaches an enabled control.
+      flushSync(() => setBusy(false));
     }
     if (done) return onDone(done.created, done.simulated);
     fail(failure ?? DIALOG_FAILED, null);
@@ -122,7 +138,13 @@ export function CompleteCreationForm({
 
   return (
     <AccountDialog title={`השלמת יצירה · ${target.name}`} dirty={dirty} busy={busy} onClose={onClose}>
-      <form className="vc-form" noValidate onSubmit={(e) => void submit(e)} aria-describedby={error && !error.field ? errorId : undefined}>
+      <form
+        ref={formRef}
+        className="vc-form"
+        noValidate
+        onSubmit={(e) => void submit(e)}
+        aria-describedby={error && !error.field ? errorId : undefined}
+      >
         <div className="db">
           <div className="kv vc-kv">
             <span>תפקיד</span>
@@ -193,7 +215,7 @@ export function CompleteCreationForm({
           <DialogNotes notes={notes} />
         </div>
         <div className="df">
-          <button type="submit" className="btn pri" disabled={busy}>
+          <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>
             {busy ? "משלים…" : "השלמת היצירה"}
           </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
@@ -226,6 +248,8 @@ export function CompleteTechnicianForm({
   const errorId = `${id}-error`;
   const deviceRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
   const t = useTechnicianFields();
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -235,6 +259,7 @@ export function CompleteTechnicianForm({
     setError({ text, field });
     if (field === "device") deviceRef.current?.focus();
     else if (field === "color") colorRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    else keepFocusInForm(formRef, submitRef);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -258,7 +283,8 @@ export function CompleteTechnicianForm({
     } catch {
       failure = DIALOG_FAILED;
     } finally {
-      setBusy(false);
+      // Re-enabled now, so the focus fail() moves reaches an enabled control.
+      flushSync(() => setBusy(false));
     }
     if (done) return onDone(done.created, done.simulated);
     fail(failure ?? DIALOG_FAILED, null);
@@ -266,7 +292,13 @@ export function CompleteTechnicianForm({
 
   return (
     <AccountDialog title={`השלמת פרופיל טכנאי · ${account.name}`} dirty={dirty} busy={busy} onClose={onClose}>
-      <form className="vc-form" noValidate onSubmit={(e) => void submit(e)} aria-describedby={error && !error.field ? errorId : undefined}>
+      <form
+        ref={formRef}
+        className="vc-form"
+        noValidate
+        onSubmit={(e) => void submit(e)}
+        aria-describedby={error && !error.field ? errorId : undefined}
+      >
         <div className="db">
           <div ref={colorRef}>
             <ColorChoice
@@ -307,7 +339,7 @@ export function CompleteTechnicianForm({
           <DialogNotes notes={[{ text: "המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים", pending: true }]} />
         </div>
         <div className="df">
-          <button type="submit" className="btn pri" disabled={busy}>
+          <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>
             {busy ? "משלים…" : "השלמה"}
           </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>

@@ -151,6 +151,11 @@ export interface AccountCommands {
    * Auth refusal or a binding refusal is reported (the row stays open, or the intent is cancelled
    * and an orphan Auth user may keep the email taken, Q16); an uncertain one leaves the row open for
    * another attempt. Carries no version: no Migration 1 function takes one.
+   * The result is mapped per caller, as the loaders map technician details (Q14, security.md §8):
+   * the real adapter (PR 2.6–2.7) never sends a Manager the technician's Outlook email
+   * (`technician.email`) or "פעיל" (`technician.active`); it narrows this result for that caller,
+   * or the screen re-reads the record (review AUTH-N3). The screens already keep only the fields the
+   * viewer's scope shows (AccountAdminScreen technicianDetailsOf).
    */
   completeCreation(input: CompleteCreationInput): Promise<CommandResult<CompletedCreation>>;
   /**
@@ -159,6 +164,8 @@ export interface AccountCommands {
    * within his scope (Migration 1 `admin_create_technician`). The Outlook email is the sign-in email
    * as the server reads it (Q5, Q14), never an input. A second field profile is refused (55000).
    * Carries no version: no Migration 1 function takes one.
+   * The result is mapped per caller as for completeCreation: a Manager's never carries the Outlook
+   * email or "פעיל" (review AUTH-N3).
    */
   completeTechnicianProfile(input: CompleteTechnicianProfileInput): Promise<CommandResult<CompletedTechnicianProfile>>;
 }

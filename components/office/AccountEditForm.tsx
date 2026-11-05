@@ -19,7 +19,11 @@
 // accountAfterProfileUpdate / technicianAfterUpdate (versionAfter), so a second save sends the
 // version the first one returned. A hidden field is not access control: the commands check the
 // caller (routineUpdateCallerError) and the server checks it in the database.
+// After a refused or failed command focus stays in the dialog (review AUTH-N1, UI-4): the form is
+// re-enabled with flushSync first (focus() on a disabled control does nothing), then a taken alias
+// (the unique constraint's "הערך כבר בשימוש.") goes to its field, and any other failure to "שמירה".
 import { useId, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import type { AccountAdminScope, TechnicianEditField } from "@/features/accounts/data/offers";
 import type { UserAccount } from "@/features/accounts/data/types";
 import {
@@ -40,6 +44,7 @@ import {
   testAccountEmailError,
 } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
+import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import { technicianColorTokenOf, type TechnicianColorToken } from "@/features/reference/data/types";
 import { AccountDialog, ColorChoice, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 import type { AccountTechnicianDetails } from "./AccountAdminParts";
@@ -88,6 +93,8 @@ export function AccountEditForm({
   const deviceRef = useRef<HTMLInputElement>(null);
   const outlookRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
   /** The records as last saved here (the version to send next, the values a patch compares to). */
   const [base, setBase] = useState(account);
   const [tech, setTech] = useState(technician);
@@ -125,6 +132,9 @@ export function AccountEditForm({
       outlook: outlookRef.current,
     };
     if (field) target[field]?.focus();
+    // A message about no field: focus stays where it is in the form, or comes back to "שמירה" (after
+    // a command, the control that had focus was disabled, and focus fell outside the dialog).
+    else if (!formRef.current?.contains(document.activeElement)) submitRef.current?.focus();
   }
 
   /** The first invalid field, in form order (the shared validators). */
@@ -163,6 +173,8 @@ export function AccountEditForm({
     setBusy(true);
     setError(null);
     let failure: string | null = null;
+    /** The field a refusal is about: a taken alias (the unique constraint, 23505). */
+    let failureField: Field | null = null;
     let profileSaved = false;
     let current = base;
     try {
@@ -170,6 +182,7 @@ export function AccountEditForm({
         const r = await accounts.updateProfile(profile);
         if (!r.ok) {
           failure = r.error;
+          if (r.error === ACTION_MESSAGES.duplicate && profile.invitationAlias !== undefined) failureField = "alias";
         } else {
           current = accountAfterProfileUpdate(base, profile, r);
           setBase(current);
@@ -192,20 +205,27 @@ export function AccountEditForm({
     } catch {
       failure = DIALOG_FAILED;
     } finally {
-      setBusy(false);
+      // Re-enabled now, so the focus fail() moves reaches an enabled control.
+      flushSync(() => setBusy(false));
     }
     if (failure === null) {
       onDone(current.name, simulatedRef.current);
       return;
     }
-    fail(profileSaved ? `${failure} ${PARTIAL}` : failure, null);
+    fail(profileSaved ? `${failure} ${PARTIAL}` : failure, failureField);
   }
 
   const invalid = (field: Field) => (error?.field === field ? { "aria-invalid": true as const, "aria-describedby": errorId } : {});
 
   return (
     <AccountDialog title={`עריכת פרטים · ${account.name}`} dirty={dirty} busy={busy} onClose={onClose}>
-      <form className="vc-form" noValidate onSubmit={(e) => void submit(e)} aria-describedby={error && !error.field ? errorId : undefined}>
+      <form
+        ref={formRef}
+        className="vc-form"
+        noValidate
+        onSubmit={(e) => void submit(e)}
+        aria-describedby={error && !error.field ? errorId : undefined}
+      >
         <div className="db">
           <label className="vc-label">
             שם
@@ -301,7 +321,8 @@ export function AccountEditForm({
                   </div>
                 </>
               ) : (
-                <p className="sub vc-p">{MANAGER_TECHNICIAN_FIELDS_PENDING}</p>
+                // TEMPORARY (Q14): in the warning colours of every "ממתין להחלטת בעלים" line (review UI-5).
+                <DialogNotes notes={[{ text: MANAGER_TECHNICIAN_FIELDS_PENDING, pending: true }]} />
               )}
             </fieldset>
           )}
@@ -309,7 +330,7 @@ export function AccountEditForm({
           <DialogNotes notes={[{ text: NOTES[scope] }]} />
         </div>
         <div className="df">
-          <button type="submit" className="btn pri" disabled={busy}>
+          <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>
             {busy ? "שומר…" : "שמירה"}
           </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>

@@ -406,7 +406,12 @@ export type CompleteCreationInput = {
   technician?: { color: TechnicianColorToken; device: string };
 };
 
-/** The created account and, for a Technician, his Settings › טכנאים row, as stored. */
+/**
+ * The created account and, for a Technician, his Settings › טכנאים row, as stored. A Manager caller
+ * never receives the technician's real Outlook email or "פעיל" (Q14; ports.ts completeCreation:
+ * the real adapter narrows the result for him); the screens keep only the fields the viewer's scope
+ * shows.
+ */
 export type CompletedCreation = { account: UserAccount; technician: TechnicianSetting | null };
 
 /**

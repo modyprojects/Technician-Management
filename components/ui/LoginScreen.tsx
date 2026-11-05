@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { LoginState } from "@/features/auth/login-state";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { BrandLogo } from "./BrandLogo";
@@ -9,6 +9,8 @@ import { BrandLogo } from "./BrandLogo";
 // - "form": the email and password form, and the note that there is no self sign-up.
 // - "failed": one message for every credential failure (SIGN_IN_MESSAGES.credentials, never which
 //   part was wrong), above the form; the caller's form starts with an empty password.
+// Each state renders a fresh form (keyed by the state): a password typed in one state never carries
+// into another, also when the state changes without a full page load (the demo's state links).
 // - "unavailable": one message for every service failure, before any submission (plan §3.4: not
 //   configured); no form. A service failure AFTER a submission (the form kept, the message above
 //   it) is the real sign-in's (PR 2.5).
@@ -52,7 +54,7 @@ export function LoginScreen({
               {alert}
             </div>
           )}
-          {withForm && form}
+          {withForm && <Fragment key={state}>{form}</Fragment>}
           {noAccess ? (
             <>
               <p className="sub login-p">{SIGN_IN_MESSAGES.noAccess}</p>

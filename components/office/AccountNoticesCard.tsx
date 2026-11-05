@@ -24,14 +24,19 @@ function lineOne(n: CreatorNotice): string {
   }
 }
 
-/** The third line, when there is one. */
-function lineThree(n: CreatorNotice): string | null {
-  if (n.kind === "pending-request") return "להחלטה ב\"בקשות לאישור\"";
+/** The third line, when there is one; `pending`: a TEMPORARY behaviour that waits for the owner. */
+function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null {
+  if (n.kind === "pending-request") return { text: "להחלטה ב\"בקשות לאישור\"", pending: false };
   // TEMPORARY (Step 2 plan Q14): the database lets a Manager change the Outlook email; the app keeps
   // it for the Creator until the owner decides, so such a change is labelled.
-  if (n.kind === "outlook-email-change" && n.actorRole === "mgr") return "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים";
+  if (n.kind === "outlook-email-change" && n.actorRole === "mgr") {
+    return { text: "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים", pending: true };
+  }
   return null;
 }
+
+/** A "ממתין להחלטת בעלים" line, in the warning colours of every such label (review UI-5). */
+const PENDING_LINE = { color: "var(--warn-fg)", fontWeight: 700 } as const;
 
 export function AccountNoticesCard({ notices }: { notices: Bounded<CreatorNoticeEntry> }) {
   const n = notices.total;
@@ -61,7 +66,11 @@ export function AccountNoticesCard({ notices }: { notices: Bounded<CreatorNotice
                 <div className="sub">
                   {ACCOUNT_ROLE_LABELS[notice.target.role]} · על ידי {notice.actor.name} · {atLabel}
                 </div>
-                {third && <div className="sub">{third}</div>}
+                {third && (
+                  <div className="sub" style={third.pending ? PENDING_LINE : undefined}>
+                    {third.text}
+                  </div>
+                )}
               </li>
             );
           })}

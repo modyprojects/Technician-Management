@@ -49,14 +49,15 @@ npm run build
 SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-ui"
 ```
 
-Each file is `<w>-<name>.png` with `<w>` = 390, 820 or 1440.
+Each file is `<w>-<name>.png` with `<w>` = 390, 820 or 1440 (68 images: 22 names at three widths, `cs-signout-topbar` at two).
 
 | Name | Page / state | Demo counterpart |
 |---|---|---|
 | `login-form`, `login-failed`, `login-unavailable`, `login-no-access` | `/dev/demo/login[?state=…]` | none (new UI) |
 | `start-creator`, `start-mgr`, `start-cs` | `/dev/demo/start/<role>` | `docs/review/step-0/<w>-demo-office.png` (the `.me` block) |
 | `start-tech`, `start-tech-profile` | `/dev/demo/start/tech[/profile]` | `docs/review/ui-demo-2/<w>-demo-tech-profile.png` |
-| `office-signout-topbar` | `/dev/demo/office/mgr/calls` (top of the page) | `docs/review/step-0/<w>-demo-office.png` |
+| `office-signout-topbar` | `/dev/demo/office/mgr/calls` (top of the page; at 1440 the user block with "יציאה" stays at the bottom of the window) | `docs/review/step-0/<w>-demo-office.png` |
+| `cs-signout-topbar` (390 and 820 only) | `/dev/demo/office/cs/calls` (top of the page): at 390 the top bar has three nav rows instead of two (review UI-2) | `docs/review/step-0/<w>-demo-office.png` |
 | `tech-profile-signout` | `/dev/demo/tech/profile` (full page) | `docs/review/ui-demo-2/<w>-demo-tech-profile.png` |
 | `creator-users` | `/dev/demo/office/creator/settings/users`, full page (notices, the table with the intent and גלעד, `areq-6`) | `docs/review/ui-demo-3/<w>-demo-settings-users.png` |
 | `creator-notices` | the notices card (crop) | — |
@@ -74,12 +75,12 @@ The drawer takes the whole width at 390 px (as the demo's drawer and "תיקון
 ## מה לבדוק
 
 1. מסך הכניסה (`/dev/demo/login`): אימייל וסיסמה בלבד, בלי הרשמה ובלי "שכחתי סיסמה". ההודעות במצבים "פרטים שגויים", "כניסה לא זמינה" ו"אין גישה" (עם כפתור "יציאה"). רקע כהה עם הלוגו הלבן, והמשפט "אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת."
-2. כפתור "יציאה": במחשב בסרגל הצד ליד השם; בטלפון ובטאבלט בסוף הסרגל העליון; אצל הטכנאי בפרופיל, תחת "חשבון".
+2. כפתור "יציאה": במחשב בסרגל הצד ליד השם, ונשאר גלוי בתחתית החלון גם בעמוד ארוך; בטלפון ובטאבלט בסוף הסרגל העליון; אצל הטכנאי בפרופיל, תחת "חשבון".
 3. מסכי הפתיחה הזמניים לכל תפקיד: שם, תפקיד, משפט שהמסכים יגיעו בהמשך, ורק פריטי תפריט שכבר בנויים. אצל מנהל ויוצר מופיע זמנית "בית" (ראו שאלה א׳).
 4. יוצר › הגדרות › משתמשים והרשאות: כרטיס "התראות חשבונות" בראש העמוד; "עריכה" בכל שורה; "סיסמה" ו"מייל" בכל שורה חוץ מהשורה שלך.
 5. חלון "הגדרת סיסמה": הסיסמה לא מוצגת שוב, לא נשמרת באפליקציה ולא נשלחת במייל או בהודעה. חלון "שינוי כתובת מייל": בחשבונות בדיקה רק כתובות ‎@example.test.
 6. "עריכת פרטים": היוצר רואה גם מייל ב-Outlook ו"פעיל"; המנהל לא, ובמקומם מופיעה השורה "ממתין להחלטת בעלים".
-7. שורות "יצירה שלא הושלמה" ו"פרופיל טכנאי חסר", ובקשה שאושרה אבל החשבון עוד לא נוצר: כפתורי "השלמת יצירה", "ביטול" ו"השלמה".
+7. שורות "יצירה שלא הושלמה" ו"פרופיל טכנאי חסר", ובקשה שאושרה אבל החשבון עוד לא נוצר: כפתורי "השלמת יצירה", "ביטול" ו"השלמה". בטלפון המצב מופיע מתחת לשם (כמו המייל והתפקיד), כך שכל הכפתורים בשורה גלויים בלי גלילה הצידה.
 8. כל הפעולות מדומות: שום דבר לא נשמר ולא נשלח.
 
 ## Owner items (Hebrew; questions first, then notices; nothing is decided here)
@@ -92,7 +93,7 @@ The drawer takes the whole width at 390 px (as the demo's drawer and "תיקון
 
 **לידיעה (התנהגות זמנית עד החלטה, לא הוחלט דבר):**
 1. כל המסכים החדשים נוספו כשורות "מוצע" ב-`demo-deviations.md` (שאלה 26).
-2. "יציאה" בשלושה מקומות. בטלפון ובטאבלט הכפתור נשאר בסוף הסרגל העליון, ובזה הוא שונה מהדמו (שאלה 4).
+2. "יציאה" בשלושה מקומות. בטלפון ובטאבלט הכפתור נשאר בסוף הסרגל העליון, ובזה הוא שונה מהדמו (שאלה 4). בטלפון הסרגל העליון של שירות לקוחות גדל לשלוש שורות (במסך ברוחב 360 גם אצל מנהל ויוצר). במחשב אזור המשתמש עם "יציאה" נשאר בתחתית החלון ולא בסוף עמוד ארוך, וגם בזה הוא שונה מהדמו.
 3. אין "סיסמה" ו"מייל" בשורה של היוצר עצמו, כי אין עדיין מסך שינוי עצמי (שאלה 22).
 4. היוצר קובע סיסמה ומוסר אותה בעצמו, ואין חובה להחליף סיסמה בכניסה הראשונה (שאלה 1).
 5. המנהל לא משנה מייל ב-Outlook ולא "פעיל". בהשלמת יצירה אותו מייל משמש לכניסה ול-Outlook. התראה על שינוי מייל ב-Outlook שעשה מנהל מסומנת (שאלה 14).
@@ -117,3 +118,29 @@ The drawer takes the whole width at 390 px (as the demo's drawer and "תיקון
 - **Route builder type:** `routes.ts` (client-safe) declares the viewpoint union locally (`"tech" | OfficeRole`), since `roles.ts` is server-only and imports `routes.ts`.
 - **The technician tabs constant** `DEMO_START_TECH_TABS` is in `_data/roles.ts` (a page file may export only Next's page exports).
 - **Backdrop checks at 390 px:** the drawer takes the whole width there, so the "press the dimmed background" steps of E4 run at 820 and 1440 only.
+
+## Review dispositions (independent review of head `1bfaaac`)
+
+Three independent reviewers (an agent that did not write the code) reviewed head `1bfaaac` through the lenses "auth-security", "ui-a11y" and "contract-tests". None found a must-fix item. Every should is fixed; every nit is fixed except where a reason is given. Each fix has a test that fails without it, checked by mutation: the e2e mutants were rebuilt and run (two production builds), and the unit mutants run against the "PR 2.3 screens" describe. D53 (2): this fix commit is a later commit, so the independent review must run again on the new head before a merge.
+
+| ID | Severity | Finding | Disposition | Test that fails without the fix |
+|---|---|---|---|---|
+| AUTH-S1 | should | The login prototype kept a typed password when its state link switched to "פרטים שגויים" | **Fixed** in `LoginScreen` (every caller): the form slot is keyed by the state (`<Fragment key={state}>`), so each state renders a fresh, empty form | E1 "the demo's state links …": fill, click "פרטים שגויים", the password is "" with no `value` attribute (mutant without the key: the password stays) |
+| AUTH-N1 / UI-4 | nit / should | After a refused command a dialog's focus fell to the page body (`focus()` ran on a still-disabled field); the alias refusal was not tied to its field | **Fixed** in all five forms: `flushSync(() => setBusy(false))` before focusing. A message about no field moves focus to the submit button when focus left the form (`AccountEditForm`, `CompleteCreationForm`, `CompleteTechnicianForm`). "הערך כבר בשימוש." from `updateProfile` with an alias in the patch goes to "כינוי בזימונים" (focus, `aria-invalid`, `aria-describedby`) | E6 alias-taken: the alias input is focused and `aria-invalid` (mutant without `flushSync`: fails; mutant without the alias mapping: fails). The credential and completion forms' failure paths cannot be reached from the demo's screens (their simulated commands accept every input that passes the form's checks); they use the same mechanism, checked by reading |
+| AUTH-N2 | nit | `technicianProfileCompletionOffered` is stricter than its validator for an inactive account | **Documented and pinned**: the rule's doc comment states the difference (offered only for active accounts; Migration 1 does not require `active`); U1 asserts both sides for בני's case | U1 (the inactive case) |
+| AUTH-N3 | nit | Completion results could return a technician's Outlook email and "פעיל" to a Manager | **Documented** (option 2): the port docs of `completeCreation` and `completeTechnicianProfile`, and the `CompletedCreation` type doc, say the real adapter maps the result per caller and never sends a Manager these two values. Not narrowed now: the Creator's screen uses the full record, and the demo returns only simulated values the browser already holds | — (doc) |
+| UI-1 | should | At 1440 "יציאה" was below the 900 px window on every real office page | **Fixed**: `.side .me { position: sticky; bottom: 0; background: var(--ink); padding-bottom: 12px }`, reset to `static` at ≤ 900 px. Measured: the button at y = 856–886 on `/office/mgr`, `/calls`, `/settings/accounts` and the Creator's `/settings/users`. Recorded in AU-02 (PROPOSED) and owner notice 2 | E2: `toBeInViewport()` above 900 px (mutant without the rule: fails on `/calls`) |
+| UI-2 | should | The narrow top bar gains a nav row (Customer Service at 390; Manager and Creator at 360 and 520–560) | **Disclosed and pinned** (no layout fix: the slot cannot shrink enough, as the reviewer measured). Re-measured on this build: Customer Service 320–390 and 600 px, Manager and Creator 320–360 and 520–560 px gain one row. New screenshot `cs-signout-topbar` (390, 820); AU-02 and owner notice 2 say it in Hebrew | E2 at 390: `cs/calls` has 3 nav rows, `mgr/calls` 2 |
+| UI-3 | should | At 390 most row actions (every red "השבתה") were cut off in both account tables | **Fixed**: at ≤ 520 px the "מצב" column is hidden (`.set-col-wide`) and the same state (`AccountState` / `IntentState`) shows under the name with the email and role. Measured in the test: no row button outside the scroller and no sideways scroll at 390, 820 and 1440. SE-17 records it (PROPOSED) | New E4 test per screen: every `td.col-fit` button inside `.scrollx`, `scrollWidth` = `clientWidth`, one visible state per row (mutant without the fold: 23 and 12 buttons outside at 390) |
+| UI-5 | nit | The TEMPORARY Q14 lines were plain grey | **Fixed**: the edit form's line is a `DialogNotes` pending note; the notices card's Q14 line uses the warning colour and weight | Screenshots `*-mgr-edit-tech`, `*-creator-notices` (a colour, not asserted) |
+| UI-6 | nit | Focus ring on the dark login page under 3:1 | **Fixed**: `.login-states :focus-visible { outline-color: var(--on-dark) }` with the header and sidebar rule | — (CSS) |
+| UI-7 / N-7 | nit | Unused `.acct-pills`, unstyled `login-err`, the `step2-screens` markers | **Fixed** for `.acct-pills` (deleted) and `login-err` (dropped). **Not changed:** the `/* step2-screens */ … /* end step2-screens */` markers follow the file's convention (every block of `styles/ui.css` since `office-calls` has the same pair) | — |
+| UI-8 | nit | "השבתה" / "הפעלה" broke label-in-name | **Fixed**: `aria-label` "השבתה · החשבון של {name}" and "הפעלה · החשבון של {name}"; the three locators that used the old names and the negative `/^(הפעלה|השבתה)( ·|$)/` updated | The updated locators |
+| S-1 | should | U13 did not pin the alias, Outlook email and "פעיל" after a save | **Fixed** with the reviewer's asserts | U13 (3 mutants killed) |
+| S-2 | should | U11 did not test `NO_APP_IMPORTS` on its own | **Fixed**: the `@/app/layout` probe in `components/`, `features/`, `lib/` (refused) and `app/` (control, allowed) | U11 (mutant without `NO_APP_IMPORTS`: fails) |
+| N-1 | nit | Small helper details unpinned (A11, A19/A20, A9, S9, V19) | **Fixed** with the reviewer's asserts | U4, U12, U13 (6 mutants killed) |
+| N-2 | nit | Two display-rule clauses never exercised | **Fixed**: direct asserts in U1 | U1 (2 mutants killed) |
+| N-3 | nit | `technicianPatch` could send "פעיל" off when the stored value is missing | **Fixed**: the Outlook email and "פעיל" are compared only when the details carry them | U13 (2 mutants killed) |
+| N-4 | nit | The U11 scan caught only literal marker forms | **Fixed (cheap option)**: also `dataset["sim"]` and any string or template text containing `data-sim`; the scanner is now a function with a self-test (each marker form found; comments and the honest "בהדגמה" wording not). A name built at run time (`"data-" + "sim"`) is still out of reach of a static scan; the ESLint import rules remain the main guard | U11 self-test probes |
+| N-5 | nit | Some call sites can be checked only by reading (every intent and pending fixture is version 1; simulated results do not advance the Settings switch) | **No change**: the residual risk in `docs/testing.md` stays, and the next independent review reads these call sites again (`intentCancelInput`, `decisionInput`, `tracker.record`) | — |
+| N-6 | nit | Four dialog tests lacked the overflow check with the dialog open | **Fixed** | — (checks added) |

@@ -971,7 +971,7 @@ test.describe("account administration (SE-01, D34)", () => {
     // A pending request is decided here, not by a direct activation on the account row (F12). Step 2
     // PR 2.3: the row's only buttons are the routine edit and the Creator's credential dialogs.
     await expect(orit.getByRole("button")).toHaveText(["עריכה", "סיסמה", "מייל"]);
-    await expect(orit.getByRole("button", { name: /הפעלת|השבתת/ })).toHaveCount(0);
+    await expect(orit.getByRole("button", { name: /^(הפעלה|השבתה)( ·|$)/ })).toHaveCount(0);
     await expect(orit).toContainText("להחלטה בבקשות");
     await requests.getByRole("button", { name: "אישור: הפעלה מחדש · אורית" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
@@ -1037,7 +1037,7 @@ test.describe("account administration (SE-01, D34)", () => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     // שיראל's stored version is 3 (two routine updates): the screen sends the version it read, so
     // the simulated check passes (a screen that sent 1 would be refused as stale, PT409).
-    await page.getByRole("button", { name: "השבתת החשבון של שיראל" }).click();
+    await page.getByRole("button", { name: "השבתה · החשבון של שיראל" }).click();
     const confirm = page.getByRole("group", { name: /להשבית את החשבון של שיראל/ });
     await expect(confirm).toContainText("היוצר מקבל התראה באפליקציה");
     await expect(confirm.getByRole("button", { name: "השבתה" })).toBeFocused();
@@ -1228,7 +1228,7 @@ test.describe("account activation paths (D34 a, c)", () => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const beni = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "בני" });
     await expect(beni).toContainText("לא פעיל");
-    await beni.getByRole("button", { name: "הפעלת החשבון של בני" }).click();
+    await beni.getByRole("button", { name: "הפעלה · החשבון של בני" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
     await expect(toast(page)).toContainText("הפעלת חשבון");
     await expect(beni).not.toContainText("לא פעיל");
@@ -3689,6 +3689,17 @@ test.describe("Step 2 login (prototype)", () => {
     await expect(states.locator('[aria-current="page"]')).toHaveCount(1);
     await states.getByRole("link", { name: "טופס" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/login$/);
+
+    // A typed password never carries into another state (spec §2.1 "failed": the form with an empty
+    // password), also on a client-side switch: each state renders a fresh form (review AUTH-S1).
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await page.getByLabel("אימייל", { exact: true }).fill("user@example.test");
+    await password.fill(LOGIN_PW);
+    await states.getByRole("link", { name: "פרטים שגויים" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login\?state=failed$/);
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
+    await expect(password).toHaveValue("");
+    expect(await password.getAttribute("value")).toBeNull();
   });
 });
 
@@ -3713,9 +3724,20 @@ test.describe("Step 2 sign-out placements (Q4)", () => {
         expect(logo && button && Math.abs(logo.y + logo.height / 2 - (button.y + button.height / 2))).toBeLessThanOrEqual(8);
         await expect(page.locator(".side .me .me-who")).toBeHidden();
         await expect(page.locator(".side .me .av")).toBeHidden();
+        // The button's slot adds a nav row on some pages (review UI-2; AU-02 and the owner notice say
+        // so). Pinned at 390 px, so a later change to the button or the nav is noticed.
+        if (page.viewportSize()!.width === 390 && path.endsWith("/calls") && !path.includes("/creator/")) {
+          const rows = await page
+            .locator(".side .nav")
+            .evaluate((nav) => new Set([...nav.children].map((item) => Math.round(item.getBoundingClientRect().top))).size);
+          expect(rows, path).toBe(path.includes("/cs/") ? 3 : 2);
+        }
       } else {
         await expect(page.locator(".side .me .me-who")).toBeVisible();
         await expect(page.locator(".side .me .me-who")).toContainText("הרשאה:");
+        // In the window without scrolling, also at the top of a long page (review UI-1: the user
+        // block stays at the bottom of the window).
+        await expect(out).toBeInViewport();
       }
       expect(await horizontalOverflow(page)).toEqual([]);
       const url = page.url();
@@ -3961,6 +3983,43 @@ test.describe("Step 2 credentials (Creator only)", () => {
     }
   });
 
+  for (const [who, path, table] of [
+    ["Creator", "/dev/demo/office/creator/settings/users", usersTable],
+    ["Manager", "/dev/demo/office/mgr/settings/accounts", managerTable],
+  ] as const) {
+    test(`${who}: every row action is in view without scrolling sideways; one visible state per row`, async ({ page }) => {
+      await openPage(page, path);
+      const scroller = page.locator(".card .scrollx").filter({ has: table(page) });
+      // Review UI-3: at 520 px and below the state moves under the name (as the email and role), so
+      // the actions cell (up to five buttons) stays inside the visible part of the table.
+      const outside = await scroller.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const buttons = [...el.querySelectorAll("td.col-fit button")];
+        return {
+          count: buttons.length,
+          outside: buttons
+            .filter((b) => {
+              const r = b.getBoundingClientRect();
+              return r.left < box.left - 1 || r.right > box.right + 1;
+            })
+            .map((b) => b.getAttribute("aria-label") ?? b.textContent),
+          scroll: el.scrollWidth - el.clientWidth,
+        };
+      });
+      expect(outside.count).toBeGreaterThan(10);
+      expect(outside.outside).toEqual([]);
+      expect(outside.scroll).toBeLessThanOrEqual(1);
+      const narrow = page.viewportSize()!.width <= 520;
+      await expect(table(page).getByRole("columnheader", { name: "מצב" })).toHaveCount(narrow ? 0 : 1);
+      // The state shows once per row at every width (the copy under the name only when narrow).
+      const gilad = rowOf(table(page), "גלעד");
+      await expect(gilad.getByText("פרופיל טכנאי חסר", { exact: true }).filter({ visible: true })).toHaveCount(1);
+      await expect(gilad.getByText("פעיל", { exact: true }).filter({ visible: true })).toHaveCount(1);
+      await expect(table(page).locator("tbody tr").first().getByText("יצירה שלא הושלמה").filter({ visible: true })).toHaveCount(1);
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
   test("the actions cell holds the row's buttons inside it (גלעד: five actions)", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const row = rowOf(usersTable(page), "גלעד");
@@ -4085,6 +4144,7 @@ test.describe("Step 2 routine edit", () => {
     await expect(dialog.getByLabel("כינוי בזימונים")).toBeVisible();
     await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toHaveCount(0);
     await expect(dialog.locator("input")).toHaveCount(3);
+    expect(await horizontalOverflow(page)).toEqual([]);
   });
 
   test("checks: the error goes to its field; nothing changed is \"אין שינוי לשמור\"; a taken alias is refused", async ({ page }) => {
@@ -4093,6 +4153,7 @@ test.describe("Step 2 routine edit", () => {
     const dialog = page.getByRole("dialog", { name: "עריכת פרטים · יורם" });
     const save = dialog.getByRole("button", { name: "שמירה" });
     const name = dialog.getByLabel("שם", { exact: true });
+    expect(await horizontalOverflow(page)).toEqual([]);
     await name.fill("");
     await save.click();
     await expect(dialog.getByRole("alert")).toHaveText("חסר שם");
@@ -4124,6 +4185,11 @@ test.describe("Step 2 routine edit", () => {
     await hadas.getByRole("button", { name: "שמירה" }).click();
     await expect(hadas.getByRole("alert")).toHaveText("הערך כבר בשימוש.");
     await expect(hadas).toBeVisible();
+    // The refusal came back from the command (the form was disabled meanwhile): focus returns to
+    // the field it is about, inside the dialog, never to the page (review UI-4, AUTH-N1).
+    await expect(hadas.getByLabel("כינוי בזימונים")).toBeFocused();
+    await expect(hadas.getByLabel("כינוי בזימונים")).toHaveAttribute("aria-invalid", "true");
+    expect(await horizontalOverflow(page)).toEqual([]);
   });
 
   test("Manager on אדי: no Outlook email or \"פעיל\" (Q14 line); the colour change sends the technician's version", async ({ page }) => {
@@ -4147,6 +4213,7 @@ test.describe("Step 2 routine edit", () => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     await page.getByRole("button", { name: "עריכה · הפרטים של שיראל" }).click();
     const dialog = page.getByRole("dialog", { name: "עריכת פרטים · שיראל" });
+    expect(await horizontalOverflow(page)).toEqual([]);
     await dialog.getByLabel("שם", { exact: true }).fill("שיראל כהן");
     await dialog.getByRole("button", { name: "שמירה" }).click();
     await expect(dialog).toHaveCount(0);
@@ -4229,6 +4296,8 @@ test.describe("Step 2 incomplete creations", () => {
     await expect(page.getByText("טכנאי חדש")).toHaveCount(0);
     await first.getByRole("button", { name: "השלמת יצירה · מנהלת משמרת" }).click();
     const dialog = page.getByRole("dialog", { name: "השלמת יצירה · מנהלת משמרת" });
+    await expect(dialog).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
     await expect(dialog.locator(".kv")).toContainText("תפקידמנהל");
     await expect(dialog.getByRole("group", { name: "צבע ביומן" })).toHaveCount(0);
     await expect(dialog.getByLabel("מכשיר")).toHaveCount(0);
@@ -4245,8 +4314,9 @@ test.describe("Step 2 incomplete creations", () => {
     test(`${who}: גלעד's "פרופיל טכנאי חסר" and "השלמה"`, async ({ page }) => {
       await openPage(page, path);
       const row = page.locator("main table tbody tr").filter({ hasText: "גלעד" });
-      await expect(row.getByText("פעיל", { exact: true })).toBeVisible();
-      await expect(row.getByText("פרופיל טכנאי חסר", { exact: true })).toBeVisible();
+      // The state is shown once: in its column, or under the name at 520 px and below (review UI-3).
+      await expect(row.getByText("פעיל", { exact: true }).filter({ visible: true })).toBeVisible();
+      await expect(row.getByText("פרופיל טכנאי חסר", { exact: true }).filter({ visible: true })).toBeVisible();
       await row.getByRole("button", { name: "השלמה · פרופיל הטכנאי של גלעד" }).click();
       const dialog = page.getByRole("dialog", { name: "השלמת פרופיל טכנאי · גלעד" });
       await expect(dialog.locator('.kv [dir="ltr"]')).toHaveText("gilad@example.test");

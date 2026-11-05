@@ -17,7 +17,11 @@
 // - Strength is the sign-in system's (TEMPORARY Q12): the app checks only non-empty and ≤ 72 bytes.
 // "שינוי כתובת מייל": the sign-in email; a test account keeps an example.test address (TEMPORARY
 // Q17); a Technician's Outlook email is not changed here ("עריכת פרטים", Q14).
+// After a refused or failed command the field takes focus again: the form is re-enabled with
+// flushSync first, since focus() on a still-disabled field does nothing and focus would fall to the
+// page, outside the dialog (review AUTH-N1, UI-4).
 import { useId, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import type { UserAccount } from "@/features/accounts/data/types";
 import { credentialEmailError, EMAIL_MAX, NO_CHANGE, passwordError } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
@@ -78,7 +82,8 @@ export function PasswordForm({
     } finally {
       // Emptied as soon as the call returns, whatever the result.
       if (passwordRef.current) passwordRef.current.value = "";
-      setBusy(false);
+      // Re-enabled now, so the focus below reaches the field.
+      flushSync(() => setBusy(false));
     }
     if (failure === null) {
       onDone(simulated);
@@ -186,7 +191,8 @@ export function EmailForm({
     } catch {
       failure = DIALOG_FAILED;
     } finally {
-      setBusy(false);
+      // Re-enabled now, so the focus below reaches the field.
+      flushSync(() => setBusy(false));
     }
     if (failure === null) {
       onDone(next, simulated);

@@ -136,7 +136,10 @@ export function profilePatch(
 /**
  * The technician patch of an edit: only the changed fields among `fields` (the viewer's:
  * technicianEditFields; a field outside them is dropped, Q14), with the version read; null when
- * nothing changed. The colour is an allowlisted token; an empty device is null.
+ * nothing changed. The colour is an allowlisted token; an empty device is null. The Outlook email
+ * and "פעיל" are compared only when the details carry them (the Creator's view): a value that was
+ * never read is never "changed", so a missing field can never send "פעיל" off or a blank email
+ * (review N-3).
  */
 export function technicianPatch(
   t: AccountTechnicianDetails,
@@ -156,11 +159,13 @@ export function technicianPatch(
     const device = optional(values.device);
     if (device !== optional(t.device)) patch.device = device;
   }
-  if (allowed.has("outlookEmail") && values.outlookEmail !== undefined) {
-    const email = typeof values.outlookEmail === "string" ? values.outlookEmail.trim() : "";
+  if (allowed.has("outlookEmail") && typeof t.outlookEmail === "string" && typeof values.outlookEmail === "string") {
+    const email = values.outlookEmail.trim();
     if (email !== t.outlookEmail) patch.outlookEmail = email;
   }
-  if (allowed.has("active") && typeof values.active === "boolean" && values.active !== t.active) patch.active = values.active;
+  if (allowed.has("active") && typeof t.active === "boolean" && typeof values.active === "boolean" && values.active !== t.active) {
+    patch.active = values.active;
+  }
   return Object.keys(patch).length > 2 ? patch : null;
 }
 

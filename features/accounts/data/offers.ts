@@ -63,7 +63,11 @@ export function technicianEditFields(scope: AccountAdminScope | null, selfId: Ac
 
 /**
  * "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4): the Creator on any such row, the
- * Manager on a Technician row. Mirrors technicianProfileCompletionError.
+ * Manager on a Technician row. Mirrors technicianProfileCompletionError, with one difference: it is
+ * offered only for ACTIVE accounts (`technicianMissing`, technicianProfileMissing), while the command
+ * and Migration 1 (`admin_create_technician`) do not require an active account. The screen offers a
+ * subset of what the command allows (an inactive account is completed after its activation); U1
+ * pins the difference (review AUTH-N2).
  */
 export const technicianProfileCompletionOffered = (
   scope: AccountAdminScope | null,

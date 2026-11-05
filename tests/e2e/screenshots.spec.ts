@@ -729,6 +729,11 @@ test.describe("step2-ui review screenshots", () => {
       // technician profile's "חשבון".
       await openPage(page, "/dev/demo/office/mgr/calls");
       await page.screenshot({ path: file("office-signout-topbar") });
+      if (size.width <= 900) {
+        // Customer Service's top bar, where the button's slot adds a nav row (review UI-2).
+        await openPage(page, "/dev/demo/office/cs/calls");
+        await page.screenshot({ path: file("cs-signout-topbar") });
+      }
       await openPage(page, "/dev/demo/tech/profile");
       await appShot(page, file("tech-profile-signout"));
 
