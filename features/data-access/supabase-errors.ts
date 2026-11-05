@@ -25,6 +25,17 @@ export const REQUEST_MESSAGES = {
   cannotCancel: "לא ניתן לבטל את הבקשה.",
   notPending: "הבקשה כבר טופלה.",
   needsCreator: "הפעולה דורשת אישור של היוצר.",
+  /** An open creation that can no longer be completed (not approved, or an account is bound; 55000). */
+  noLongerApplies: "הבקשה כבר אינה רלוונטית.",
+} as const;
+
+/**
+ * Technician field-profile refusals ("השלמה" of "פרופיל טכנאי חסר", Migration 1
+ * `admin_create_technician`, 55000) that the shared validators also return.
+ */
+export const TECHNICIAN_MESSAGES = {
+  notTechnician: "החשבון אינו חשבון טכנאי.",
+  hasProfile: "לטכנאי כבר יש פרופיל טכנאי.",
 } as const;
 
 /**
@@ -103,11 +114,11 @@ const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["a pending request exists", "קיימת כבר בקשה פתוחה."],
   ["the request is not pending", REQUEST_MESSAGES.notPending],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
-  ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
+  ["the request no longer applies", REQUEST_MESSAGES.noLongerApplies],
   ["the request cannot be cancelled", REQUEST_MESSAGES.cannotCancel],
   ["requires the Creator's approval", REQUEST_MESSAGES.needsCreator],
-  ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
-  ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],
+  ["the profile is not a Technician", TECHNICIAN_MESSAGES.notTechnician],
+  ["the Technician already has a field profile", TECHNICIAN_MESSAGES.hasProfile],
   ["profiles: a profile with a technician record keeps its role", "לא ניתן לשנות את התפקיד של חשבון טכנאי."],
   ["profiles: the last active Creator cannot be demoted or deactivated", "לא ניתן להשבית את היוצר הפעיל האחרון או לשנות את תפקידו."],
   ["value locked until an open owner decision", "הערך נעול עד להחלטת הבעלים."],

@@ -9,7 +9,7 @@
 // database's generic 22023 / 23514 text, and the simulation's refusal of an account that already has
 // the requested state is its own (the database treats it as a no-op).
 import { isUuid } from "@/features/data-access/common";
-import { ACTION_MESSAGES, REQUEST_MESSAGES } from "@/features/data-access/supabase-errors";
+import { ACTION_MESSAGES, REQUEST_MESSAGES, TECHNICIAN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { isTechnicianColorToken, type TechnicianId } from "@/features/reference/data/types";
 import { isTechnicianId } from "@/features/reference/data/validate";
 import {
@@ -25,6 +25,8 @@ import {
   type AccountRole,
   type AccountStateInput,
   type CancelAccountRequestInput,
+  type CompleteCreationInput,
+  type CompleteTechnicianProfileInput,
   type NewAccountInput,
   type NewTechnicianInput,
   type UpdateProfileInput,
@@ -219,11 +221,16 @@ export type AccountStored = {
   version: number;
   isTest: boolean;
   technicianId: TechnicianId | null;
+  /** `profiles.invitation_rep_name` (unique; aliasTakenError simulates the constraint). */
+  invitationAlias: string | null;
 };
 
 /**
  * An account request as stored (like ReviewResolveStored): its status, version and requester;
- * `creation` for a create (or a creation intent), `fulfilled` once an account is bound to it.
+ * `creation` for a create (or a creation intent), `fulfilled` once an account is bound to it;
+ * `intent` for a creation intent (`direct_create`, an immediate creation's audited authorization)
+ * rather than a Manager's request; `requestedRole` the role the row names (a create's target role,
+ * an intent's role, the current role of another kind's account).
  */
 export type AccountRequestStored = {
   status: AccountRequestStatus;
@@ -231,6 +238,8 @@ export type AccountRequestStored = {
   requestedBy: AccountId;
   creation: boolean;
   fulfilled: boolean;
+  intent: boolean;
+  requestedRole: AccountRole;
 };
 
 /** Who acts (production: the session's profile id and role, never an argument). */
@@ -508,4 +517,95 @@ export function technicianUpdateCommandError(
     (input.outlookEmail !== undefined && stored?.isTest !== false ? testAccountEmailError(input.outlookEmail) : null) ??
     (stored ? staleVersionError(input.expectedVersion, stored.version) : ACTION_MESSAGES.forbidden)
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Completing an open creation and a missing technician profile (Step 2 plan §3.8; PR 2.3)
+
+const COMPLETE_CREATION_KEYS: ReadonlySet<string> = new Set(["requestId", "phone", "technician"]);
+const COMPLETION_TECHNICIAN_KEYS: ReadonlySet<string> = new Set(["color", "device"]);
+const TECHNICIAN_PROFILE_KEYS: ReadonlySet<string> = new Set(["accountId", "color", "device"]);
+
+/** The field-profile part of a completion: an allowlisted colour token and a device. */
+function completionTechnicianError(technician: unknown): string | null {
+  if (!technician || typeof technician !== "object" || !onlyKeys(technician, COMPLETION_TECHNICIAN_KEYS)) return "קלט לא תקין";
+  const t = technician as { color?: unknown; device?: unknown };
+  if (!isTechnicianColorToken(t.color)) return "צבע לא תקין";
+  return deviceError(t.device as string);
+}
+
+/**
+ * "השלמת יצירה" (Step 2 plan §3.8 "Retry"), in Migration 1's order: the caller (Creator or
+ * Manager; no viewer is refused); the input (only `requestId`, `phone` and `technician`: an email,
+ * role, name or test marker is refused, never dropped, since they come from the stored row); who may
+ * (the Creator on a Manager's "create" request, Variant B; the requester on his own creation
+ * intent; anyone else and an unknown row get "no permission", 42501); the row's state (approved,
+ * a creation, no account bound; else 55000 "the request no longer applies"); then the technician
+ * fields, present exactly when the row names a Technician. `stored` is the row as the caller may
+ * read it, undefined when there is none. No message ever contains an input value.
+ */
+export function completeCreationError(
+  input: CompleteCreationInput,
+  stored: AccountRequestStored | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  const caller = accountAdminCallerError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object" || !onlyKeys(input, COMPLETE_CREATION_KEYS)) return "קלט לא תקין";
+  const shape =
+    requestIdError(input.requestId) ??
+    (input.phone === null ? null : phoneError(input.phone)) ??
+    (input.technician === undefined ? null : completionTechnicianError(input.technician));
+  if (shape) return shape;
+  const allowed =
+    stored !== undefined &&
+    ((viewer.role === "creator" && !stored.intent && stored.creation) || (stored.intent && stored.requestedBy === viewer.id));
+  if (!allowed) return ACTION_MESSAGES.forbidden;
+  if (!(stored.status === "approved" && stored.creation && !stored.fulfilled)) return REQUEST_MESSAGES.noLongerApplies;
+  if (stored.requestedRole === "tech") return input.technician === undefined ? "פרטי הטכנאי לא תקינים" : null;
+  return input.technician === undefined ? null : "קלט לא תקין";
+}
+
+/**
+ * "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4), in the order of Migration 1
+ * `admin_create_technician`: the caller (Creator or Manager); the input (only `accountId`, `color`
+ * and `device`: the Outlook email is the sign-in email the server reads, never an input); an
+ * unknown account, or one outside the Manager's scope (Customer Service and Technician), gets "no
+ * permission" (42501); then the account must be a Technician (55000 "the profile is not a
+ * Technician") without a field profile (55000 "the Technician already has a field profile").
+ */
+export function technicianProfileCompletionError(
+  input: CompleteTechnicianProfileInput,
+  stored: AccountStored | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  const caller = accountAdminCallerError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object" || !onlyKeys(input, TECHNICIAN_PROFILE_KEYS)) return "קלט לא תקין";
+  const shape =
+    accountIdError(input.accountId) ?? (isTechnicianColorToken(input.color) ? null : "צבע לא תקין") ?? deviceError(input.device);
+  if (shape) return shape;
+  if (!stored || (viewer.role === "mgr" && !MANAGER_SCOPE.includes(stored.role))) return ACTION_MESSAGES.forbidden;
+  if (stored.role !== "tech") return TECHNICIAN_MESSAGES.notTechnician;
+  return stored.technicianId === null ? null : TECHNICIAN_MESSAGES.hasProfile;
+}
+
+/**
+ * An invitation alias that another account already holds: the database's unique constraint
+ * (`profiles.invitation_rep_name`, 23505, ACTION_MESSAGES.duplicate), simulated over the accounts
+ * the caller can read (TECH: the database checks every account). The alias is compared trimmed;
+ * null, "" and a non-string (not in the patch) are never taken. `accountId` is the account being
+ * updated (its own alias is not "taken").
+ */
+export function aliasTakenError(
+  alias: unknown,
+  accountId: AccountId,
+  accounts: Readonly<Record<string, Pick<AccountStored, "invitationAlias">>>,
+): string | null {
+  const wanted = typeof alias === "string" ? alias.trim() : "";
+  if (!wanted) return null;
+  const taken = Object.entries(accounts ?? {}).some(
+    ([id, a]) => id !== accountId && typeof a?.invitationAlias === "string" && a.invitationAlias.trim() === wanted,
+  );
+  return taken ? ACTION_MESSAGES.duplicate : null;
 }

@@ -684,3 +684,79 @@ test.describe("step2-pr22 review screenshots", () => {
     });
   }
 });
+
+// Step 2 PR 2.3 "screens first" (fake data, all PROPOSED): the sign-in prototype in its four states,
+// the temporary start screens (Q18), "יציאה" (Q4), the Creator's notices and credential dialogs, the
+// routine edit and the incomplete creations. Dialogs are shot open and empty (no typed password in
+// any image). Run only this block, from a local production build:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-ui"
+const OUT_STEP2_UI = path.resolve("docs/review/step2-ui");
+
+test.describe("step2-ui review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-ui screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(240_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_STEP2_UI, `${size.width}-${name}.png`);
+      /** A dialog, open and untouched: the viewport (the drawer is fixed over the page). */
+      const dialogShot = async (opener: string, name: string) => {
+        await page.getByRole("button", { name: opener }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: file(name) });
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+      };
+
+      for (const [name, url] of [
+        ["login-form", "/dev/demo/login"],
+        ["login-failed", "/dev/demo/login?state=failed"],
+        ["login-unavailable", "/dev/demo/login?state=unavailable"],
+        ["login-no-access", "/dev/demo/login?state=no-access"],
+        ["start-creator", "/dev/demo/start/creator"],
+        ["start-mgr", "/dev/demo/start/mgr"],
+        ["start-cs", "/dev/demo/start/cs"],
+        ["start-tech", "/dev/demo/start/tech"],
+        ["start-tech-profile", "/dev/demo/start/tech/profile"],
+      ] as const) {
+        await openPage(page, url);
+        await appShot(page, file(name));
+      }
+
+      // "יציאה": the top of an office page (the end of the top bar at 900 px and below) and the
+      // technician profile's "חשבון".
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.screenshot({ path: file("office-signout-topbar") });
+      if (size.width <= 900) {
+        // Customer Service's top bar, where the button's slot adds a nav row (review UI-2).
+        await openPage(page, "/dev/demo/office/cs/calls");
+        await page.screenshot({ path: file("cs-signout-topbar") });
+      }
+      await openPage(page, "/dev/demo/tech/profile");
+      await appShot(page, file("tech-profile-signout"));
+
+      // The Creator's Settings › "משתמשים והרשאות": notices, the table with the intent and גלעד, areq-6.
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      const notices = page.locator(".set-body > .card").first();
+      await notices.scrollIntoViewIfNeeded();
+      await notices.screenshot({ path: file("creator-notices") });
+      await dialogShot("סיסמה · הגדרת סיסמה לחשבון של שיראל", "creator-password-dialog");
+      await dialogShot("מייל · שינוי כתובת המייל של הדס", "creator-email-dialog");
+      await dialogShot("עריכה · הפרטים של יורם", "creator-edit-tech");
+      await dialogShot("השלמה · פרופיל הטכנאי של גלעד", "complete-technician");
+      await dialogShot("השלמת יצירה: יצירת חשבון · נציגת ערב", "creator-complete-request");
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      await appShot(page, file("creator-users"));
+
+      // The Manager's Settings › "משתמשים".
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await dialogShot("עריכה · הפרטים של אדי", "mgr-edit-tech");
+      await dialogShot("עריכה · הפרטים של שיראל", "mgr-edit-cs");
+      await dialogShot("השלמת יצירה · טכנאי חדש", "mgr-complete-creation");
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await appShot(page, file("mgr-accounts"));
+    });
+  }
+});

@@ -7,7 +7,7 @@
 // account or request ids. The real server checks these itself, in the database, under the
 // caller's session.
 import type { AccountAdminData } from "@/components/office/AccountAdminParts";
-import type { AccountRequest, UserAccount } from "@/features/accounts/data/types";
+import { isOpenCreation, type AccountRequest, type CreationIntent, type UserAccount } from "@/features/accounts/data/types";
 import type { AccountRequestStored, AccountStored } from "@/features/accounts/data/validate";
 import type { ProductListItem } from "@/features/products/data/types";
 import type { OfficeRole } from "@/features/reference/data/types";
@@ -27,27 +27,58 @@ const accountStored = (a: UserAccount): AccountStored => ({
   version: a.version,
   isTest: a.isTest,
   technicianId: a.technicianId,
+  invitationAlias: a.invitationAlias,
 });
 
-/** A request as the cancel and decide checks read it (requester, version, an unfulfilled creation). */
+/**
+ * A request as the cancel, decide and complete checks read it (requester, version, an unfulfilled
+ * creation, the role it names). A Manager's request is never a creation intent.
+ */
 const requestStored = (r: AccountRequest): AccountRequestStored => ({
   status: r.status,
   version: r.version,
   requestedBy: r.requestedBy.id,
   creation: r.kind === "create",
   fulfilled: r.account !== null,
+  intent: false,
+  requestedRole: r.target.role,
+});
+
+/** An open creation intent as stored (`direct_create`, approved, no account bound yet). */
+const intentStored = (i: CreationIntent): AccountRequestStored => ({
+  status: "approved",
+  version: i.version,
+  requestedBy: i.requestedBy.id,
+  creation: true,
+  fulfilled: false,
+  intent: true,
+  requestedRole: i.role,
 });
 
 /**
- * Account administration: the accounts and requests in the viewer's scope, as stored, and the
+ * Account administration: the accounts, requests and the viewer's own creation intents in the
+ * viewer's scope, as stored; who each open creation creates (`creationTargets`: name, email and
+ * role from the stored row, never from the client); the listed technicians' versions; and the
  * viewer with his role (`viewerRole`: the page's role, which is the signed-in demo account's role;
  * set only when that account exists, so a missing viewer is denied by default).
  */
 export function accountAdminState(admin: AccountAdminData | null, viewerRole: OfficeRole): SimulatedServerState {
   if (!admin) return {};
+  const intents = admin.intents.items.map((e) => e.intent);
+  const openRequests = admin.requests.items.map((e) => e.request).filter(isOpenCreation);
   return {
     accounts: Object.fromEntries(admin.accounts.items.map((a) => [a.id, accountStored(a)])),
-    requests: Object.fromEntries(admin.requests.items.map((e) => [e.request.id, requestStored(e.request)])),
+    requests: Object.fromEntries([
+      ...admin.requests.items.map((e) => [e.request.id, requestStored(e.request)] as const),
+      ...intents.map((i) => [i.id, intentStored(i)] as const),
+    ]),
+    creationTargets: Object.fromEntries([
+      ...intents.map((i) => [i.id, { name: i.name, email: i.email, role: i.role }] as const),
+      ...openRequests.map((r) => [r.id, { name: r.target.name, email: r.target.email, role: r.target.role }] as const),
+    ]),
+    technicians: Object.fromEntries(
+      Object.values(admin.technicians).map((t) => [t.id, { version: t.version, name: t.name, isTest: t.isTest }]),
+    ),
     self: admin.self,
     ...(admin.self ? { selfRole: viewerRole } : {}),
   };

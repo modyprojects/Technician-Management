@@ -13,6 +13,7 @@ export function TechShell({
   activeTab,
   activeIsCurrent = true,
   navHrefs,
+  navTabs,
 }: {
   head: ReactNode;
   children: ReactNode;
@@ -23,6 +24,8 @@ export function TechShell({
   activeIsCurrent?: boolean;
   /** Optional link per bottom-navigation tab; tabs without one render as buttons. */
   navHrefs?: TechNavHrefs;
+  /** The bottom-navigation tabs to show (default all three; TechBottomNav `tabs`). */
+  navTabs?: readonly TechTab[];
 }) {
   return (
     <div className="techwrap">
@@ -39,7 +42,7 @@ export function TechShell({
             {foot}
           </div>
         )}
-        {activeTab && <TechBottomNav active={activeTab} current={activeIsCurrent} hrefs={navHrefs} />}
+        {activeTab && <TechBottomNav active={activeTab} current={activeIsCurrent} hrefs={navHrefs} tabs={navTabs} />}
       </div>
     </div>
   );

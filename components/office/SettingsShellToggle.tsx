@@ -8,10 +8,10 @@
 // Shared by the operational Settings tabs (technicians, places, reasons, call types, mail,
 // template). What a role may change is decided on the server (G-04); the page offers the tab.
 // "פעיל" of a technician is versioned: each change sends the version read, then the version the
-// last STORED change returned (versionAfter), so pressing again never gets a false "data changed".
+// last STORED change returned (versionTracker), so pressing again never gets a false "data changed".
 import { useId, useRef, useState } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
-import { versionAfter, type CommandResult } from "@/features/data-access/common";
+import { versionTracker, type CommandResult, type VersionTracker } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import type { TechnicianId } from "@/features/reference/data/types";
 import type { SettingId, TechNotificationKey, TemplateFieldKey } from "@/features/settings/data/types";
@@ -69,8 +69,8 @@ export function SettingsShellToggle({
   const [on, setOn] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
-  /** The version a stored "פעיל" change returned; null until one did (then the version read is sent). */
-  const storedVersion = useRef<number | null>(null);
+  /** The version each "פעיל" change sends: the one read, then the one the last stored change returned. */
+  const version = useRef<VersionTracker | null>(null);
   const errorId = useId();
 
   async function toggle() {
@@ -82,10 +82,11 @@ export function SettingsShellToggle({
     setError(null);
     let failure: string | null = null;
     try {
-      const read = storedVersion.current ?? (action.kind === "technicianActive" ? action.expectedVersion : 0);
-      const result = await runToggle(settings, action, next, read);
+      version.current ??= versionTracker(action.kind === "technicianActive" ? action.expectedVersion : 0);
+      const tracker = version.current;
+      const result = await runToggle(settings, action, next, tracker.current);
       if (!result.ok) failure = result.error;
-      else if (action.kind === "technicianActive") storedVersion.current = versionAfter(result, read);
+      else if (action.kind === "technicianActive") tracker.record(result);
     } catch {
       failure = FAILED;
     } finally {
