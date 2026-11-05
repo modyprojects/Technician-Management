@@ -55,14 +55,17 @@ export function accountAdminState(admin: AccountAdminData | null, viewerRole: Of
 
 /**
  * The operational Settings tabs whose commands check stored data: what forbids a delete (SE-06,
- * SE-07) and the technicians' versions ("פעיל", SE-05; PT409 when stale).
+ * SE-07) and the technicians' versions ("פעיל", SE-05; PT409 when stale). Settings › טכנאים also
+ * passes the viewer's role (`selfRole`: "פעיל" is the Creator's only for now, Q14; "+ הוספת טכנאי"
+ * the Creator's or the Manager's), never an account id.
  */
-export async function settingsTabState(tab: SettingsSection): Promise<SimulatedServerState> {
+export async function settingsTabState(tab: SettingsSection, viewerRole: OfficeRole): Promise<SimulatedServerState> {
   switch (tab) {
     case "techs": {
       const techs = await demoDataAccess.settings.technicians();
       return {
         technicians: Object.fromEntries(techs.items.map((t) => [t.id, { version: t.version, name: t.name, isTest: t.isTest }])),
+        selfRole: viewerRole,
       };
     }
     case "places": {

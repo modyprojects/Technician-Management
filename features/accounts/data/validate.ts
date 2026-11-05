@@ -1,9 +1,13 @@
 // Input checks for account commands, shared by every implementation (simulated now, the server
 // later; the server always re-validates and checks the caller's role in the database, D34).
 // Each returns a Hebrew error, or null when valid. They never throw on untyped input, and no
-// message ever repeats an input password. Messages that the database also produces are the same
-// text as its mapping (features/data-access/supabase-errors.ts), so the simulation and the real
-// adapter say the same thing.
+// message ever repeats an input password. Refusals the database also makes about WHO may act or
+// WHICH record (42501: an unknown or out-of-scope target too), a request's state (55000: not
+// pending, cannot be cancelled, needs the Creator) and the version (PT409) use the text of its
+// mapping (features/data-access/supabase-errors.ts), so the simulation and the real adapter say the
+// same thing. Input-shape messages ("חסר שם", "מספר טלפון לא תקין" …) are more specific than the
+// database's generic 22023 / 23514 text, and the simulation's refusal of an account that already has
+// the requested state is its own (the database treats it as a no-op).
 import { isUuid } from "@/features/data-access/common";
 import { ACTION_MESSAGES, REQUEST_MESSAGES } from "@/features/data-access/supabase-errors";
 import { isTechnicianColorToken, type TechnicianId } from "@/features/reference/data/types";
@@ -13,11 +17,13 @@ import {
   isNewAccountRole,
   MANAGER_REQUESTABLE_ROLES,
   type AccountDecision,
+  type AccountDecisionInput,
   type AccountId,
   type AccountRequestId,
   type AccountRequestInput,
   type AccountRequestStatus,
   type AccountRole,
+  type AccountStateInput,
   type CancelAccountRequestInput,
   type NewAccountInput,
   type NewTechnicianInput,
@@ -54,10 +60,15 @@ export function emailError(email: string): string | null {
   return null;
 }
 
+/**
+ * A work phone as the database CHECK allows it (`profiles.work_phone ~ '^[0-9+ -]{3,20}$'`): digits,
+ * "+", "-" and the ASCII space only (never a tab, a line break or another space character), at most
+ * 20 characters after trimming, with at least three digits.
+ */
 export function phoneError(phone: string): string | null {
   const t = typeof phone === "string" ? phone.trim() : "";
   if (!t) return "חסר טלפון";
-  return t.length <= PHONE_MAX && /^[0-9+\-\s]+$/.test(t) && /\d{3}/.test(t.replace(/\D/g, "")) ? null : "מספר טלפון לא תקין";
+  return t.length <= PHONE_MAX && /^[0-9+\- ]+$/.test(t) && /\d{3}/.test(t.replace(/\D/g, "")) ? null : "מספר טלפון לא תקין";
 }
 
 /** The reserved domain of test users' emails (docs/database-schema.md, D47). */
@@ -97,7 +108,9 @@ export function newAccountError(input: NewAccountInput): string | null {
 export function accountRequestError(input: AccountRequestInput): string | null {
   switch (input?.kind) {
     case "create":
-      // No phone: a request stores none (Migration 1 `account_requests`, Step 2 plan §3.7 h).
+      // No phone: a request stores none (Migration 1 `account_requests`, Step 2 plan §3.7 h); a
+      // phone, or any other extra field, is refused rather than dropped.
+      if (!onlyKeys(input, CREATE_REQUEST_KEYS)) return "קלט לא תקין";
       return accountNameError(input.name) ?? emailError(input.email);
     case "activate":
     case "reactivate":
@@ -145,21 +158,29 @@ export function accountRequestTargetError(
   target: { role: AccountRole; active: boolean } | undefined,
 ): string | null {
   if (kind === "create") return null;
-  if (!target) return "החשבון לא נמצא";
+  // An unknown or out-of-scope account: the database's 42501.
+  if (!target) return ACTION_MESSAGES.forbidden;
   if (kind === "role-change") return MANAGER_REQUESTABLE_ROLES.includes(target.role) ? null : "רק היוצר מנהל חשבונות מנהל ויוצר";
   if (target.role !== "cs") return "בקשה לאישור היא רק לחשבון שירות לקוחות";
   return target.active ? "החשבון כבר פעיל" : null;
 }
 
-/** Only a pending request can be decided (D34 a). `status` is the stored status. Cancelling: cancelRequestError(). */
+/**
+ * Only a pending request can be decided (D34 a). `status` is the stored status, undefined for an
+ * unknown request (Migration 1 `decide_account_request`: 22023, then 55000 "the request is not
+ * pending"). Cancelling: cancelRequestError().
+ */
 export function pendingRequestError(status: AccountRequestStatus | undefined): string | null {
-  if (!status) return "הבקשה לא נמצאה";
-  return status === "pending" ? null : "הבקשה כבר לא ממתינה להחלטה";
+  if (!status) return ACTION_MESSAGES.invalid;
+  return status === "pending" ? null : REQUEST_MESSAGES.notPending;
 }
 
-/** An immediate (de)activation needs the opposite stored state. `active` is undefined when no such account exists. */
+/**
+ * An immediate (de)activation needs the opposite stored state. `active` is undefined when no such
+ * account exists in the caller's scope (the database's 42501).
+ */
 export function accountStateError(action: "deactivate" | "activate", active: boolean | undefined): string | null {
-  if (active === undefined) return "החשבון לא נמצא";
+  if (active === undefined) return ACTION_MESSAGES.forbidden;
   if (action === "deactivate") return active ? null : "החשבון כבר לא פעיל";
   return active ? "החשבון כבר פעיל" : null;
 }
@@ -168,9 +189,14 @@ export function accountStateError(action: "deactivate" | "activate", active: boo
 // Versions (Step 2 plan §3.7 a): every Migration 1 edit function takes `p_expected_version` and
 // refuses a stale one with PT409.
 
-/** The version a screen read: a positive integer (as productUpdateError). */
+/** The largest version the database stores (`integer` columns and `p_expected_version`). */
+export const VERSION_MAX = 2_147_483_647;
+
+/** The version a screen read: a positive integer within the database's `integer` range. */
 export function expectedVersionError(version: unknown): string | null {
-  return typeof version === "number" && Number.isInteger(version) && version >= 1 ? null : "גרסה לא תקינה";
+  return typeof version === "number" && Number.isSafeInteger(version) && version >= 1 && version <= VERSION_MAX
+    ? null
+    : "גרסה לא תקינה";
 }
 
 /**
@@ -209,6 +235,80 @@ export type AccountRequestStored = {
 
 /** Who acts (production: the session's profile id and role, never an argument). */
 export type AccountViewer = { id: AccountId; role: AccountRole };
+
+/** The accounts a Manager administers (D34): Customer Service and Technician. */
+const MANAGER_SCOPE: readonly AccountRole[] = ["cs", "tech"];
+
+// ---------------------------------------------------------------------------------------------
+// Who may call (Migration 1 `require_caller`, 42501). `viewerRole` comes from the session.
+
+/** The Creator only: decisions, "+ הוספת משתמש", passwords and emails (D34). */
+export const creatorOnlyError = (viewerRole: unknown): string | null => (viewerRole === "creator" ? null : ACTION_MESSAGES.forbidden);
+
+/** The Manager only: Customer Service requests (Migration 1 `request_account_change`, D34 a). */
+export const managerOnlyError = (viewerRole: unknown): string | null => (viewerRole === "mgr" ? null : ACTION_MESSAGES.forbidden);
+
+/** The Creator or the Manager: (de)activation, "+ הוספת טכנאי" and routine updates (D34 b–d). */
+export const accountAdminCallerError = (viewerRole: unknown): string | null =>
+  viewerRole === "creator" || viewerRole === "mgr" ? null : ACTION_MESSAGES.forbidden;
+
+/**
+ * A Manager activates a Technician at once (D34 c), never a Customer Service account: that is a
+ * request for the Creator (D34 a; Migration 1 `admin_set_user_active`, 55000).
+ */
+export function managerActivationError(viewerRole: unknown, targetRole: AccountRole | undefined): string | null {
+  return viewerRole === "mgr" && targetRole === "cs" ? REQUEST_MESSAGES.needsCreator : null;
+}
+
+/**
+ * The Creator's decision, in the order of Migration 1 `decide_account_request`: the caller (Creator
+ * only), the input, an unknown request, a request that is no longer pending, then the version
+ * (PT409). Not modelled here: the database also refuses a test-marked Creator.
+ */
+export function decideRequestError(
+  input: AccountDecisionInput,
+  stored: AccountRequestStored | undefined,
+  viewerRole: unknown,
+): string | null {
+  const caller = creatorOnlyError(viewerRole);
+  if (caller) return caller;
+  if (!input || typeof input !== "object") return "בקשה לא תקינה";
+  return (
+    requestIdError(input.requestId) ??
+    expectedVersionError(input.expectedVersion) ??
+    accountDecisionError(input.decision) ??
+    pendingRequestError(stored?.status) ??
+    (stored ? staleVersionError(input.expectedVersion, stored.version) : ACTION_MESSAGES.invalid)
+  );
+}
+
+/**
+ * An immediate deactivation or activation, in the order of Migration 1 `admin_set_user_active`: the
+ * caller (Creator or Manager), the input, the caller's own account, an unknown or out-of-scope
+ * account (the Manager's scope is Customer Service and Technician, D34), a Manager's Customer
+ * Service activation (a request instead), then the version (PT409). Last, the simulation refuses an
+ * account that already has that state (the database treats it as a no-op). `stored` is the account
+ * as the caller may read it, undefined when there is none.
+ */
+export function accountStateCommandError(
+  action: "deactivate" | "activate",
+  input: AccountStateInput,
+  stored: AccountStored | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  const caller = accountAdminCallerError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object") return "חשבון לא תקין";
+  const shape = accountIdError(input.accountId) ?? expectedVersionError(input.expectedVersion);
+  if (shape) return shape;
+  if (input.accountId === viewer.id) return ACTION_MESSAGES.forbidden;
+  if (!stored || (viewer.role === "mgr" && !MANAGER_SCOPE.includes(stored.role))) return ACTION_MESSAGES.forbidden;
+  if (action === "activate" && !stored.active) {
+    const needsCreator = managerActivationError(viewer.role, stored.role);
+    if (needsCreator) return needsCreator;
+  }
+  return staleVersionError(input.expectedVersion, stored.version) ?? accountStateError(action, stored.active);
+}
 
 /**
  * Cancelling a request, in the order of Migration 1 `cancel_account_request` (L1440–1482): the
@@ -261,7 +361,7 @@ export function credentialEmailError(email: string, target: { isTest: boolean })
 
 /** Only the Creator sets passwords and changes emails (D34 e). `viewerRole` comes from the session. */
 export function credentialsCallerError(viewerRole: unknown): string | null {
-  return viewerRole === "creator" ? null : ACTION_MESSAGES.forbidden;
+  return creatorOnlyError(viewerRole);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -278,11 +378,31 @@ export function invitationAliasError(alias: string | null): string | null {
   return alias.trim().length > INVITATION_ALIAS_MAX ? `הכינוי ארוך מ-${INVITATION_ALIAS_MAX} תווים` : null;
 }
 
-/** The fields of a profile update (the account and the caller are checked by routineUpdateCallerError). */
+/** "Nothing to save": a routine update that names no field (as productUpdateError). */
+export const NO_CHANGE = "אין שינוי לשמור";
+
+/** Whether every own key of `input` is in `keys` (an extra field is refused, never dropped). */
+function onlyKeys(input: object, keys: ReadonlySet<string>): boolean {
+  return Object.keys(input).every((k) => keys.has(k));
+}
+
+const CREATE_REQUEST_KEYS: ReadonlySet<string> = new Set(["kind", "name", "email"]);
+const PROFILE_UPDATE_FIELDS = ["name", "phone", "invitationAlias"] as const;
+const PROFILE_UPDATE_KEYS: ReadonlySet<string> = new Set(["accountId", "expectedVersion", ...PROFILE_UPDATE_FIELDS]);
+const TECHNICIAN_UPDATE_FIELDS = ["name", "color", "device", "outlookEmail", "active"] as const;
+const TECHNICIAN_UPDATE_KEYS: ReadonlySet<string> = new Set(["technicianId", "expectedVersion", ...TECHNICIAN_UPDATE_FIELDS]);
+
+/**
+ * The fields of a profile update (the account and the caller are checked by routineUpdateCallerError).
+ * Only the UpdateProfileInput keys: an email, a role or a test marker is refused, never dropped
+ * (D34 e); a patch that names no field is "nothing to save".
+ */
 export function profileUpdateError(input: UpdateProfileInput): string | null {
   if (!input || typeof input !== "object") return "קלט לא תקין";
+  if (!onlyKeys(input, PROFILE_UPDATE_KEYS)) return "קלט לא תקין";
   const shape = accountIdError(input.accountId) ?? expectedVersionError(input.expectedVersion);
   if (shape) return shape;
+  if (PROFILE_UPDATE_FIELDS.every((k) => input[k] === undefined)) return NO_CHANGE;
   if (input.name !== undefined) {
     const e = accountNameError(input.name);
     if (e) return e;
@@ -294,12 +414,17 @@ export function profileUpdateError(input: UpdateProfileInput): string | null {
   return input.invitationAlias !== undefined ? invitationAliasError(input.invitationAlias) : null;
 }
 
-/** The fields of a technician update; the colour is an allowlisted token, never CSS. */
+/**
+ * The fields of a technician update; the colour is an allowlisted token, never CSS. Only the
+ * UpdateTechnicianInput keys; a patch that names no field is "nothing to save".
+ */
 export function technicianUpdateError(input: UpdateTechnicianInput): string | null {
   if (!input || typeof input !== "object") return "קלט לא תקין";
+  if (!onlyKeys(input, TECHNICIAN_UPDATE_KEYS)) return "קלט לא תקין";
   if (!isTechnicianId(input.technicianId)) return "טכנאי לא תקין";
   const version = expectedVersionError(input.expectedVersion);
   if (version) return version;
+  if (TECHNICIAN_UPDATE_FIELDS.every((k) => input[k] === undefined)) return NO_CHANGE;
   if (input.name !== undefined) {
     const e = accountNameError(input.name);
     if (e) return e;
@@ -322,15 +447,14 @@ export function technicianUpdateError(input: UpdateTechnicianInput): string | nu
  */
 export const MANAGER_TECHNICIAN_FIELDS_PENDING = "רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים";
 
-/** The accounts a Manager administers (D34): Customer Service and Technician. */
-const MANAGER_SCOPE: readonly AccountRole[] = ["cs", "tech"];
 
 /**
  * Who may make a routine update (D34 d; Migration 1 `admin_update_profile`,
  * `admin_update_technician`): the Creator any account; the Manager a Technician or Customer Service
  * account other than his own, without the Outlook email or "פעיל" (Q14). Everyone else, and an
  * unknown target, get "no permission". `target.id` is the account id (null for a technician record,
- * which is never the Manager's own).
+ * which is never the Manager's own); a target without an id at all is refused (fail closed). It
+ * reads `input` as sent (the patch), before an adapter fills the unchanged fields.
  */
 export function routineUpdateCallerError(
   viewer: AccountViewer | null | undefined,
@@ -340,8 +464,48 @@ export function routineUpdateCallerError(
   if (!viewer || !target) return ACTION_MESSAGES.forbidden;
   if (viewer.role === "creator") return null;
   if (viewer.role !== "mgr") return ACTION_MESSAGES.forbidden;
+  if (typeof target.id !== "string" && target.id !== null) return ACTION_MESSAGES.forbidden;
   if (!MANAGER_SCOPE.includes(target.role) || (target.id !== null && target.id === viewer.id)) return ACTION_MESSAGES.forbidden;
   // Read as a technician update: a profile update has neither field (untyped input is checked too).
   const fields: Partial<UpdateTechnicianInput> = input && typeof input === "object" ? (input as Partial<UpdateTechnicianInput>) : {};
   return fields.outlookEmail !== undefined || fields.active !== undefined ? MANAGER_TECHNICIAN_FIELDS_PENDING : null;
+}
+
+/**
+ * A routine profile update as a command checks it, in the order of Migration 1
+ * `admin_update_profile`: the caller's role (Creator or Manager), the input as sent (the patch),
+ * who may update this account (routineUpdateCallerError), then the version (PT409). `stored` is the
+ * account as the caller may read it, undefined when there is none.
+ */
+export function profileUpdateCommandError(
+  input: UpdateProfileInput,
+  stored: Pick<AccountStored, "role" | "version"> | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  return (
+    accountAdminCallerError(viewer?.role) ??
+    profileUpdateError(input) ??
+    routineUpdateCallerError(viewer, stored ? { id: input.accountId, role: stored.role } : undefined, input) ??
+    (stored ? staleVersionError(input.expectedVersion, stored.version) : ACTION_MESSAGES.forbidden)
+  );
+}
+
+/**
+ * A routine technician update as a command checks it, in the order of Migration 1
+ * `admin_update_technician`: the caller's role, the patch, who may (Q14 for the Manager), a
+ * test-marked technician's Outlook email in example.test (D47; Migration 1
+ * `technicians_test_outlook_email`), then the version (PT409).
+ */
+export function technicianUpdateCommandError(
+  input: UpdateTechnicianInput,
+  stored: { version: number; isTest: boolean } | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  return (
+    accountAdminCallerError(viewer?.role) ??
+    technicianUpdateError(input) ??
+    routineUpdateCallerError(viewer, stored ? { id: null, role: "tech" } : undefined, input) ??
+    (input.outlookEmail !== undefined && stored?.isTest !== false ? testAccountEmailError(input.outlookEmail) : null) ??
+    (stored ? staleVersionError(input.expectedVersion, stored.version) : ACTION_MESSAGES.forbidden)
+  );
 }

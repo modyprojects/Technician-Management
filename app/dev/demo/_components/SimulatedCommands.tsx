@@ -16,24 +16,22 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import {
-  accountDecisionError,
+  accountAdminCallerError,
   accountIdError,
   accountRequestError,
   accountRequestTargetError,
-  accountStateError,
+  accountStateCommandError,
   cancelRequestError,
+  creatorOnlyError,
   credentialEmailError,
   credentialsCallerError,
-  expectedVersionError,
+  decideRequestError,
+  managerOnlyError,
   newAccountError,
   newTechnicianError,
   passwordError,
-  pendingRequestError,
-  profileUpdateError,
-  requestIdError,
-  routineUpdateCallerError,
-  staleVersionError,
-  technicianUpdateError,
+  profileUpdateCommandError,
+  technicianUpdateCommandError,
   testAccountEmailError,
   type AccountRequestStored,
   type AccountStored,
@@ -41,7 +39,8 @@ import {
 } from "@/features/accounts/data/validate";
 import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
-import { ownValue, type CommandResult } from "@/features/data-access/common";
+import { ownValue, type CommandResult, type VersionedResult } from "@/features/data-access/common";
+import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
 import { productEditError } from "@/features/products/data/validate";
@@ -129,7 +128,8 @@ export type SimulatedServerState = {
   accounts?: Readonly<Record<string, AccountStored>>;
   /**
    * Settings › טכנאים: the technician records on the screen by technician id (version, name, test
-   * marker). A technician this provider created counts as version 1.
+   * marker). A technician this provider created counts as version 1. The tab also passes
+   * `selfRole` ("פעיל" is the Creator's only for now, Q14), never `self` (no account ids there).
    */
   technicians?: Readonly<Record<string, { version: number; name: string; isTest: boolean }>>;
   /** The signed-in account (production: from the session, G-03). */
@@ -348,11 +348,14 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
             () =>
               `מטריצת הרשאות · ${PERMISSION_LABELS[key].label} · ${ACCOUNT_ROLE_LABELS[role]}: ${onOff(value)} · ערך זמני עד אישור הבעלים`,
           ),
-        // Settings › טכנאים nests the technicians (with versions); elsewhere it fails (deny by default).
+        // Settings › טכנאים nests the technicians (with versions) and the viewer's role; elsewhere it
+        // fails (deny by default). Creator only for now (Q14). Returns the version checked: nothing
+        // is stored, so it is unchanged.
         setTechnicianActive: (input) =>
           run(
-            () => [technicianActiveError(input, storedTechnician(input?.techId))],
+            () => [technicianActiveError(input, storedTechnician(input?.techId), state.selfRole)],
             () => (input.active ? "טכנאי פעיל · יקבל זימונים חדשים" : "טכנאי לא פעיל · לא יקבל זימונים חדשים, ההיסטוריה נשמרת"),
+            (): VersionedResult => ({ version: storedTechnician(input.techId)?.version ?? input.expectedVersion }),
           ),
         addPlace: (input) =>
           run(
@@ -418,14 +421,17 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
       },
       // The account screens nest the accounts and requests in the viewer's scope, the viewer and
-      // his role (accountAdminState); elsewhere the stored checks fail (deny by default). Not
-      // modelled: Migration 1 also refuses a test-marked Creator's decisions, cancellations of
-      // others' requests and credential changes (every demo account is test-marked), and versions
-      // never advance here (nothing is stored; a changed row offers no second action).
+      // his role (accountAdminState); elsewhere the stored checks fail (deny by default). Every
+      // command checks the caller's role first, as Migration 1's `require_caller` (the shared
+      // validators: creatorOnlyError, managerOnlyError, accountAdminCallerError and the command
+      // checks below). Not modelled: Migration 1 also refuses a test-marked Creator's decisions,
+      // cancellations of others' requests and credential changes (every demo account is
+      // test-marked). Versions never advance here (nothing is stored): a versioned command returns
+      // the version it checked, and a simulated row offers no second action.
       accounts: {
         createAccount: (input) =>
           run(
-            () => [newAccountError(input), testAccountEmailError(input.email)],
+            () => [creatorOnlyError(state.selfRole), newAccountError(input), testAccountEmailError(input.email)],
             () => `יצירת חשבון ${ACCOUNT_ROLE_LABELS[input.role]} · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
             (): { account: UserAccount } => {
               const account = {
@@ -447,8 +453,9 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
         requestAccount: (input) =>
           run(
             () => [
+              managerOnlyError(state.selfRole),
+              state.self ? null : ACTION_MESSAGES.forbidden,
               accountRequestError(input),
-              state.self ? null : "אין משתמש מחובר",
               input.kind === "create"
                 ? testAccountEmailError(input.email)
                 : accountRequestTargetError(input.kind, ownValue(state.accounts, input.accountId)),
@@ -477,6 +484,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                   reason: null,
                   decidedBy: null,
                   decidedAt: null,
+                  cancelledAfterApproval: false,
                   version: 1,
                   isTest: true,
                 },
@@ -485,57 +493,36 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
         decideAccountRequest: (input) =>
           run(
-            () => {
-              const stored = ownValue(state.requests, input?.requestId);
-              return [
-                requestIdError(input.requestId),
-                expectedVersionError(input.expectedVersion),
-                accountDecisionError(input.decision),
-                pendingRequestError(stored?.status),
-                stored ? staleVersionError(input.expectedVersion, stored.version) : null,
-              ];
-            },
+            () => [decideRequestError(input, ownValue(state.requests, input?.requestId), state.selfRole)],
             () =>
               input.decision.outcome === "approve"
                 ? "אישור הבקשה · נכנסת לתוקף"
                 : `דחיית הבקשה · סיבה: ${excerpt(input.decision.reason)}`,
+            (): VersionedResult => ({ version: ownValue(state.requests, input.requestId)?.version ?? input.expectedVersion }),
           ),
         cancelAccountRequest: (input) =>
           run(
             () => [cancelRequestError(input, ownValue(state.requests, input?.requestId), viewer)],
             () => "ביטול הבקשה",
+            (): VersionedResult => ({ version: ownValue(state.requests, input.requestId)?.version ?? input.expectedVersion }),
           ),
         deactivateAccount: (input) =>
           run(
-            () => {
-              const stored = ownValue(state.accounts, input?.accountId);
-              return [
-                accountIdError(input.accountId),
-                expectedVersionError(input.expectedVersion),
-                state.self && state.self.id === input.accountId ? "אי אפשר להשבית את החשבון שלך" : null,
-                accountStateError("deactivate", stored?.active),
-                stored ? staleVersionError(input.expectedVersion, stored.version) : null,
-              ];
-            },
+            () => [accountStateCommandError("deactivate", input, ownValue(state.accounts, input?.accountId), viewer)],
             // The Creator is notified only of a Manager's deactivation (D34 b); the screen says so.
             () => `השבתת חשבון · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
           ),
         activateAccount: (input) =>
           run(
-            () => {
-              const stored = ownValue(state.accounts, input?.accountId);
-              return [
-                accountIdError(input.accountId),
-                expectedVersionError(input.expectedVersion),
-                accountStateError("activate", stored?.active),
-                stored ? staleVersionError(input.expectedVersion, stored.version) : null,
-              ];
-            },
+            () => [accountStateCommandError("activate", input, ownValue(state.accounts, input?.accountId), viewer)],
             () => `הפעלת חשבון · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · מיידית`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
           ),
+        // The Manager's accounts tab and the Creator's Settings › טכנאים pass the viewer's role.
         createTechnician: (input) =>
           run(
-            () => [newTechnicianError(input), testAccountEmailError(input.email)],
+            () => [accountAdminCallerError(state.selfRole), newTechnicianError(input), testAccountEmailError(input.email)],
             () => `הוספת טכנאי · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
             (): { account: UserAccount; technician: TechnicianSetting } => {
               const technician: TechnicianSetting = {
@@ -566,12 +553,13 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
           ),
         // D34 e, D50: the Creator only. Nothing is stored, sent or returned; the password never
         // appears in a message or a toast. No screen calls these in PR 2.2 (dialogs: PR 2.3).
+        // An unknown account is the database's 22023 (assert_can_change_credentials).
         setPassword: (accountId, password) =>
           run(
             () => [
               credentialsCallerError(state.selfRole),
               accountIdError(accountId),
-              ownValue(state.accounts, accountId) ? null : "החשבון לא נמצא",
+              ownValue(state.accounts, accountId) ? null : ACTION_MESSAGES.invalid,
               passwordError(password),
             ],
             () => `הגדרת סיסמה · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · הסיסמה לא נשמרה ולא נשלחה`,
@@ -583,7 +571,7 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
               return [
                 credentialsCallerError(state.selfRole),
                 accountIdError(accountId),
-                stored ? null : "החשבון לא נמצא",
+                stored ? null : ACTION_MESSAGES.invalid,
                 stored ? credentialEmailError(email, stored) : null,
               ];
             },
@@ -592,30 +580,16 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
         // D34 d (Q14 for a Manager's Outlook email and "פעיל"). No screen calls these in PR 2.2.
         updateProfile: (input) =>
           run(
-            () => {
-              const stored = ownValue(state.accounts, input?.accountId);
-              return [
-                profileUpdateError(input),
-                routineUpdateCallerError(viewer, stored ? { id: input.accountId, role: stored.role } : undefined, input),
-                stored ? staleVersionError(input.expectedVersion, stored.version) : null,
-              ];
-            },
+            () => [profileUpdateCommandError(input, ownValue(state.accounts, input?.accountId), viewer)],
             () =>
               `עדכון פרטים · ${excerpt(input.name ?? ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · נרשם ביומן הביקורת`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
           ),
         updateTechnician: (input) =>
           run(
-            () => {
-              const stored = storedTechnician(input?.technicianId);
-              return [
-                technicianUpdateError(input),
-                routineUpdateCallerError(viewer, stored ? { id: null, role: "tech" } : undefined, input),
-                // A test-marked technician keeps an example.test Outlook email (D47; Migration 1 CHECK).
-                input.outlookEmail !== undefined && stored?.isTest !== false ? testAccountEmailError(input.outlookEmail) : null,
-                stored ? staleVersionError(input.expectedVersion, stored.version) : null,
-              ];
-            },
+            () => [technicianUpdateCommandError(input, storedTechnician(input?.technicianId), viewer)],
             () => `עדכון פרטי טכנאי · ${excerpt(input.name ?? storedTechnician(input.technicianId)?.name ?? "", 40)}`,
+            (): VersionedResult => ({ version: storedTechnician(input.technicianId)?.version ?? input.expectedVersion }),
           ),
       },
       products: {

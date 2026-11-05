@@ -65,6 +65,25 @@ export type CommandResult<T = void> =
       error: string;
     };
 
+/**
+ * What a versioned edit returns (Step 2 PR 2.2): the record's version as stored after it. Every
+ * Migration 1 edit function returns the new version; a simulated edit stored nothing, so it
+ * returns the version it checked (unchanged).
+ */
+export type VersionedResult = { version: number };
+
+/**
+ * The version to send with the next edit of the same record (`expectedVersion`): the one a STORED
+ * edit returned (the database bumped it), otherwise the one read. A failed or simulated result, or
+ * one without a valid version, keeps the version read: a screen never invents one.
+ */
+export function versionAfter(result: CommandResult<unknown>, read: number): number {
+  if (!result.ok || result.simulated) return read;
+  const data: unknown = result.data;
+  const version = typeof data === "object" && data !== null ? (data as { version?: unknown }).version : undefined;
+  return typeof version === "number" && Number.isSafeInteger(version) && version >= 1 ? version : read;
+}
+
 /** Hard upper bound of every list query (docs/security.md: query bounds). */
 export const MAX_PAGE_LIMIT = 100;
 

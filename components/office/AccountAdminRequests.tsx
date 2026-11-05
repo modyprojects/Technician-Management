@@ -6,19 +6,27 @@
 // - mode "decide" (the Creator, Settings › "משתמשים והרשאות", section "בקשות לאישור"): approve, or
 //   reject with a required reason typed into an inline field (accounts.decideAccountRequest).
 // - mode "own" (the Manager, Settings › "משתמשים", section "הבקשות שלי"): cancel his own pending
-//   request, or his own approved creation that has no account yet (isOpenCreation;
+//   request, or his own approved creation that has no account yet (requesterMayCancel;
 //   accounts.cancelAccountRequest). The Creator never cancels a Manager's pending request: he
-//   rejects it with a reason. Each action sends the request's version (`expectedVersion`).
+//   rejects it with a reason. Each action sends the request's version (`expectedVersion`) and
+//   keeps the version a stored action returns (versionAfter), so a later action on the same
+//   request never gets a false "data changed". A cancelled approved creation keeps its decider and
+//   time (cancelledRequest): the row reads "אושרה על ידי … · בוטלה".
 // Nothing changes while a request is pending; every step is audited; no automatic expiry (D25).
 // The screen reads each result: a SIMULATED one (the UI demo) shows the outcome on its row, marked
 // "לא נשמר · פעולה מדומה", with no further action, and says "בהדגמה … לא נשמר"; a stored one says
 // what was done (TE-23). Display only (G-04): the server decides who may act.
 import { useEffect, useId, useRef, useState } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
-import { isOpenCreation, type AccountRef, type AccountRequest } from "@/features/accounts/data/types";
+import {
+  cancelledRequest,
+  requesterMayCancel,
+  type AccountRef,
+  type AccountRequest,
+} from "@/features/accounts/data/types";
 import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
-import type { CommandResult } from "@/features/data-access/common";
+import { versionAfter, type CommandResult, type VersionedResult } from "@/features/data-access/common";
 import {
   ActionMessage,
   RequestStatusPill,
@@ -75,26 +83,41 @@ export function AccountAdminRequests({
   const pendingCount = entries.filter((e) => e.request.status === "pending" && !e.local).length;
   const title = mode === "decide" ? "בקשות לאישור" : "הבקשות שלי";
 
-  /** The request after a successful action; `local` (no further action) when it was simulated. */
-  function done(entry: AccountRequestEntry, patch: Partial<AccountRequest>, simulated: boolean) {
+  /**
+   * The request after a successful action, with the version a stored action returned; `local` (no
+   * further action) when it was simulated.
+   */
+  function done(entry: AccountRequestEntry, request: AccountRequest, result: CommandResult<VersionedResult>, decidedLabel: string | null) {
     setFocusRow(entry.request.id);
     onUpdate({
       ...entry,
-      request: { ...entry.request, ...patch, decidedBy: self, decidedAt: new Date().toISOString() },
-      decidedLabel: "עכשיו",
-      local: simulated,
+      request: { ...request, version: versionAfter(result, entry.request.version) },
+      decidedLabel,
+      local: result.simulated,
     });
   }
 
+  /** A decision: the Creator is its decider, now. */
+  const decided = (entry: AccountRequestEntry, patch: Partial<AccountRequest>): AccountRequest => ({
+    ...entry.request,
+    ...patch,
+    decidedBy: self,
+    decidedAt: new Date().toISOString(),
+  });
+
   /** Runs one command for one request; ignores taps while another action runs. */
-  async function act(key: string, run: () => Promise<CommandResult>, onOk: (simulated: boolean) => void) {
+  async function act(
+    key: string,
+    run: () => Promise<CommandResult<VersionedResult>>,
+    onOk: (result: Extract<CommandResult<VersionedResult>, { ok: true }>) => void,
+  ) {
     if (running.current) return;
     running.current = true;
     setBusy(key);
     setMessage(null);
     try {
       const r = await run();
-      if (r.ok) onOk(r.simulated);
+      if (r.ok) onOk(r);
       else setMessage({ kind: "error", text: r.error });
     } catch {
       setMessage({ kind: "error", text: FAILED });
@@ -113,12 +136,12 @@ export function AccountAdminRequests({
           expectedVersion: entry.request.version,
           decision: { outcome: "approve" },
         }),
-      (simulated) => {
-        done(entry, { status: "approved" }, simulated);
+      (r) => {
+        done(entry, decided(entry, { status: "approved" }), r, "עכשיו");
         const title = requestTitle(entry.request);
         setMessage({
           kind: "ok",
-          text: said(simulated, `הבקשה "${title}" הייתה מאושרת ונכנסת לתוקף.`, `הבקשה "${title}" אושרה ונכנסה לתוקף.`),
+          text: said(r.simulated, `הבקשה "${title}" הייתה מאושרת ונכנסת לתוקף.`, `הבקשה "${title}" אושרה ונכנסה לתוקף.`),
         });
       },
     );
@@ -140,15 +163,15 @@ export function AccountAdminRequests({
           expectedVersion: entry.request.version,
           decision: { outcome: "reject", reason: text },
         }),
-      (simulated) => {
-        done(entry, { status: "rejected", reason: text }, simulated);
+      (r) => {
+        done(entry, decided(entry, { status: "rejected", reason: text }), r, "עכשיו");
         setRejecting(null);
         setReason("");
         setReasonError(null);
         const title = requestTitle(entry.request);
         setMessage({
           kind: "ok",
-          text: said(simulated, `הבקשה "${title}" הייתה נדחית, והסיבה נשמרת איתה.`, `הבקשה "${title}" נדחתה, והסיבה נשמרה איתה.`),
+          text: said(r.simulated, `הבקשה "${title}" הייתה נדחית, והסיבה נשמרת איתה.`, `הבקשה "${title}" נדחתה, והסיבה נשמרה איתה.`),
         });
       },
     );
@@ -158,10 +181,12 @@ export function AccountAdminRequests({
     void act(
       `cancel-${entry.request.id}`,
       () => accounts.cancelAccountRequest({ requestId: entry.request.id, expectedVersion: entry.request.version }),
-      (simulated) => {
-        done(entry, { status: "cancelled" }, simulated);
+      (r) => {
+        // An approved creation keeps its decider and time (Migration 1): only a pending one is "now".
+        const request = cancelledRequest(entry.request, self, new Date().toISOString());
+        done(entry, request, r, request.cancelledAfterApproval ? entry.decidedLabel : "עכשיו");
         const title = requestTitle(entry.request);
-        setMessage({ kind: "ok", text: said(simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
+        setMessage({ kind: "ok", text: said(r.simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
       },
     );
   }
@@ -194,7 +219,7 @@ export function AccountAdminRequests({
             const actionable = r.status === "pending" && !entry.local;
             const isRejecting = rejecting === r.id && actionable && mode === "decide";
             // The requester cancels a pending request or an approved creation with no account yet.
-            const cancellable = mode === "own" && !entry.local && (r.status === "pending" || isOpenCreation(r));
+            const cancellable = mode === "own" && !entry.local && requesterMayCancel(r);
             const reasonId = `${id}-${r.id}-reason`;
             const reasonErrorId = `${id}-${r.id}-reason-error`;
             return (

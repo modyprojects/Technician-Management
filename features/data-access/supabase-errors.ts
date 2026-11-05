@@ -23,6 +23,8 @@ export const ACTION_MESSAGES = {
  */
 export const REQUEST_MESSAGES = {
   cannotCancel: "לא ניתן לבטל את הבקשה.",
+  notPending: "הבקשה כבר טופלה.",
+  needsCreator: "הפעולה דורשת אישור של היוצר.",
 } as const;
 
 /**
@@ -99,11 +101,11 @@ const DATABASE_KINDS: ReadonlyMap<string, DatabaseErrorKind> = new Map([
 const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["an open request exists", "קיימת כבר בקשה פתוחה."],
   ["a pending request exists", "קיימת כבר בקשה פתוחה."],
-  ["the request is not pending", "הבקשה כבר טופלה."],
+  ["the request is not pending", REQUEST_MESSAGES.notPending],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
   ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
   ["the request cannot be cancelled", REQUEST_MESSAGES.cannotCancel],
-  ["requires the Creator's approval", "הפעולה דורשת אישור של היוצר."],
+  ["requires the Creator's approval", REQUEST_MESSAGES.needsCreator],
   ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
   ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],
   ["profiles: a profile with a technician record keeps its role", "לא ניתן לשנות את התפקיד של חשבון טכנאי."],

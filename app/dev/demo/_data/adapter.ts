@@ -45,6 +45,8 @@ import {
   ACCOUNT_REQUEST_STATUSES,
   ACCOUNT_ROLE_VALUES,
   isAccountRequestStatus,
+  cancelledAfterApprovalOf,
+  creatorNoticesOf,
   isAccountRole,
   technicianProfileMissing,
   type AccountRef,
@@ -55,6 +57,7 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import type { SessionQueries } from "@/features/auth/data/ports";
+import { sessionUserOf } from "@/features/auth/data/session";
 import {
   isMatrixRole,
   isOfficeRole,
@@ -316,6 +319,7 @@ const accountRequest = (r: DemoAccountRequest): AccountRequest => ({
   reason: r.reason,
   decidedBy: r.decidedBy ? accountRef(r.decidedBy) : null,
   decidedAt: r.decidedAt,
+  cancelledAfterApproval: cancelledAfterApprovalOf(r),
   version: r.version,
   isTest: TEST,
 });
@@ -349,13 +353,15 @@ function eventNotice(e: DemoAccountEvent): CreatorNotice {
 }
 
 /**
- * The Creator's notices, newest first (Step 2 plan §3.10): pending requests, a Manager's
- * deactivations, and Outlook-email changes not made by the viewing Creator himself.
+ * The Creator's notices, newest first (Step 2 plan §3.10), selected by creatorNoticesOf() as every
+ * implementation does: pending requests, a Manager's deactivations, and Outlook-email changes not
+ * made by the viewing Creator himself. The viewer is the demo's Creator account.
  */
-const CREATOR_NOTICES_NEWEST_FIRST: readonly CreatorNotice[] = [
-  ...ACCOUNT_REQUESTS.filter((r) => r.status === "pending").map(requestNotice),
-  ...ACCOUNT_EVENTS.filter((e) => !(e.kind === "outlook-email-change" && e.actorId === DEMO_CREATOR_ID)).map(eventNotice),
-].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+const CREATOR_NOTICES_NEWEST_FIRST: readonly CreatorNotice[] = creatorNoticesOf(
+  DEMO_CREATOR_ID ? { id: DEMO_CREATOR_ID, role: "creator" } : null,
+  ACCOUNT_REQUESTS.map((r) => ({ status: r.status, notice: requestNotice(r) })),
+  ACCOUNT_EVENTS.map(eventNotice),
+);
 
 const creationIntent = (x: DemoCreationIntent): CreationIntent => ({
   id: x.id,
@@ -382,8 +388,8 @@ export function demoSession(viewpoint: { role: AccountRole; name: string }): Ses
     async current() {
       if (!isAccountRole(viewpoint?.role) || typeof viewpoint.name !== "string") return null;
       const a = ACCOUNTS.find((x) => x.role === viewpoint.role && x.name === viewpoint.name);
-      if (!a || !a.active) return null;
-      return { id: a.id, role: a.role, name: a.name, technicianId: a.technicianId, isTest: TEST };
+      // sessionUserOf: null (no access) for a missing or inactive account, as the real port.
+      return sessionUserOf(a ? { ...a, isTest: TEST } : null);
     },
   };
 }

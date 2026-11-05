@@ -66,19 +66,19 @@ async function tabBody(role: OfficeRole, tab: SettingsSection): Promise<{ body: 
     }
     case "techs": {
       // The technicians' versions, so a "פעיל" change checks them as the server would (PT409).
-      const [technicians, state] = await Promise.all([demoDataAccess.settings.technicians(), settingsTabState(tab)]);
+      const [technicians, state] = await Promise.all([demoDataAccess.settings.technicians(), settingsTabState(tab, role)]);
       return { body: <SettingsTechs technicians={technicians} />, state };
     }
     case "places":
       return {
         body: <SettingsPlaces places={await demoDataAccess.settings.places()} />,
-        state: await settingsTabState(tab),
+        state: await settingsTabState(tab, role),
       };
     case "reasons": {
       const [reasons, approvalText, state] = await Promise.all([
         demoDataAccess.settings.reasons(),
         demoDataAccess.reference.approvalText(),
-        settingsTabState(tab),
+        settingsTabState(tab, role),
       ]);
       return {
         body: (

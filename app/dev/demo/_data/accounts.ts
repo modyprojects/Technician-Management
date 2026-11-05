@@ -22,7 +22,7 @@ export type DemoAccount = {
   technicianId: TechId | null;
   /**
    * The stored version (profiles.version): 1 for an account never changed since its creation, 2 for
-   * the two deactivated ones. Not all 1, so nothing can hard-code it.
+   * the two deactivated ones, 3 for שיראל (ACCOUNT_VERSION). Not all 1, so nothing can hard-code it.
    */
   version: number;
 };
@@ -35,6 +35,12 @@ const ACCOUNT_ID: Record<string, string> = {
 };
 
 /**
+ * Stored versions above 1 among the active office accounts: שיראל's profile had two routine updates
+ * (D34 d), so an action on her row must send 3 (a screen that sent 1 would get PT409).
+ */
+const ACCOUNT_VERSION: Readonly<Record<string, number>> = { "acc-shirel": 3 };
+
+/**
  * The office users (USERS), the technicians' accounts (TECHS) and three inactive accounts that
  * show every D34 activation path in the Manager's scope:
  * - אורית: a deactivated Customer Service account whose reactivation request waits (areq-2);
@@ -44,17 +50,20 @@ const ACCOUNT_ID: Record<string, string> = {
  *   three technicians are all active, so this former technician has no technician record here.
  */
 export const ACCOUNTS: readonly DemoAccount[] = [
-  ...USERS.map((u) => ({
-    id: ACCOUNT_ID[u.name] ?? `acc-${u.email.split("@")[0]}`,
-    name: u.name,
-    role: u.role,
-    email: u.email,
-    phone: u.phone,
-    active: true,
-    deactivatedAt: null,
-    technicianId: null,
-    version: 1,
-  })),
+  ...USERS.map((u) => {
+    const id = ACCOUNT_ID[u.name] ?? `acc-${u.email.split("@")[0]}`;
+    return {
+      id,
+      name: u.name,
+      role: u.role,
+      email: u.email,
+      phone: u.phone,
+      active: true,
+      deactivatedAt: null,
+      technicianId: null,
+      version: ACCOUNT_VERSION[id] ?? 1,
+    };
+  }),
   ...TECHS.map((t) => ({
     id: `acc-tech-${t.id}`,
     name: t.name,
@@ -119,7 +128,11 @@ export type DemoAccountRequest = {
   reason: string | null;
   decidedBy: string | null;
   decidedAt: string | null;
-  /** The stored version (account_requests.version): 1 while pending, 2 once decided or cancelled. */
+  /**
+   * The stored version (account_requests.version): 1 while pending (Migration 1 never updates a
+   * pending request); 2 once decided or cancelled; 3 once an approved creation is fulfilled
+   * (admin_create_profile binds the account) or cancelled after approval.
+   */
   version: number;
 };
 
@@ -193,7 +206,8 @@ export const ACCOUNT_REQUESTS: readonly DemoAccountRequest[] = [
     reason: null,
     decidedBy: "acc-creator",
     decidedAt: "2026-09-14T12:20:00+03:00",
-    version: 2,
+    // Approved (2), then fulfilled: admin_create_profile bound הדס's account to it (3).
+    version: 3,
   },
 ];
 
@@ -214,6 +228,10 @@ export type DemoAccountEvent = {
 export const ACCOUNT_EVENTS: readonly DemoAccountEvent[] = [
   { id: "aev-1", kind: "manager-deactivation", at: "2026-09-01T09:00:00+03:00", actorId: "acc-doron", targetAccountId: "acc-orit" },
   { id: "aev-2", kind: "manager-deactivation", at: "2026-08-14T16:30:00+03:00", actorId: "acc-doron", targetAccountId: "acc-beni" },
+  // A change by the Manager: the database allows it (Migration 1 admin_update_technician), but while
+  // Step 2 plan Q14 is open the app keeps the Outlook email for the Creator (TEMPORARY), so the app
+  // itself never makes this change. PR 2.3 labels such a notice in the card, or changes this
+  // fixture with the owner's Q14 answer.
   { id: "aev-3", kind: "outlook-email-change", at: "2026-10-18T10:15:00+03:00", actorId: "acc-doron", targetAccountId: "acc-tech-e" },
 ];
 

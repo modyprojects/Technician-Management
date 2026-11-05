@@ -122,13 +122,60 @@ export type AccountRequest = TestMarker & {
   reason: string | null;
   /**
    * The Creator (approved, rejected) or whoever cancelled a pending request; null while pending. An
-   * approved creation that is cancelled later keeps its decider (the audit names who cancelled).
+   * approved creation that is cancelled later keeps its decider and time (Migration 1
+   * `cancel_account_request`): see `cancelledAfterApproval`.
    */
   decidedBy: AccountRef | null;
   decidedAt: IsoTimestamp | null;
+  /**
+   * An approved creation cancelled before an account was bound to it: `decidedBy` / `decidedAt` are
+   * still the APPROVAL, never the cancellation (who cancelled is in the audit only). Always
+   * cancelledAfterApprovalOf() of the stored row.
+   */
+  cancelledAfterApproval: boolean;
   /** The stored version (`account_requests.version`), sent back as `expectedVersion` (PT409 when it changed). */
   version: number;
 };
+
+/**
+ * Whether a stored request is an approved creation that was cancelled later, read from the row
+ * itself: Migration 1 sets `decided_by` on a PENDING cancellation to the caller, who can only be the
+ * requester, and keeps the approving Creator on an approved one. So a cancelled "create" whose
+ * decider is not its requester was cancelled after approval (the `account_request.cancelled` audit
+ * row says the same: `details.from_status = 'approved'`).
+ */
+export const cancelledAfterApprovalOf = (row: {
+  kind: AccountRequestKind;
+  status: AccountRequestStatus;
+  requestedBy: AccountId;
+  decidedBy: AccountId | null;
+}): boolean => row.kind === "create" && row.status === "cancelled" && row.decidedBy !== null && row.decidedBy !== row.requestedBy;
+
+/**
+ * The outcome line of a decided or cancelled request ("אושרה על ידי משתמש יוצר · 14.09 12:20"):
+ * who decided and when (`decidedLabel`: decidedAt formatted by the page); null while pending. An
+ * approved creation cancelled later reads "אושרה על ידי … · בוטלה": its decider and time are the
+ * approval's, so they are never shown as the cancellation's.
+ */
+export function requestOutcomeLine(request: AccountRequest, decidedLabel: string | null): string | null {
+  if (request.status === "pending") return null;
+  const who = request.decidedBy?.name ? ` על ידי ${request.decidedBy.name}` : "";
+  const when = decidedLabel ? ` · ${decidedLabel}` : "";
+  if (request.cancelledAfterApproval) {
+    return `${ACCOUNT_REQUEST_STATUS_LABELS.approved}${who}${when} · ${ACCOUNT_REQUEST_STATUS_LABELS.cancelled}`;
+  }
+  return `${ACCOUNT_REQUEST_STATUS_LABELS[request.status]}${who}${when}`;
+}
+
+/**
+ * A request after a successful cancellation, as Migration 1 stores it: a pending one names who
+ * cancelled and when; an approved creation keeps its decider and time (cancelledAfterApproval).
+ */
+export function cancelledRequest(request: AccountRequest, by: AccountRef | null, at: IsoTimestamp): AccountRequest {
+  return request.status === "approved"
+    ? { ...request, status: "cancelled", cancelledAfterApproval: true }
+    : { ...request, status: "cancelled", decidedBy: by, decidedAt: at };
+}
 
 /**
  * An approved "create" request whose account was not created yet (no account bound to it): its
@@ -137,6 +184,13 @@ export type AccountRequest = TestMarker & {
  */
 export const isOpenCreation = (request: Pick<AccountRequest, "kind" | "status" | "account">): boolean =>
   request.kind === "create" && request.status === "approved" && request.account === null;
+
+/**
+ * What the requester's "הבקשות שלי" offers to cancel (display only; cancelRequestError decides): a
+ * pending request, or an approved creation with no account yet (isOpenCreation).
+ */
+export const requesterMayCancel = (request: Pick<AccountRequest, "kind" | "status" | "account">): boolean =>
+  request.status === "pending" || isOpenCreation(request);
 
 /** Accounts list query: optional role filter, paged (default 40, at most 100). */
 export type AccountListQuery = PageRequest & { roles?: readonly AccountRole[] };
@@ -169,6 +223,27 @@ export type CreatorNotice = TestMarker & {
   /** "pending-request" only: the request's kind; null otherwise. */
   requestKind: AccountRequestKind | null;
 };
+
+/**
+ * The Creator's notices from their sources, as every implementation selects them (Step 2 plan
+ * §3.10): nothing unless the viewer is the Creator (RLS also lets a Manager read his own audit
+ * rows); requests only while pending; a Manager's deactivations (`profile.deactivated` with
+ * `actor_role` manager, selected by the source); Outlook-email changes by anyone but the viewer;
+ * newest first.
+ */
+export function creatorNoticesOf(
+  viewer: { id: AccountId; role: AccountRole } | null | undefined,
+  requests: readonly { status: AccountRequestStatus; notice: CreatorNotice }[],
+  events: readonly CreatorNotice[],
+): CreatorNotice[] {
+  if (viewer?.role !== "creator") return [];
+  return [
+    ...requests.filter((r) => r.status === "pending" && r.notice.kind === "pending-request").map((r) => r.notice),
+    ...events.filter(
+      (e) => e.kind === "manager-deactivation" || (e.kind === "outlook-email-change" && e.actor.id !== viewer.id),
+    ),
+  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
 
 /**
  * A direct creation that was authorized but not completed (Migration 1 `direct_create`, approved,
@@ -231,16 +306,20 @@ export const isNewAccountRole = (value: unknown): value is NewAccountRole =>
 
 /**
  * "+ הוספת משתמש": immediate (D34). Technician, Customer Service and Manager; a Creator account is
- * pending the owner's decision (Q9). No password: the Creator sets the first one (D50; Q1).
+ * pending the owner's decision (Q9). No password: the Creator sets the first one (D50; Q1). A
+ * Technician is created with NewTechnicianInput (createTechnician, D34 c): "tech" here covers only
+ * the account phases (Step 2 plan §3.8 phases 1–3), so its result has `technicianMissing: true`.
  */
 export type NewAccountInput = { name: string; email: string; phone: string; role: NewAccountRole };
 
 /**
  * A routine profile update (D34 d): name, work phone and invitation alias, never the email. Patch
- * semantics: an omitted field is unchanged, `null` clears it. The Manager may update Technician and
- * Customer Service accounts other than his own; the Creator any account. The real adapter reads
- * the current row under the caller's session and fills the unchanged fields (the database function
- * replaces all of them).
+ * semantics: an omitted field is unchanged, `null` clears it; any other key, or no field at all, is
+ * refused. The Manager may update Technician and Customer Service accounts other than his own; the
+ * Creator any account. The checks (profileUpdateCommandError) run on the input AS SENT (the patch),
+ * before the real adapter fills the unchanged fields from the row it reads under the caller's
+ * session (the database function replaces all of them); the filled values are the stored ones,
+ * protected by `expectedVersion`.
  */
 export type UpdateProfileInput = {
   accountId: AccountId;
@@ -251,9 +330,12 @@ export type UpdateProfileInput = {
 };
 
 /**
- * A routine technician update (D34 d, SE-05). Patch semantics as UpdateProfileInput. The Outlook
- * email and "פעיל" (`active`) are the Creator's only (TEMPORARY, Step 2 plan Q14): the database lets
- * a Manager change them; the app narrows it until the owner decides.
+ * A routine technician update (D34 d, SE-05). Patch semantics and checks as UpdateProfileInput:
+ * the caller check runs on the patch as sent, so a Manager's patch that names neither field passes,
+ * although the adapter then sends the stored Outlook email and "פעיל" unchanged. The Outlook email
+ * and "פעיל" (`active`, the same field as SettingsCommands.setTechnicianActive) are the Creator's
+ * only (TEMPORARY, Step 2 plan Q14): the database lets a Manager change them; the app narrows it
+ * until the owner decides.
  */
 export type UpdateTechnicianInput = {
   technicianId: TechnicianId;

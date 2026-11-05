@@ -5,10 +5,11 @@
 // MAX_PAGE_LIMIT, 100) so a screen can say "ועוד X".
 // Who may change what is enforced on the server and in the database (G-04): the matrix only by
 // the Creator (D33); operational settings with the matrix key `settings` (D35); technicians by
-// the Manager and the Creator (D34). Screens only decide what to offer.
+// the Manager and the Creator (D34 d; "פעיל" and the Outlook email by the Creator only for now,
+// Step 2 plan Q14). Screens only decide what to offer.
 // The "טופל" text is read with reference.approvalText() (one source for Settings and the close
 // screen); it is changed with SettingsCommands.setFixedText.
-import type { CommandResult } from "@/features/data-access/common";
+import type { CommandResult, VersionedResult } from "@/features/data-access/common";
 import type { MatrixRole, PermissionKey } from "@/features/reference/data/types";
 import type {
   Bounded,
@@ -53,14 +54,20 @@ export interface SettingsQueries {
 export interface SettingsCommands {
   /**
    * Changes one matrix value (Creator only, D33; audited, effective at once). The Creator is never
-   * a matrix role; a pending cell (PENDING_MATRIX_CELLS) is rejected.
+   * a matrix role; a pending cell (PENDING_MATRIX_CELLS) is rejected. GAP (Step 10, Step 2 plan
+   * Q13): Migration 1 `admin_set_role_permission` also takes `p_expected_version`
+   * (`role_permissions.version`); the matrix cells carry no version yet, so the matrix adapter adds
+   * it (a cell version and `expectedVersion` here) together with that adapter. No value changes.
    */
   setPermission(role: MatrixRole, key: PermissionKey, value: boolean): Promise<CommandResult>;
   /**
    * "פעיל" of a technician: eligibility for new invitations (SE-05), not sign-in. At the version
-   * read (PT409 when it changed).
+   * read (PT409 when it changed); returns the version as stored after it. Creator only for now
+   * (TEMPORARY, Step 2 plan Q14; WORKLOG phase E P6): the same field as AccountCommands.updateTechnician's
+   * `active` (Migration 1 `admin_update_technician`, which a Manager may call); a Manager is refused
+   * with MANAGER_TECHNICIAN_FIELDS_PENDING, never by the matrix key `settings`.
    */
-  setTechnicianActive(input: TechnicianActiveInput): Promise<CommandResult>;
+  setTechnicianActive(input: TechnicianActiveInput): Promise<CommandResult<VersionedResult>>;
   /** "+ הוספת מקום" (SE-06). */
   addPlace(input: NewPlaceInput): Promise<CommandResult<CreatedSetting>>;
   setPlaceActive(id: SettingId, active: boolean): Promise<CommandResult>;

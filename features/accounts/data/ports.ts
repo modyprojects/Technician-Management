@@ -5,8 +5,12 @@
 // never from an argument; a screen only decides what to offer (G-04).
 // Command shape (Step 2 PR 2.2): every command that takes `expectedVersion` takes one input object
 // (as products.update, review.resolve, visits.correct). A stale version is refused with the
-// "data changed" message (PT409, ACTION_MESSAGES.stale).
-import type { CommandResult, Page, PageRequest } from "@/features/data-access/common";
+// "data changed" message (PT409, ACTION_MESSAGES.stale). Each returns the record's version as
+// stored after it (VersionedResult; every Migration 1 edit function returns it), and a screen sends
+// that one with its next edit of the same record (versionAfter). A decision that also changes an
+// ACCOUNT (an approved activation or role change) returns the request's version only: the screen
+// reads the account again before acting on it.
+import type { CommandResult, Page, PageRequest, VersionedResult } from "@/features/data-access/common";
 import type {
   AccountDecisionInput,
   AccountId,
@@ -67,11 +71,13 @@ export interface AccountCommands {
   /**
    * Creator only: creates a Manager, Customer Service or Technician account, immediately (D34). A
    * Creator account is pending the owner's decision (Step 2 plan Q9). No password: the Creator
-   * sets the first one with setPassword (Q1).
+   * sets the first one with setPassword (Q1). Technicians are created with createTechnician (the
+   * account and its technician record); "tech" here creates the account only (Step 2 plan §3.8
+   * phases 1–3), which then shows as "פרופיל טכנאי חסר" (`technicianMissing`).
    */
   createAccount(input: NewAccountInput): Promise<CommandResult<CreatedAccount>>;
   /**
-   * Manager: a Customer Service create / activate / reactivate / role-change request. Nothing
+   * Manager only: a Customer Service create / activate / reactivate / role-change request. Nothing
    * changes until the Creator approves (D34 a); the result carries the new request. The
    * implementation checks the target account's current role against stored data (the input
    * validator checks only the shape): a Manager must never gain extra privileges (D34). A create
@@ -79,7 +85,7 @@ export interface AccountCommands {
    */
   requestAccount(input: AccountRequestInput): Promise<CommandResult<CreatedAccountRequest>>;
   /** Creator only: approves or rejects a pending request at the version read; a rejection needs a reason. */
-  decideAccountRequest(input: AccountDecisionInput): Promise<CommandResult>;
+  decideAccountRequest(input: AccountDecisionInput): Promise<CommandResult<VersionedResult>>;
   /**
    * The requester cancels his own pending requests and his own approved, unfulfilled creations; the
    * Creator cancels approved, unfulfilled creations of anyone. A Manager's pending request is never
@@ -87,19 +93,20 @@ export interface AccountCommands {
    * creation that is cancelled keeps its decider; the audit names who cancelled (Migration 1
    * `cancel_account_request`; TEMPORARY design, PR 1.3 Q16).
    */
-  cancelAccountRequest(input: CancelAccountRequestInput): Promise<CommandResult>;
+  cancelAccountRequest(input: CancelAccountRequestInput): Promise<CommandResult<VersionedResult>>;
   /**
    * Deactivates an account immediately, without approval (D34 b): the Manager for Customer Service
    * and Technician accounts, the Creator for any but its own. Audited; a Manager's deactivation
    * notifies the Creator in the app. Accounts are deactivated, never deleted
    * (docs/database-schema.md).
    */
-  deactivateAccount(input: AccountStateInput): Promise<CommandResult>;
+  deactivateAccount(input: AccountStateInput): Promise<CommandResult<VersionedResult>>;
   /**
    * Activates or reactivates an account immediately: the Creator for any, the Manager for
-   * Technician accounts only (D34 c). A Manager's Customer Service activation is a request.
+   * Technician accounts only (D34 c). A Manager's Customer Service activation is a request: this
+   * command refuses it with "הפעולה דורשת אישור של היוצר." (Migration 1, 55000).
    */
-  activateAccount(input: AccountStateInput): Promise<CommandResult>;
+  activateAccount(input: AccountStateInput): Promise<CommandResult<VersionedResult>>;
   /** Manager or Creator: a technician account with its Settings row, immediately (D34 c). */
   createTechnician(input: NewTechnicianInput): Promise<CommandResult<CreatedTechnician>>;
   /**
@@ -117,11 +124,16 @@ export interface AccountCommands {
   /**
    * Routine profile update (D34 d): name, work phone, invitation alias; never the email. The
    * Manager: Technician and Customer Service accounts, never his own; the Creator: any account.
+   * The checks run on the patch as sent, before the adapter fills the unchanged fields
+   * (UpdateProfileInput).
    */
-  updateProfile(input: UpdateProfileInput): Promise<CommandResult>;
+  updateProfile(input: UpdateProfileInput): Promise<CommandResult<VersionedResult>>;
   /**
    * Routine technician update (D34 d, SE-05): name, colour, device; the Outlook email and "פעיל"
-   * only by the Creator (TEMPORARY, Q14). Every Outlook-email change notifies the Creator (D34 f).
+   * only by the Creator (TEMPORARY, Q14; "פעיל" is also SettingsCommands.setTechnicianActive, under
+   * the same rule). The Manager's caller check runs on the patch as sent, before the adapter fills
+   * the unchanged fields from the row it reads (UpdateTechnicianInput). Every Outlook-email change
+   * notifies the Creator (D34 f).
    */
-  updateTechnician(input: UpdateTechnicianInput): Promise<CommandResult>;
+  updateTechnician(input: UpdateTechnicianInput): Promise<CommandResult<VersionedResult>>;
 }

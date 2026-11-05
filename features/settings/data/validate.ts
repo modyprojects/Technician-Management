@@ -1,8 +1,14 @@
 // Input checks for settings commands, shared by every implementation (simulated now, the server
-// later; the server always re-validates, and checks the caller's role and `settings` itself).
+// later; the server always re-validates, and checks the caller's role itself: the matrix and
+// "פעיל" of a technician by the Creator only for now, the operational lists with `settings`).
 // Each returns a Hebrew error, or null when valid.
-import { expectedVersionError, staleVersionError } from "@/features/accounts/data/validate";
+import {
+  expectedVersionError,
+  MANAGER_TECHNICIAN_FIELDS_PENDING,
+  staleVersionError,
+} from "@/features/accounts/data/validate";
 import { isUuid } from "@/features/data-access/common";
+import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import { isMatrixRole, isPermissionKey, type TechnicianId } from "@/features/reference/data/types";
 import { isTechnicianId } from "@/features/reference/data/validate";
 import {
@@ -30,17 +36,24 @@ export const activeFlagError = (active: boolean): string | null => (typeof activ
 export const technicianIdError = (id: TechnicianId): string | null => (isTechnicianId(id) ? null : "טכנאי לא תקין");
 
 /**
- * "פעיל" of a technician (SE-05) at the version read. `stored` is the technician as stored (its
- * version), undefined when there is none: refused (deny by default). A stale version gets the
- * database's PT409 text (staleVersionError).
+ * "פעיל" of a technician (SE-05) at the version read. The caller first (`viewerRole`, from the
+ * session): the Creator only for now; a Manager gets the TEMPORARY Q14 text (the same field as
+ * accounts.updateTechnician's `active`, which refuses him the same way), anyone else "no
+ * permission". `stored` is the technician as stored (its version), undefined when there is none:
+ * refused as the database does (42501). A stale version gets the database's PT409 text.
  */
-export function technicianActiveError(input: TechnicianActiveInput, stored: { version: number } | undefined): string | null {
+export function technicianActiveError(
+  input: TechnicianActiveInput,
+  stored: { version: number } | undefined,
+  viewerRole: unknown,
+): string | null {
+  if (viewerRole !== "creator") return viewerRole === "mgr" ? MANAGER_TECHNICIAN_FIELDS_PENDING : ACTION_MESSAGES.forbidden;
   if (!input || typeof input !== "object") return "קלט לא תקין";
   return (
     technicianIdError(input.techId) ??
     expectedVersionError(input.expectedVersion) ??
     activeFlagError(input.active) ??
-    (stored ? staleVersionError(input.expectedVersion, stored.version) : "הטכנאי לא נמצא")
+    (stored ? staleVersionError(input.expectedVersion, stored.version) : ACTION_MESSAGES.forbidden)
   );
 }
 
