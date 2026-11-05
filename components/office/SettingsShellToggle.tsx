@@ -7,9 +7,11 @@
 // Accessibility: aria-pressed (as the demo's tog), a Hebrew aria-label, optional aria-describedby.
 // Shared by the operational Settings tabs (technicians, places, reasons, call types, mail,
 // template). What a role may change is decided on the server (G-04); the page offers the tab.
+// "פעיל" of a technician is versioned: each change sends the version read, then the version the
+// last STORED change returned (versionAfter), so pressing again never gets a false "data changed".
 import { useId, useRef, useState } from "react";
 import { useCommands } from "@/features/data-access/commands-context";
-import type { CommandResult } from "@/features/data-access/common";
+import { versionAfter, type CommandResult } from "@/features/data-access/common";
 import type { Commands } from "@/features/data-access/types";
 import type { TechnicianId } from "@/features/reference/data/types";
 import type { SettingId, TechNotificationKey, TemplateFieldKey } from "@/features/settings/data/types";
@@ -18,17 +20,23 @@ const FAILED = "השינוי לא נשמר. נסה שוב.";
 
 /** Which setting the switch changes. */
 export type SettingsToggleAction =
-  | { kind: "technicianActive"; techId: TechnicianId }
+  | { kind: "technicianActive"; techId: TechnicianId; expectedVersion: number }
   | { kind: "placeActive"; id: SettingId }
   | { kind: "reasonActive"; id: SettingId }
   | { kind: "callTypeActive"; id: SettingId }
   | { kind: "techNotification"; key: TechNotificationKey }
   | { kind: "templateRequired"; key: TemplateFieldKey };
 
-function runToggle(settings: Commands["settings"], action: SettingsToggleAction, value: boolean): Promise<CommandResult> {
+/** `expectedVersion`: the version to send for a versioned setting (technicianActive). */
+function runToggle(
+  settings: Commands["settings"],
+  action: SettingsToggleAction,
+  value: boolean,
+  expectedVersion: number,
+): Promise<CommandResult<unknown>> {
   switch (action.kind) {
     case "technicianActive":
-      return settings.setTechnicianActive(action.techId, value);
+      return settings.setTechnicianActive({ techId: action.techId, expectedVersion, active: value });
     case "placeActive":
       return settings.setPlaceActive(action.id, value);
     case "reasonActive":
@@ -61,6 +69,8 @@ export function SettingsShellToggle({
   const [on, setOn] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  /** The version a stored "פעיל" change returned; null until one did (then the version read is sent). */
+  const storedVersion = useRef<number | null>(null);
   const errorId = useId();
 
   async function toggle() {
@@ -72,8 +82,10 @@ export function SettingsShellToggle({
     setError(null);
     let failure: string | null = null;
     try {
-      const result = await runToggle(settings, action, next);
+      const read = storedVersion.current ?? (action.kind === "technicianActive" ? action.expectedVersion : 0);
+      const result = await runToggle(settings, action, next, read);
       if (!result.ok) failure = result.error;
+      else if (action.kind === "technicianActive") storedVersion.current = versionAfter(result, read);
     } catch {
       failure = FAILED;
     } finally {

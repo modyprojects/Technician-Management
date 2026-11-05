@@ -893,9 +893,26 @@ test.describe("account administration (SE-01, D34)", () => {
     await expect(page.getByRole("button", { name: /סיסמה|שינוי מייל/ })).toHaveCount(0);
     await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
     const form = page.getByRole("form", { name: "הוספת משתמש" });
-    await expect(form.getByLabel("הרשאה").locator("option")).toHaveText(["שירות לקוחות", "מנהל", "יוצר"]);
+    // Step 2 PR 2.2 (Q9, TEMPORARY): a Creator account is not offered; the option says why and is disabled.
+    const roles = form.getByLabel("הרשאה").locator("option");
+    await expect(roles).toHaveText(["שירות לקוחות", "מנהל", "יוצר · ממתין להחלטת בעלים"]);
+    await expect(roles.last()).toHaveJSProperty("disabled", true);
+    await expect(roles.first()).toHaveJSProperty("disabled", false);
+    await expect(form.getByLabel("הרשאה")).toHaveValue("cs");
+    await expect(form.locator('option[value="creator"]')).toHaveCount(0);
+    await expect(form.getByText("יצירת חשבון יוצר: ממתין להחלטת בעלים.", { exact: false })).toBeVisible();
     await expect(form.locator('input[type="password"]')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("Creator: \"בקשות לאישור\" offers approve and reject only, never a cancel of a Manager's request (PR 2.2 g)", async ({
+    page,
+  }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    await expect(requests.getByRole("button", { name: /^אישור: / })).toHaveCount(2);
+    await expect(requests.getByRole("button", { name: /^דחייה: / })).toHaveCount(2);
+    await expect(requests.getByRole("button", { name: /^ביטול הבקשה/ })).toHaveCount(0);
   });
 
   test("Creator: rejecting without a reason is blocked; with a reason it is simulated", async ({ page }) => {
@@ -971,8 +988,11 @@ test.describe("account administration (SE-01, D34)", () => {
     await expect(form.getByLabel("מייל", { exact: true })).toHaveAttribute("aria-invalid", "true");
     await expect(form.getByLabel("שם", { exact: true })).not.toHaveAttribute("aria-invalid", "true");
 
+    // Step 2 PR 2.2 (h): a request stores no phone; it is added after the account is created.
+    await expect(form.getByLabel("טלפון", { exact: true })).toHaveCount(0);
+    await expect(form.locator('input[type="tel"]')).toHaveCount(0);
+    await expect(form).toContainText("את הטלפון מוסיפים אחרי שהחשבון נוצר.");
     await form.getByLabel("מייל", { exact: true }).fill("rep4@example.test");
-    await form.getByLabel("טלפון", { exact: true }).fill("050-000-0199");
     await form.getByRole("button", { name: "שליחה לאישור היוצר" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
     await expect(toast(page)).toContainText("בקשה לאישור היוצר");
@@ -987,6 +1007,8 @@ test.describe("account administration (SE-01, D34)", () => {
 
   test("Manager: deactivation asks to confirm, is immediate and simulated; a pending request can be cancelled", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    // שיראל's stored version is 3 (two routine updates): the screen sends the version it read, so
+    // the simulated check passes (a screen that sent 1 would be refused as stale, PT409).
     await page.getByRole("button", { name: "השבתת החשבון של שיראל" }).click();
     const confirm = page.getByRole("group", { name: /להשבית את החשבון של שיראל/ });
     await expect(confirm).toContainText("היוצר מקבל התראה באפליקציה");
@@ -998,6 +1020,7 @@ test.describe("account administration (SE-01, D34)", () => {
     const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "שיראל" });
     await expect(row).toContainText("לא פעיל");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
     // The confirm panel closed: focus moves to the changed row, never to <body> (F4).
     await expect(row).toBeFocused();
 
@@ -1021,6 +1044,22 @@ test.describe("operational settings (SE-05 to SE-16)", () => {
     await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
     await expect(page.getByRole("form", { name: "הוספת טכנאי" })).toBeVisible();
     expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("technicians: \"פעיל\" of stored technicians sends their versions (PR 2.2 a) and toggles back (simulated)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/techs");
+    for (const name of ["יורם", "אדי"]) {
+      const active = page.getByRole("button", { name: `${name} פעיל – מקבל זימונים חדשים` });
+      await expect(active).toHaveAttribute("aria-pressed", "true");
+      await active.click();
+      await expect(active).toHaveAttribute("aria-pressed", "false");
+      await expect(toast(page).filter({ hasText: "טכנאי לא פעיל" })).toContainText(SIMULATED);
+      await active.click();
+      await expect(active).toHaveAttribute("aria-pressed", "true");
+      await expect(toast(page).filter({ hasText: "טכנאי פעיל · יקבל זימונים חדשים" })).toContainText(SIMULATED);
+    }
+    // No refusal ("הנתונים השתנו בינתיים", an unknown technician) on any switch.
+    await expect(page.locator("main .set-err")).toHaveCount(0);
   });
 
   test("places: the seeded places are in use (no delete); a new place can be added and deleted (SE-06)", async ({ page }) => {
@@ -2663,6 +2702,22 @@ test.describe("D57: Settings › \"משתמשים\" and the landing, negative ac
     // The matrix value is unchanged: the Manager's "הגדרות" key is still off (SE-03, D33).
     await openPage(page, "/dev/demo/office/creator/settings/users");
     await expect(page.getByRole("button", { name: "הגדרות למנהל", exact: true })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the simulated commands' caller is the page's role: `selfRole` mgr on the Manager's tab, creator on the Creator's (PR 2.2 review CA-5)", async ({
+    page,
+  }) => {
+    const selfRole = { mgr: /selfRole\\?"\s*:\s*\\?"mgr\\?"/, creator: /selfRole\\?"\s*:\s*\\?"creator\\?"/ };
+    const manager = await html(page, "/dev/demo/office/mgr/settings/accounts");
+    expect(manager).toMatch(selfRole.mgr);
+    expect(manager).not.toMatch(selfRole.creator);
+    for (const path of ["/dev/demo/office/creator/settings/users", "/dev/demo/office/creator/settings/techs"]) {
+      const body = await html(page, path);
+      expect(body, path).toMatch(selfRole.creator);
+      expect(body, path).not.toMatch(selfRole.mgr);
+    }
+    // Customer Service gets no account state at all.
+    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toContain("selfRole");
   });
 
   test("the landing and the former \"משתמשים\" address answer 307 with the target and no account data", async ({ page }) => {

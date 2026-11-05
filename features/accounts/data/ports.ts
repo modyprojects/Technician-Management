@@ -3,34 +3,64 @@
 // simulated) and, later, by server functions that check authorization in the database under the
 // caller's own session before any Auth admin call (D34). The caller's role comes from the session,
 // never from an argument; a screen only decides what to offer (G-04).
-import type { CommandResult, Page } from "@/features/data-access/common";
+// Command shape (Step 2 PR 2.2): every command that takes `expectedVersion` takes one input object
+// (as products.update, review.resolve, visits.correct). A stale version is refused with the
+// "data changed" message (PT409, ACTION_MESSAGES.stale). Each returns the record's version as
+// stored after it (VersionedResult; every Migration 1 edit function returns it), and a screen sends
+// that one with its next edit of the same record (versionAfter). A decision that also changes an
+// ACCOUNT (an approved activation or role change) returns the request's version only: the screen
+// reads the account again before acting on it.
+import type { CommandResult, Page, PageRequest, VersionedResult } from "@/features/data-access/common";
 import type {
-  AccountDecision,
+  AccountDecisionInput,
   AccountId,
   AccountListQuery,
   AccountRequest,
-  AccountRequestId,
   AccountRequestInput,
   AccountRequestQuery,
+  AccountStateInput,
+  CancelAccountRequestInput,
   CreatedAccount,
   CreatedAccountRequest,
   CreatedTechnician,
+  CreationIntent,
+  CreatorNotice,
   NewAccountInput,
   NewTechnicianInput,
+  UpdateProfileInput,
+  UpdateTechnicianInput,
   UserAccount,
 } from "./types";
 
 export interface AccountsQueries {
   /**
    * Accounts by role (creator, mgr, cs, tech) then name (Hebrew collation), optionally filtered by
-   * role; paged. A role filter with no known role matches nothing (never every account).
+   * role; paged. A role filter with no known role matches nothing (never every account). Each
+   * carries its `version` and `technicianMissing`.
    */
   list(query?: AccountListQuery): Promise<Page<UserAccount>>;
   /**
    * Account requests, newest first, optionally filtered by status; paged. A status filter with no
-   * known status matches nothing.
+   * known status matches nothing. Never returns a creation intent (`direct_create`): see
+   * openCreations().
    */
   requests(query?: AccountRequestQuery): Promise<Page<AccountRequest>>;
+  /**
+   * The viewer's own open creation intents (`direct_create`, approved, no account bound yet), newest
+   * first; paged (default 40, at most 100). Production: `requested_by` is the session's user (RLS
+   * lets a requester read his own rows). The demo adapter has no session and returns every
+   * fictional intent: its loader filters by the viewer before anything reaches a page (PR 2.3).
+   */
+  openCreations(query?: PageRequest): Promise<Page<CreationIntent>>;
+  /**
+   * The Creator's account notices ("התראות חשבונות", D34 b and f; Step 2 plan §3.10), newest first;
+   * paged (default 40, at most 100): pending requests, a Manager's deactivations, and Outlook-email
+   * changes made by anyone but the viewing Creator. Creator only: production denies any other
+   * caller (the adapter checks the role itself, because RLS also lets a Manager read his own audit
+   * rows). The demo adapter has no session: it returns the demo Creator's view, and only the
+   * Creator's loader calls it (PR 2.3). No read/unread state.
+   */
+  creatorNotices(query?: PageRequest): Promise<Page<CreatorNotice>>;
 }
 
 /**
@@ -38,31 +68,72 @@ export interface AccountsQueries {
  * the record as stored, so a screen never builds ids or test markers itself.
  */
 export interface AccountCommands {
-  /** Creator only: creates an account of any role, immediately (D34). */
+  /**
+   * Creator only: creates a Manager, Customer Service or Technician account, immediately (D34). A
+   * Creator account is pending the owner's decision (Step 2 plan Q9). No password: the Creator
+   * sets the first one with setPassword (Q1). Technicians are created with createTechnician (the
+   * account and its technician record); "tech" here creates the account only (Step 2 plan §3.8
+   * phases 1–3), which then shows as "פרופיל טכנאי חסר" (`technicianMissing`).
+   */
   createAccount(input: NewAccountInput): Promise<CommandResult<CreatedAccount>>;
   /**
-   * Manager: a Customer Service create / activate / reactivate / role-change request. Nothing
+   * Manager only: a Customer Service create / activate / reactivate / role-change request. Nothing
    * changes until the Creator approves (D34 a); the result carries the new request. The
    * implementation checks the target account's current role against stored data (the input
-   * validator checks only the shape): a Manager must never gain extra privileges (D34).
+   * validator checks only the shape): a Manager must never gain extra privileges (D34). A create
+   * request carries no phone (the Creator adds it on completion, or later as a routine update).
    */
   requestAccount(input: AccountRequestInput): Promise<CommandResult<CreatedAccountRequest>>;
-  /** Creator only: approves or rejects a pending request; a rejection needs a reason. */
-  decideAccountRequest(requestId: AccountRequestId, decision: AccountDecision): Promise<CommandResult>;
-  /** Cancels a pending request (its Manager, or the Creator). */
-  cancelAccountRequest(requestId: AccountRequestId): Promise<CommandResult>;
+  /** Creator only: approves or rejects a pending request at the version read; a rejection needs a reason. */
+  decideAccountRequest(input: AccountDecisionInput): Promise<CommandResult<VersionedResult>>;
+  /**
+   * The requester cancels his own pending requests and his own approved, unfulfilled creations; the
+   * Creator cancels approved, unfulfilled creations of anyone. A Manager's pending request is never
+   * cancelled by the Creator: he rejects it with a reason (decideAccountRequest). An approved
+   * creation that is cancelled keeps its decider; the audit names who cancelled (Migration 1
+   * `cancel_account_request`; TEMPORARY design, PR 1.3 Q16).
+   */
+  cancelAccountRequest(input: CancelAccountRequestInput): Promise<CommandResult<VersionedResult>>;
   /**
    * Deactivates an account immediately, without approval (D34 b): the Manager for Customer Service
    * and Technician accounts, the Creator for any but its own. Audited; a Manager's deactivation
    * notifies the Creator in the app. Accounts are deactivated, never deleted
    * (docs/database-schema.md).
    */
-  deactivateAccount(accountId: AccountId): Promise<CommandResult>;
+  deactivateAccount(input: AccountStateInput): Promise<CommandResult<VersionedResult>>;
   /**
    * Activates or reactivates an account immediately: the Creator for any, the Manager for
-   * Technician accounts only (D34 c). A Manager's Customer Service activation is a request.
+   * Technician accounts only (D34 c). A Manager's Customer Service activation is a request: this
+   * command refuses it with "הפעולה דורשת אישור של היוצר." (Migration 1, 55000).
    */
-  activateAccount(accountId: AccountId): Promise<CommandResult>;
+  activateAccount(input: AccountStateInput): Promise<CommandResult<VersionedResult>>;
   /** Manager or Creator: a technician account with its Settings row, immediately (D34 c). */
   createTechnician(input: NewTechnicianInput): Promise<CommandResult<CreatedTechnician>>;
+  /**
+   * Creator only (D34 e, D50): sets or resets an account's password. The server first runs
+   * `assert_can_change_credentials` under the caller's session (Creator only, audited), then the
+   * Auth admin call. The password is never logged, echoed, returned or stored by the app; Supabase
+   * decides its strength (Q12). No data is returned.
+   */
+  setPassword(accountId: AccountId, password: string): Promise<CommandResult>;
+  /**
+   * Creator only (D34 e, D50): changes an account's sign-in email, after the same database check.
+   * A test-marked account keeps an example.test address (TEMPORARY, app-only rule, Q17).
+   */
+  changeEmail(accountId: AccountId, email: string): Promise<CommandResult>;
+  /**
+   * Routine profile update (D34 d): name, work phone, invitation alias; never the email. The
+   * Manager: Technician and Customer Service accounts, never his own; the Creator: any account.
+   * The checks run on the patch as sent, before the adapter fills the unchanged fields
+   * (UpdateProfileInput).
+   */
+  updateProfile(input: UpdateProfileInput): Promise<CommandResult<VersionedResult>>;
+  /**
+   * Routine technician update (D34 d, SE-05): name, colour, device; the Outlook email and "פעיל"
+   * only by the Creator (TEMPORARY, Q14; "פעיל" is also SettingsCommands.setTechnicianActive, under
+   * the same rule). The Manager's caller check runs on the patch as sent, before the adapter fills
+   * the unchanged fields from the row it reads (UpdateTechnicianInput). Every Outlook-email change
+   * notifies the Creator (D34 f).
+   */
+  updateTechnician(input: UpdateTechnicianInput): Promise<CommandResult<VersionedResult>>;
 }

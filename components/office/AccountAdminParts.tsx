@@ -5,6 +5,7 @@ import {
   ACCOUNT_REQUEST_KIND_LABELS,
   ACCOUNT_REQUEST_STATUS_LABELS,
   ACCOUNT_ROLE_LABELS,
+  requestOutcomeLine,
   type AccountRef,
   type AccountRequest,
   type AccountRequestStatus,
@@ -102,13 +103,12 @@ export function requestRoleText(r: AccountRequest): string {
 /** "יצירת חשבון · נציגה 3". */
 export const requestTitle = (r: AccountRequest): string => `${ACCOUNT_REQUEST_KIND_LABELS[r.kind]} · ${r.target.name}`;
 
-/** "אושרה על ידי משתמש יוצר · 14.09 12:20" (or who cancelled). */
+/**
+ * "אושרה על ידי משתמש יוצר · 14.09 12:20" (or who cancelled a pending request); an approved creation
+ * cancelled later: "אושרה על ידי … · בוטלה" (requestOutcomeLine).
+ */
 export function requestOutcomeText(entry: AccountRequestEntry): string | null {
-  const r = entry.request;
-  if (r.status === "pending") return null;
-  const who = r.decidedBy?.name ? ` על ידי ${r.decidedBy.name}` : "";
-  const when = entry.decidedLabel ? ` · ${entry.decidedLabel}` : "";
-  return `${ACCOUNT_REQUEST_STATUS_LABELS[r.status]}${who}${when}`;
+  return requestOutcomeLine(entry.request, entry.decidedLabel);
 }
 
 /** Name with the 🧪 badge of a test user (SIM-18) and an optional line under it. */

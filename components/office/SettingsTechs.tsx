@@ -4,7 +4,8 @@
 // SIM-18): colour, name (🧪 on test records), phone, Outlook email, device and "פעיל".
 // - "פעיל" is eligibility for new invitations (SE-05): an inactive technician gets no new
 //   invitations and keeps his history. It does not control sign-in, which follows the user
-//   account (D34, D36). Each change runs useCommands().settings.setTechnicianActive.
+//   account (D34, D36). Each change runs useCommands().settings.setTechnicianActive with the
+//   row's version (`expectedVersion`; a stale one gets the "data changed" message, PT409).
 // - "+ הוספת טכנאי" (the demo's toast button) opens the shared technician form (AccountForm "tech",
 //   the same form as the Manager's screen), which runs useCommands().accounts.createTechnician: a
 //   technician account with its Settings row, immediate (D34 c). The colour is an allowlisted
@@ -106,7 +107,7 @@ export function SettingsTechs({ technicians }: { technicians: Bounded<Technician
                   <td className="col-fit set-col-wide">{t.device}</td>
                   <td className="col-center col-fit">
                     <SettingsShellToggle
-                      action={{ kind: "technicianActive", techId: t.id }}
+                      action={{ kind: "technicianActive", techId: t.id, expectedVersion: t.version }}
                       initial={t.active}
                       label={`${t.name} פעיל – מקבל זימונים חדשים`}
                     />

@@ -3,11 +3,14 @@
 // Account forms of account administration (SE-01, D34), opened inline under a card's "+" button
 // (the demo's "+ הוספת משתמש" and "+ הוספת טכנאי" toasts, L943 and L948, become real forms). Same
 // look as the other Settings add forms (styles/ui.css "settings-ops": .set-form, colour swatches).
-// - "account": the Creator's "+ הוספת משתמש" (Customer Service, Manager or Creator), immediate.
-//   Technicians are added with the "tech" form (Settings › "טכנאים", the Manager's screen).
+// - "account": the Creator's "+ הוספת משתמש" (Customer Service or Manager), immediate. A Creator
+//   account is not offered: TEMPORARY (Step 2 plan Q9; D49), the role list shows a disabled
+//   "יוצר · ממתין להחלטת בעלים" and the note says so. Technicians are added with the "tech" form
+//   (Settings › "טכנאים", the Manager's screen).
 // - "cs-request": the Manager's "+ בקשת חשבון שירות לקוחות": a request that waits for the Creator;
-//   nothing is created until the Creator approves (D34 a).
-// - "tech": "+ הוספת טכנאי" (Settings › "טכנאים" and the Manager's "ניהול משתמשים"), immediate
+//   nothing is created until the Creator approves (D34 a). Name and email only: a request stores
+//   no phone (Migration 1); it is added after the account is created (plan §3.7 h).
+// - "tech": "+ הוספת טכנאי" (Settings › "טכנאים" and the Manager's Settings › "משתמשים"), immediate
 //   (D34 c): one form for both screens.
 // No password field and no public sign-up (D50): until an email provider is approved the Creator
 // hands out the first sign-in details. Each submit runs one command from useCommands().accounts;
@@ -18,14 +21,16 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   ACCOUNT_ROLE_LABELS,
   DEFAULT_TECHNICIAN_DEVICE,
+  isNewAccountRole,
   type AccountRequest,
-  type AccountRole,
+  type NewAccountRole,
   type UserAccount,
 } from "@/features/accounts/data/types";
 import {
   accountNameError,
   accountRequestError,
   ACCOUNT_NAME_MAX,
+  CREATOR_ACCOUNT_PENDING,
   DEVICE_MAX,
   deviceError,
   EMAIL_MAX,
@@ -52,8 +57,14 @@ export type AccountFormResult =
   | { kind: "tech"; simulated: boolean; account: UserAccount; technician: TechnicianSetting }
   | { kind: "cs-request"; simulated: boolean; request: AccountRequest };
 
-/** Roles of "+ הוספת משתמש" (technicians: the "tech" form, with colour and device). */
-const OFFICE_ACCOUNT_ROLES: readonly AccountRole[] = ["cs", "mgr", "creator"];
+/**
+ * Roles of "+ הוספת משתמש" (technicians: the "tech" form, with colour and device). The Creator role
+ * follows as a disabled option (TEMPORARY, Q9): it can never be chosen or sent.
+ */
+const OFFICE_ACCOUNT_ROLES: readonly NewAccountRole[] = ["cs", "mgr"];
+
+/** The disabled role option's text (Q9). */
+const CREATOR_PENDING_OPTION = `${ACCOUNT_ROLE_LABELS.creator} · ממתין להחלטת בעלים`;
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 
@@ -64,8 +75,8 @@ const LABELS: Readonly<Record<AccountFormKind, string>> = {
 };
 
 const NOTES: Readonly<Record<AccountFormKind, string>> = {
-  account: "החשבון נוצר מיד. אין הרשמה עצמית: עד שיאושר ספק מייל, היוצר מוסר את פרטי הכניסה הראשוניים. טכנאים מוסיפים בלשונית \"טכנאים\".",
-  "cs-request": "הבקשה עוברת לאישור היוצר. עד שהיוצר מאשר לא נוצר חשבון ושום דבר לא משתנה.",
+  account: `החשבון נוצר מיד. אין הרשמה עצמית: עד שיאושר ספק מייל, היוצר מוסר את פרטי הכניסה הראשוניים. טכנאים מוסיפים בלשונית "טכנאים". ${CREATOR_ACCOUNT_PENDING}.`,
+  "cs-request": "הבקשה עוברת לאישור היוצר. עד שהיוצר מאשר לא נוצר חשבון ושום דבר לא משתנה. את הטלפון מוסיפים אחרי שהחשבון נוצר.",
   tech: "הטכנאי נוסף מיד. המייל משמש לכניסה לאפליקציה ולשיוך זימונים מ-Outlook לטכנאי.",
 };
 
@@ -100,7 +111,9 @@ export function AccountForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState<AccountRole>("cs");
+  const [role, setRole] = useState<NewAccountRole>("cs");
+  /** The Customer Service request has no phone field (a request stores no phone). */
+  const withPhone = kind !== "cs-request";
   const [color, setColor] = useState<TechnicianColorToken>(TECHNICIAN_COLOR_TOKENS[0]);
   const [device, setDevice] = useState(DEFAULT_TECHNICIAN_DEVICE);
   const [busy, setBusy] = useState(false);
@@ -118,8 +131,8 @@ export function AccountForm({
     const fields: [Field, string | null][] = [
       ["name", accountNameError(values.name)],
       ["email", emailError(values.email)],
-      ["phone", phoneError(values.phone)],
     ];
+    if (withPhone) fields.push(["phone", phoneError(values.phone)]);
     if (kind === "tech") fields.push(["device", deviceError(values.device)]);
     const hit = fields.find(([, message]) => message !== null);
     if (hit) return { field: hit[0], message: hit[1] as string };
@@ -130,7 +143,7 @@ export function AccountForm({
         ? newAccountError({ ...base, role })
         : kind === "tech"
           ? newTechnicianError({ ...base, color, device: values.device })
-          : accountRequestError({ kind: "create", ...base });
+          : accountRequestError({ kind: "create", name: values.name, email: values.email });
     return rest ? { field: null, message: rest } : null;
   }
 
@@ -155,7 +168,7 @@ export function AccountForm({
     setInvalid(null);
     try {
       if (kind === "cs-request") {
-        const r = await accounts.requestAccount({ kind: "create", ...base });
+        const r = await accounts.requestAccount({ kind: "create", name: values.name, email: values.email });
         if (!r.ok || !r.data) return fail(r.ok ? FAILED : r.error, null);
         onDone({ kind, simulated: r.simulated, request: r.data.request });
       } else if (kind === "tech") {
@@ -223,32 +236,44 @@ export function AccountForm({
           {...fieldProps("email")}
         />
       </label>
-      <label>
-        טלפון
-        <input
-          ref={phoneRef}
-          type="tel"
-          dir="ltr"
-          value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value);
-            edited("phone");
-          }}
-          required
-          maxLength={PHONE_MAX}
-          autoComplete="off"
-          {...fieldProps("phone")}
-        />
-      </label>
+      {withPhone && (
+        <label>
+          טלפון
+          <input
+            ref={phoneRef}
+            type="tel"
+            dir="ltr"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              edited("phone");
+            }}
+            required
+            maxLength={PHONE_MAX}
+            autoComplete="off"
+            {...fieldProps("phone")}
+          />
+        </label>
+      )}
       {kind === "account" && (
         <label>
           הרשאה
-          <select value={role} onChange={(e) => setRole(e.target.value as AccountRole)}>
+          <select
+            value={role}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (isNewAccountRole(next)) setRole(next);
+            }}
+          >
             {OFFICE_ACCOUNT_ROLES.map((r) => (
               <option key={r} value={r}>
                 {ACCOUNT_ROLE_LABELS[r]}
               </option>
             ))}
+            {/* TEMPORARY (Q9): shown, never selectable, no `creator` value. */}
+            <option value="" disabled>
+              {CREATOR_PENDING_OPTION}
+            </option>
           </select>
         </label>
       )}

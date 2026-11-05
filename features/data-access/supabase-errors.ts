@@ -18,6 +18,16 @@ export const ACTION_MESSAGES = {
 } as const;
 
 /**
+ * Account-request refusals that the shared validators also return (features/accounts/data/validate.ts),
+ * so the simulated commands and the real adapter show the same text.
+ */
+export const REQUEST_MESSAGES = {
+  cannotCancel: "לא ניתן לבטל את הבקשה.",
+  notPending: "הבקשה כבר טופלה.",
+  needsCreator: "הפעולה דורשת אישור של היוצר.",
+} as const;
+
+/**
  * Sign-in messages (plan §3.4): one message for every credential failure (wrong password, unknown
  * email, inactive account, no profile), one for every service failure (not configured,
  * unreachable, rate-limited, database objects missing). Neither reveals anything about an account.
@@ -91,11 +101,11 @@ const DATABASE_KINDS: ReadonlyMap<string, DatabaseErrorKind> = new Map([
 const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["an open request exists", "קיימת כבר בקשה פתוחה."],
   ["a pending request exists", "קיימת כבר בקשה פתוחה."],
-  ["the request is not pending", "הבקשה כבר טופלה."],
+  ["the request is not pending", REQUEST_MESSAGES.notPending],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
   ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
-  ["the request cannot be cancelled", "לא ניתן לבטל את הבקשה."],
-  ["requires the Creator's approval", "הפעולה דורשת אישור של היוצר."],
+  ["the request cannot be cancelled", REQUEST_MESSAGES.cannotCancel],
+  ["requires the Creator's approval", REQUEST_MESSAGES.needsCreator],
   ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
   ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],
   ["profiles: a profile with a technician record keeps its role", "לא ניתן לשנות את התפקיד של חשבון טכנאי."],

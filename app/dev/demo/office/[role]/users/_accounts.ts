@@ -8,17 +8,19 @@ import type { AccountAdminData, AccountRequestEntry } from "@/components/office/
 import type { AccountRef, AccountRequest, AccountRole } from "@/features/accounts/data/types";
 import { MAX_PAGE_LIMIT } from "@/features/data-access/common";
 import type { OfficeRole } from "@/features/reference/data/types";
-import { demoDataAccess } from "../../../_data/adapter";
+import { demoDataAccess, demoSession } from "../../../_data/adapter";
 import { notificationTimeLabel } from "../../../_data/dates";
 import { accountAdminScope, VIEWPOINTS } from "../../../_data/roles";
 
 /** Roles the Manager administers (D34): Customer Service and Technician accounts. */
 const MANAGER_SCOPE_ROLES: readonly AccountRole[] = ["cs", "tech"];
 
-/** The viewpoint's own account (demo stand-in for the session's user, G-03). */
+/**
+ * The viewpoint's own account through the demo session port (features/auth/data; production:
+ * `getSessionUser()`, G-03). Null when the account is missing or inactive (fail closed).
+ */
 export async function signedInAccount(role: OfficeRole): Promise<AccountRef | null> {
-  const own = await demoDataAccess.accounts.list({ roles: [role], limit: MAX_PAGE_LIMIT });
-  const me = own.items.find((a) => a.name === VIEWPOINTS[role].who);
+  const me = await demoSession({ role, name: VIEWPOINTS[role].who }).current();
   return me ? { id: me.id, name: me.name } : null;
 }
 

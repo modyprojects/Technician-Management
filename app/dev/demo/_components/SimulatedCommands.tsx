@@ -9,27 +9,38 @@ import { useMemo, type ReactNode } from "react";
 import {
   ACCOUNT_REQUEST_KIND_LABELS,
   ACCOUNT_ROLE_LABELS,
+  technicianProfileMissing,
   type AccountRef,
   type AccountRequest,
-  type AccountRequestStatus,
   type AccountRole,
   type UserAccount,
 } from "@/features/accounts/data/types";
 import {
-  accountDecisionError,
+  accountAdminCallerError,
   accountIdError,
   accountRequestError,
   accountRequestTargetError,
-  accountStateError,
+  accountStateCommandError,
+  cancelRequestError,
+  creatorOnlyError,
+  credentialEmailError,
+  credentialsCallerError,
+  decideRequestError,
+  managerOnlyError,
   newAccountError,
   newTechnicianError,
-  pendingRequestError,
-  requestIdError,
+  passwordError,
+  profileUpdateCommandError,
+  technicianUpdateCommandError,
   testAccountEmailError,
+  type AccountRequestStored,
+  type AccountStored,
+  type AccountViewer,
 } from "@/features/accounts/data/validate";
 import { cancelReasonError } from "@/features/calls/data/validate";
 import { CommandsProvider } from "@/features/data-access/commands-context";
-import { ownValue, type CommandResult } from "@/features/data-access/common";
+import { ownValue, type CommandResult, type VersionedResult } from "@/features/data-access/common";
+import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
 import { productEditError } from "@/features/products/data/validate";
@@ -48,7 +59,7 @@ import {
   settingIdError,
   settingNameError,
   techNotificationError,
-  technicianIdError,
+  technicianActiveError,
   templateLabelRequiredError,
 } from "@/features/settings/data/validate";
 import {
@@ -108,12 +119,27 @@ export type SimulatedServerState = {
   places?: Readonly<Record<string, { inUse: boolean }>>;
   /** Follow-up reasons by id (delete only a user-added, never-used reason, SE-07). */
   reasons?: Readonly<Record<string, { inUse: boolean; userAdded: boolean }>>;
-  /** Account requests in the viewer's scope by id: the stored status (decide or cancel only while pending, D34). */
-  requests?: Readonly<Record<string, AccountRequestStatus>>;
-  /** Accounts in the viewer's scope by id (D34). */
-  accounts?: Readonly<Record<string, { name: string; email: string; role: AccountRole; active: boolean }>>;
+  /**
+   * Account requests in the viewer's scope by id, as stored: status, version, requester and whether
+   * it is an unfulfilled creation (decide only while pending; cancel per cancelRequestError, D34).
+   */
+  requests?: Readonly<Record<string, AccountRequestStored>>;
+  /** Accounts in the viewer's scope by id, as stored (role, state, version, test marker; D34). */
+  accounts?: Readonly<Record<string, AccountStored>>;
+  /**
+   * Settings › טכנאים: the technician records on the screen by technician id (version, name, test
+   * marker). A technician this provider created counts as version 1. The tab also passes
+   * `selfRole` ("פעיל" is the Creator's only for now, Q14), never `self` (no account ids there).
+   */
+  technicians?: Readonly<Record<string, { version: number; name: string; isTest: boolean }>>;
   /** The signed-in account (production: from the session, G-03). */
   self?: AccountRef | null;
+  /**
+   * The signed-in account's role (production: the session's `profiles.role`, never an argument).
+   * Named `selfRole`, not `role`: the Manager's page payload must never hold `role:"mgr"` (its
+   * account scope is Customer Service and Technician only; tests/e2e/demo.spec.ts).
+   */
+  selfRole?: AccountRole;
   /**
    * The signed-in user's name only, for a screen that must not carry account ids (phase E P1:
    * account ids only on the account screens): the call card's closed-visit corrections show who
@@ -159,6 +185,13 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
       created.add(id);
       return id;
     };
+
+    /** The caller as the server would take it from the session; null without one (deny by default). */
+    const viewer: AccountViewer | null = state.self && state.selfRole ? { id: state.self.id, role: state.selfRole } : null;
+
+    /** A technician record as stored: one this provider created counts as version 1 (never stored). */
+    const storedTechnician = (id: string): { version: number; name: string; isTest: boolean } | undefined =>
+      typeof id === "string" && created.has(id) ? { version: 1, name: "", isTest: true } : ownValue(state.technicians, id);
 
     /**
      * Validates, waits, shows the demo toast and returns the simulated result. Validation, the
@@ -315,10 +348,14 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
             () =>
               `מטריצת הרשאות · ${PERMISSION_LABELS[key].label} · ${ACCOUNT_ROLE_LABELS[role]}: ${onOff(value)} · ערך זמני עד אישור הבעלים`,
           ),
-        setTechnicianActive: (techId, active) =>
+        // Settings › טכנאים nests the technicians (with versions) and the viewer's role; elsewhere it
+        // fails (deny by default). Creator only for now (Q14). Returns the version checked: nothing
+        // is stored, so it is unchanged.
+        setTechnicianActive: (input) =>
           run(
-            () => [technicianIdError(techId), activeFlagError(active)],
-            () => (active ? "טכנאי פעיל · יקבל זימונים חדשים" : "טכנאי לא פעיל · לא יקבל זימונים חדשים, ההיסטוריה נשמרת"),
+            () => [technicianActiveError(input, storedTechnician(input?.techId), state.selfRole)],
+            () => (input.active ? "טכנאי פעיל · יקבל זימונים חדשים" : "טכנאי לא פעיל · לא יקבל זימונים חדשים, ההיסטוריה נשמרת"),
+            (): VersionedResult => ({ version: storedTechnician(input.techId)?.version ?? input.expectedVersion }),
           ),
         addPlace: (input) =>
           run(
@@ -383,13 +420,21 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
             () => `תבנית זימון · שדה ${required ? "חובה" : "רשות"}`,
           ),
       },
+      // The account screens nest the accounts and requests in the viewer's scope, the viewer and
+      // his role (accountAdminState); elsewhere the stored checks fail (deny by default). Every
+      // command checks the caller's role first, as Migration 1's `require_caller` (the shared
+      // validators: creatorOnlyError, managerOnlyError, accountAdminCallerError and the command
+      // checks below). Not modelled: Migration 1 also refuses a test-marked Creator's decisions,
+      // cancellations of others' requests and credential changes (every demo account is
+      // test-marked). Versions never advance here (nothing is stored): a versioned command returns
+      // the version it checked, and a simulated row offers no second action.
       accounts: {
         createAccount: (input) =>
           run(
-            () => [newAccountError(input), testAccountEmailError(input.email)],
+            () => [creatorOnlyError(state.selfRole), newAccountError(input), testAccountEmailError(input.email)],
             () => `יצירת חשבון ${ACCOUNT_ROLE_LABELS[input.role]} · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
-            (): { account: UserAccount } => ({
-              account: {
+            (): { account: UserAccount } => {
+              const account = {
                 id: remember(simId("account")),
                 name: input.name.trim(),
                 role: input.role,
@@ -398,15 +443,19 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                 active: true,
                 deactivatedAt: null,
                 technicianId: null,
+                version: 1,
                 isTest: true,
-              },
-            }),
+              };
+              // A Technician created here has no technician record yet (Step 2 plan §3.8 phase 4).
+              return { account: { ...account, technicianMissing: technicianProfileMissing(account) } };
+            },
           ),
         requestAccount: (input) =>
           run(
             () => [
+              managerOnlyError(state.selfRole),
+              state.self ? null : ACTION_MESSAGES.forbidden,
               accountRequestError(input),
-              state.self ? null : "אין משתמש מחובר",
               input.kind === "create"
                 ? testAccountEmailError(input.email)
                 : accountRequestTargetError(input.kind, ownValue(state.accounts, input.accountId)),
@@ -435,42 +484,45 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                   reason: null,
                   decidedBy: null,
                   decidedAt: null,
+                  cancelledAfterApproval: false,
+                  version: 1,
                   isTest: true,
                 },
               };
             },
           ),
-        decideAccountRequest: (requestId, decision) =>
+        decideAccountRequest: (input) =>
           run(
-            () => [requestIdError(requestId), accountDecisionError(decision), pendingRequestError(ownValue(state.requests, requestId))],
+            () => [decideRequestError(input, ownValue(state.requests, input?.requestId), state.selfRole)],
             () =>
-              decision.outcome === "approve"
+              input.decision.outcome === "approve"
                 ? "אישור הבקשה · נכנסת לתוקף"
-                : `דחיית הבקשה · סיבה: ${excerpt(decision.reason)}`,
+                : `דחיית הבקשה · סיבה: ${excerpt(input.decision.reason)}`,
+            (): VersionedResult => ({ version: ownValue(state.requests, input.requestId)?.version ?? input.expectedVersion }),
           ),
-        cancelAccountRequest: (requestId) =>
+        cancelAccountRequest: (input) =>
           run(
-            () => [requestIdError(requestId), pendingRequestError(ownValue(state.requests, requestId))],
+            () => [cancelRequestError(input, ownValue(state.requests, input?.requestId), viewer)],
             () => "ביטול הבקשה",
+            (): VersionedResult => ({ version: ownValue(state.requests, input.requestId)?.version ?? input.expectedVersion }),
           ),
-        deactivateAccount: (accountId) =>
+        deactivateAccount: (input) =>
           run(
-            () => [
-              accountIdError(accountId),
-              state.self && state.self.id === accountId ? "אי אפשר להשבית את החשבון שלך" : null,
-              accountStateError("deactivate", ownValue(state.accounts, accountId)?.active),
-            ],
+            () => [accountStateCommandError("deactivate", input, ownValue(state.accounts, input?.accountId), viewer)],
             // The Creator is notified only of a Manager's deactivation (D34 b); the screen says so.
-            () => `השבתת חשבון · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
+            () => `השבתת חשבון · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · מיידית · נרשם ביומן הביקורת`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
           ),
-        activateAccount: (accountId) =>
+        activateAccount: (input) =>
           run(
-            () => [accountIdError(accountId), accountStateError("activate", ownValue(state.accounts, accountId)?.active)],
-            () => `הפעלת חשבון · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · מיידית`,
+            () => [accountStateCommandError("activate", input, ownValue(state.accounts, input?.accountId), viewer)],
+            () => `הפעלת חשבון · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · מיידית`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
           ),
+        // The Manager's accounts tab and the Creator's Settings › טכנאים pass the viewer's role.
         createTechnician: (input) =>
           run(
-            () => [newTechnicianError(input), testAccountEmailError(input.email)],
+            () => [accountAdminCallerError(state.selfRole), newTechnicianError(input), testAccountEmailError(input.email)],
             () => `הוספת טכנאי · ${excerpt(input.name, 40)} · לא נוצר משתמש`,
             (): { account: UserAccount; technician: TechnicianSetting } => {
               const technician: TechnicianSetting = {
@@ -481,23 +533,63 @@ export function SimulatedCommandsProvider({ state = EMPTY_STATE, children }: { s
                 email: input.email.trim(),
                 active: true,
                 device: input.device.trim(),
+                version: 1,
                 isTest: true,
               };
-              return {
-                technician,
-                account: {
-                  id: remember(simId("account")),
-                  name: technician.name,
-                  role: "tech",
-                  email: technician.email,
-                  phone: technician.phone,
-                  active: true,
-                  deactivatedAt: null,
-                  technicianId: technician.id,
-                  isTest: true,
-                },
+              const account = {
+                id: remember(simId("account")),
+                name: technician.name,
+                role: "tech" as const,
+                email: technician.email,
+                phone: technician.phone,
+                active: true,
+                deactivatedAt: null,
+                technicianId: technician.id,
+                version: 1,
+                isTest: true,
               };
+              return { technician, account: { ...account, technicianMissing: technicianProfileMissing(account) } };
             },
+          ),
+        // D34 e, D50: the Creator only. Nothing is stored, sent or returned; the password never
+        // appears in a message or a toast. No screen calls these in PR 2.2 (dialogs: PR 2.3).
+        // An unknown account is the database's 22023 (assert_can_change_credentials).
+        setPassword: (accountId, password) =>
+          run(
+            () => [
+              credentialsCallerError(state.selfRole),
+              accountIdError(accountId),
+              ownValue(state.accounts, accountId) ? null : ACTION_MESSAGES.invalid,
+              passwordError(password),
+            ],
+            () => `הגדרת סיסמה · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · הסיסמה לא נשמרה ולא נשלחה`,
+          ),
+        changeEmail: (accountId, email) =>
+          run(
+            () => {
+              const stored = ownValue(state.accounts, accountId);
+              return [
+                credentialsCallerError(state.selfRole),
+                accountIdError(accountId),
+                stored ? null : ACTION_MESSAGES.invalid,
+                stored ? credentialEmailError(email, stored) : null,
+              ];
+            },
+            () => `שינוי כתובת מייל · ${excerpt(ownValue(state.accounts, accountId)?.name ?? "", 40)} · לא נשמר`,
+          ),
+        // D34 d (Q14 for a Manager's Outlook email and "פעיל"). No screen calls these in PR 2.2.
+        updateProfile: (input) =>
+          run(
+            () => [profileUpdateCommandError(input, ownValue(state.accounts, input?.accountId), viewer)],
+            () =>
+              `עדכון פרטים · ${excerpt(input.name ?? ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · נרשם ביומן הביקורת`,
+            (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
+          ),
+        updateTechnician: (input) =>
+          run(
+            () => [technicianUpdateCommandError(input, storedTechnician(input?.technicianId), viewer)],
+            () => `עדכון פרטי טכנאי · ${excerpt(input.name ?? storedTechnician(input.technicianId)?.name ?? "", 40)}`,
+            (): VersionedResult => ({ version: storedTechnician(input.technicianId)?.version ?? input.expectedVersion }),
           ),
       },
       products: {

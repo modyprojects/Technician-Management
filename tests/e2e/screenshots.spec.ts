@@ -644,3 +644,43 @@ test.describe("manager-dashboard review screenshots", () => {
     });
   }
 });
+
+// Step 2 PR 2.2 (port alignment): the two visible demo changes. "+ הוספת משתמש" no longer offers
+// "יוצר" (a disabled "יוצר · ממתין להחלטת בעלים" and a note, TEMPORARY Q9), and the Manager's
+// "+ בקשת חשבון שירות לקוחות" has no phone field. The demo counterpart of the Creator's form is
+// docs/review/ui-demo-3/<w>-demo-settings-users.png (docs/demo.html's "+ הוספת משתמש" is a toast);
+// docs/demo.html has no request form. A closed native select hides its options, so a crop of the
+// form shows the role list opened as a list box (size attribute set for the shot only). Run only
+// this block:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-pr22"
+const OUT_PR22 = path.resolve("docs/review/step2-pr22");
+
+test.describe("step2-pr22 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-pr22 screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_PR22, `${size.width}-${name}.png`);
+
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
+      const account = page.getByRole("form", { name: "הוספת משתמש" });
+      await expect(account).toBeVisible();
+      await appShot(page, file("creator-add-user-form"), true);
+      // The role options as a list (screenshot only): "יוצר · ממתין להחלטת בעלים" is greyed out.
+      await account.getByLabel("הרשאה").evaluate((el) => el.setAttribute("size", "3"));
+      await account.scrollIntoViewIfNeeded();
+      await account.screenshot({ path: file("creator-add-user-roles") });
+
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await page.getByRole("button", { name: "+ בקשת חשבון שירות לקוחות" }).click();
+      const request = page.getByRole("form", { name: "בקשת חשבון שירות לקוחות" });
+      await expect(request).toBeVisible();
+      await appShot(page, file("mgr-cs-request-form"), true);
+      await request.scrollIntoViewIfNeeded();
+      await request.screenshot({ path: file("mgr-cs-request-form-crop") });
+    });
+  }
+});

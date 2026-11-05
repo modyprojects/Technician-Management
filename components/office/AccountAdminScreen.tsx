@@ -6,12 +6,19 @@
 // - "all": the Creator (Settings › "משתמשים והרשאות"): every account; "+ הוספת משתמש"
 //   (immediate; technicians are added on Settings › "טכנאים"); deactivate and activate any account
 //   but the Creator's own; "בקשות לאישור" with approve / reject (AccountAdminRequests, "decide").
-// - "cs-tech": the Manager ("ניהול משתמשים"): Customer Service and Technician accounts only.
+// - "cs-tech": the Manager (Settings › "משתמשים", D57 (1)): Customer Service and Technician accounts only.
 //   "+ בקשת חשבון שירות לקוחות" makes a pending request that waits for the Creator (D34 a);
 //   "+ הוספת טכנאי" and a technician's activation are immediate (D34 c); deactivation of a Customer
 //   Service or Technician account is immediate, audited, and the Creator is notified in the app
 //   (D34 b); activating a Customer Service account is a request. "הבקשות שלי" lists the Manager's
-//   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e).
+//   own requests, with "ביטול הבקשה" while pending. No password or email editing (D34 e; the
+//   Creator's credential dialogs come in Step 2 PR 2.3).
+// Each (de)activation and decision sends the version read (`expectedVersion`); a stale one is
+// refused with the "data changed" message (PT409). After a STORED action the row keeps the version
+// the command returned (versionAfter), so the next action on it is not refused as stale. A stored
+// approval of an activation or role change also changes the account, whose new version the
+// decision does not return: the real adapter's screen reads the account again (router.refresh,
+// Step 2 PR 2.5+) before offering another action on that row.
 // Every action runs one command from useCommands().accounts, and the screen reads the result: a
 // SIMULATED result (the UI demo) shows the change on its row, marked "לא נשמר · פעולה מדומה", with
 // no further action (nothing was stored, so a second action would act on stale data), and says
@@ -30,7 +37,7 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import { useCommands } from "@/features/data-access/commands-context";
-import type { CommandResult } from "@/features/data-access/common";
+import { versionAfter, type CommandResult } from "@/features/data-access/common";
 import { AccountForm, type AccountFormKind, type AccountFormResult } from "./AccountAdminForms";
 import {
   AccountName,
@@ -149,9 +156,9 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   function deactivate(a: UserAccount) {
     void act(
       `deactivate-${a.id}`,
-      () => commands.deactivateAccount(a.id),
+      () => commands.deactivateAccount({ accountId: a.id, expectedVersion: a.version }),
       (r) => {
-        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: false } : x)));
+        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: false, version: versionAfter(r, x.version) } : x)));
         markChanged(a.id, r.simulated);
         setConfirm(null);
         setFocusRow(a.id);
@@ -171,9 +178,11 @@ export function AccountAdminScreen({ scope, accounts, requests, self }: AccountA
   function activate(a: UserAccount) {
     void act(
       `activate-${a.id}`,
-      () => commands.activateAccount(a.id),
+      () => commands.activateAccount({ accountId: a.id, expectedVersion: a.version }),
       (r) => {
-        setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, active: true, deactivatedAt: null } : x)));
+        setRows((prev) =>
+          prev.map((x) => (x.id === a.id ? { ...x, active: true, deactivatedAt: null, version: versionAfter(r, x.version) } : x)),
+        );
         markChanged(a.id, r.simulated);
         setFocusRow(a.id);
         setMessage({ kind: "ok", text: said(r.simulated, `החשבון של ${a.name} היה מופעל מיד.`, `החשבון של ${a.name} הופעל.`) });

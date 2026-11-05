@@ -1,11 +1,14 @@
 // What the simulated commands of one office screen check against stored data, as the server
 // would (SimulatedServerState): read through the data-access layer, scoped to that screen. Only
-// the Settings tabs that delete (places, reasons), the account screens (Settings › "משתמשים
-// והרשאות" and the Manager's Settings › "משתמשים"), "מוצרים" (products, brands, suppliers), a
-// review item ("פריטים לבדיקה") and the call card's closed-visit corrections receive it; every
-// other demo page gets the empty state, so no other page carries account or request ids. The real
-// server checks these itself, in the database, under the caller's session.
+// the Settings tabs that delete (places, reasons) or carry versions (technicians), the account
+// screens (Settings › "משתמשים והרשאות" and the Manager's Settings › "משתמשים"), "מוצרים"
+// (products, brands, suppliers), a review item ("פריטים לבדיקה") and the call card's closed-visit
+// corrections receive it; every other demo page gets the empty state, so no other page carries
+// account or request ids. The real server checks these itself, in the database, under the
+// caller's session.
 import type { AccountAdminData } from "@/components/office/AccountAdminParts";
+import type { AccountRequest, UserAccount } from "@/features/accounts/data/types";
+import type { AccountRequestStored, AccountStored } from "@/features/accounts/data/validate";
 import type { ProductListItem } from "@/features/products/data/types";
 import type { OfficeRole } from "@/features/reference/data/types";
 import type { ReviewItemDetail } from "@/features/review/data/types";
@@ -16,21 +19,55 @@ import { demoDataAccess } from "../../_data/adapter";
 import { closedVisitCorrectionsOffered } from "../../_data/roles";
 import { signedInAccount } from "./users/_accounts";
 
-/** Account administration: the accounts and requests in the viewer's scope, and the viewer. */
-export function accountAdminState(admin: AccountAdminData | null): SimulatedServerState {
+const accountStored = (a: UserAccount): AccountStored => ({
+  name: a.name,
+  email: a.email,
+  role: a.role,
+  active: a.active,
+  version: a.version,
+  isTest: a.isTest,
+  technicianId: a.technicianId,
+});
+
+/** A request as the cancel and decide checks read it (requester, version, an unfulfilled creation). */
+const requestStored = (r: AccountRequest): AccountRequestStored => ({
+  status: r.status,
+  version: r.version,
+  requestedBy: r.requestedBy.id,
+  creation: r.kind === "create",
+  fulfilled: r.account !== null,
+});
+
+/**
+ * Account administration: the accounts and requests in the viewer's scope, as stored, and the
+ * viewer with his role (`viewerRole`: the page's role, which is the signed-in demo account's role;
+ * set only when that account exists, so a missing viewer is denied by default).
+ */
+export function accountAdminState(admin: AccountAdminData | null, viewerRole: OfficeRole): SimulatedServerState {
   if (!admin) return {};
   return {
-    accounts: Object.fromEntries(
-      admin.accounts.items.map((a) => [a.id, { name: a.name, email: a.email, role: a.role, active: a.active }]),
-    ),
-    requests: Object.fromEntries(admin.requests.items.map((e) => [e.request.id, e.request.status])),
+    accounts: Object.fromEntries(admin.accounts.items.map((a) => [a.id, accountStored(a)])),
+    requests: Object.fromEntries(admin.requests.items.map((e) => [e.request.id, requestStored(e.request)])),
     self: admin.self,
+    ...(admin.self ? { selfRole: viewerRole } : {}),
   };
 }
 
-/** The operational Settings tabs that delete records: what forbids a delete (SE-06, SE-07). */
-export async function settingsTabState(tab: SettingsSection): Promise<SimulatedServerState> {
+/**
+ * The operational Settings tabs whose commands check stored data: what forbids a delete (SE-06,
+ * SE-07) and the technicians' versions ("פעיל", SE-05; PT409 when stale). Settings › טכנאים also
+ * passes the viewer's role (`selfRole`: "פעיל" is the Creator's only for now, Q14; "+ הוספת טכנאי"
+ * the Creator's or the Manager's), never an account id.
+ */
+export async function settingsTabState(tab: SettingsSection, viewerRole: OfficeRole): Promise<SimulatedServerState> {
   switch (tab) {
+    case "techs": {
+      const techs = await demoDataAccess.settings.technicians();
+      return {
+        technicians: Object.fromEntries(techs.items.map((t) => [t.id, { version: t.version, name: t.name, isTest: t.isTest }])),
+        selfRole: viewerRole,
+      };
+    }
     case "places": {
       const places = await demoDataAccess.settings.places();
       return { places: Object.fromEntries(places.items.map((p) => [p.id, { inUse: p.inUse }])) };
