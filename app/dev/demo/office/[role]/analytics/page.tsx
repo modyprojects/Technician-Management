@@ -12,7 +12,7 @@ import { DashboardDetailTable } from "@/components/office/DashboardDetailTable";
 import { DashboardPeriodControls } from "@/components/office/DashboardPeriodControls";
 import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { formatMetric } from "@/components/office/KpiGrid";
-import { dayName, monthLabel, MONTH_NAMES } from "@/features/calendar/data/dates";
+import { monthLabel } from "@/features/calendar/data/dates";
 import { MAX_PAGE_LIMIT } from "@/features/data-access/common";
 import {
   detailRowsOffered,
@@ -20,7 +20,7 @@ import {
   NOT_ENTERED_LABEL,
   type DashboardMetricKey,
 } from "@/features/dashboards/data/metric-definitions";
-import { dateLabel, DASHBOARD_PERIOD_KINDS, monthOfDate, resolveDashboardPeriod, type DashboardPeriodKind } from "@/features/dashboards/data/periods";
+import { dateLabel, DASHBOARD_PERIOD_KINDS, longDateLabel, monthOfDate, resolveDashboardPeriod, type DashboardPeriodKind } from "@/features/dashboards/data/periods";
 import {
   NONE_GROUP_KEY,
   type AnalyticsPeriod,
@@ -72,8 +72,6 @@ const PERIOD_LABELS: Readonly<Record<DashboardPeriodKind, string>> = { day: "י�
 const LEGEND =
   "\"—\" אין מספיק נתונים · \"לא זמין\" אין נתון מובנה · \"הגדרה ממתינה\" ההגדרה ממתינה לאישור הבעלים · נתונים חסרים אינם נחשבים כאפס";
 
-/** "יום רביעי, 21 באוקטובר 2026". */
-const longDate = (d: string): string => `יום ${dayName(d)}, ${Number(d.slice(8, 10))} ב${MONTH_NAMES[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
 
 /** A supplier or brand's label from the tab's bars ("" or the none key: "לא הוזן"); the key otherwise. */
 function groupLabel(key: string, lists: readonly (readonly BarRow[])[]): string {
@@ -347,7 +345,7 @@ export default async function OfficeAnalyticsPage({
           <div className="sub">MODY · מערכת ניהול טכנאים</div>
         </div>
         <div className="od-title-actions" style={{ alignItems: "center" }}>
-          <span className="sub">{longDate(asOf)}</span>
+          <span className="sub">{longDateLabel(asOf)}</span>
           {offers(permissions, "export") && (
             // TODO(OF-14): no exports port yet (XLSX export is pending a decision). When it exists,
             // this becomes a command through useCommands() / an authorized server route, and data-sim

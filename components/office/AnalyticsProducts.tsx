@@ -131,7 +131,7 @@ export function AnalyticsProducts({
         {skus.items.length ? (
           <>
             {/* Focusable, so a keyboard can scroll the table sideways on a phone. */}
-            <div className="scrollx ma-table-wrap" style={{ marginTop: 14 }} tabIndex={0} role="region" aria-labelledby="ma-skus-h">
+            <div className="scrollx ma-table-wrap" style={{ marginTop: 14 }} tabIndex={0} role="region" aria-label="טבלת המק״טים">
               <table aria-labelledby="ma-skus-h">
                 <thead>
                   <tr>

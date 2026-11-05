@@ -618,6 +618,14 @@ test.describe("manager-dashboard review screenshots", () => {
       await expect(page.getByRole("dialog")).toBeVisible();
       await shot("dash-products-dialog", false);
 
+      // Set E (D57 (9), owner message 6): "נפתחה" (opened_at) and "תחילת טיפול" (first arrival) with
+      // their own labels on the customer card (48213: opened 19.10, not started; the return counted
+      // from opened_at) and on the products screen's "נוצר מזימון".
+      await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+      await shot("customer-card-dates");
+      await openPage(page, "/dev/demo/office/mgr/products");
+      await shot("products-dates", false);
+
       // The reference, tab by tab, and its dialog ("לא בוצעו במועד").
       const refShot = async (name: string, fullPage = true) => {
         await page.evaluate(() => document.fonts.ready);

@@ -29,11 +29,14 @@ export type KpiTile = {
 
 const NUMBER = new Intl.NumberFormat("he-IL", { maximumFractionDigits: 1 });
 
+/** A duration's hours for display: the unrounded mean when the metric carries it, so T7 rounds once. */
+const hoursOf = (m: Metric, value: number): number => m.durationHours ?? value;
+
 /** The number as the demo prints it; null → "—"; a state → its text. The unit suffix is separate (see KpiValue). */
 export function formatMetricNumber(m: Metric): string {
   if (m.state) return METRIC_STATE_TEXT[m.state];
   if (m.value == null) return "—";
-  if (m.unit === "duration") return durationDisplay(m.value).amount;
+  if (m.unit === "duration") return durationDisplay(hoursOf(m, m.value)).amount;
   if (m.decimals !== undefined) return m.value.toFixed(m.decimals);
   return NUMBER.format(m.value);
 }
@@ -44,7 +47,7 @@ export function formatMetric(m: Metric): string {
   if (m.state || m.value == null) return n;
   if (m.unit === "percent") return `${n}%`;
   if (m.unit === "minutes") return `${n} דק׳`;
-  if (m.unit === "duration") return durationDisplay(m.value).text;
+  if (m.unit === "duration") return durationDisplay(hoursOf(m, m.value)).text;
   return n;
 }
 
@@ -63,11 +66,11 @@ function KpiValue({ metric, color, noDataText }: { metric: Metric; color?: strin
       </div>
     );
   }
-  const unit = metric.unit === "minutes" ? "דק׳" : metric.unit === "duration" ? durationDisplay(metric.value).unit : null;
+  const unit = metric.unit === "minutes" ? "דק׳" : metric.unit === "duration" ? durationDisplay(hoursOf(metric, metric.value)).unit : null;
   return (
     <div className="v num" style={color ? { color } : undefined}>
       {formatMetricNumber(metric)}
-      {metric.unit === "percent" && "%"}
+      {metric.unit === "percent" && <span className="kpi-pct">%</span>}
       {unit && <small> {unit}</small>}
     </div>
   );

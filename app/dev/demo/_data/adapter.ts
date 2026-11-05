@@ -127,7 +127,7 @@ import {
 } from "./aggregations";
 import { officeDay, officeMonth, officeWeek, techMonth, techWeek, techWeekFigures } from "./calendar";
 import { correctionsOf, VISIT_BASE_VERSION, visitValue, type DemoCorrection } from "./corrections";
-import { CUSTOMERS, customerIdOf, customerProducts, findCustomer, openedOn, type DemoCustomer } from "./customers";
+import { callStartDates, CUSTOMERS, customerIdOf, customerProducts, findCustomer, type DemoCustomer } from "./customers";
 import { daysBetween } from "./dates";
 import { UNPARSED_INVITATIONS, type DemoUnparsedInvitation, type DemoUnparsedProblem } from "./intake";
 import { calendarVisitDetail, callDetail, callSummary, historyItem, productDto, techDayVisit, techRef, visitDetail } from "./mappers";
@@ -342,13 +342,19 @@ function customerDetail(x: DemoCustomer): CustomerDetail {
     .map((p) => ({
       product: productDto(p.sku),
       callCount: p.calls.length,
-      firstDate: openedOn(p.calls[0] as Call),
-      lastDate: openedOn(p.calls[p.calls.length - 1] as Call),
+      // "נפתחה" and "תחילת טיפול" of the first and latest call by opening time (D57 (9)).
+      firstCall: callStartDates(p.calls[0] as Call),
+      latestCall: callStartDates(p.calls[p.calls.length - 1] as Call),
       cameBack: p.returns.length > 0,
       returns: boundedOf(p.returns, CUSTOMER_PRODUCTS_LIMIT),
     }))
-    // Products that came back first, then the latest call first.
-    .sort((a, b) => Number(b.cameBack) - Number(a.cameBack) || b.lastDate.localeCompare(a.lastDate) || a.product.sku.localeCompare(b.product.sku));
+    // Products that came back first, then the latest opened call first.
+    .sort(
+      (a, b) =>
+        Number(b.cameBack) - Number(a.cameBack) ||
+        Date.parse(b.latestCall.openedAt) - Date.parse(a.latestCall.openedAt) ||
+        a.product.sku.localeCompare(b.product.sku),
+    );
   const calls = boundedOf(x.calls, CUSTOMER_CALLS_LIMIT);
   return {
     id: x.id,
@@ -375,6 +381,8 @@ function productMatches(x: DemoCatalogueProduct, q: string): boolean {
 
 function productListItem(x: DemoCatalogueProduct): ProductListItem {
   const p = x.product;
+  // The creating invitation: the earliest opened call and its first visit; "נפתחה" and "תחילת טיפול"
+  // of that call (D57 (9)).
   const first = x.calls[0];
   const firstVisit = first?.visits[0];
   return {
@@ -384,7 +392,7 @@ function productListItem(x: DemoCatalogueProduct): ProductListItem {
     supplier: p.sup,
     brandId: x.brandId,
     supplierId: x.supplierId,
-    firstSeen: first && firstVisit ? { req: first.req, n: firstVisit.n, date: firstVisit.date, source: firstVisit.source, isTest: TEST } : null,
+    firstSeen: first && firstVisit ? { ...callStartDates(first), n: firstVisit.n, source: firstVisit.source, isTest: TEST } : null,
     callCount: x.calls.length,
     version: x.version,
     isTest: TEST,

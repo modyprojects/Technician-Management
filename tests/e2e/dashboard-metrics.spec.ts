@@ -12,6 +12,7 @@ import {
 } from "@/app/dev/demo/office/[role]/analytics/_state";
 import {
   closedVisitsIn,
+  closeTime,
   completedCallsIn,
   countedCalls,
   detailRecords,
@@ -49,6 +50,7 @@ import { NONE_GROUP_KEY, type AnalyticsPeriod, type DashboardScope, type Metric 
 import { DASHBOARD_PERMISSION_KEYS } from "@/features/reference/data/permissions";
 import { PERMISSION_KEYS, type PermissionKey, type RolePermissions } from "@/features/reference/data/types";
 import type { VisitStatus } from "@/features/visits/data/types";
+import { gridStep } from "@/components/office/GroupedBars";
 import { onlyInProject } from "./helpers";
 
 // Unit tests of the manager dashboard's pure data layer (D57; spec-final §10.1): the formulas, the
@@ -165,16 +167,25 @@ function datasetS(): MetricCall[] {
     ]),
     C("S11", "P-3", "yes", J("2027-03-15", "07:00"), null, [V(1, "t2", "2027-03-15", "09:00", "11:00", "work", ["09:00", "09:20", null])]),
     C("S12", "P-2", "unknown", J("2027-03-15", "07:30"), null, [V(1, "t1", "2027-03-15", "10:00", "11:00", "cancel")]),
-    // Day boundary: opened 1.3 00:30 Jerusalem (28.2 22:30 UTC); visit on 15.3 00:30 (14.3 22:30 UTC).
-    C("S13", "P-1", "yes", "2027-03-01T00:30:00+02:00", J("2027-03-15", "01:00"), [
-      V(1, "t2", "2027-03-15", "00:30", "01:30", "done", ["00:00", "00:20", "01:00"]),
+    // Day boundary, written as UTC instants (as a database returns timestamptz), so taking the date
+    // from the string instead of converting to Asia/Jerusalem fails: opened 1.3 00:30 Jerusalem
+    // (28.2 22:30 UTC); visit on 15.3 00:30–01:30 Jerusalem (14.3 22:30–23:30 UTC); closed 15.3 01:00.
+    C("S13", "P-1", "yes", "2027-02-28T22:30:00Z", "2027-03-14T23:00:00Z", [
+      V(1, "t2", "2027-03-15", "00:30", "01:30", "done", [null, null, null], {
+        scheduledStart: "2027-03-14T22:30:00Z",
+        scheduledEnd: "2027-03-14T23:30:00Z",
+        departedAt: "2027-03-14T22:00:00Z",
+        arrivedAt: "2027-03-14T22:20:00Z",
+        endedAt: "2027-03-14T23:00:00Z",
+      }),
     ]),
-    // Closed on 1.3 00:10 Jerusalem (28.2 22:10 UTC): a March closure; visit 2 crosses midnight (70 min).
-    C("S14", "P-4", "yes", J("2027-02-26", "08:00"), "2027-03-01T00:10:00+02:00", [
+    // Closed on 1.3 00:10 Jerusalem (28.2 22:10 UTC, written as UTC): a March closure; visit 2
+    // crosses midnight (23:00 → 00:10 Jerusalem = 70 min).
+    C("S14", "P-4", "yes", J("2027-02-26", "08:00"), "2027-02-28T22:10:00Z", [
       V(1, "t1", "2027-02-26", "08:00", "09:30", "cont", ["08:00", "08:30", "09:30"]),
       V(2, "t1", "2027-02-28", "23:00", "00:30", "done", ["22:40", "23:00", null], {
-        scheduledEnd: "2027-03-01T00:30:00+02:00",
-        endedAt: "2027-03-01T00:10:00+02:00",
+        scheduledEnd: "2027-02-28T22:30:00Z",
+        endedAt: "2027-02-28T22:10:00Z",
       }),
     ]),
   ];
@@ -202,7 +213,8 @@ const day = (d: string): AnalyticsPeriod => ({ from: d, to: d });
 const refs = (rs: readonly VisitRecord[]): string[] => rs.map((r) => `${r.call.req}/${r.visit.n}`);
 const reqs = (found: DetailRecords | null): string[] => (found ? found.rows.map((r) => r.call.req).sort() : []);
 const v = (m: Metric): number | null => m.value;
-const shown = (m: Metric): string | null => (m.value === null ? null : durationDisplay(m.value).text);
+/** A duration as the screen shows it: T7 over the unrounded mean (`durationHours`), rounded once. */
+const shown = (m: Metric): string | null => (m.value === null ? null : durationDisplay(m.durationHours ?? m.value).text);
 
 // 1-10: dataset S --------------------------------------------------------------------------------
 
@@ -253,7 +265,8 @@ test.describe("manager dashboard formulas: dataset S (spec-final §10.1)", () =>
     expect(fv.find((r) => r.call.req === "S4")?.visit.n).toBe(2);
     // Closure: S1 218 h, S2 99, S4 98.83, S5 17.17, S10 2.67, S13 336.5, S14 64.17 → 836.33 ÷ 7 = 119.48 h = "5.0 ימים".
     // S14 counts in March by its Jerusalem date although its UTC date is 28.2.
-    expect(s.closeTime).toMatchObject({ value: 119.48, unit: "duration", basis: 7, durationHours: 119.48 });
+    // `value` to two decimals; `durationHours` unrounded (836.33… ÷ 7 = 119.476…), shown per T7.
+    expect(s.closeTime).toMatchObject({ value: 119.48, unit: "duration", basis: 7, durationHours: expect.closeTo(119.476, 3) });
     expect(shown(s.closeTime)).toBe("5.0 ימים");
     expect(completedCallsIn(datasetS(), MARCH, TEST_ENV).map((r) => r.call.req).sort()).toEqual(["S1", "S10", "S13", "S14", "S2", "S4", "S5"]);
   });
@@ -464,6 +477,113 @@ test.describe("manager dashboard formulas: dataset S (spec-final §10.1)", () =>
     expect([p1?.calls, p1 && v(p1.followupRate)]).toEqual([5, 40]);
     expect(p.bySupplier.find((r) => r.key === "ספק א")?.value).toBe(5);
     expect(technicianMetrics(datasetSD(), "t1", MARCH, NOW, TEST_ENV).activity.planned.value).toBe(8);
+  });
+});
+
+// Focused rules (review findings MC-2 to MC-7): small synthetic sets beside dataset S ---------------
+
+test.describe("manager dashboard formulas: focused rules", () => {
+  onlyInProject("desktop");
+
+  /** A March call with one performed visit on 10.3. */
+  const X = (req: string, openedAt: string, resolvedAt: string | null, visits?: MetricVisit[]): MetricCall =>
+    C(req, "P-1", "yes", openedAt, resolvedAt, visits ?? [V(1, "t1", "2027-03-10", "09:00", "10:00", "done", ["08:00", "08:30", "09:30"])]);
+
+  test("closure time: resolved_at before opened_at is invalid and a missing opened_at is missing; both excluded, never averaged (T6)", () => {
+    const calls = [
+      X("X1", J("2027-03-10", "08:00"), J("2027-03-10", "18:00")),
+      // Resolved one hour before it was opened (clock skew, a bad import): an impossible sequence.
+      X("X2", J("2027-03-10", "19:00"), J("2027-03-10", "18:00")),
+    ];
+    expect(closeTime(calls, MARCH, TEST_ENV)).toMatchObject({ value: 10, basis: 1, excluded: { missing: 0, invalid: 1 } });
+    calls.push(X("X3", "", J("2027-03-10", "18:00")));
+    expect(closeTime(calls, MARCH, TEST_ENV)).toMatchObject({ value: 10, basis: 1, excluded: { missing: 1, invalid: 1 } });
+    // Only X1 is measured; the dialog still lists all three, the unmeasurable ones without a duration.
+    expect(completedCallsIn(calls, MARCH, TEST_ENV).map((r) => [r.call.req, r.problem])).toEqual([
+      ["X1", null],
+      ["X2", "invalid"],
+      ["X3", "missing"],
+    ]);
+  });
+
+  test("only calls resolved now (D38) count as closed, even with a resolved_at left set (T8)", () => {
+    // R1: resolved on visit 1, then visit 2 closed "המשך טיפול": the call is awaiting follow-up now.
+    const r1 = X("R1", J("2027-03-02", "08:00"), J("2027-03-05", "10:00"), [
+      V(1, "t1", "2027-03-05", "09:00", "10:00", "done", ["08:00", "08:30", "10:00"]),
+      V(2, "t1", "2027-03-08", "09:00", "10:00", "cont", ["08:00", "08:30", "09:30"]),
+    ]);
+    // R2: resolved on visit 1, then reopened by a new visit (still open).
+    const r2 = X("R2", J("2027-03-02", "08:00"), J("2027-03-05", "10:00"), [
+      V(1, "t1", "2027-03-05", "09:00", "10:00", "done", ["08:00", "08:30", "10:00"]),
+      V(2, "t1", "2027-03-16", "09:00", "10:00", "new"),
+    ]);
+    // R3: resolved and still resolved (the control).
+    const r3 = X("R3", J("2027-03-02", "08:00"), J("2027-03-05", "10:00"), [
+      V(1, "t1", "2027-03-05", "09:00", "10:00", "done", ["08:00", "08:30", "10:00"]),
+    ]);
+    const calls = [r1, r2, r3];
+    expect(trendMembers(calls, "2027-03", "closed", TEST_ENV).map((c) => c.req)).toEqual(["R3"]);
+    expect(completedCallsIn(calls, MARCH, TEST_ENV).map((r) => r.call.req)).toEqual(["R3"]);
+    // 2.3 08:00 → 5.3 10:00 = 74 h.
+    expect(closeTime(calls, MARCH, TEST_ENV)).toMatchObject({ value: 74, basis: 1 });
+    expect(v(technicianMetrics(calls, "t1", MARCH, NOW, TEST_ENV).activity.closedCalls)).toBe(1);
+  });
+
+  test("30-day highlights count calls by opening date, not by closing date (T4)", () => {
+    // Opened 10.2 (before the 14.2–15.3 window), closed inside it on 20.2.
+    const early = C("S15", "P-1", "yes", J("2027-02-10", "08:00"), J("2027-02-20", "10:00"), [
+      V(1, "t2", "2027-02-20", "09:00", "10:00", "done", ["08:00", "08:30", "10:00"]),
+    ]);
+    const calls = [...datasetS(), early];
+    const h = generalMetrics(calls, NOW, 6, TEST_ENV).highlights;
+    expect(h.skus.items.find((r) => r.key === "P-1")?.value).toBe(5);
+    expect(h.suppliers.items.find((r) => r.key === "ספק א")?.value).toBe(5);
+    expect(reqs(detailRecords(calls, "top.skus", { now: NOW, group: "P-1" }, TEST_ENV))).not.toContain("S15");
+  });
+
+  test("a call stamped after `now` (clock skew) is counted nowhere: products, coverage, highlights", () => {
+    // Opened 13:00 on 15.3, an hour after NOW; a visit tomorrow.
+    const late = C("S16", "P-3", "yes", J("2027-03-15", "13:00"), null, [V(1, "t1", "2027-03-16", "09:00", "10:00", "new")]);
+    const calls = [...datasetS(), late];
+    const p = productMetrics(calls, NOW, TEST_ENV);
+    expect(p.skus.find((r) => r.sku === "P-3")?.calls).toBe(4);
+    expect(p.bySupplier.find((r) => r.key === "ספק ב")?.value).toBe(4);
+    const g = generalMetrics(calls, NOW, 6, TEST_ENV);
+    expect(g.coverageStart).toBe("2027-02-13");
+    expect(g.highlights.suppliers.items.find((r) => r.key === "ספק ב")?.value).toBe(4);
+    expect(g.highlights.skus.items.find((r) => r.key === "P-3")?.value).toBe(4);
+    expect(reqs(detailRecords(calls, "top.suppliers", { now: NOW, group: "ספק ב" }, TEST_ENV))).toEqual(["S11", "S5", "S6", "S9"]);
+    expect(reqs(detailRecords(calls, "prod.skuCalls", { now: NOW, group: "P-3" }, TEST_ENV))).not.toContain("S16");
+  });
+
+  test("chart gridlines: whole-number steps, the scale four steps (never \"12.5\")", () => {
+    // [largest value, step]: 28 → 10 (10 / 20 / 30, scale 40); 2 → 1; 1 → 1; 10 → 5; 50 → 20; 100 → 25; 0 → 1.
+    for (const [max, step] of [
+      [28, 10],
+      [2, 1],
+      [1, 1],
+      [10, 5],
+      [50, 20],
+      [100, 25],
+      [0, 1],
+    ] as const) {
+      expect(gridStep(max), String(max)).toBe(step);
+      expect(Number.isInteger(gridStep(max)) && 4 * gridStep(max) >= max, String(max)).toBe(true);
+    }
+  });
+
+  test("closure time is rounded once for display (T7): 47.496 h reads \"47 שעות\", not \"2.0 ימים\"", () => {
+    // 47 h 29 min 45 s = 47.4958 h: rounding to two decimals first would give 47.50 → 48 → "2.0 ימים".
+    const calls = [X("D1", "2027-03-08T08:00:00+02:00", "2027-03-10T07:29:45+02:00")];
+    const m = closeTime(calls, MARCH, TEST_ENV);
+    expect(m.value).toBe(47.5);
+    expect(m.durationHours).toBeCloseTo(47.4958, 4);
+    expect(shown(m)).toBe("47 שעות");
+    // A dialog row carries the unrounded hours too.
+    const rows = detailRecords(calls, "service.closeTime", { now: NOW }, TEST_ENV);
+    const row = rows?.records === "calls" ? rows.rows[0] : undefined;
+    expect(row?.durationHours).toBeCloseTo(47.4958, 4);
+    expect(durationDisplay(row?.durationHours ?? 0).text).toBe("47 שעות");
   });
 });
 

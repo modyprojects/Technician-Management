@@ -1531,6 +1531,58 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
   });
 });
 
+test.describe("D57 (9): \"נפתחה\" (opened_at) and \"תחילת טיפול\" (first arrival) are separate fields", () => {
+  // Fixture facts (fictional): 48213 (KT-2041, משפחת לוי) opened 19.10 11:21; its first visit is on
+  // 21.10 (TODAY, "היום") and has no arrival yet. 47490 (KT-2041) opened 18.08; its first visit
+  // arrived 20.08 10:03. 48205 (BT-1120, customer 235395) opened 15.10, first visit 19.10.
+  const startLine = (scope: ReturnType<Page["locator"]>, req: string) => scope.locator(`[data-call-start="${req}"]`).filter({ visible: true });
+
+  test("customer card: both labelled fields per call; never a first-visit date under \"נפתחה\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+    const products = page.getByRole("region", { name: /מוצרים של הלקוח/ });
+    const latest = startLine(products, "48213");
+    await expect(latest).toHaveCount(1);
+    await expect(latest).toContainText("קריאה אחרונה");
+    await expect(latest.locator('[data-field="opened"]')).toHaveText("נפתחה: 19.10");
+    await expect(latest.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: טרם התחיל");
+    const first = startLine(products, "47490");
+    await expect(first).toContainText("קריאה ראשונה");
+    await expect(first.locator('[data-field="opened"]')).toHaveText("נפתחה: 18.08");
+    await expect(first.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: 20.08 10:03");
+    // The return rule and its text use opened_at: 48213 opened 26 days after 47690's closure on 23.9
+    // (by its first visit, 21.10 "היום", it would read 28 days).
+    await expect(products).toContainText("פנייה 48213 (19.10) נפתחה 26 ימים אחרי סגירת פנייה 47690");
+    const text = await products.innerText();
+    expect(text).not.toMatch(/\(היום\) נפתחה|נפתחה: היום|נפתחה: 20\.08|נפתחה 28 ימים/);
+  });
+
+  test("customer card: the return window counts from opened_at (48205: 21 days, not 25)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-235395");
+    const products = page.getByRole("region", { name: /מוצרים של הלקוח/ });
+    await expect(products).toContainText("פנייה 48205 (15.10) נפתחה 21 ימים אחרי סגירת פנייה 47700");
+    await expect(startLine(products, "48205").locator('[data-field="opened"]')).toHaveText("נפתחה: 15.10");
+  });
+
+  test("products screen: the creating call shows both labelled fields, opened_at under \"נפתחה\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    const row = page.getByRole("table", { name: "מוצרים" }).locator("tbody tr").filter({ has: page.getByText("KT-2041", { exact: true }) });
+    const line = startLine(row, "47490");
+    await expect(line).toHaveCount(1);
+    await expect(line.locator('[data-field="opened"]')).toHaveText("נפתחה: 18.08");
+    await expect(line.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: 20.08 10:03");
+    // The first visit's date (20.08) never appears under "נפתחה".
+    expect(await row.innerText()).not.toContain("נפתחה: 20.08");
+  });
+
+  test("the dashboard dialog and the customer card agree on 48213's opening date", async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "runs in the desktop project only");
+    await openPage(page, `/dev/demo/office/mgr/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041`);
+    const row = page.getByRole("dialog").locator("tbody tr").filter({ has: page.getByRole("link", { name: /48213/ }) });
+    await expect(row).toContainText("19.10.2026");
+    await expect(row).not.toContainText("21.10.2026");
+  });
+});
+
 test.describe("products (PR-04 to PR-07, D19)", () => {
   const productRow = (page: Page, sku: string) =>
     page.getByRole("table", { name: "מוצרים" }).locator("tbody tr").filter({ has: page.getByText(sku, { exact: true }) });
@@ -2694,9 +2746,11 @@ test.describe("D57 (6): the white MODY logo in the existing dark headers", () =>
     const box = await name.boundingBox();
     if (narrow) {
       expect(box && box.width <= 1 && box.height <= 1).toBe(true);
-      // The logo sits in the nav row: not taller than a nav link.
+      // The logo sits in the nav row: not taller than a nav link, centred on the first link's row
+      // (never a row of its own, also when the nav wraps).
       const [logo, link] = await Promise.all([officeLogo(page).boundingBox(), sideNav(page).getByRole("link").first().boundingBox()]);
       expect(logo && link && logo.height <= link.height).toBe(true);
+      expect(logo && link && Math.abs(logo.y + logo.height / 2 - (link.y + link.height / 2))).toBeLessThanOrEqual(8);
     } else {
       await expect(name).toBeVisible();
       const logo = await officeLogo(page).boundingBox();
@@ -2870,7 +2924,18 @@ test.describe("D57 dashboard: scope, no fabrication, colours", () => {
     await expect(main.locator('a[href*="/review"], a[href*="/back-from-field"], a[href*="/customers"], a[href*="/calls?"]')).toHaveCount(0);
     await expect(dashValue(page, "לא בוצעו במועד")).not.toHaveText("הגדרה ממתינה");
     await expect(dashValue(page, "זמן סגירת קריאה")).not.toHaveText("הגדרה ממתינה");
-    await expect(page.getByRole("img", { name: /מגמת קריאות שירות לפי חודש/ })).toBeVisible();
+    // A named group, not an image: an image's children are presentational and must not hold links
+    // (axe nested-interactive, WCAG 4.1.2). Its content is hidden from assistive technology.
+    const chart = page.getByRole("group", { name: /מגמת קריאות שירות לפי חודש/ });
+    await expect(chart).toBeVisible();
+    await expect(page.locator('[role="img"] a[href]')).toHaveCount(0);
+    expect(await chart.locator("a").count()).toBeGreaterThan(0);
+    for (const a of await chart.locator("a").all()) {
+      await expect(a).toHaveAttribute("aria-hidden", "true");
+      await expect(a).toHaveAttribute("tabindex", "-1");
+    }
+    // Gridlines at whole-number steps (September's 28 opened calls → a 40 scale: 10 / 20 / 30), never "12.5".
+    await expect(chart.locator(".ma-gridline span")).toHaveText(["10", "20", "30"]);
     await expect(page.locator(".ma-gbar-o").last()).toHaveCSS("background-color", "rgb(70, 119, 213)");
     await expect(page.locator(".ma-gbar-c").last()).toHaveCSS("background-color", "rgb(105, 117, 134)");
     await expect(page.locator(".ma-progress .ma-seg-done")).toHaveCSS("background-color", "rgb(70, 119, 213)");
@@ -3010,6 +3075,15 @@ test.describe("D57 dashboard: Technicians toolbar (desktop)", () => {
     await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("69%");
     await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("3.9 ימים");
     expect(await page.evaluate(() => (window as unknown as { __maMarker?: string }).__maMarker)).toBe("kept");
+    // שמואל's values equal his full October ones, so they cannot show that the range reached the
+    // metrics. יורם's differ: 1–21.10 gives 74 planned (76 for October), 70 done, 52 closed.
+    await page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "יורם" }).click();
+    await expect(page).toHaveURL(/tech=y/);
+    await expect(page).toHaveURL(/from=2026-10-01&to=2026-10-21/);
+    await expect(page.locator(".ma-section .ma-label").first()).toHaveText("1.10.2026 – 21.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("74");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("70");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("52");
   });
 
   test("switching technician keeps the period", async ({ page }) => {
@@ -3212,13 +3286,19 @@ test.describe("D57 dashboard: loading and error", () => {
         await route.continue();
       });
       await page.locator(".side").getByRole("link", { name: "דשבורד" }).click();
+      // The loading text is a status outside the busy region (announced); the placeholders are busy.
       const skeleton = page.locator('[aria-busy="true"]');
       await expect(skeleton).toBeVisible();
-      await expect(skeleton).toContainText("טוען את הדשבורד…");
+      await expect(page.getByRole("status").filter({ hasText: "טוען את הדשבורד…" })).toBeVisible();
+      await expect(skeleton.getByRole("status")).toHaveCount(0);
       const during = await frame();
+      // The skeleton mirrors the page's blocks: the first tile does not move when the data arrives.
+      const top = (selector: string) => page.locator(selector).first().evaluate((el) => Math.round(el.getBoundingClientRect().top));
+      const skeletonTile = await top(".ma-skel .ma-skel-kpis .kpi");
       await expect(page.locator(".ma-dash .ma-kpis").first()).toBeVisible({ timeout: 10_000 });
       await expect(skeleton).toHaveCount(0);
       const after = await frame();
+      expect(Math.abs((await top(".ma-dash .ma-kpis .kpi")) - skeletonTile)).toBeLessThanOrEqual(2);
       for (const [a, b] of [
         [before, during],
         [during, after],
@@ -3251,5 +3331,76 @@ test.describe("D57 dashboard: loading and error", () => {
     }
     await openPage(page, "/dev/demo/office/cs/analytics");
     await expect(page.locator(".side")).toHaveCount(1);
+  });
+});
+
+test.describe("D57 dashboard: accessibility and layout details (review fixes)", () => {
+  test("SKU bars show the product name wherever the dashboard is at least 600px wide (tablet included)", async ({ page }) => {
+    await openPage(page, DASH);
+    const name = page.locator(".ma-bars-sku .ma-bar-pname").first();
+    if (page.viewportSize()!.width >= 820) await expect(name).toBeVisible();
+    else await expect(name).toBeHidden();
+  });
+
+  test("no two landmarks share a name; tile groups keep theirs", async ({ page }) => {
+    for (const q of ["", "?tab=tech&tech=y", "?tab=prod"]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".ma-dash section").first()).toBeVisible();
+      const names = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("main section[aria-label], main section[aria-labelledby], main [role='region']")].map((el) => {
+          const by = el.getAttribute("aria-labelledby");
+          return (by ? (document.getElementById(by)?.textContent ?? "") : (el.getAttribute("aria-label") ?? "")).trim();
+        }),
+      );
+      expect(names.length, q).toBeGreaterThan(0);
+      expect(new Set(names).size, `${q}: ${names.join(" | ")}`).toBe(names.length);
+    }
+    await openPage(page, DASH);
+    await expect(page.getByRole("region", { name: "פעילות היום" })).toHaveCount(1);
+  });
+
+  test("a ranked bar's link is named by its own visible text (WCAG 2.5.3)", async ({ page }) => {
+    await openPage(page, DASH);
+    const link = page.getByRole("list", { name: "3 ספקים מובילים" }).getByRole("link").first();
+    await expect(link).not.toHaveAttribute("aria-label", /./);
+    await expect(link).toHaveAccessibleName(/^מ\.ס\. יבוא\s*:\s*106 קריאות · פירוט$/);
+  });
+
+  test("dashboard tiles: no arrow glyph; the percent sign in the small unit style", async ({ page }) => {
+    await openPage(page, DASH);
+    await expect(page.locator(".ma-kpis .od-kpi-go").first()).toBeHidden();
+    const first = dashTile(page, "פתרון בביקור ראשון");
+    await expect(first.locator(".v")).toHaveText("71%");
+    await expect(first.locator(".kpi-pct")).toHaveCSS("font-size", "12px");
+  });
+
+  test("the SKU table: headers on one line; the SKU column stays in view while the table scrolls sideways", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    await expect(table.locator("thead th")).toHaveCount(8);
+    for (const th of await table.locator("thead th").all()) await expect(th).toHaveCSS("white-space", "nowrap");
+    const heights = await table.locator("thead th").evaluateAll((ths) => ths.map((th) => Math.round(th.getBoundingClientRect().height)));
+    expect(new Set(heights).size, heights.join(",")).toBe(1);
+    await expect(table.locator("tbody td").first()).toHaveCSS("position", "sticky");
+    const scroller = page.getByRole("region", { name: "טבלת המק״טים" });
+    const scrolls = await scroller.evaluate((el) => el.scrollWidth > el.clientWidth);
+    if (scrolls) {
+      // RTL: scrolling towards the later columns is a negative scrollLeft.
+      await scroller.evaluate((el) => {
+        el.scrollLeft = -el.scrollWidth;
+      });
+      const [box, cell] = await Promise.all([scroller.boundingBox(), table.locator("tbody td").first().boundingBox()]);
+      expect(box && cell && cell.x + cell.width).toBeGreaterThan((box?.x ?? 0) + (box?.width ?? 0) - 3);
+    }
+  });
+
+  test("closing a dialog opened from a chart bar returns focus to the chart table's summary, not to <body>", async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "runs in the desktop project only");
+    await openPage(page, DASH);
+    await page.locator('a.ma-ghalf-o[href*="group=2026-09"]').click();
+    await expect(dialog(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page.locator(".ma-details > summary")).toBeFocused();
   });
 });

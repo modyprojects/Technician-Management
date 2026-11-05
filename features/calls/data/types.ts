@@ -1,6 +1,6 @@
 // Service-call DTOs: the office calls list and call card. Pure types and enums (no data).
 // See features/data-access/common.ts.
-import type { HourMinute, IsoDate, Page, PageRequest, TestMarker } from "@/features/data-access/common";
+import type { HourMinute, IsoDate, IsoTimestamp, Page, PageRequest, TestMarker } from "@/features/data-access/common";
 import type { Customer, CustomerId } from "@/features/customers/data/types";
 import type { Product, TechnicianId, TechnicianRef } from "@/features/reference/data/types";
 import type { VisitRecord, VisitRef, VisitSource, VisitStatus } from "@/features/visits/data/types";
@@ -27,6 +27,21 @@ export type CallVisitBrief = {
   status: VisitStatus;
   source: VisitSource;
   technician: TechnicianRef;
+};
+
+/**
+ * A call's two start dates (D57 (9), owner message 6): two different fields, each shown with its own
+ * label and never one under the other's label.
+ * - "נפתחה" = `openedAt`: when the call was opened in the system (`service_calls.opened_at`).
+ * - "תחילת טיפול" = `workStartAt`: when the technician started working at the customer, the arrival
+ *   of the call's first visit (the first recorded arrival by visit number; a cancelled visit has
+ *   none); null before any arrival, shown as "טרם התחיל" (never a fabricated value).
+ * ISO instants with an offset; screens show them in Asia/Jerusalem.
+ */
+export type CallStartDates = {
+  req: string;
+  openedAt: IsoTimestamp;
+  workStartAt: IsoTimestamp | null;
 };
 
 /** One calls-list row. */

@@ -3,7 +3,7 @@
 // months and the coverage guard. Pure: dates are "YYYY-MM-DD" in Asia/Jerusalem and "today"
 // (`asOf`) always comes from the caller (G-01). There is no future navigation: offsets are 0 or
 // negative, and a custom range ends at `asOf` at the latest.
-import { addDays, monthLabel, pad, weekStartOf } from "@/features/calendar/data/dates";
+import { addDays, dayName, monthLabel, MONTH_NAMES, pad, weekStartOf } from "@/features/calendar/data/dates";
 import type { YearMonth } from "@/features/calendar/data/types";
 import { isIsoDate, type IsoDate } from "@/features/data-access/common";
 import type { AnalyticsPeriod } from "./types";
@@ -36,6 +36,10 @@ export const daysInclusive = (from: IsoDate, to: IsoDate): number => Math.round(
 
 /** "21.10.2026", "1.10.2026", "2.1.2027" (no leading zeros). */
 export const dateLabel = (d: IsoDate): string => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
+
+/** The dashboard title's date: "יום רביעי, 21 באוקטובר 2026" (the page and its loading state). */
+export const longDateLabel = (d: IsoDate): string =>
+  `יום ${dayName(d)}, ${Number(d.slice(8, 10))} ב${MONTH_NAMES[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
 
 const dayMonth = (d: IsoDate): string => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}`;
 

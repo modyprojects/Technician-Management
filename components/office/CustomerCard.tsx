@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { CALL_STATUS_ORDER, CALL_STATUSES, CallStatusPill } from "@/components/ui/CallStatusPill";
 import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
-import type { CallStatus, CallSummary } from "@/features/calls/data/types";
+import type { CallStartDates, CallStatus, CallSummary } from "@/features/calls/data/types";
 import { ddmm } from "@/features/calendar/data/dates";
 import type { CustomerDetail, CustomerProduct } from "@/features/customers/data/types";
+import { jerusalemDate, jerusalemTime } from "@/features/dashboards/data/time";
 import type { IsoDate } from "@/features/data-access/common";
 import { KpiGrid, type KpiTile } from "./KpiGrid";
 import { ReturnedMark } from "./CustomersTable";
@@ -22,7 +23,9 @@ import { ReturnedMark } from "./CustomersTable";
 // - Products: "↩ חזר תוך זמן קצר" when a later call for the same SKU opened within the return
 //   window after the earlier call's latest closed visit; the window and its status come from the
 //   caller (data, temporary), never written here. Brand and supplier "לא הוזן" when empty
-//   (OF-07); 🧪 on test products (SIM-17).
+//   (OF-07); 🧪 on test products (SIM-17). The first and latest call show "נפתחה" (opened_at) and
+//   "תחילת טיפול" (the first visit's arrival, "טרם התחיל" before it) with their own labels; a
+//   first-visit date is never shown under "נפתחה" (D57 (9)).
 // - At 520px stage width and below the calls table shows technician, visits and date under the
 //   product (styles/ui.css .set-col-wide / .set-inline-narrow), so it fits a phone.
 // Presentational and hook-free: the caller passes the DTO, the addresses and today's date.
@@ -208,6 +211,41 @@ function CustomerProducts({
   );
 }
 
+/**
+ * A call's two start dates, each with its own label (D57 (9)): "נפתחה" (opened_at) and "תחילת טיפול"
+ * (the first visit's arrival, "טרם התחיל" before any arrival). Dates in Asia/Jerusalem.
+ */
+function CallStartLine({
+  label,
+  call,
+  day,
+  callHrefs,
+}: {
+  label: string;
+  call: CallStartDates;
+  day: (d: IsoDate) => string;
+  callHrefs: CustomerCardData["callHrefs"];
+}) {
+  const opened = jerusalemDate(call.openedAt);
+  const startDate = jerusalemDate(call.workStartAt);
+  const startTime = jerusalemTime(call.workStartAt);
+  return (
+    <div className="sub" data-call-start={call.req}>
+      {label} <ReqLink req={call.req} href={callHrefs[call.req]} /> · <span data-field="opened">נפתחה: {opened ? <span className="num">{day(opened)}</span> : "—"}</span> ·{" "}
+      <span data-field="work-start">
+        תחילת טיפול:{" "}
+        {startDate && startTime ? (
+          <span className="num">
+            {day(startDate)} {startTime}
+          </span>
+        ) : (
+          "טרם התחיל"
+        )}
+      </span>
+    </div>
+  );
+}
+
 function CustomerProductItem({
   cp,
   day,
@@ -231,20 +269,15 @@ function CustomerProductItem({
         <bdi dir="ltr">{p.sku}</bdi> · {p.brand || <NotEntered />} · {p.supplier || <NotEntered />}
       </div>
       <div className="sub">
-        <span className="num">{cp.callCount}</span> {cp.callCount === 1 ? "קריאה" : "קריאות"} ·{" "}
-        {cp.firstDate === cp.lastDate ? (
-          <span className="num">{day(cp.firstDate)}</span>
-        ) : (
-          <>
-            ראשונה <span className="num">{day(cp.firstDate)}</span> · אחרונה <span className="num">{day(cp.lastDate)}</span>
-          </>
-        )}
+        <span className="num">{cp.callCount}</span> {cp.callCount === 1 ? "קריאה" : "קריאות"}
       </div>
+      {cp.callCount > 1 && <CallStartLine label="קריאה ראשונה" call={cp.firstCall} day={day} callHrefs={callHrefs} />}
+      <CallStartLine label={cp.callCount > 1 ? "קריאה אחרונה" : "קריאה"} call={cp.latestCall} day={day} callHrefs={callHrefs} />
       {cp.returns.items.length > 0 && (
         <ul aria-label={`קריאות חוזרות על ${p.name}`} style={{ listStyle: "none", margin: "2px 0 0", padding: 0, fontSize: 13, lineHeight: 1.6 }}>
           {cp.returns.items.map((r) => (
             <li key={r.req}>
-              פנייה <ReqLink req={r.req} href={callHrefs[r.req]} /> (<span className="num">{day(r.date)}</span>) נפתחה{" "}
+              פנייה <ReqLink req={r.req} href={callHrefs[r.req]} /> (<span className="num">{day(r.openedDate)}</span>) נפתחה{" "}
               <b className="num">{r.days}</b> {r.days === 1 ? "יום" : "ימים"} אחרי סגירת פנייה <ReqLink req={r.previousReq} href={callHrefs[r.previousReq]} />
             </li>
           ))}

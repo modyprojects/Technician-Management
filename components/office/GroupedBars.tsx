@@ -4,15 +4,19 @@ import type { YearMonth } from "@/features/calendar/data/types";
 
 // "מגמת קריאות שירות": opened vs closed service calls per month as grouped bars (reference .trends;
 // spec-final §6.8). Server-safe. The oldest month is first in the DOM, so it is on the right in
-// RTL; each month shows opened (--dash-blue, start side) then closed (--dash-compare). Gridlines at
-// 25/50/75% of a "nice" maximum (the smallest 1/2/5 × 10ⁿ at least the largest value) are labelled
-// (PROPOSED, C27). A month entirely before the first recorded call shows "—" at the baseline.
+// RTL; each month shows opened (--dash-blue, start side) then closed (--dash-compare). Three
+// gridlines at whole-number steps are labelled (PROPOSED, C27): the step is the smallest
+// 1 / 2 / 2.5 / 5 × 10ⁿ that is a whole number and at least a quarter of the largest value, and the
+// scale is four steps (28 → 10 / 20 / 30; 2 → 1 / 2 / 3), so a call count never reads "12.5". A month
+// entirely before the first recorded call shows "—" at the baseline.
 // No value labels on the bars (as the reference): the values are in each bar's title and in the
 // table under the chart. The two series differ in hue but hardly in lightness, so the fixed order,
 // the legend and the table carry the distinction (docs/design-system.md, "Manager dashboard").
-// Accessibility: the plot is one named image; the bars are pointer shortcuts only (aria-hidden
-// links, tabindex -1, present only when the role is offered `calls`); the <details> table is the
-// keyboard and screen-reader path and the equivalent control for WCAG 2.5.8 (PROPOSED, C22).
+// Accessibility: the plot is one named group (role="group", not "img": an image's children are
+// presentational, and it must not contain links, WCAG 4.1.2) whose content is hidden from assistive
+// technology; the bars are pointer shortcuts only (aria-hidden links, tabindex -1, present only when
+// the role is offered `calls`); the <details> table is the keyboard and screen-reader path and the
+// equivalent control for WCAG 2.5.8 (PROPOSED, C22).
 
 export type GroupedBarsRow = {
   month: YearMonth;
@@ -25,13 +29,20 @@ export type GroupedBarsRow = {
 /** 3-letter month forms for the 12-month chart (spec-final §6.8). */
 const SHORT_MONTHS = ["ינו׳", "פבר׳", "מרץ", "אפר׳", "מאי", "יוני", "יולי", "אוג׳", "ספט׳", "אוק׳", "נוב׳", "דצמ׳"] as const;
 
-const NUMBER = new Intl.NumberFormat("he-IL", { maximumFractionDigits: 1 });
+const NUMBER = new Intl.NumberFormat("he-IL");
 
-/** The smallest 1, 2 or 5 × 10ⁿ that is at least `max` (at least 1). */
-export function niceMax(max: number): number {
-  if (!(max > 1)) return 1;
-  const power = 10 ** Math.floor(Math.log10(max));
-  for (const step of [1, 2, 5, 10]) if (step * power >= max) return step * power;
+/**
+ * The gridline step for counts up to `max`: the smallest 1, 2, 2.5 or 5 × 10ⁿ that is a whole number,
+ * at least 1 and at least max ÷ 4. The chart's scale is 4 steps, so the three gridlines read step,
+ * 2·step and 3·step (whole numbers: calls are counted, never fractional).
+ */
+export function gridStep(max: number): number {
+  const target = Math.max(1, Number.isFinite(max) ? max / 4 : 1);
+  const power = 10 ** Math.floor(Math.log10(target));
+  for (const m of [1, 2, 2.5, 5, 10]) {
+    const step = m * power;
+    if (step >= target && Number.isInteger(step)) return step;
+  }
   return 10 * power;
 }
 
@@ -61,7 +72,7 @@ function Bar({
       {bar}
     </Link>
   ) : (
-    <span className={cls} title={value === null ? undefined : title}>
+    <span className={cls} title={value === null ? undefined : title} aria-hidden="true">
       {bar}
     </span>
   );
@@ -70,21 +81,22 @@ function Bar({
 export function GroupedBars({ rows, months }: { rows: readonly GroupedBarsRow[]; months: 3 | 6 | 12 }) {
   const values = rows.flatMap((r) => [r.opened, r.closed]).filter((v): v is number => v !== null);
   if (!values.length) return <div className="ma-empty">אין נתונים לתקופה</div>;
-  const scale = niceMax(Math.max(...values));
+  const step = gridStep(Math.max(...values));
+  const scale = 4 * step;
   const first = rows[0];
   const last = rows[rows.length - 1];
   const range = first && last ? `${monthLabel(first.month)}–${monthLabel(last.month)}` : "";
   return (
     <div
       className={months === 12 ? "ma-trend ma-trend-12" : "ma-trend"}
-      role="img"
+      role="group"
       aria-label={`מגמת קריאות שירות לפי חודש, נפתחו ונסגרו (${range}); הנתונים בטבלה שמתחת לתרשים`}
     >
       <div className="ma-plot">
         <div className="ma-gridlines" aria-hidden="true">
-          {[25, 50, 75].map((p) => (
-            <div key={p} className="ma-gridline" style={{ bottom: `${p}%` }}>
-              <span className="num">{NUMBER.format((scale * p) / 100)}</span>
+          {[1, 2, 3].map((k) => (
+            <div key={k} className="ma-gridline" style={{ bottom: `${k * 25}%` }}>
+              <span className="num">{NUMBER.format(k * step)}</span>
             </div>
           ))}
         </div>

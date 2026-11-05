@@ -16,7 +16,8 @@ import { TREND_MONTH_OPTIONS, type GeneralDashboard, type Metric, type TrendMont
 // "מגמת קריאות שירות" (opened vs closed, 3 / 6 / 12 completed months). Nothing else: no follow-up
 // or review counters, no "דורש טיפול", no live view and no links to work queues (D57 (2)).
 // Presentational Server Component; the page builds every link. Metric links open the details
-// dialog only when `detailHref` is given (the role is offered `calls`, D33).
+// dialog only when `detailHref` is given (the role is offered `calls`, D33). The tile sections are
+// unnamed <section>s: their KPI group carries the name, so no landmark is listed twice.
 
 const LABEL = (key: DashboardMetricKey): string => METRIC_DEFINITIONS[key].label;
 
@@ -138,7 +139,7 @@ export function AnalyticsGeneral({
 
   return (
     <>
-      <section className="ma-section" aria-labelledby="ma-today-h">
+      <section className="ma-section">
         <div className="ma-sec-head">
           <h2 id="ma-today-h">פעילות היום</h2>
           <span className="ma-label num">
@@ -150,7 +151,7 @@ export function AnalyticsGeneral({
         <Progress today={today} />
       </section>
 
-      <section className="ma-section" aria-labelledby="ma-service-h">
+      <section className="ma-section">
         <div className="ma-sec-head">
           <h2 id="ma-service-h">מדדי שירות</h2>
           <span className="ma-label">{monthLabel(monthOfDate(service.period.from))} · החודש הנוכחי</span>
@@ -235,7 +236,8 @@ export function AnalyticsGeneral({
         <GroupedBars rows={trendRows} months={trend.months} />
         <p className="ma-hint">הקריאות שנפתחו ונסגרו בכל חודש אינן בהכרח אותן קריאות.</p>
         <details className="ma-details">
-          <summary>הנתונים בטבלה</summary>
+          {/* Where focus returns after a dialog opened from a chart bar (the bars are pointer shortcuts only). */}
+          <summary data-detail-fallback="trend">הנתונים בטבלה</summary>
           <div className="scrollx ma-table-wrap">
             <table aria-label="מגמת קריאות שירות: נפתחו ונסגרו לפי חודש">
               <thead>

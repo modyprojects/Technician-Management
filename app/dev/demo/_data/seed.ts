@@ -94,8 +94,8 @@ function C(o: Partial<SeedCall> & Pick<SeedCall, "req" | "customer" | "phone" | 
  */
 function callTimes(c: SeedCall): Call {
   const first = c.visits[0] as Visit;
-  const openedOn = shiftWorkDay(shiftWorkDay(first.date, -1), -1);
-  const openedAt = atJerusalem(openedOn, fromMin(8 * 60 + ((Number(c.req) * 37) % 480)));
+  const openingDay = shiftWorkDay(shiftWorkDay(first.date, -1), -1);
+  const openedAt = atJerusalem(openingDay, fromMin(8 * 60 + ((Number(c.req) * 37) % 480)));
   let resolvedAt: string | null = null;
   if (callStatus({ ...c, openedAt, resolvedAt }) === "resolved") {
     const resolving = c.visits.filter(isClosedVisit).sort((a, b) => b.n - a.n)[0] as Visit;

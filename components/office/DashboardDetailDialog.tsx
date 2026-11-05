@@ -17,11 +17,22 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), summa
 
 const isPlainClick = (e: MouseEvent): boolean => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
-/** The first visible element that opened this dialog (a tile, a bar row, a table link). */
-function opener(returnKey: string): HTMLElement | null {
-  const all = document.querySelectorAll<HTMLElement>(`[data-detail-key="${CSS.escape(returnKey)}"]`);
-  for (const el of all) if (el.getClientRects().length > 0 && el.getAttribute("aria-hidden") !== "true") return el;
-  return null;
+/** Rendered and shown: not display:none, and not inside a closed <details> (content-visibility). */
+const isShown = (el: HTMLElement): boolean => (typeof el.checkVisibility === "function" ? el.checkVisibility() : el.getClientRects().length > 0);
+
+/**
+ * Where focus returns: the visible elements that opened this dialog (a tile, a bar row, a table
+ * link), then the stable fallback of its metric family ([data-detail-fallback], e.g. the chart
+ * table's summary for a chart bar, whose links are aria-hidden and whose table link sits in a closed
+ * <details>), so focus never drops to <body>.
+ */
+function focusTargets(returnKey: string): HTMLElement[] {
+  const openers = [...document.querySelectorAll<HTMLElement>(`[data-detail-key="${CSS.escape(returnKey)}"]`)].filter(
+    (el) => isShown(el) && el.getAttribute("aria-hidden") !== "true",
+  );
+  const family = returnKey.split(".")[0] ?? "";
+  const fallback = document.querySelector<HTMLElement>(`[data-detail-fallback="${CSS.escape(family)}"]`);
+  return fallback && isShown(fallback) ? [...openers, fallback] : openers;
 }
 
 export function DashboardDetailDialog({
@@ -53,7 +64,10 @@ export function DashboardDetailDialog({
   const descId = useId();
 
   function returnFocus() {
-    opener(returnKey)?.focus({ preventScroll: true });
+    for (const el of focusTargets(returnKey)) {
+      el.focus({ preventScroll: true });
+      if (document.activeElement === el) return;
+    }
   }
 
   function close() {

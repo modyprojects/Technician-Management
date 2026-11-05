@@ -48,7 +48,10 @@ export type Metric = {
   basis?: number;
   /** Measurements left out of an average: missing reports, and impossible sequences (T6). */
   excluded?: { missing: number; invalid: number };
-  /** unit "duration": the mean in hours (two decimals), the same number as `value`. */
+  /**
+   * unit "duration": the unrounded mean in hours (`value` is the same mean to two decimals). Screens
+   * show this one through `durationDisplay` (T7), so the display is rounded only once.
+   */
   durationHours?: number;
 };
 
@@ -167,21 +170,6 @@ export type CsWorkQueue = {
 /** Dashboard period, inclusive (the demo shows one month: "אוקטובר 2026"). */
 export type AnalyticsPeriod = { from: IsoDate; to: IsoDate };
 
-/** One technician's figures for a period (part of TechnicianDetail; the D57 tab reads TechnicianDashboard). */
-export type TechnicianStats = {
-  technician: TechnicianRef;
-  /** Closed visits. */
-  closed: number;
-  done: number;
-  cont: number;
-  /** % of the technician's first visits closed as "טופל". */
-  firstVisitFixRate: Metric;
-  avgTravelMinutes: Metric;
-  avgTreatMinutes: Metric;
-  /** Closed visits per work day with visits (one decimal). */
-  visitsPerDay: Metric;
-};
-
 /**
  * "תקלה נפוצה": only from a structured issue category (D57 (4)); never inferred from the free-text
  * fault description. No such category exists yet, so it is always "unavailable" ("לא זמין").
@@ -234,19 +222,17 @@ export type TechnicianDetailQuery = PageRequest & {
   filter?: TechnicianVisitFilter;
 };
 
-/** A technician's visit reports ("דוחות הביקורים", dashTech); the screen shows no counts or KPIs from it (D57 (3)). */
+/**
+ * A technician's visit reports ("דוחות הביקורים", dashTech): the visit rows only. It carries no
+ * counts, KPIs or follow-up counters, so none can reach the screen or the payload (D57 (2)-(3): no
+ * follow-up counters, no counts on the filter chips); the Technicians tab's numbers come from
+ * TechnicianDashboard.
+ */
 export type TechnicianDetail = {
-  stats: TechnicianStats;
   /** The filter applied to `visits`. */
   filter: TechnicianVisitFilter;
-  /** The period's visits per chip ("הכל" includes every status; "open" = scheduled, en route, in progress). */
-  visitCounts: Record<TechnicianVisitFilter, number>;
   /** The period's visits matching `filter`, newest first, one page. */
   visits: Page<TechnicianVisitRow>;
-  /** Most frequent follow-up reason; null when none. */
-  topReason: string | null;
-  /** Calls whose first visit was this technician's and is closed ("מתוך X קריאות"). */
-  firstVisitCalls: number;
   includesTestData: boolean;
 };
 
@@ -383,7 +369,7 @@ export type DashboardDetailRow = TestMarker & {
   /** Call rows: service_calls.opened_at / resolved_at. */
   openedAt?: IsoTimestamp;
   resolvedAt?: IsoTimestamp | null;
-  /** Closure keys: resolved_at − opened_at in hours; null when not measurable. */
+  /** Closure keys: resolved_at − opened_at in hours (unrounded; shown per T7); null when not measurable. */
   durationHours?: number | null;
   /** First-visit keys: the first performed visit's outcome was "טופל" (D57 (5)). */
   firstVisitResolved?: boolean;

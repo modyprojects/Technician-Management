@@ -5,6 +5,7 @@ import { ProductRules } from "@/components/office/ProductRules";
 import { ProductsTable, type ProductsTableRow } from "@/components/office/ProductsTable";
 import { Pager } from "@/components/ui/Pager";
 import { callsListHref } from "@/features/calls/data/search-params";
+import { jerusalemDate, jerusalemTime } from "@/features/dashboards/data/time";
 import { parseProductsListState, productListQueryOf } from "@/features/products/data/search-params";
 import { offers } from "@/features/reference/data/permissions";
 import { DemoOfficeFrame } from "../../../_components/DemoFrames";
@@ -32,6 +33,17 @@ export async function generateMetadata({ params }: PageProps<"/dev/demo/office/[
 
 /** The demo's 40-row page (OF-04). */
 const PAGE_SIZE = 40;
+
+/** An instant as the list shows it, in Asia/Jerusalem: "18.08" and "20.08 10:03". */
+const dayOf = (iso: string): string => {
+  const d = jerusalemDate(iso);
+  return d ? ddmm(d) : "";
+};
+const dayTimeOf = (iso: string): string | null => {
+  const d = jerusalemDate(iso);
+  const t = jerusalemTime(iso);
+  return d && t ? `${ddmm(d)} ${t}` : null;
+};
 
 // "מוצרים" (spec office screens "Products", PR-06, D19; matrix key `products`): every product by
 // its normalized SKU (PR-07), with name, brand and supplier ("לא הוזן" when empty, PR-04, OF-07),
@@ -79,7 +91,9 @@ export default async function OfficeProductsPage({ params, searchParams }: PageP
     // A role without `calls` does not see the creating call (ProductFirstSeen: null when the call is
     // not visible to the viewer); the count of calls stays (an aggregate, no call details).
     product: withCalls ? product : { ...product, firstSeen: null },
-    firstSeenDate: product.firstSeen ? ddmm(product.firstSeen.date) : "",
+    // "נפתחה" (opened_at) and "תחילת טיפול" (the first arrival) of the creating call, in Asia/Jerusalem (D57 (9)).
+    firstSeenOpened: product.firstSeen ? dayOf(product.firstSeen.openedAt) : "",
+    firstSeenWorkStart: product.firstSeen?.workStartAt ? dayTimeOf(product.firstSeen.workStartAt) : null,
     firstSeenHref: withCalls && product.firstSeen ? demoHref.call(role, product.firstSeen.req) : null,
     callsHref: withCalls ? callsListHref(demoHref.calls(role), { q: product.sku, status: "all", tech: "all", page: 1 }) : null,
   }));

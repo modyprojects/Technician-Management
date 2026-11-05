@@ -44,36 +44,23 @@ import {
   type TechnicianDashboard,
   type TechnicianDetail,
   type TechnicianDetailQuery,
-  type TechnicianStats,
   type TechnicianVisitFilter,
   type TrendMonths,
 } from "@/features/dashboards/data/types";
 import { atJerusalem, daysBetween, shiftWorkDay } from "./dates";
 import { callStatus, isClosedVisit, isOpenVisit } from "./status";
 import { followupReasonOf, productDto, techRef, technicianLanes } from "./mappers";
-import { ALL_VISITS, avg, CALLS, lastVisit, travelOf, treatOf, type CallVisit } from "./queries";
-import { prod, REASONS, TECH_IDS } from "./reference";
+import { ALL_VISITS, CALLS, lastVisit, travelOf, treatOf, type CallVisit } from "./queries";
+import { prod, TECH_IDS } from "./reference";
 import type { Call, TechId, Visit } from "./types";
 
 const metric = (value: number | null, unit: MetricUnit, decimals?: number): Metric =>
   decimals === undefined ? { value, unit } : { value, unit, decimals };
 
-const pct = (part: number, whole: number): number | null => (whole ? Math.round((part / whole) * 100) : null);
-
-/** Rounded average, or null for an empty list (the demo shows 0; screens show "—"). */
-const avgOrNull = (xs: readonly number[]): number | null => (xs.length ? avg(xs) : null);
-
 /** The first DASHBOARD_LIST_LIMIT items and the full count. */
 const capped = <T>(all: readonly T[]): Bounded<T> => boundedOf(all, DASHBOARD_LIST_LIMIT);
 
-const nonNull = (xs: readonly (number | null)[]): number[] => xs.filter((x): x is number => x != null);
-
 const inRange = (date: IsoDate, p: Period): boolean => date >= p.from && date <= p.to;
-
-const firstVisit = (c: Call): Visit => c.visits[0] as Visit;
-
-/** Calls whose first visit is in the period. */
-const callsIn = (p: Period): Call[] => CALLS.filter((c) => inRange(firstVisit(c).date, p));
 
 function attentionItem(c: Call, status: Extract<CallStatus, "followup" | "awaiting">, asOf: IsoDate): CallAttentionItem {
   const v = lastVisit(c);
@@ -151,22 +138,6 @@ export function csQueue(date: IsoDate): CsWorkQueue {
   };
 }
 
-function techStats(id: TechId, closed: readonly CallVisit[], calls: readonly Call[]): TechnicianStats {
-  const m = closed.filter((x) => x.v.tech === id);
-  const firsts = calls.filter((c) => firstVisit(c).tech === id && isClosedVisit(firstVisit(c)));
-  const days = new Set(m.map((x) => x.v.date)).size;
-  return {
-    technician: techRef(id),
-    closed: m.length,
-    done: m.filter((x) => x.v.status === "done").length,
-    cont: m.filter((x) => x.v.status === "cont").length,
-    firstVisitFixRate: metric(pct(firsts.filter((c) => firstVisit(c).status === "done").length, firsts.length), "percent"),
-    avgTravelMinutes: metric(avgOrNull(nonNull(m.map((x) => travelOf(x.v)))), "minutes"),
-    avgTreatMinutes: metric(avgOrNull(nonNull(m.map((x) => treatOf(x.v)))), "minutes"),
-    visitsPerDay: metric(days ? Math.round((m.length / days) * 10) / 10 : null, "count", 1),
-  };
-}
-
 /** Whether a visit matches a drill-down chip (the demo's tdFilter). */
 function matchesVisitFilter(v: Visit, filter: TechnicianVisitFilter): boolean {
   if (filter === "all") return true;
@@ -182,13 +153,6 @@ export function technicianDetail(
   const all = ALL_VISITS.filter((x) => x.v.tech === id && inRange(x.v.date, period)).sort((a, b) =>
     (b.v.date + b.v.start).localeCompare(a.v.date + a.v.start),
   );
-  const closed = all.filter((x) => isClosedVisit(x.v));
-  const calls = callsIn(period);
-  const firsts = calls.filter((c) => firstVisit(c).tech === id && isClosedVisit(firstVisit(c)));
-  const top = REASONS.map((r) => [r.name, closed.filter((x) => x.v.reason === r.name).length] as const)
-    .filter(([, n]) => n > 0)
-    .sort((a, b) => b[1] - a[1])[0];
-  const count = (f: TechnicianVisitFilter): number => all.filter((x) => matchesVisitFilter(x.v, f)).length;
   // pageOf() clamps page and limit (default 40, at most 100).
   const page = pageOf(
     all.filter((x) => matchesVisitFilter(x.v, query.filter)),
@@ -196,9 +160,7 @@ export function technicianDetail(
     query.limit,
   );
   return {
-    stats: techStats(id, closed, calls),
     filter: query.filter,
-    visitCounts: { all: all.length, open: count("open"), done: count("done"), cont: count("cont"), cancel: count("cancel") },
     visits: {
       ...page,
       items: page.items.map(({ c, v }) => {
@@ -223,8 +185,6 @@ export function technicianDetail(
         };
       }),
     },
-    topReason: top ? top[0] : null,
-    firstVisitCalls: firsts.length,
     includesTestData: true,
   };
 }

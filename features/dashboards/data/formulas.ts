@@ -352,15 +352,17 @@ const hours2 = (h: number): number => Math.round(h * 100) / 100;
 
 /**
  * "זמן סגירת קריאה": mean (resolved_at − opened_at) in hours over the completed calls with both
- * timestamps and resolved_at ≥ opened_at. The screen shows it per T7 (durationDisplay).
+ * timestamps and resolved_at ≥ opened_at. `value` is the mean to two decimals (dialog, tests);
+ * `durationHours` is the unrounded mean, which the screen shows per T7 (durationDisplay), so the
+ * display is rounded once (47.496 h → "47 שעות", never 47.50 → "48 שעות" → "2.0 ימים").
  */
 export function closeTime(calls: readonly MetricCall[], period: AnalyticsPeriod, scope: DashboardScope, tech?: TechnicianId): Metric {
   const rs = completedCallsIn(calls, period, scope, tech);
   const valid = rs.flatMap((r) => (r.hours === null ? [] : [r.hours]));
   const excluded = { missing: rs.filter((r) => r.problem === "missing").length, invalid: rs.filter((r) => r.problem === "invalid").length };
   if (!valid.length) return { value: null, unit: "duration", basis: 0, excluded };
-  const mean = hours2(valid.reduce((a, b) => a + b, 0) / valid.length);
-  return { value: mean, unit: "duration", decimals: 2, basis: valid.length, excluded, durationHours: mean };
+  const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+  return { value: hours2(mean), unit: "duration", decimals: 2, basis: valid.length, excluded, durationHours: mean };
 }
 
 /** "קריאות שנסגרו" of a technician: completed calls closed in the period by the technician's visit (T2). */
@@ -526,8 +528,10 @@ export function generalMetrics(calls: readonly MetricCall[], now: IsoTimestamp, 
     },
     highlights: {
       period: window,
-      suppliers: topGroups(counted, window, "supplier", TOP_SUPPLIERS_LIMIT, { excludeNone: true }, scope),
-      skus: topGroups(counted, window, "sku", TOP_SKUS_LIMIT, {}, scope),
+      // Only calls opened by `now`, as on the Products tab and in coverageStart (a call stamped after
+      // `now`, e.g. by clock skew, is counted nowhere).
+      suppliers: topGroups(openedBy(counted, now), window, "supplier", TOP_SUPPLIERS_LIMIT, { excludeNone: true }, scope),
+      skus: topGroups(openedBy(counted, now), window, "sku", TOP_SKUS_LIMIT, {}, scope),
     },
     trend: { months, rows: monthlyTrend(counted, asOf, months, coverageStart, scope) },
   };
@@ -684,14 +688,14 @@ export function detailRecords(
       return {
         records: "calls",
         rows: completedCallsIn(counted, month, scope).map((r) =>
-          callRow(r.call, { technician: r.visit.tech, durationHours: r.hours === null ? null : hours2(r.hours) }),
+          callRow(r.call, { technician: r.visit.tech, durationHours: r.hours }),
         ),
       };
     case "top.suppliers":
     case "top.skus": {
       const kind: GroupKind = key === "top.suppliers" ? "supplier" : "sku";
       const window = lastDaysWindow(asOf, HIGHLIGHT_WINDOW_DAYS);
-      const inWindow = openedWithin(counted, window);
+      const inWindow = openedWithin(openedBy(counted, ctx.now), window);
       const ranked = topGroups(inWindow, window, kind, Number.MAX_SAFE_INTEGER, { excludeNone: kind === "supplier" }, scope);
       if (!ranked.items.some((r) => r.key === group)) return null;
       return { records: "calls", rows: groupMembers(inWindow, kind, group as string, scope).sort(byOpenedDesc).map((c) => callRow(c)) };
@@ -734,7 +738,7 @@ export function detailRecords(
         rows: completedCallsIn(counted, period, scope, tech).map((r) =>
           callRow(r.call, {
             technician: r.visit.tech,
-            ...(key === "tech.closeTime" ? { durationHours: r.hours === null ? null : hours2(r.hours) } : {}),
+            ...(key === "tech.closeTime" ? { durationHours: r.hours } : {}),
           }),
         ),
       };

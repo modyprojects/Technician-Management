@@ -67,7 +67,7 @@ export function AnalyticsTechnicians({
           {coverageStart ? `אין נתונים לפני ${dateLabel(coverageStart)}` : "אין עדיין קריאות שירות"}
         </div>
       )}
-      <section className="ma-section" aria-labelledby="ma-tech-act-h">
+      <section className="ma-section">
         <div className="ma-sec-head">
           <h2 id="ma-tech-act-h">פעילות — {t.name}</h2>
           <span className="ma-label num">{periodLabel}</span>
@@ -81,7 +81,7 @@ export function AnalyticsTechnicians({
         />
       </section>
 
-      <section className="ma-section" aria-labelledby="ma-tech-perf-h">
+      <section className="ma-section">
         <div className="ma-sec-head">
           <h2 id="ma-tech-perf-h">מדדי ביצועים — {t.name}</h2>
           <span className="ma-label">ללא השוואה בין טכנאים</span>

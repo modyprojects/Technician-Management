@@ -10,7 +10,9 @@ import type { BarRow } from "@/features/dashboards/data/types";
 // A row links to the records behind it (the details dialog) only when the caller passes `href`
 // (the role is offered `calls`); otherwise it is plain text. A truncated name keeps its full text
 // in `title` and for screen readers. SKU rows are LTR text with the 🧪 badge (SIM-17) and the
-// product name where space allows (spec §5).
+// product name where space allows (spec §5). A link's accessible name is its own content (name,
+// value, the hidden unit and "· פירוט", and the badge's "נתוני בדיקה"), so it always contains the
+// visible text (WCAG 2.5.3).
 
 export type RankedBarsRow = BarRow & { href?: string; detailKey?: string };
 
@@ -59,12 +61,14 @@ export function RankedBars({
                 <span style={{ color: "var(--dash-muted)" }}>{name}</span>
               )}
             </span>
+            <span className="sr-only">: </span>
             <span className="ma-bar-track" aria-hidden="true">
               <span className={tone === "compare" ? "ma-bar-fill ma-compare" : "ma-bar-fill"} style={{ width: `${(r.value / max) * 100}%` }} />
             </span>
             <span className="ma-bar-val num">
               {NUMBER.format(r.value)}
               <span className="sr-only"> {unitLabel}</span>
+              {r.href && <span className="sr-only"> · פירוט</span>}
             </span>
           </>
         );
@@ -78,7 +82,6 @@ export function RankedBars({
                 scroll={false}
                 aria-haspopup="dialog"
                 data-detail-key={r.detailKey}
-                aria-label={`${full}${r.isTest ? " (נתוני בדיקה)" : ""}: ${NUMBER.format(r.value)} ${unitLabel} · פירוט`}
               >
                 {body}
               </Link>
