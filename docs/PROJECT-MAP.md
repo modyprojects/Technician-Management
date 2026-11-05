@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-05 (runtime canary-rows check for migrations, branch `claude/db-canary-check`, PR #13, based on `main` `bcaa885`; D54).
+Last updated: 2026-11-05 (owner's consolidated decisions D55; the migration guard joins the protected list; earlier: runtime canary-rows check, PR #13, D54).
 
 ## 1. Purpose and how to read it
 
@@ -48,7 +48,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `tests/db-canary-selftest/` | Self-test cases for the canary-rows check (49): each case has its own tiny migrations, fixtures and `expect.json` (expected outcome and rule); passing schema changes and failing cases for rules R1 to R7, including one per bypass found in review round 1. Outside `tests/db/` for the same reason |
 | `supabase/config.toml` | Local Supabase configuration for CI tests: Postgres 17, invitation-only Auth (sign-ups off, D50), seed disabled (no seed file). Not used for the remote project |
 | `scripts/install-supabase-cli.sh` | Installs the pinned Supabase CLI (checksum-verified) in CI |
-| `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers |
+| `scripts/check-migrations.mjs` | Migration guard (D47): migrations may insert only approved reference data and never test markers. Protected file (D55): merging a change that weakens it needs the owner's approval |
 | `scripts/db-canary.mjs` | Canary-rows check (D47, runtime): applies the migrations to the local database with and without canary rows and fails when a migration changes, removes, copies or derives data, or writes data into the schema (rules R1 to R7, `docs/testing.md`; a tripwire, not proof against deliberate evasion); `--selftest` runs `tests/db-canary-selftest/`. Local Docker only, Node standard library; design, measurements and review round 1 in `docs/review/db-canary/README.md` |
 | `scripts/check-bundle.mjs` | Post-build browser bundle check: secret patterns always; fixture sentinel after go-live |
 | `scripts/scan-secrets.sh` | Local Gitleaks scan (same pinned version as CI), values redacted |
