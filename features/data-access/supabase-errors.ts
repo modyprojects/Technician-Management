@@ -1,0 +1,188 @@
+// Supabase errors -> short Hebrew messages for the user (Step 2 plan §3.7 "Errors", §4 "Hebrew
+// messages"; docs/security.md §8: no stack trace, raw database or Auth text, or session material
+// reaches the client). Pure: no I/O and no logging. Callers log an event name and a code only.
+//
+// Database errors are read by `error.code` (SQLSTATE or PostgREST `PGRST…`), never by HTTP status:
+// a `55000` business refusal arrives as HTTP 500. Auth errors are read by the Supabase Auth error
+// code. The codes and the `55000` texts are those Migration 1 raises (PR #12, not merged yet); an
+// unknown code or text gets the generic message (R14: unit tests pin the known texts).
+
+/** Messages shared by every action. Wording is shown to the owner for feedback (plan §4). */
+export const ACTION_MESSAGES = {
+  forbidden: "אין לך הרשאה לפעולה הזו.",
+  invalid: "חלק מהפרטים חסרים או שגויים.",
+  duplicate: "הערך כבר בשימוש.",
+  stale: "הנתונים השתנו בינתיים. רעננו את הדף ונסו שוב.",
+  unavailable: "הפעולה עדיין אינה זמינה.",
+  unknown: "הפעולה לא הושלמה. נסו שוב מאוחר יותר.",
+} as const;
+
+/**
+ * Sign-in messages (plan §3.4): one message for every credential failure (wrong password, unknown
+ * email, inactive account, no profile), one for every service failure (not configured,
+ * unreachable, rate-limited, database objects missing). Neither reveals anything about an account.
+ */
+export const SIGN_IN_MESSAGES = {
+  credentials: "האימייל או הסיסמה שגויים, או שאין לחשבון גישה.",
+  service: "הכניסה אינה זמינה כרגע. נסו שוב מאוחר יותר.",
+  noAccess: "אין לחשבון הזה גישה למסך הזה.",
+} as const;
+
+/** Auth Admin messages (account creation and the Creator's credential changes, PRs 2.6–2.7). */
+export const AUTH_ADMIN_MESSAGES = {
+  emailExists: "כתובת המייל כבר רשומה במערכת ההתחברות. פנו ליוצר",
+  weakPassword: "הסיסמה אינה עומדת בדרישות.",
+  userNotFound: "חשבון ההתחברות לא נמצא.",
+  rateLimited: "בוצעו יותר מדי פעולות. נסו שוב מאוחר יותר.",
+} as const;
+
+/** What kind of database failure it was; the caller decides (for example "no access" when objects are missing). */
+export type DatabaseErrorKind = "forbidden" | "invalid" | "duplicate" | "stale" | "state" | "missing-object" | "unknown";
+
+/** The `code` of an error-shaped value: a short non-empty string, else null. */
+function codeOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 && code.length <= 64 ? code : null;
+}
+
+/** The `message` of an error-shaped value, else null (compared only, never shown). */
+function messageOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" ? message : null;
+}
+
+/** The HTTP `status` of an Auth error, else null. */
+function statusOf(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) return null;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && Number.isInteger(status) ? status : null;
+}
+
+// Maps (not object literals), so a code such as "constructor" or "__proto__" is never found.
+
+const DATABASE_KINDS: ReadonlyMap<string, DatabaseErrorKind> = new Map([
+  ["42501", "forbidden"],
+  ["22023", "invalid"],
+  ["23514", "invalid"],
+  ["23502", "invalid"],
+  ["23503", "invalid"],
+  ["23505", "duplicate"],
+  ["PT409", "stale"],
+  ["55000", "state"],
+  // The database objects are not there (Migration 1 not applied, or the API schema cache is stale):
+  // PostgREST's "table, function, column or schema not found" and the matching SQLSTATEs.
+  ["PGRST106", "missing-object"],
+  ["PGRST202", "missing-object"],
+  ["PGRST204", "missing-object"],
+  ["PGRST205", "missing-object"],
+  ["42P01", "missing-object"],
+  ["42703", "missing-object"],
+  ["42883", "missing-object"],
+  ["3F000", "missing-object"],
+]);
+
+/**
+ * `55000` ("wrong state") texts that Migration 1 raises from the account and matrix functions,
+ * matched exactly. Trigger texts that the functions never let through (immutable fields,
+ * append-only tables) and the one-time bootstrap's texts get the generic message.
+ */
+const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
+  ["an open request exists", "קיימת כבר בקשה פתוחה."],
+  ["a pending request exists", "קיימת כבר בקשה פתוחה."],
+  ["the request is not pending", "הבקשה כבר טופלה."],
+  ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
+  ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
+  ["the request cannot be cancelled", "לא ניתן לבטל את הבקשה."],
+  ["requires the Creator's approval", "הפעולה דורשת אישור של היוצר."],
+  ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
+  ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],
+  ["profiles: a profile with a technician record keeps its role", "לא ניתן לשנות את התפקיד של חשבון טכנאי."],
+  ["profiles: the last active Creator cannot be demoted or deactivated", "לא ניתן להשבית את היוצר הפעיל האחרון או לשנות את תפקידו."],
+  ["value locked until an open owner decision", "הערך נעול עד להחלטת הבעלים."],
+  ["value already approved", "הערך כבר אושר."],
+]);
+
+/** The kind of a database (PostgREST) error; anything unrecognised, including a network failure, is "unknown". */
+export function databaseErrorKind(error: unknown): DatabaseErrorKind {
+  const code = codeOf(error);
+  return (code !== null && DATABASE_KINDS.get(code)) || "unknown";
+}
+
+/** The Hebrew message for a database (PostgREST) error. Never the database's own text. */
+export function databaseErrorMessage(error: unknown): string {
+  switch (databaseErrorKind(error)) {
+    case "forbidden":
+      return ACTION_MESSAGES.forbidden;
+    case "invalid":
+      return ACTION_MESSAGES.invalid;
+    case "duplicate":
+      return ACTION_MESSAGES.duplicate;
+    case "stale":
+      return ACTION_MESSAGES.stale;
+    case "state": {
+      const message = messageOf(error);
+      return (message !== null && STATE_MESSAGES.get(message)) || ACTION_MESSAGES.unknown;
+    }
+    case "missing-object":
+    case "unknown":
+      return ACTION_MESSAGES.unknown;
+  }
+}
+
+/** A request reference may appear in a message only as an id: letters, digits and hyphens. */
+const REQUEST_REF_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+
+const AUTH_ADMIN_TEXTS: ReadonlyMap<string, string> = new Map([
+  ["weak_password", AUTH_ADMIN_MESSAGES.weakPassword],
+  ["user_not_found", AUTH_ADMIN_MESSAGES.userNotFound],
+  ["over_request_rate_limit", AUTH_ADMIN_MESSAGES.rateLimited],
+  ["validation_failed", ACTION_MESSAGES.invalid],
+  ["email_address_invalid", ACTION_MESSAGES.invalid],
+  ["bad_json", ACTION_MESSAGES.invalid],
+  ["not_admin", ACTION_MESSAGES.forbidden],
+  ["no_authorization", ACTION_MESSAGES.forbidden],
+  ["bad_jwt", ACTION_MESSAGES.forbidden],
+]);
+
+/**
+ * The Hebrew message for a Supabase Auth Admin error (account creation, password and email
+ * changes). An address that Auth already holds names the request reference when one is given,
+ * so the Creator can find the case (Step 2 plan §3.8, Q16). A network failure or an unknown code
+ * gets the generic message; whether the call took effect is the caller's question (plan §3.8).
+ */
+export function authAdminErrorMessage(error: unknown, context: { requestRef?: string } = {}): string {
+  const code = codeOf(error);
+  if (code === "email_exists" || code === "user_already_exists") {
+    const ref = context.requestRef;
+    return ref !== undefined && REQUEST_REF_PATTERN.test(ref)
+      ? `${AUTH_ADMIN_MESSAGES.emailExists} (מספר בקשה ${ref}).`
+      : `${AUTH_ADMIN_MESSAGES.emailExists}.`;
+  }
+  return (code !== null && AUTH_ADMIN_TEXTS.get(code)) || ACTION_MESSAGES.unknown;
+}
+
+/** Auth error codes of a refused sign-in that say something about the account: one generic message. */
+const SIGN_IN_CREDENTIAL_CODES: ReadonlySet<string> = new Set([
+  "invalid_credentials",
+  "email_not_confirmed",
+  "phone_not_confirmed",
+  "user_banned",
+  "user_not_found",
+]);
+
+/**
+ * Whether a failed `signInWithPassword` is a credential failure or a service failure (plan §3.4).
+ * Credential failures are the account-related codes above, and an HTTP 400 without a code (older
+ * Auth servers). Everything else (rate limits, network failures, server errors, unknown values) is
+ * a service failure, whose message reveals nothing about any account either.
+ */
+export function signInFailureKind(error: unknown): "credentials" | "service" {
+  const code = codeOf(error);
+  if (code !== null) return SIGN_IN_CREDENTIAL_CODES.has(code) ? "credentials" : "service";
+  return statusOf(error) === 400 ? "credentials" : "service";
+}
+
+/** The sign-in screen's message for a failed `signInWithPassword`. */
+export const signInFailureMessage = (error: unknown): string => SIGN_IN_MESSAGES[signInFailureKind(error)];

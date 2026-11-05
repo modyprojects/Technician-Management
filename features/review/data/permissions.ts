@@ -1,8 +1,8 @@
 // Display helpers of "פריטים לבדיקה" over a role's permission values (D33, D39, D44;
 // docs/database-schema.md §8.3). Pure, no data or I/O. They decide only what a screen offers:
-// enforcement is always on the server and in the database (G-04). The role helpers of the demo
-// (app/dev/demo/_data/roles.ts) wrap them with the fixed D14 rule (Manager and Creator), which is
-// never a matrix key (D33).
+// enforcement is always on the server and in the database (G-04). The shared role helpers
+// (features/auth/roles.ts) and the demo's (app/dev/demo/_data/roles.ts) wrap them, the demo's with
+// the fixed D14 rule (Manager and Creator), which is never a matrix key (D33).
 import { offers } from "@/features/reference/data/permissions";
 import type { PermissionKey, RolePermissions } from "@/features/reference/data/types";
 import { pendingCreatorDecision, pendingMatrixDecision } from "@/features/settings/data/types";
