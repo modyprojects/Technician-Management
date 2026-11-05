@@ -5,6 +5,8 @@
 -- destroy the real Creator's profile and the audit evidence; it refuses to run as soon as any
 -- profile, technician, request or audit row exists.
 -- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53).
+-- It also removes the migration history row (CLI version or MCP name, step 6) and refuses to run
+-- when the history table exists without one.
 -- Locally:
 --   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
 -- The whole script is one DO block (re-review R-S3): the refusal, every DROP and the history
@@ -15,9 +17,11 @@
 -- default privileges and grants; owner question Q2 in docs/review/step1-pr13): restoring Supabase's permissive defaults
 -- would reopen the known anon finding.
 -- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
--- on the empty tables, one proves that the precondition below refuses to run.
+-- on the empty tables, two prove that it refuses to run (data present; no history row, step 6).
 
 do $down$
+declare
+  v_history_rows bigint;
 begin
   -- 0. Fail closed (S4): refuse to run once any account, request or audit row exists (for example
   --    after the first Creator was bootstrapped, D49). Nothing is dropped then.
@@ -100,9 +104,20 @@ begin
   -- 5. The private schema (empty by now; it fails if anything else was added to it).
   drop schema private;
 
-  -- 6. The CLI's migration history, so the migration can be applied again.
+  -- 6. The migration history, so the migration can be applied again and is never listed as applied
+  --    once its objects are gone (review OPS-1). The CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which
+  --    must be 'access_and_permissions' (docs/review/step1-pr13/README.md section 10). Every row
+  --    with either is removed. When the history table exists but holds neither, the whole rollback
+  --    is refused (nothing is dropped): find the recorded row first.
   if to_regclass('supabase_migrations.schema_migrations') is not null then
-    delete from supabase_migrations.schema_migrations where version = '20261104120000';
+    delete from supabase_migrations.schema_migrations
+    where version = '20261104120000' or name = 'access_and_permissions';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261104120000 or name access_and_permissions; nothing was dropped';
+    end if;
   end if;
 end
 $down$;

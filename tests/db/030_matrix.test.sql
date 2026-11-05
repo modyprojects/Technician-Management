@@ -2,20 +2,26 @@
 -- docs/testing.md category 4 "Matrix metadata"). Values are TEMPORARY until Step 10 (D51).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(60);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select ('00000000-0000-4000-8000-0000000000' || k)::uuid, '00000000-0000-0000-0000-000000000000'::uuid,
        'authenticated', 'authenticated', 'user-' || k || '@example.test',
        '{"role": "creator"}'::jsonb, '{"role": "creator"}'::jsonb, now(), now()
-from unnest(array['c1', 'a1', 'a9', 'b1', 'd1', 'f1']) as k;
+from unnest(array['c1', 'a1', 'a8', 'a9', 'b1', 'b8', 'd1', 'd8', 'f1']) as k;
 select private.bootstrap_first_creator('00000000-0000-4000-8000-0000000000c1', 'יוצר');
 insert into public.profiles (id, role, full_name, is_active) values
   ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', true),
   ('00000000-0000-4000-8000-0000000000a9', 'manager', 'מנהל לא פעיל', false),
   ('00000000-0000-4000-8000-0000000000b1', 'customer_service', 'נציגה א', true),
   ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', true);
+-- Real-marked callers (final independent review T1): a test caller is refused by the test-user rule
+-- before the role check, so only real-marked Managers and Customer Service users test the role check.
+insert into public.profiles (id, role, full_name, is_active, is_test) values
+  ('00000000-0000-4000-8000-0000000000a8', 'manager', 'מנהל אמיתי', true, false),
+  ('00000000-0000-4000-8000-0000000000b8', 'customer_service', 'נציגה אמיתית', true, false),
+  ('00000000-0000-4000-8000-0000000000d8', 'technician', 'טכנאי אמיתי', true, false);
 
 -- Catalogue and seeded values ------------------------------------------------------------------
 select results_eq(
@@ -28,6 +34,22 @@ select results_eq(
 select throws_ok(
   $$ insert into public.permissions (key, label_he, enforcement, sort_order) values ('matrix', 'עריכת הרשאות', 'data', 99) $$,
   '23514', null, 'a fixed capability can never become a key (closed catalogue CHECK)');
+select throws_ok(
+  $$ insert into public.permissions (key, label_he, enforcement, sort_order) values ('matrix', 'עריכת הרשאות', 'screen', 99) $$,
+  '23514', 'new row for relation "permissions" violates check constraint "permissions_key_check"',
+  'T5: the closed key list itself refuses an unknown key (also when its enforcement would pass)');
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conname = 'permissions_key_check' and conrelid = 'public.permissions'::regclass),
+  'CHECK ((key = ANY (ARRAY[''cal''::text, ''calls''::text, ''card''::text, ''cancel''::text, ''dashGen''::text, ''dashTech''::text, ''dashProd''::text, ''export''::text, ''settings''::text, ''usage''::text, ''products''::text, ''conflicts''::text, ''recordings''::text])))',
+  'T5: the closed catalogue CHECK lists exactly the 13 D33 keys (D33: a new key needs a reviewed migration)');
+select results_eq(
+  $$ select key, label_he from public.permissions order by sort_order $$,
+  $$ values ('cal', 'יומן טכנאים'), ('calls', 'קריאות – צפייה וחיפוש'), ('card', 'כרטיס קריאה – תמונות, חתימה'),
+            ('cancel', 'ביטול קריאה'), ('dashGen', 'דשבורד · כללי'), ('dashTech', 'דשבורד · טכנאים'),
+            ('dashProd', 'דשבורד · מוצרים וספקים'), ('export', 'ייצוא ל-Excel'), ('settings', 'הגדרות'),
+            ('usage', 'מדדי שימוש'), ('products', 'עריכת מוצרים'), ('conflicts', 'טיפול בפריטים לבדיקה'),
+            ('recordings', 'הקלטות מקוריות') $$,
+  'T5: the Hebrew labels are the demo''s and the TEMPORARY SE-02 labels, exactly');
 
 select results_eq(
   $$ select role, permission_key, allowed from public.role_permissions rp
@@ -134,6 +156,22 @@ select throws_ok($$ select public.admin_set_role_permission('customer_service', 
   '42501', 'not authorized', 'a Technician cannot change the matrix');
 reset role;
 
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a8","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_set_role_permission('manager', 'settings', true, 1, null) $$,
+  '42501', 'not authorized', 'T1: a real-marked Manager cannot grant himself a key (the Creator-only role check refuses)');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b8","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_set_role_permission('customer_service', 'export', true, 1, null) $$,
+  '42501', 'not authorized', 'T1: a real-marked Customer Service user cannot change the matrix');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d8","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_set_role_permission('customer_service', 'export', true, 1, null) $$,
+  '42501', 'not authorized', 'T1: a real-marked Technician cannot change the matrix');
+reset role;
+
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
 select is(public.admin_set_role_permission('customer_service', 'export', true, 1, 'בדיקה'), 2,
@@ -181,7 +219,19 @@ select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
 select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 1) $$,
   '42501', 'not authorized', 'the body itself refuses Customer Service');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a8","role":"authenticated"}', true);
+select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 1) $$,
+  '42501', 'not authorized', 'T1: the body refuses a real-marked Manager');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b8","role":"authenticated"}', true);
+select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 1) $$,
+  '42501', 'not authorized', 'T1: the body refuses a real-marked Customer Service user');
+select set_config('request.jwt.claims', '', true);
+select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 1) $$,
+  '42501', 'not authorized',
+  'D1: the owner''s database role alone cannot approve; it needs an active real Creator''s id in the claims');
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 7) $$,
+  'PT409', 'version conflict', 'T5: a stale expected_version is a conflict for the approval too');
 select is(private.admin_approve_role_permission('manager', 'cal', 1), 2, 'the Creator''s session marks a value approved');
 select throws_ok($$ select private.admin_approve_role_permission('manager', 'cal', 2) $$,
   '55000', 'value already approved', 'an approved value cannot be approved again');
@@ -191,6 +241,10 @@ select ok(
   (select value_status = 'approved' and approved_by = '00000000-0000-4000-8000-0000000000c1' and approved_at is not null
    from public.role_permissions where role = 'manager' and permission_key = 'cal'),
   'approval stores status, approver and time');
+select throws_ok(
+  $$ update public.role_permissions set value_status = 'approved' where role = 'manager' and permission_key = 'dashTech' $$,
+  '23514', 'new row for relation "role_permissions" violates check constraint "role_permissions_approval_check"',
+  'T5 (D51): approved means with an approver and a time, even as postgres');
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;

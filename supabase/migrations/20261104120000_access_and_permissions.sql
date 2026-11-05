@@ -15,6 +15,13 @@
 -- Applying it to the remote project needs the owner's separate approval (D52 rule 4, D53) and,
 -- before that, the owner's D50 Auth settings change.
 --
+-- search_path (final independent review SEC-1): every function in public and private pins
+-- search_path = pg_catalog, pg_temp. An empty search_path is not enough: PostgreSQL then searches
+-- the session's temporary schema first for type and relation names, and any API role can create a
+-- domain such as pg_temp.text there, whose CHECK would run inside these bodies as their owner.
+-- Listing pg_temp last makes pg_catalog win (PostgreSQL, "Writing SECURITY DEFINER Functions
+-- Safely"); every other object is named schema-qualified. tests/db/010 and 015 assert it.
+--
 -- Error codes raised by the functions:
 --   42501 "not authorized" (generic, also for unknown targets)
 --   22023 "invalid input"
@@ -24,7 +31,10 @@
 
 -- ---------------------------------------------------------------------------------------------
 -- 0. Apply as postgres. The hardening below changes the default privileges of `postgres`, and
---    every object must be owned by `postgres`; any other role fails closed.
+--    every object must be owned by `postgres`; any other role fails closed, as long as the client
+--    stops at the first error and rolls back (review OPS-3). Supported: the Supabase CLI, MCP
+--    apply_migration (one query string), or `psql --single-transaction -v ON_ERROR_STOP=1 -f`.
+--    Plain `psql -f` without those flags reports the refusal and runs the rest of the file.
 -- ---------------------------------------------------------------------------------------------
 do $$
 begin
@@ -292,14 +302,14 @@ comment on table public.audit_logs is
 alter table public.audit_logs enable row level security;
 
 -- ---------------------------------------------------------------------------------------------
--- 4. Shared trigger functions (SECURITY INVOKER, empty search_path, no dynamic SQL, no grants:
+-- 4. Shared trigger functions (SECURITY INVOKER, search_path pg_catalog, pg_temp, no dynamic SQL, no grants:
 --    EXECUTE is checked only when a trigger is created). Every writer is a SECURITY DEFINER body
 --    owned by postgres, so the triggers read consistent data.
 -- ---------------------------------------------------------------------------------------------
 create function private.tg_bump_version()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   new.version := old.version + 1;
@@ -312,7 +322,7 @@ $$;
 create function private.tg_immutable_markers()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_new jsonb := to_jsonb(new);
@@ -330,7 +340,7 @@ $$;
 create function private.tg_reject_update_delete()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   raise exception using errcode = '55000', message = tg_table_name || ' is append-only';
@@ -340,7 +350,7 @@ $$;
 create function private.tg_reject_delete()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   raise exception using errcode = '55000', message = tg_table_name || ': rows are never deleted';
@@ -350,7 +360,7 @@ $$;
 create function private.tg_reject_truncate()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   raise exception using errcode = '55000', message = tg_table_name || ' cannot be truncated';
@@ -362,7 +372,7 @@ $$;
 create function private.tg_one_way_people()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_row jsonb := to_jsonb(new);
@@ -388,7 +398,7 @@ $$;
 create function private.tg_profile_guard()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   if new.id <> old.id or new.created_at <> old.created_at or new.created_by is distinct from old.created_by then
@@ -419,7 +429,7 @@ $$;
 create function private.tg_technician_guard()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   if tg_op = 'UPDATE' and (new.id <> old.id or new.profile_id <> old.profile_id
@@ -441,7 +451,7 @@ $$;
 create function private.tg_account_request_guard()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_mutable text[] := array['status', 'decided_by', 'decided_at', 'rejection_reason', 'target_profile_id', 'version', 'updated_at'];
@@ -473,7 +483,7 @@ create function private.audit_row_hash(
 returns text
 language sql
 stable
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select encode(sha256(convert_to(concat_ws('|',
     p_prev_hash,
@@ -492,7 +502,7 @@ $$;
 create function private.tg_audit_target()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   new.occurred_at := now();
@@ -514,7 +524,7 @@ $$;
 create function private.tg_audit_chain()
 returns trigger
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_last_id bigint;
@@ -537,7 +547,7 @@ $$;
 create function private.write_audit(p_action text, p_target_table text, p_target_id uuid, p_details jsonb)
 returns bigint
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_id bigint;
@@ -562,7 +572,7 @@ create function private.audit_chain_verify(p_anchor_id bigint default null, p_an
 returns bigint
 language plpgsql
 stable
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_row record;
@@ -658,7 +668,7 @@ create trigger t99_reject_truncate before truncate on public.audit_logs
 
 -- ---------------------------------------------------------------------------------------------
 -- 7. Helpers for RLS and the app (§9): SECURITY DEFINER (a policy on profiles reads profiles),
---    return a boolean or the caller's own id, empty search_path, no dynamic SQL, in private,
+--    return a boolean or the caller's own id, search_path pg_catalog, pg_temp, no dynamic SQL, in private,
 --    owned by postgres. Every one requires an active profile.
 -- ---------------------------------------------------------------------------------------------
 create function private.is_active_user()
@@ -666,7 +676,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active)
 $$;
@@ -676,7 +686,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role = p_role)
 $$;
@@ -686,7 +696,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_active and p.role = 'creator')
 $$;
@@ -696,7 +706,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select exists (
     select 1 from public.profiles p
@@ -711,7 +721,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select coalesce((
     select case
@@ -732,7 +742,7 @@ returns uuid
 language sql
 stable
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
   select t.id
   from public.technicians t
@@ -753,7 +763,7 @@ $$;
 create function private.require_caller(p_roles text[])
 returns public.profiles
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -772,7 +782,7 @@ create function private.admin_set_role_permission(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -819,12 +829,15 @@ $$;
 -- TEMPORARY (owner question Q6, deny by default): §4 says role_permissions is written only by
 -- admin_set_role_permission and D51 places the approval of the final values in Step 10, so no API
 -- role may execute this function (no grant, section 13) until the owner decides who approves and
--- when. Only the owner's database role can run it until then.
+-- when. Only the owner's database role can run it until then, and only with an active real
+-- Creator's id in request.jwt.claims (require_caller; without claims it refuses, 42501): the value
+-- is then stored as approved by that Creator and audited with him as actor, although he did not
+-- act in the app (review D1; tests/db/030 runs it this way).
 create function private.admin_approve_role_permission(p_role text, p_key text, p_expected_version integer)
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -867,7 +880,7 @@ create function private.assert_can_manage(p_target_role text)
 returns void
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -887,7 +900,7 @@ create function private.assert_can_change_credentials(p_target_profile_id uuid, 
 returns void
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -923,7 +936,7 @@ create function private.authorize_account_creation(p_role text, p_email text, p_
 returns uuid
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -971,7 +984,7 @@ create function private.admin_create_profile(
 returns uuid
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1030,7 +1043,7 @@ create function private.admin_set_user_role(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1074,7 +1087,7 @@ create function private.admin_set_user_active(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1118,7 +1131,7 @@ create function private.admin_update_profile(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1168,7 +1181,7 @@ create function private.admin_create_technician(
 returns uuid
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1180,7 +1193,10 @@ begin
     raise exception using errcode = '22023', message = 'invalid input';
   end if;
   select p.* into v_target from public.profiles p where p.id = p_profile_id for share;
-  if not found or (v_caller.is_test and not v_target.is_test) then
+  -- Review SEC-3: a Manager gets the generic error for a profile he cannot read (another Manager,
+  -- the Creator), as for an unknown id; the specific error below only for readable profiles.
+  if not found or (v_caller.is_test and not v_target.is_test)
+     or (v_caller.role = 'manager' and v_target.role not in ('technician', 'customer_service')) then
     raise exception using errcode = '42501', message = 'not authorized';
   end if;
   if v_target.role <> 'technician' then
@@ -1206,7 +1222,7 @@ create function private.admin_update_technician(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1258,7 +1274,7 @@ create function private.request_account_change(
 returns uuid
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1310,7 +1326,11 @@ begin
       if p_requested_role is null then
         raise exception using errcode = '22023', message = 'invalid input';
       end if;
-      if p_requested_role = v_target.role
+      -- TEMPORARY, deny by default (final independent review SEC-2, owner question Q19): no role
+      -- change for an inactive account. Otherwise two approved role changes around a Manager's
+      -- immediate Technician activation would turn an inactive Customer Service account into an
+      -- active one without an activation request (D34 a). The Creator changes roles directly.
+      if p_requested_role = v_target.role or not v_target.is_active
          or exists (select 1 from public.technicians t where t.profile_id = v_target.id) then
         raise exception using errcode = '55000', message = 'the request does not apply';
       end if;
@@ -1340,7 +1360,7 @@ create function private.decide_account_request(
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1393,7 +1413,9 @@ begin
       perform private.write_audit('profile.activated', 'profiles', v_target.id,
         jsonb_build_object('actor_role', v_caller.role, 'request_id', p_request_id));
     else
-      if v_target.role not in ('technician', 'customer_service') or v_target.role = v_request.requested_role then
+      -- SEC-2 (TEMPORARY, Q19): as when the request is made, never for an inactive account.
+      if v_target.role not in ('technician', 'customer_service') or v_target.role = v_request.requested_role
+         or not v_target.is_active then
         raise exception using errcode = '55000', message = 'the request no longer applies';
       end if;
       update public.profiles p set role = v_request.requested_role, updated_by = v_caller.id where p.id = v_target.id;
@@ -1419,7 +1441,7 @@ create function private.cancel_account_request(p_request_id uuid, p_expected_ver
 returns integer
 language plpgsql
 security definer
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 declare
   v_caller public.profiles;
@@ -1468,7 +1490,7 @@ returns boolean
 language sql
 stable
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.has_permission(p_key) $$;
 
 create function public.is_creator()
@@ -1476,7 +1498,7 @@ returns boolean
 language sql
 stable
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.is_creator() $$;
 
 create function public.my_technician_id()
@@ -1484,7 +1506,7 @@ returns uuid
 language sql
 stable
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.my_technician_id() $$;
 
 create function public.admin_set_role_permission(
@@ -1492,35 +1514,35 @@ create function public.admin_set_role_permission(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_set_role_permission(p_role, p_key, p_allowed, p_expected_version, p_reason) $$;
 
 create function public.admin_approve_role_permission(p_role text, p_key text, p_expected_version integer)
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_approve_role_permission(p_role, p_key, p_expected_version) $$;
 
 create function public.assert_can_manage(p_target_role text)
 returns void
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.assert_can_manage(p_target_role) $$;
 
 create function public.assert_can_change_credentials(p_target_profile_id uuid, p_kind text)
 returns void
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.assert_can_change_credentials(p_target_profile_id, p_kind) $$;
 
 create function public.authorize_account_creation(p_role text, p_email text, p_full_name text)
 returns uuid
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.authorize_account_creation(p_role, p_email, p_full_name) $$;
 
 create function public.admin_create_profile(
@@ -1529,7 +1551,7 @@ create function public.admin_create_profile(
 returns uuid
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_create_profile(p_user_id, p_role, p_full_name, p_work_phone, p_invitation_rep_name, p_request_id) $$;
 
 create function public.admin_set_user_role(
@@ -1537,7 +1559,7 @@ create function public.admin_set_user_role(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_set_user_role(p_profile_id, p_new_role, p_expected_version, p_reason) $$;
 
 create function public.admin_set_user_active(
@@ -1545,7 +1567,7 @@ create function public.admin_set_user_active(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_set_user_active(p_profile_id, p_active, p_expected_version, p_reason) $$;
 
 create function public.admin_update_profile(
@@ -1553,7 +1575,7 @@ create function public.admin_update_profile(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_update_profile(p_profile_id, p_expected_version, p_full_name, p_work_phone, p_invitation_rep_name) $$;
 
 create function public.admin_create_technician(
@@ -1562,7 +1584,7 @@ create function public.admin_create_technician(
 returns uuid
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_create_technician(p_profile_id, p_display_name, p_color, p_outlook_email, p_device_label, p_accepts_invitations) $$;
 
 create function public.admin_update_technician(
@@ -1571,7 +1593,7 @@ create function public.admin_update_technician(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.admin_update_technician(p_technician_id, p_expected_version, p_display_name, p_color, p_outlook_email, p_device_label, p_accepts_invitations) $$;
 
 create function public.request_account_change(
@@ -1580,7 +1602,7 @@ create function public.request_account_change(
 returns uuid
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.request_account_change(p_request_type, p_target_profile_id, p_requested_role, p_email, p_full_name) $$;
 
 create function public.decide_account_request(
@@ -1588,14 +1610,14 @@ create function public.decide_account_request(
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.decide_account_request(p_request_id, p_decision, p_expected_version, p_rejection_reason) $$;
 
 create function public.cancel_account_request(p_request_id uuid, p_expected_version integer)
 returns integer
 language sql
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$ select private.cancel_account_request(p_request_id, p_expected_version) $$;
 
 -- ---------------------------------------------------------------------------------------------
@@ -1608,7 +1630,7 @@ returns table (table_name text, marker text, bucket text, test_rows bigint)
 language plpgsql
 stable
 security invoker
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   if not (private.is_creator()
@@ -1645,7 +1667,7 @@ $$;
 create function private.bootstrap_first_creator(p_user_id uuid, p_full_name text)
 returns uuid
 language plpgsql
-set search_path = ''
+set search_path = pg_catalog, pg_temp
 as $$
 begin
   if nullif(current_setting('request.jwt.claims', true), '') is not null

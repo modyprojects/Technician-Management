@@ -3,7 +3,7 @@
 -- metadata claims.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(42);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -153,6 +153,26 @@ update public.profiles set role = 'technician' where id = '00000000-0000-4000-80
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
 set local role authenticated;
 select is((select count(*) from public.profiles), 1::bigint, 'after a role change the former Manager reads only his own profile');
+reset role;
+
+
+-- Review T4: an inactive Creator reads nothing (every Creator policy and the census go through
+-- is_creator(), which requires an active profile). It cannot arise through the API today (the last
+-- active Creator is locked and nothing creates a second one), so it is inserted as postgres.
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000c2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'user-c2@example.test', now(), now());
+insert into public.profiles (id, role, full_name, is_active, is_test) values
+  ('00000000-0000-4000-8000-0000000000c2', 'creator', 'יוצר לא פעיל', false, false);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c2","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.is_creator(), false, 'T4: an inactive Creator is not the Creator');
+select is(
+  (select (select count(*) from public.profiles) + (select count(*) from public.technicians)
+        + (select count(*) from public.permissions) + (select count(*) from public.role_permissions)
+        + (select count(*) from public.account_requests) + (select count(*) from public.audit_logs)),
+  0::bigint, 'T4: an inactive Creator reads 0 rows in every table');
+select throws_ok($$ select * from public.test_data_census() $$, '42501', 'not authorized', 'T4: an inactive Creator cannot run the census');
 reset role;
 
 select * from finish();

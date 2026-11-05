@@ -3,7 +3,7 @@
 -- caller's JWT claims, as PostgREST does.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(126);
+select plan(142);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. b3 is an inactive Customer Service
 -- account; f1, f2 and f3 are Auth users without a profile; b9, d8 and d9 (with field profile e9)
@@ -12,7 +12,7 @@ insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, ra
 select ('00000000-0000-4000-8000-0000000000' || k)::uuid, '00000000-0000-0000-0000-000000000000'::uuid,
        'authenticated', 'authenticated', 'user-' || k || '@example.test',
        '{"role": "creator"}'::jsonb, '{"role": "creator"}'::jsonb, now(), now()
-from unnest(array['c1', 'a1', 'a2', 'a9', 'b1', 'b2', 'b3', 'b9', 'd1', 'd2', 'd3', 'd4', 'd8', 'd9', 'f1', 'f2', 'f3']) as k;
+from unnest(array['c1', 'a1', 'a2', 'a8', 'a9', 'b1', 'b2', 'b3', 'b9', 'd1', 'd2', 'd3', 'd4', 'd5', 'd8', 'd9', 'f1', 'f2', 'f3']) as k;
 select private.bootstrap_first_creator('00000000-0000-4000-8000-0000000000c1', 'יוצר');
 insert into public.profiles (id, role, full_name, is_active) values
   ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', true),
@@ -28,7 +28,12 @@ insert into public.profiles (id, role, full_name, is_active) values
 insert into public.profiles (id, role, full_name, is_active, is_test) values
   ('00000000-0000-4000-8000-0000000000b9', 'customer_service', 'נציגה אמיתית', true, false),
   ('00000000-0000-4000-8000-0000000000d8', 'technician', 'טכנאי אמיתי ללא כרטיס', true, false),
-  ('00000000-0000-4000-8000-0000000000d9', 'technician', 'טכנאי אמיתי', true, false);
+  ('00000000-0000-4000-8000-0000000000d9', 'technician', 'טכנאי אמיתי', true, false),
+  -- a8: a real-marked active Manager, so the Creator-only role checks are what refuses him (review T1).
+  ('00000000-0000-4000-8000-0000000000a8', 'manager', 'מנהל אמיתי', true, false);
+-- d5: last updated a day ago, so an edit shows that updated_at advances (review T5).
+insert into public.profiles (id, role, full_name, is_active, updated_at) values
+  ('00000000-0000-4000-8000-0000000000d5', 'technician', 'טכנאי ישן', true, now() - interval '1 day');
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
   ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y', 'tech-a@example.test'),
   ('00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-0000000000d2', true, 'טכנאי ב', 't-e', 'tech-b@example.test'),
@@ -199,6 +204,11 @@ select ok(
   and (select target_profile_id = '00000000-0000-4000-8000-0000000000f1' from public.account_requests
        where id = current_setting('tm_test.intent_f1')::uuid),
   'the new profile is an active test Technician created by the Manager, named from the intent and linked to it; Auth metadata "creator" is ignored');
+select is(
+  (select count(*) from public.audit_logs where action = 'profile.created' and target_table = 'profiles'
+     and target_id = '00000000-0000-4000-8000-0000000000f1' and actor_profile_id = '00000000-0000-4000-8000-0000000000a1'
+     and details = jsonb_build_object('role', 'technician', 'request_id', current_setting('tm_test.intent_f1'))),
+  1::bigint, 'T3: phase 3 is audited (profile.created with the role and the intent it was bound to)');
 
 -- Another caller's intent cannot be used.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
@@ -292,6 +302,13 @@ select throws_ok($$ select public.admin_set_user_role('00000000-0000-4000-8000-0
 select throws_ok($$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000d2', 'password') $$,
   '42501', 'not authorized', 'Customer Service cannot authorize credential changes');
 reset role;
+-- Review T2: a test-marked caller on a test target passes the test-user rule, so only the role check
+-- refuses these two.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e1', 1, 'x', 't-y', 'cs-mailbox@example.test', null, true) $$,
+  '42501', 'not authorized', 'T2: Customer Service cannot update a field profile (its Outlook email included)');
+reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok($$ select public.authorize_account_creation('technician', 'x@example.test', 'x') $$,
@@ -307,6 +324,25 @@ select throws_ok($$ select public.admin_set_user_role('00000000-0000-4000-8000-0
   '42501', 'not authorized', 'a Technician cannot change roles');
 select throws_ok($$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000d1', 'password') $$,
   '42501', 'not authorized', 'a Technician cannot authorize credential changes');
+select throws_ok($$ select public.admin_create_technician('00000000-0000-4000-8000-0000000000d3', 'x', 't-s', 'tech-x@example.test', null, true) $$,
+  '42501', 'not authorized', 'T2: a Technician cannot create a field profile');
+reset role;
+
+-- Review T1: a real-marked Manager (after go-live every Manager is one) is refused by the
+-- Creator-only role checks themselves, not by the test-user rule.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a8","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000b9', 'password') $$,
+  '42501', 'not authorized', 'T1: a real-marked Manager never sets or resets passwords');
+select throws_ok($$ select public.admin_set_user_role('00000000-0000-4000-8000-0000000000b9', 'manager', 1, null) $$,
+  '42501', 'not authorized', 'T1: a real-marked Manager cannot change a role directly (no promotion to Manager)');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d9","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000b9', 'password') $$,
+  '42501', 'not authorized', 'T1: a real-marked Technician cannot authorize credential changes');
+select throws_ok($$ select public.admin_set_user_role('00000000-0000-4000-8000-0000000000b9', 'technician', 1, null) $$,
+  '42501', 'not authorized', 'T1: a real-marked Technician cannot change roles');
 reset role;
 
 -- admin_set_user_role (Creator only) -------------------------------------------------------------
@@ -354,6 +390,8 @@ select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000
   '42501', 'not authorized', 'a Manager cannot deactivate himself');
 select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b9', false, 1, null) $$,
   '42501', 'not authorized', 'a test Manager cannot manage a real account (D47)');
+select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000d2', false, 9, null) $$,
+  'PT409', 'version conflict', 'T5: a stale expected_version is a conflict');
 reset role;
 
 select ok(
@@ -473,7 +511,14 @@ select throws_ok($$ select public.admin_update_profile('00000000-0000-4000-8000-
   '42501', 'not authorized', 'a Manager cannot update his own account');
 select throws_ok($$ select public.admin_update_profile('00000000-0000-4000-8000-0000000000b9', 1, 'x', null, null) $$,
   '42501', 'not authorized', 'a test Manager cannot update a real account');
+select throws_ok($$ select public.admin_update_profile('00000000-0000-4000-8000-0000000000d2', 99, 'x', null, null) $$,
+  'PT409', 'version conflict', 'T5: a stale expected_version is a conflict');
+select is(public.admin_update_profile('00000000-0000-4000-8000-0000000000d5', 1, 'טכנאי ישן שונה', null, null), 2,
+  'setup: a Manager renames d5');
 reset role;
+select ok((select updated_at = now() and version = 2 and updated_by = '00000000-0000-4000-8000-0000000000a1'
+           from public.profiles where id = '00000000-0000-4000-8000-0000000000d5'),
+  'T5: an edit advances updated_at (it was a day old) and the version');
 select is(
   (select details from public.audit_logs where action = 'profile.updated'
      and target_id = '00000000-0000-4000-8000-0000000000d2'),
@@ -484,6 +529,17 @@ set local role authenticated;
 select lives_ok($$ select public.admin_update_profile('00000000-0000-4000-8000-0000000000a1', 1, 'מנהל א', '03-555-0000', 'דורון') $$,
   'the Creator updates a Manager''s phone and invitation alias');
 reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select is(
+  (select count(*) from public.audit_logs
+   where target_id = '00000000-0000-4000-8000-0000000000a1' and actor_profile_id <> '00000000-0000-4000-8000-0000000000a1'),
+  0::bigint, 'T4 (owner question Q8): a Manager does not read the Creator''s audit rows about his own (Manager) account');
+reset role;
+select is(
+  (select count(*) from public.audit_logs where action = 'profile.updated' and target_id = '00000000-0000-4000-8000-0000000000a1'
+     and actor_profile_id = '00000000-0000-4000-8000-0000000000c1'),
+  1::bigint, 'positive control: that audit row exists');
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok(
@@ -499,6 +555,9 @@ set local role authenticated;
 select lives_ok(
   $$ select public.admin_create_technician('00000000-0000-4000-8000-0000000000d3', 'טכנאי ג', 't-s', ' Tech-C@Example.test ', 'אנדרואיד', true) $$,
   'a Manager creates a Technician field profile');
+select throws_ok($$ select public.admin_create_technician('00000000-0000-4000-8000-0000000000a2', 'x', 't-s', 'x9@example.test', null, true) $$,
+  '42501', 'not authorized',
+  'SEC-3: for a profile he cannot read (another Manager) a Manager gets the generic error, as for an unknown id');
 select throws_ok($$ select public.admin_create_technician('00000000-0000-4000-8000-0000000000b3', 'x', 't-s', 'x@example.test', null, true) $$,
   '55000', 'the profile is not a Technician', 'a field profile needs a Technician profile');
 select throws_ok($$ select public.admin_create_technician('00000000-0000-4000-8000-0000000000d2', 'x', 't-s', 'x2@example.test', null, true) $$,
@@ -514,7 +573,15 @@ select is(
   2, 'a Manager changes an Outlook email and the invitation toggle');
 select throws_ok($$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e2', 1, 'x', 't-e', 'tech-b2@example.test', null, true) $$,
   'PT409', 'version conflict', 'a stale expected_version is a conflict');
+select throws_ok($$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e2', 2, 'טכנאי ב', 't-e', 'tech-a@example.test', null, false) $$,
+  '23505', null, 'T5: an Outlook email belongs to one field profile only (unique)');
 reset role;
+select is(
+  (select count(*) from public.audit_logs a join public.technicians t on t.id = a.target_id
+   where a.action = 'technician.created' and t.profile_id = '00000000-0000-4000-8000-0000000000d3'
+     and a.actor_profile_id = '00000000-0000-4000-8000-0000000000a1'
+     and a.details = '{"profile_id": "00000000-0000-4000-8000-0000000000d3"}'::jsonb),
+  1::bigint, 'T3: a new field profile is audited (technician.created)');
 
 select ok(
   (select is_test and outlook_email = 'tech-c@example.test' from public.technicians

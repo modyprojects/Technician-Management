@@ -155,9 +155,9 @@ select is(
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('public', 'private') and p.prosecdef
      and (n.nspname <> 'private' or p.proowner <> 'postgres'::regrole
-          or coalesce(p.proconfig, '{}') <> array['search_path=""'])),
+          or coalesce(p.proconfig, '{}') <> array['search_path=pg_catalog, pg_temp'])),
   0::bigint,
-  'every SECURITY DEFINER function is in private, owned by postgres, with an empty search_path (security.md §5)'
+  'every SECURITY DEFINER function is in private, owned by postgres, with search_path pg_catalog, pg_temp (security.md §5, SEC-1)'
 );
 
 select is(
@@ -169,9 +169,9 @@ select is(
 
 select is(
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname in ('public', 'private') and coalesce(p.proconfig, '{}') <> array['search_path=""']),
+   where n.nspname in ('public', 'private') and coalesce(p.proconfig, '{}') <> array['search_path=pg_catalog, pg_temp']),
   0::bigint,
-  'every function in public and private fixes search_path to empty'
+  'every function in public and private pins search_path to pg_catalog, pg_temp (pg_temp last: an empty search_path searches pg_temp first for types, SEC-1)'
 );
 
 select is(

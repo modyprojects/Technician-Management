@@ -5,7 +5,7 @@
 -- deletion of the newest rows only with an anchor recorded outside the database (review S3).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(42);
+select plan(43);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -172,6 +172,12 @@ select throws_ok(
              (select prev_hash from public.audit_logs order by id desc limit 1), repeat('c', 64), '{}') $$,
   '23505', null, 'a fork (two rows after the same row) is refused by UNIQUE (prev_hash), even with the chain trigger off');
 alter table public.audit_logs enable trigger t90_audit_chain;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+select throws_ok(
+  $$ select private.write_audit('matrix.value_set', 'role_permissions', '00000000-0000-4000-8000-0000000000c1', '{}') $$,
+  '23514', 'new row for relation "audit_logs" violates check constraint "audit_logs_target_id_check"',
+  'T5: a matrix row has no target id (its role and key are in details), even through write_audit as postgres');
+select set_config('request.jwt.claims', '', true);
 select throws_ok($$ select private.audit_chain_verify(1, null) $$, '22023', 'invalid input',
   'an anchor needs both its id and its row_hash');
 
