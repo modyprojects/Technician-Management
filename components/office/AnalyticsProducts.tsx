@@ -129,7 +129,8 @@ export function AnalyticsProducts({ products }: { products: Products }) {
                       >
                         {formatMetric(r.followupRate)}
                       </td>
-                      <td>{r.topIssue ?? "—"}</td>
+                      {/* D57 (4): only from a structured issue category, never from the free-text description. */}
+                      <td>{r.topIssue.state === "computed" ? r.topIssue.value : "לא זמין"}</td>
                     </tr>
                   );
                 })}

@@ -4,9 +4,13 @@
 // the prototype. Fields the demo lacks (ADD rows in demo-deviations) are filled
 // deterministically without drawing random numbers, so the demo's sequence is unchanged.
 import "server-only";
-import { addDays, fromMin, isWork, pad, TODAY } from "./dates";
+import { addDays, atJerusalem, DEMO_NOW, fromMin, isWork, pad, shiftWorkDay, TODAY } from "./dates";
 import { FIXED_TEXT, PRODUCTS, REASONS, TECHS } from "./reference";
+import { callStatus, isClosedVisit } from "./status";
 import type { Call, MediaItem, Visit } from "./types";
+
+/** A call before the final pass adds its service_calls.opened_at / resolved_at (callTimes). */
+type SeedCall = Omit<Call, "openedAt" | "resolvedAt">;
 
 export const SEED = 20261021;
 
@@ -71,12 +75,49 @@ function V(o: Partial<Visit> & Pick<Visit, "tech" | "date" | "start" | "end">): 
 }
 
 /** The demo's C() defaults, plus the ADD fields. */
-function C(o: Partial<Call> & Pick<Call, "req" | "customer" | "phone" | "city" | "street" | "sku" | "desc" | "visits">): Call {
+function C(o: Partial<SeedCall> & Pick<SeedCall, "req" | "customer" | "phone" | "city" | "street" | "sku" | "desc" | "visits">): SeedCall {
   return {
     customerNo: customerNo(o.req), phone2: "", building: "", floor: "", apt: "", arrival: "", type: "תיקון",
     warranty: "כן", rep: "שיראל", techNote: "", isTest: true,
     ...o,
   };
+}
+
+/**
+ * ADD (D57, spec-final §5.2): fictional service_calls.opened_at and resolved_at, in Asia/Jerusalem.
+ * - opened_at (the invitation's receipt): two work days before the call's first visit, at
+ *   08:00 + ((request number × 37) mod 480) minutes (08:00–15:59). Earliest: 47380, 13.7.2026 09:40.
+ * - resolved_at: only when the D38 status is "resolved": the resolving visit's date at its reported
+ *   end time as closed (a server time; a later office time correction does not move it, so the
+ *   seeded value is used, before corrections.ts).
+ * Deterministic and draws no random numbers.
+ */
+function callTimes(c: SeedCall): Call {
+  const first = c.visits[0] as Visit;
+  const openedOn = shiftWorkDay(shiftWorkDay(first.date, -1), -1);
+  const openedAt = atJerusalem(openedOn, fromMin(8 * 60 + ((Number(c.req) * 37) % 480)));
+  let resolvedAt: string | null = null;
+  if (callStatus({ ...c, openedAt, resolvedAt }) === "resolved") {
+    const resolving = c.visits.filter(isClosedVisit).sort((a, b) => b.n - a.n)[0] as Visit;
+    resolvedAt = resolving.endAt ? atJerusalem(resolving.date, resolving.endAt) : null;
+  }
+  return { ...c, openedAt, resolvedAt };
+}
+
+/**
+ * The invariants of callTimes, checked when the module loads (the fixture cannot drift): every
+ * call is opened by DEMO_NOW, every resolved call has a resolved_at, and no resolved_at precedes
+ * its opened_at.
+ */
+function checkCallTimes(calls: readonly Call[]): void {
+  const now = Date.parse(DEMO_NOW);
+  for (const c of calls) {
+    if (!(Date.parse(c.openedAt) <= now)) throw new Error(`Call ${c.req}: opened_at ${c.openedAt} is after DEMO_NOW`);
+    if (callStatus(c) === "resolved" && c.resolvedAt === null) throw new Error(`Call ${c.req}: resolved without resolved_at`);
+    if (c.resolvedAt !== null && Date.parse(c.resolvedAt) < Date.parse(c.openedAt)) {
+      throw new Error(`Call ${c.req}: resolved_at precedes opened_at`);
+    }
+  }
 }
 
 export function seedCalls(): Call[] {
@@ -92,7 +133,7 @@ export function seedCalls(): Call[] {
     return arr[0] as T;
   };
 
-  const calls: Call[] = [];
+  const calls: SeedCall[] = [];
   let req = 47800;
   // Historical: Oct 1 – Oct 20 (the draws below run in the demo's object-literal order).
   for (let d = "2026-10-01"; d <= "2026-10-20"; d = addDays(d, 1)) {
@@ -272,8 +313,8 @@ export function seedCalls(): Call[] {
   // (47700 on 24.09, 48205 on 19.10: 25 days) and his SH-510 did not; נועה ברק's WC-300 returned
   // only after 98 days (not a return); דוד פרץ and מוטי אזולאי show products created from an
   // invitation (MX-410, TB-75; brand or supplier "לא הוזן").
-  const again = (of: string, o: Partial<Call> & Pick<Call, "req" | "sku" | "desc" | "visits">): Call => {
-    const b = calls.find((c) => c.req === of) as Call;
+  const again = (of: string, o: Partial<SeedCall> & Pick<SeedCall, "req" | "sku" | "desc" | "visits">): SeedCall => {
+    const b = calls.find((c) => c.req === of) as SeedCall;
     return C({
       customer: b.customer, customerNo: b.customerNo, phone: b.phone, phone2: b.phone2, city: b.city, street: b.street,
       building: b.building, floor: b.floor, apt: b.apt, arrival: b.arrival, ...o,
@@ -314,7 +355,11 @@ export function seedCalls(): Call[] {
       visits: [closedDone("s", "2026-09-24", "נוקה המפצל, עובר בין המקלחת לפיה.", "אבי כהן")],
     }),
   );
-  return calls;
+
+  // Final pass (D57): opened_at / resolved_at, after every random draw.
+  const timed = calls.map(callTimes);
+  checkCallTimes(timed);
+  return timed;
 }
 
 /** All demo service calls (computed once). Treat as read-only; copy into client state to change. */

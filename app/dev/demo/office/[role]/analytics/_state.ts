@@ -2,11 +2,12 @@
 // drill-down are real links (UI demo, D53; the demo keeps them in memory as S.dashTab,
 // S.techDetail and S.tdFilter, docs/demo.html L1150-1153). Pure; unknown or malformed values fall
 // back to the defaults. The adapter validates the technician id and the filter again.
+import { monthLabel, monthName } from "@/features/calendar/data/dates";
 import { clampPage, type IsoDate } from "@/features/data-access/common";
+import { monthOfDate, monthPeriod } from "@/features/dashboards/data/periods";
 import { isTechnicianVisitFilter, type AnalyticsPeriod, type TechnicianVisitFilter } from "@/features/dashboards/data/types";
 import type { PermissionKey } from "@/features/reference/data/types";
 import { isTechnicianId } from "@/features/reference/data/validate";
-import { MONTHS, pad } from "../../../_data/dates";
 
 /** The demo's tabs and the matrix key that offers each (offDash(), L861). */
 export const ANALYTICS_TABS = [
@@ -60,12 +61,11 @@ export function analyticsHref(
   return qs ? `${base}?${qs}` : base;
 }
 
-/** The calendar month of `date` as a dashboard period, with its Hebrew names ("אוקטובר 2026"). */
+/**
+ * The calendar month of `date` as a dashboard period, with its Hebrew names ("אוקטובר 2026"); the
+ * period resolver's month rule (features/dashboards/data/periods.ts).
+ */
 export function monthOf(date: IsoDate): { period: AnalyticsPeriod; name: string; label: string } {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const ym = `${year}-${pad(month)}`;
-  const name = MONTHS[month - 1] ?? "";
-  return { period: { from: `${ym}-01`, to: `${ym}-${pad(lastDay)}` }, name, label: `${name} ${year}` };
+  const month = monthOfDate(date);
+  return { period: monthPeriod(month), name: monthName(month), label: monthLabel(month) };
 }
