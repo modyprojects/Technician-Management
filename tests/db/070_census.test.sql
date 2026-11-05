@@ -2,7 +2,7 @@
 -- The first checks run before any fixture, on the database built from migrations alone.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(16);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -22,6 +22,39 @@ select results_eq(
      order by c.relname::text collate "C" $$,
   $$ values ('permissions', 13::bigint), ('role_permissions', 26::bigint) $$,
   'migrations create no rows in any table except the approved reference data: 13 keys and 26 TEMPORARY values (D47, D49, D51)');
+-- Views too (verification round 2, F1): a view can carry constant fictitious rows without any table
+-- row (create view ... as select * from (values (...))). Every view (and materialized view) in
+-- public and private returns no rows on the fresh database, except approved reference views: none
+-- in PR 1.3 (010_hardening also requires no views today; this check stays when views are approved).
+-- A function that returns constant rows cannot be counted generically: the review checks it.
+select results_eq(
+  $$ select c.relname::text collate "default", x.row_count
+     from pg_class c
+     join pg_namespace s on s.oid = c.relnamespace
+     cross join lateral (
+       select (xpath('/row/n/text()',
+                     query_to_xml(format('select count(*) as n from %I.%I', s.nspname, c.relname), false, true, '')))[1]::text::bigint
+              as row_count) x
+     where s.nspname in ('public', 'private') and c.relkind in ('v', 'm') and x.row_count <> 0
+     order by c.relname::text collate "C" $$,
+  $$ select v.relname, v.row_count from (values ('', 0::bigint)) as v (relname, row_count) where false $$,
+  'migrations create no view in public or private that returns rows (approved reference views: none in PR 1.3)');
+-- Positive control for the view check: a view with constant rows is counted (rolled back).
+create view public.census_view_probe with (security_invoker = true) as
+  select * from (values ('10001', 'probe row')) as v (customer_number, name);
+select results_eq(
+  $$ select c.relname::text collate "default", x.row_count
+     from pg_class c
+     join pg_namespace s on s.oid = c.relnamespace
+     cross join lateral (
+       select (xpath('/row/n/text()',
+                     query_to_xml(format('select count(*) as n from %I.%I', s.nspname, c.relname), false, true, '')))[1]::text::bigint
+              as row_count) x
+     where s.nspname in ('public', 'private') and c.relkind in ('v', 'm') and x.row_count <> 0
+     order by c.relname::text collate "C" $$,
+  $$ values ('census_view_probe'::text, 1::bigint) $$,
+  'positive control: a view that returns constant rows is found by the view check');
+drop view public.census_view_probe;
 select is((select count(*) from auth.users), 0::bigint, 'migrations create no Auth user (no test user, no Creator; D47, D49)');
 select is(
   (select case when to_regclass('storage.buckets') is null then 0::bigint

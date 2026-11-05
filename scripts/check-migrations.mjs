@@ -2,16 +2,23 @@
 // They must never contain fictitious or test data, because a future Production project is built
 // from the same migration files and must start with no fictional content.
 //
-// How it reads SQL (re-review R-G4, R-G7): a tokenizer that follows the PostgreSQL lexer. Comments
-// (nested), single-quoted strings, E'' strings, quoted identifiers and dollar quotes of any tag
-// length are recognised exactly as PostgreSQL does; unquoted identifiers are lower-cased and
-// truncated to 63 bytes as PostgreSQL does. Every rule matches tokens, never text with the strings
-// blanked out. Anything the tokenizer cannot read fails closed: an unterminated quote, an
-// unexpected character, a non-ASCII character outside a string or comment, U&'' / U&"" escapes.
-// Function bodies and DO bodies are tokenized in turn; a lexer error inside them fails too. A
-// function definition or a DO block is recognised wherever it starts in a statement (in PL/pgSQL
-// after BEGIN, THEN, LOOP ...), and dollar quotes are allowed only as such bodies, so no code can
-// hide in a dollar-quoted "text". A string continued across a newline fails (PostgreSQL joins it).
+// How it reads SQL (re-review R-G4, R-G7; claims corrected in fix round 3, V2-10): a tokenizer
+// modelled on the PostgreSQL lexer for the forms migrations use, not a reimplementation of it.
+// Nested comments, standard '' strings (standard_conforming_strings on, which no migration may
+// change), E'' strings, b''/x'' strings, quoted identifiers and dollar quotes of any tag length are
+// read as PostgreSQL reads them when the client encoding is UTF8; unquoted identifiers are
+// lower-cased and truncated to 63 bytes. Every rule matches tokens, never text with the strings
+// blanked out. What could make PostgreSQL read a file differently fails closed: an unterminated
+// quote or comment, an unexpected character, a non-ASCII character outside a string or comment or
+// inside an E'' string, U&'' / U&"" escapes, a string continued across a newline (PostgreSQL joins
+// it), and naming a setting that changes the reading (client_encoding, SET NAMES,
+// standard_conforming_strings, backslash_quote; fix round 3, V2-1). Function bodies and DO bodies
+// are tokenized in turn; a lexer error inside them fails too. A function definition or a DO block is
+// recognised wherever it starts in a statement (in PL/pgSQL after BEGIN, THEN, LOOP ...), and dollar
+// quotes are allowed only as such bodies, so no code can hide in a dollar-quoted "text". The guard
+// is not a SQL parser: rules that read a construct (a target, a column definition, an option list)
+// read the forms listed below, and anything they cannot read fails; constructs they do not model
+// are left to the review (docs/review/step1-pr13/README.md section 8).
 //
 // "Statements that run" are top-level statements and statements inside DO blocks. A function body
 // does not run when it is defined, so rules for statements that run are relaxed there; the
@@ -26,7 +33,9 @@
 //      insert into public.<reference table> (column, ...) values (constant, ...), ...;
 //    with an approved reference table (REFERENCE_TABLES), an explicit column list without the
 //    test-marker columns (is_test, data_source, target_is_test) and plain constants only (plain
-//    '...' strings, numbers, true, false, null). Nothing else may follow the VALUES list.
+//    '...' strings, numbers, true, false, null). Nothing else may follow the VALUES list, and it is
+//    a top-level statement of the file, never a statement of a DO block (where an IF decides whether
+//    it runs; fix round 3, V2-9).
 // 2. No test markers: a reference INSERT's strings must not contain 'simulator', 'automated_test',
 //    'seed' or an example.test address; no ALTER may set a default on a marker column (other than
 //    false; DROP DEFAULT only as ALTER [COLUMN] x DROP DEFAULT; never generated), a reference table
@@ -47,12 +56,18 @@
 //    (AS $$ ... $$) in LANGUAGE sql or plpgsql; any other form fails because the guard cannot read
 //    it. An INSERT inside a body is allowed only in a reviewed writer function listed in
 //    ALLOWED_WRITERS by exact signature, and only into the tables listed for it; its strings must
-//    not contain test markers either. A function whose body or header (parameter defaults,
-//    options) inserts, updates, deletes, merges or truncates, or names a writer, is a writer
-//    itself. Every name in ALLOWED_WRITERS is a writer even when its definition is elsewhere.
-//    A migration never names a writer in a statement that runs, with or without "(" (a call,
-//    a trigger, an operator, an aggregate, a cast, a default, a policy, CALL ...); only GRANT,
-//    REVOKE, COMMENT ON and DROP FUNCTION/PROCEDURE/ROUTINE may name one.
+//    not contain test markers either. A MERGE ... THEN INSERT action is an INSERT into the MERGE
+//    target (fix round 3, V2-5). A function whose body or header (parameter defaults, options)
+//    inserts, updates, deletes, merges or truncates, or names a writer, is a writer itself. Every
+//    name in ALLOWED_WRITERS is a writer even when its definition is elsewhere. Writer names are
+//    compared lower-cased on both sides, so a quoted mixed-case name ("Wf") is seen too (fix round
+//    3, V2-2). A migration never names a writer in a statement that runs, with or without "(" (a
+//    call, a trigger, an operator, an aggregate, a cast, a default, a policy, CALL ...); only GRANT,
+//    REVOKE, COMMENT ON and DROP FUNCTION/PROCEDURE/ROUTINE may name one. PostgreSQL also accepts a
+//    function name as a string in CREATE/ALTER AGGREGATE, OPERATOR, TYPE and TEXT SEARCH options
+//    (sfunc = 'w'): there a string value fails, except plain strings for PLAIN_STRING_OPTIONS (fix
+//    round 3, V2-3). A writer named inside SQL text that a function runs is a string: those
+//    functions fail by name (rule 6).
 // 5. D49: bootstrap_first_creator may appear only in its own CREATE FUNCTION header, in REVOKE and
 //    in COMMENT ON FUNCTION statements; anywhere else (a call, a GRANT, an ALTER, another function's
 //    body or header, a string) fails.
@@ -60,12 +75,14 @@
 //    GRANT/REVOKE/ALTER DEFAULT PRIVILEGES and as EXECUTE FUNCTION/PROCEDURE in CREATE [EVENT]
 //    TRIGGER. Built-ins that run SQL text or write outside the schema fail as any name, quoted or
 //    not (query_to_xml and relatives, dblink, http, set_config, large-object and file functions,
-//    create_secret, update_secret, resolve), and so do the names of the cron, vault, net, pgsodium,
-//    realtime, supabase_functions, dblink, graphql, graphql_public, pgmq and pgmq_public schemas,
-//    quoted or not, followed by "." or not, and inside a search_path string; an E'' string in a
+//    create_secret, update_secret, resolve; fix round 3, V2-6: pgTAP's SQL-running functions,
+//    xpath_table, crosstab, connectby, ts_stat, ts_rewrite), and so do the names of the cron,
+//    vault, net, pgsodium, realtime, supabase_functions, dblink, graphql, graphql_public, pgmq and
+//    pgmq_public schemas, quoted or not, followed by "." or not, and inside a search_path string; an E'' string in a
 //    search_path fails (its escapes spell any name). CREATE EXTENSION only for names in
 //    ALLOWED_EXTENSIONS; ALTER EXTENSION, subscriptions, foreign servers and foreign tables fail.
-//    standard_conforming_strings, backslash_quote and session_replication_role may not be named.
+//    standard_conforming_strings, backslash_quote, session_replication_role and client_encoding may
+//    not be named, and SET [LOCAL | SESSION] NAMES fails (fix round 3, V2-1).
 // 7. No other data change in statements that run: UPDATE (any form: ONLY, parentheses, "*",
 //    aliases, in a CTE; after DO, in a rule action or ON CONFLICT, always; after FOR, as in OPEN
 //    ... FOR UPDATE, unless a word of a locking clause or a policy follows and no <name> [alias] SET
@@ -80,12 +97,14 @@
 //    earlier top-level statement of the files, a domain there only over a built-in type (a domain
 //    default, also one inherited from a base domain, fills every row; fix round 2, V1-7). No type
 //    or domain may be named like a built-in type (with search_path it would take the built-in's
-//    place).
+//    place). ADD exclude <type> adds a column named exclude: EXCLUDE starts a constraint only when
+//    USING or "(" follows (fix round 3, V2-4), in ALTER TABLE and in CREATE TABLE.
 //    "Existing" is every table except one created earlier in the same file by a plain top-level
 //    CREATE TABLE <schema>.<name> (not IF NOT EXISTS, not temporary, not in a DO block or function
 //    body) that no INSERT in the file has targeted yet; in function bodies every table is existing.
-//    CREATE CAST and ALTER TYPE ... ALTER/DROP ATTRIBUTE fail everywhere (a cast or a typed table
-//    change rewrites values).
+//    CREATE CAST, ALTER TYPE ... ADD/ALTER/DROP ATTRIBUTE and ALTER TABLE ... OF <type> fail
+//    everywhere (a cast or a typed table change rewrites values; ADD ATTRIBUTE ... CASCADE fills
+//    the rows of typed tables; fix round 3, V2-8).
 // 8. Names stay what they are: no RENAME of any kind (TO, COLUMN, a bare column, CONSTRAINT, VALUE,
 //    ATTRIBUTE), no SET SCHEMA, no INHERIT/INHERITS, no ATTACH PARTITION or PARTITION OF, nothing in
 //    pg_temp, and CREATE TABLE/VIEW may use a reference table name only for the table in public
@@ -94,11 +113,12 @@
 //    every file, with only the bodies of the reviewed ALLOWED_WRITERS functions blanked out, and a
 //    file it rejects fails (see "The guard on main" below).
 // Compensating runtime control for what a static check cannot see: tests/db/070_census.test.sql
-// requires a census of 0 and no rows in any table except the listed reference data on a database
-// built from migrations alone. That database is empty, so a rewrite of populated business tables
-// is caught only by this guard and the review. A static check cannot prove that arbitrary SQL
-// changes no data; it rejects the constructs it knows can, and the review of every migration
-// checks the rest (docs/review/step1-pr13/README.md section 8).
+// requires a census of 0, no rows in any table except the listed reference data and no rows in any
+// view (fix round 3, V2-7) on a database built from migrations alone. That database is empty, so a
+// rewrite of populated business tables is caught only by this guard and the review, and so is a
+// function that returns constant rows. A static check cannot prove that arbitrary SQL changes no
+// data; it rejects the constructs it knows can, and the review of every migration checks the rest
+// (docs/review/step1-pr13/README.md section 8).
 //
 // Usage: node scripts/check-migrations.mjs [repository root]
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -136,7 +156,10 @@ const TEST_MARKERS = [
   { pattern: /example\.test/i, label: "example.test address" },
 ];
 const BOOTSTRAP = "bootstrap_first_creator";
-const DENIED_SETTINGS = /standard_conforming_strings|backslash_quote|session_replication_role/i;
+// Settings that change how PostgreSQL reads the rest of the file (string escapes, the client
+// encoding: with SJIS a non-ASCII byte before a backslash ends an E'' string the guard reads as
+// continuing; fix round 3, V2-1) or that switch off triggers.
+const DENIED_SETTINGS = /standard_conforming_strings|backslash_quote|session_replication_role|client_encoding/i;
 // Schemas that run or store data outside the reviewed schema (rule 6). Their names fail as any name,
 // quoted or not, and inside a search_path list (fix round 2, V1-3 and V1-4).
 const DENIED_SCHEMAS = new Set(["cron", "vault", "net", "pgsodium", "realtime", "supabase_functions", "dblink", "graphql", "graphql_public", "pgmq", "pgmq_public"]);
@@ -145,6 +168,21 @@ const DENIED_SCHEMAS = new Set(["cron", "vault", "net", "pgsodium", "realtime", 
 // default search_path set outside the migrations reaches their schema.
 const DENIED_FUNCTIONS =
   /^(?:query_to_xml|query_to_xml_and_xmlschema|query_to_xmlschema|cursor_to_xml|cursor_to_xmlschema|dblink\w*|http|http_\w+|set_config|lo_\w+|pg_file_\w+|pg_read_file|pg_read_binary_file|pg_ls_dir|create_secret|update_secret|resolve)$/;
+// Functions that run SQL text passed to them as an argument (fix round 3, V2-6): a writer or an
+// UPDATE written inside that text is a string to every other rule. pgTAP's assertion and runner
+// functions (lives_ok, throws_*, results_eq, cmp_ok's operator text ...; the list was checked
+// against the pgTAP functions whose bodies EXECUTE caller text) run their text; xml2's xpath_table
+// and tablefunc's crosstab/connectby build and run a query from their arguments; ts_stat and
+// ts_rewrite refuse DML but their query's SELECT may call any function, a writer included (checked
+// on the local database, rolled back). They fail as any name, quoted or not.
+const SQL_TEXT_FUNCTIONS =
+  /^(?:lives_ok|dies_ok|throws_\w+|results_eq|results_ne|set_eq|set_ne|set_has|set_hasnt|bag_eq|bag_ne|bag_has|bag_hasnt|is_empty|isnt_empty|row_eq|performs_ok|performs_within|runtests|do_tap|cmp_ok|_def_is|_time_trials|_runner|_runem|_query|_temptable|_temptypes|_relcomp|_relne|_docomp|_do_ne|xpath_table|crosstab\w*|connectby|ts_stat|ts_rewrite)$/;
+// CREATE/ALTER AGGREGATE, OPERATOR, TYPE and TEXT SEARCH PARSER/TEMPLATE take function names as
+// options (sfunc, function, input, restrict ...), and PostgreSQL also accepts a string there
+// (sfunc = 'w' calls w), which rule 4 would not read as a name (fix round 3, V2-3). In those
+// statements a string option value is allowed only for these keys, which never name a function,
+// and only as a plain '...' string.
+const PLAIN_STRING_OPTIONS = new Set(["initcond", "minitcond", "category", "delimiter"]);
 // An `update` or `truncate` token right after one of these may not be a data change (FOR UPDATE,
 // ON UPDATE, BEFORE/AFTER/OR UPDATE in triggers, GRANT/REVOKE privilege lists, INSTEAD OF UPDATE).
 // After DO it always is (a rule action, or ON CONFLICT DO UPDATE): fix round 2, V1-1.
@@ -162,7 +200,7 @@ const BUILTIN_TYPES = new Set(["bigint", "bit", "bool", "boolean", "bpchar", "by
   "macaddr8", "money", "numeric", "real", "smallint", "text", "time", "timestamp", "timestamptz", "timetz", "tsquery", "tsvector",
   "uuid", "varbit", "varchar", "xml"]);
 // ALTER TABLE ... ADD <one of these> adds a table constraint, not a column (also a CREATE TABLE
-// element that is not a column).
+// element that is not a column). EXCLUDE is not a reserved word: see tableConstraintAt.
 const TABLE_CONSTRAINT_STARTS = new Set(["constraint", "primary", "unique", "check", "foreign", "exclude"]);
 // A serial column is a column with a sequence default: adding one fills every existing row.
 const SERIAL_TYPES = new Set(["serial", "serial2", "serial4", "serial8", "smallserial", "bigserial"]);
@@ -193,7 +231,7 @@ function truncateIdentifier(name) {
 }
 
 /**
- * Tokenizes SQL like the PostgreSQL lexer. Returns { tokens, errors, statements }: tokens are
+ * Tokenizes SQL, modelled on the PostgreSQL lexer (see the header). Returns { tokens, errors, statements }: tokens are
  * { type, value, start } with type ident (lower-cased, truncated), qident (quoted identifier),
  * string (prefix "" | "e" | "b" | "x" | "n"), dollar (value = the body, tag = the delimiter),
  * number, param, op or punct. `statements` splits the tokens at ";" ({ tokens, code, bodies }).
@@ -245,6 +283,10 @@ export function lexSql(sql) {
   };
   const pushString = (r, prefix, start) => {
     if (!r.closed) errors.push("unterminated string literal");
+    // In an E'' string a backslash escapes the next character. Read in another client encoding
+    // (SJIS, BIG5, GBK ...), a non-ASCII byte can swallow the backslash after it, so PostgreSQL
+    // ends the string where the guard does not (fix round 3, V2-1). Write such text in a '...' string.
+    if (prefix === "e" && NON_ASCII.test(r.value)) errors.push("a non-ASCII character in an E'' string is not allowed in migrations (in another client encoding it can end the string early); write it in a plain '...' string");
     tokens.push({ type: "string", value: r.value, prefix, start });
     checkContinuation(r.end);
     return r.end;
@@ -570,6 +612,13 @@ function dataChanges(tokens) {
     if (t.type !== "ident") return;
     const prev = tokenKey(tokens[k - 1]);
     if (t.value === "insert" && isWord(tokens[k + 1], "into")) found.push({ kind: "INSERT", index: k });
+    // MERGE ... WHEN NOT MATCHED THEN INSERT [(columns)] VALUES ... inserts into the MERGE target
+    // (fix round 3, V2-5): `merge` is the index of the nearest MERGE INTO before it, or -1.
+    if (t.value === "insert" && !isWord(tokens[k + 1], "into") && prev === "then") {
+      let merge = k - 1;
+      while (merge >= 0 && !(isWord(tokens[merge], "merge") && isWord(tokens[merge + 1], "into"))) merge -= 1;
+      found.push({ kind: "INSERT", index: k, merge });
+    }
     if (t.value === "update" && updateChangesData(tokens, k)) found.push({ kind: "UPDATE", index: k });
     if (t.value === "delete" && isWord(tokens[k + 1], "from")) found.push({ kind: "DELETE", index: k });
     if (t.value === "merge" && isWord(tokens[k + 1], "into")) found.push({ kind: "MERGE", index: k });
@@ -610,6 +659,17 @@ function insertTarget(tokens, k) {
   return name ? { ...name, table: name.name } : null;
 }
 
+// The table an INSERT of dataChanges writes to: the INSERT INTO target, or for a MERGE ... THEN
+// INSERT action the MERGE INTO [ONLY] target (null when the guard cannot read it).
+function changeTarget(tokens, change) {
+  if (change.merge === undefined) return insertTarget(tokens, change.index);
+  if (change.merge < 0) return null;
+  let m = change.merge + 2;
+  if (isWord(tokens[m], "only")) m += 1;
+  const name = qualifiedNameAt(tokens, m);
+  return name ? { ...name, table: name.name } : null;
+}
+
 const isConstant = (tokens, k) => {
   const t = tokens[k];
   if (t === undefined) return 0;
@@ -620,8 +680,9 @@ const isConstant = (tokens, k) => {
   return 0;
 };
 
-// Rule 1 and 2 for an INSERT in a statement that runs.
-function referenceInsertProblems(tokens, k, where) {
+// Rule 1 and 2 for an INSERT in a statement that runs. `topLevel`: the statement is a statement of
+// the file, not of a DO block (where an IF may decide whether the INSERT runs; fix round 3, V2-9).
+function referenceInsertProblems(tokens, k, where, topLevel) {
   const target = insertTarget(tokens, k);
   const reference = [...REFERENCE_TABLES].map((t) => `public.${t}`).join(", ");
   if (!target) return [`${where}: an INSERT target the guard cannot read is not allowed`];
@@ -631,6 +692,7 @@ function referenceInsertProblems(tokens, k, where) {
   }
   if (target.schema === null) return [`${where}: INSERT into "${target.table}" must name the table as public.${target.table}`];
   if (k !== 0) return [`${where}: INSERT into "${target.table}" is allowed only as a plain statement (insert into public.<table> (columns) values (constants))`];
+  if (!topLevel) return [`${where}: INSERT into "${target.table}" is allowed only as a top-level statement of the file, not inside a DO block`];
   const problems = [];
   let m = target.next;
   if (!isPunct(tokens[m], "(")) return [`${where}: INSERT into "${target.table}" must list its columns`];
@@ -717,6 +779,15 @@ function addedColumnTypeProblem(tokens, k, createdTypes) {
   return problem ? `ADD COLUMN of ${problem}` : null;
 }
 
+// A table constraint at tokens[k] (ALTER TABLE ... ADD <here>, or a CREATE TABLE element). EXCLUDE
+// is not a reserved word: `add exclude text default 'x'` adds a column named exclude, so EXCLUDE
+// starts a constraint only when USING or "(" follows (fix round 3, V2-4).
+function tableConstraintAt(tokens, k) {
+  const word = wordAt(tokens, k);
+  if (word === "exclude") return isWord(tokens[k + 1], "using") || isPunct(tokens[k + 1], "(");
+  return TABLE_CONSTRAINT_STARTS.has(word);
+}
+
 // An ALTER TABLE action that rewrites the values of existing rows (rule 7, fix round 1 N1), or null.
 function rewritingAction(action, createdTypes) {
   if (isWord(action[0], "drop")) return isWord(action[1], "constraint") ? null : "DROP COLUMN";
@@ -730,7 +801,7 @@ function rewritingAction(action, createdTypes) {
   let m = 1;
   const columnKeyword = isWord(action[m], "column");
   if (columnKeyword) m += 1;
-  if (!columnKeyword && TABLE_CONSTRAINT_STARTS.has(wordAt(action, m))) return null;
+  if (!columnKeyword && tableConstraintAt(action, m)) return null;
   for (let p = m; p < action.length; p += 1) {
     const t = action[p];
     // SET DEFAULT is harmless only as a foreign key action (ON DELETE/UPDATE SET DEFAULT); a column
@@ -775,6 +846,19 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       if ((t.value === "alter" || t.value === "drop") && isWord(next, "attribute")) {
         add("ALTER TYPE ... ALTER/DROP ATTRIBUTE is not allowed in migrations (it rewrites the columns of typed tables)");
       }
+      // ADD ATTRIBUTE ... CASCADE adds a column to every typed table of the type, and a domain
+      // default fills its existing rows (fix round 3, V2-8).
+      if (t.value === "add" && isWord(next, "attribute")) {
+        add("ALTER TYPE ... ADD ATTRIBUTE is not allowed in migrations (it adds a column, with its default, to the existing rows of typed tables)");
+      }
+      // SET [LOCAL | SESSION] NAMES changes the client encoding, also in a function's or a role's
+      // SET clause (fix round 3, V2-1).
+      if (t.value === "set") {
+        const m = isWord(next, "local", "session") ? k + 2 : k + 1;
+        if (isName(tokens[m]) && tokens[m].value.toLowerCase() === "names") {
+          add("SET NAMES is not allowed in migrations (it changes the client encoding, so PostgreSQL would read the rest of the file differently from the guard)");
+        }
+      }
       if (t.value === "set" && isWord(next, "schema")) add("SET SCHEMA is not allowed in migrations; names stay what they are");
       if (t.value === "inherits" || (t.value === "inherit" && !isWord(tokens[k - 1], "no"))) add("INHERIT/INHERITS is not allowed in migrations");
       if (t.value === "attach" && isWord(next, "partition")) add("ATTACH PARTITION is not allowed in migrations");
@@ -800,6 +884,7 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       // Fix round 2, V1-3/V1-4: quoted or not, followed by "." or not (a search_path list).
       if (DENIED_SCHEMAS.has(t.value)) add(`the ${t.value} schema is not allowed in migrations (it runs or stores data outside the schema)`);
       if (DENIED_FUNCTIONS.test(t.value)) add(`${t.value}() is not allowed in migrations (it runs SQL text or writes outside the schema)`);
+      if (SQL_TEXT_FUNCTIONS.test(t.value)) add(`${t.value}() is not allowed in migrations (pgTAP or extension function that runs SQL text given as an argument)`);
       // Fix round 2, V1-1: database.schema.name (PostgreSQL accepts the current database's name)
       // and record.field.field would slip past every rule that reads a schema-qualified name.
       if (isPunct(next, ".") && isName(tokens[k + 2]) && isPunct(tokens[k + 3], ".")) {
@@ -825,7 +910,7 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       }
     }
     if ((t.type === "ident" || t.type === "qident") && DENIED_SETTINGS.test(t.value)) add(`${t.value} may not be named in migrations`);
-    if ((t.type === "string" || t.type === "dollar") && DENIED_SETTINGS.test(t.value)) add("standard_conforming_strings, backslash_quote and session_replication_role may not be named in migrations");
+    if ((t.type === "string" || t.type === "dollar") && DENIED_SETTINGS.test(t.value)) add("standard_conforming_strings, backslash_quote, session_replication_role and client_encoding may not be named in migrations");
     if (t.type === "string" || t.type === "dollar") {
       // As on main: text that reads as an INSERT into a business table fails, even in a string.
       for (const m of t.value.matchAll(/\binsert\s+into\s+(?:"?([a-z_][a-z0-9_$]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_$]*)"?/gi)) {
@@ -836,6 +921,21 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       if (/\b(?:insertInto|update|deleteFrom)\w*Collection\b/i.test(t.value)) add("a string reads as a pg_graphql mutation; migrations never carry such text");
     }
   });
+
+  // A string option value in CREATE/ALTER AGGREGATE, OPERATOR, TYPE or TEXT SEARCH may name a
+  // function (sfunc = 'w'); only PLAIN_STRING_OPTIONS keys may take a plain string (V2-3).
+  const optionStatement = tokens.some((t, k) => isWord(t, "create", "alter") &&
+    (isWord(tokens[k + 1], "aggregate", "operator", "type") || (isWord(tokens[k + 1], "text") && isWord(tokens[k + 2], "search"))));
+  if (optionStatement) {
+    tokens.forEach((t, k) => {
+      const op = tokens[k - 1];
+      if (t.type !== "string" || !op || op.type !== "op" || op.value !== "=" || !isName(tokens[k - 2])) return;
+      const key = tokens[k - 2].value.toLowerCase();
+      if (!PLAIN_STRING_OPTIONS.has(key) || t.prefix !== "") {
+        add(`a string value for the option ${key} of CREATE/ALTER AGGREGATE, OPERATOR, TYPE or TEXT SEARCH is not allowed in migrations (PostgreSQL reads it as a function name); write the name unquoted`);
+      }
+    });
+  }
 
   if (containsSequence(tokens, "create", "extension")) {
     const k = tokens.findIndex((t, m) => isWord(t, "create") && isWord(tokens[m + 1], "extension"));
@@ -894,7 +994,7 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       const close = matchingParen(tokens, name.next);
       for (const column of splitTopLevel(tokens, name.next + 1, close === -1 ? tokens.length : close)) {
         markerDefault(column, add);
-        if (TABLE_CONSTRAINT_STARTS.has(wordAt(column, 0)) || isWord(column[0], "like")) continue;
+        if (tableConstraintAt(column, 0) || isWord(column[0], "like")) continue;
         const problem = columnTypeProblem(column, 1, createdTypes);
         if (problem) add(`a column of reference table ${name.name} has ${problem}`);
       }
@@ -912,6 +1012,9 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
     const existing = !target || target.name.schema === null || !newTables.has(`${target.name.schema}.${target.name.name}`);
     for (const action of splitTopLevel(tokens, target ? target.next : k + 2, tokens.length)) {
       markerDefault(action, add);
+      // ALTER TABLE ... OF <type> makes it a typed table: a later ALTER TYPE ... ADD ATTRIBUTE
+      // ... CASCADE then fills its existing rows (fix round 3, V2-8). NOT OF only removes the link.
+      if (isWord(action[0], "of")) add("ALTER TABLE ... OF <type> (a typed table) is not allowed in migrations");
       if (action.some((a) => isWord(a, "type")) && action.some((a) => isWord(a, "using"))) {
         add("ALTER COLUMN ... TYPE ... USING rewrites existing rows; not allowed in migrations");
       }
@@ -1264,14 +1367,19 @@ export function checkFiles(files, options = {}) {
   const typesBefore = (index) => new Set([...createdAt].filter(([, at]) => at < index).map(([key]) => key));
 
   // Rule 4: readable bodies and allowed inserts; every function that changes data is a writer.
-  const writers = new Set([...allowedWriters.keys()].map((signature) => signature.replace(/\(.*$/, "").split(".").pop()));
+  // Writer names are compared lower-cased on both sides (fix round 3, V2-2): a writer defined with
+  // a quoted mixed-case name ("Wf") is called as "Wf", and the names a statement uses are lower-cased.
+  // This also treats "Wf" and wf as one name, which only fails closed.
+  const writers = new Set([...allowedWriters.keys()].map((signature) => signature.replace(/\(.*$/, "").split(".").pop().toLowerCase()));
   writers.add(BOOTSTRAP);
+  const addWriter = (name) => writers.add(name.toLowerCase());
+  const isWriter = (name) => writers.has(name.toLowerCase());
   for (const d of definitions) {
     const where = `${d.file}: function ${d.qualifiedName}`;
     const createdTypes = typesBefore(d.runIndex);
     if (!d.readable) {
       problems.push(`${d.file}: the body of ${d.qualifiedName} must be dollar-quoted (AS $$ ... $$) in LANGUAGE sql or plpgsql; string-literal, BEGIN ATOMIC and RETURN bodies are not allowed, because the guard cannot read them`);
-      if (d.name) writers.add(d.name);
+      if (d.name) addWriter(d.name);
     }
     if (d.schema && /^pg_temp(?:_[0-9]+)?$/.test(d.schema)) problems.push(`${d.file}: ${d.qualifiedName}: functions in pg_temp are not allowed in migrations`);
     problems.push(...anywhereProblems(d.headerTokens, `${d.file}: function ${d.qualifiedName} (header)`, { topLevel: false, sqlBody: false, createdTypes }));
@@ -1282,12 +1390,13 @@ export function checkFiles(files, options = {}) {
       problems.push(...anywhereProblems(body.tokens, where, { topLevel: false, sqlBody: body.language === "sql", createdTypes }));
       problems.push(...referenceTriggerProblems(body.tokens, where));
       for (const change of dataChanges(body.tokens)) {
-        if (d.name) writers.add(d.name);
+        if (d.name) addWriter(d.name);
         if (change.kind !== "INSERT") continue;
-        const target = insertTarget(body.tokens, change.index);
+        const target = changeTarget(body.tokens, change);
         const qualified = target && target.schema ? `${target.schema}.${target.table}` : null;
         if (!entry || !qualified || !entry.tables.includes(qualified)) {
-          problems.push(`${where}: INSERT into "${target ? target.table : "?"}" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)`);
+          const kind = change.merge === undefined ? "INSERT" : "INSERT (a MERGE ... THEN INSERT action)";
+          problems.push(`${where}: ${kind} into "${target ? target.table : "?"}" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)`);
         }
       }
       if (entry) {
@@ -1308,11 +1417,12 @@ export function checkFiles(files, options = {}) {
   for (let changed = true; changed; ) {
     changed = false;
     for (const d of definitions) {
-      if (!d.name || writers.has(d.name)) continue;
+      if (!d.name || isWriter(d.name)) continue;
       const referenced = [...names(d.headerTokens, d.headerSkip), ...d.bodyStatements.flatMap((b) => [...names(b.tokens)])];
-      if (referenced.some((name) => writers.has(name))) {
-        writers.add(d.name);
-        changed = true;
+      if (referenced.some(isWriter)) {
+        const before = writers.size;
+        addWriter(d.name);
+        changed = changed || writers.size > before;
       }
     }
   }
@@ -1354,9 +1464,10 @@ export function checkFiles(files, options = {}) {
     problems.push(...referenceTriggerProblems(tokens, file));
     for (const change of dataChanges(tokens)) {
       if (change.kind === "INSERT") {
-        problems.push(...referenceInsertProblems(tokens, change.index, file));
+        if (change.merge !== undefined) problems.push(`${file}: MERGE ... THEN INSERT is not allowed in migrations; they change schema and approved reference data only`);
+        else problems.push(...referenceInsertProblems(tokens, change.index, file, topLevel));
         // A table that has rows is no longer new, whatever schema the INSERT names.
-        const target = insertTarget(tokens, change.index);
+        const target = changeTarget(tokens, change);
         for (const key of [...newTables]) if (!target || key.endsWith(`.${target.table}`)) newTables.delete(key);
       } else problems.push(`${file}: ${change.kind} is not allowed in migrations; they change schema and approved reference data only`);
     }
@@ -1367,7 +1478,7 @@ export function checkFiles(files, options = {}) {
       problems.push(`${file}: bootstrap_first_creator may only be defined, revoked or commented in migrations (D49)`);
     }
     if (!referenceExempt(tokens)) {
-      for (const writer of [...names(tokens)].filter((name) => writers.has(name))) {
+      for (const writer of [...names(tokens)].filter(isWriter)) {
         problems.push(`${file}: the migration calls ${writer}(), a function that writes data; migrations never run or attach data-writing functions (D47)`);
       }
     }

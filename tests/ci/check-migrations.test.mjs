@@ -485,7 +485,7 @@ test("R-G3/R-G9/R-G10/R-G11: dynamic SQL, COPY, writing built-ins, extensions an
   }
 });
 
-test("R-G4: the tokenizer reads dollar quotes, identifiers and strings exactly as PostgreSQL does", () => {
+test("R-G4: the tokenizer reads dollar quotes, identifiers and strings as PostgreSQL does (UTF8 client encoding)", () => {
   // A dollar tag longer than 62 characters, and one inside a function body.
   const tag = `$${"a".repeat(70)}$`;
   rejects(`select ${tag} /* ${tag};\ninsert into public.customers (name) values ('Fake');\nselect ${tag} */ ${tag};`, /INSERT into "customers" is not allowed/);
@@ -1070,4 +1070,230 @@ test("V1-9 / rule 9: what the guard on main rejected is still rejected, text Pos
   const body = `returns bigint language sql as $$ insert into public.audit_logs (action) values (p_action) returning 1 $$;`;
   passes(`create function private.write_audit(p_action text, p_target_table text, p_target_id uuid, p_details jsonb) ${body}`);
   rejects(`create function private.write_audit(p_action text, p_target_table text, p_target_id uuid) ${body}`, /INSERT into "audit_logs" is not allowed/);
+});
+
+// ------------------------------------------------------------------------------------------------
+// Fix round 3: the inputs of verification round 2 (V2-1 ... V2-9). Each test fails when its fix is
+// removed from the guard.
+// ------------------------------------------------------------------------------------------------
+const WRITER_W = `create function private.w() returns integer language plpgsql set search_path = '' as $$
+  begin update public.permissions set label_he = 'Fake label'; return 1; end $$;`;
+
+test("V2-1 (fix round 3): client_encoding may not be named, in any form", () => {
+  // J2: with client_encoding SJIS, PostgreSQL ends e'Á\' at the second quote (0x81 0x5C is one
+  // character) and calls private.w(); the guard read one string.
+  const j2 = String.raw`${WRITER_W}
+    set client_encoding = 'SJIS';
+    select e'Á\', private.w() --'
+    ;
+    reset client_encoding;`;
+  rejects(j2, /client_encoding may not be named in migrations/);
+  const NAMED = /client_encoding may not be named in migrations/i;
+  for (const sql of [
+    `set client_encoding = 'SJIS';`,
+    `set local client_encoding to 'SJIS';`,
+    `set "client_encoding" = 'SJIS';`,
+    `SET "CLIENT_ENCODING" TO 'BIG5';`,
+    `reset client_encoding;`,
+    `alter role postgres set client_encoding = 'SJIS';`,
+    `alter database postgres set client_encoding to 'GBK';`,
+    `create function private.f() returns int language sql set client_encoding = 'SJIS' as $$ select 1 $$;`,
+    `create function private.f() returns int language plpgsql as $$ begin set local client_encoding = 'SJIS'; return 1; end $$;`,
+  ]) {
+    rejects(sql, NAMED);
+  }
+  // In a string too (as the other denied settings).
+  rejects(`select current_setting('client_encoding');`, /standard_conforming_strings, backslash_quote, session_replication_role and client_encoding may not be named/);
+});
+
+test("V2-1 (fix round 3): SET [LOCAL | SESSION] NAMES fails, also in a function's or a role's SET clause", () => {
+  const NAMES = /SET NAMES is not allowed in migrations/;
+  // J5: SET NAMES 'SJIS' made PostgreSQL run the UPDATE in the CTE that the guard read as a string.
+  rejects(String.raw`set names 'SJIS';
+    with a as (select e'Á\' as x), b as (update public.permissions set label_he = chr(70)||chr(97)||chr(107)||chr(101) returning 1) select count(*) from b --')
+    ;`, NAMES);
+  for (const sql of [
+    `set names 'SJIS';`,
+    `SET NAMES 'SJIS';`,
+    `set local names 'BIG5';`,
+    `set session names 'GBK';`,
+    `set names default;`,
+    `set "names" 'SJIS';`,
+    `create function private.f() returns int language sql set names 'SJIS' as $$ select 1 $$;`,
+    `alter function private.f() set names 'SJIS';`,
+    `alter role postgres set names 'SJIS';`,
+    `do $$ begin set local names 'SJIS'; end $$;`,
+  ]) {
+    rejects(sql, NAMES);
+  }
+  passes(`alter table public.permissions alter column label_he set not null;`);
+});
+
+test("V2-1 (fix round 3): a non-ASCII character in an E'' string fails; plain strings keep Hebrew", () => {
+  const ESTRING = /a non-ASCII character in an E'' string is not allowed in migrations/;
+  rejects(String.raw`select e'Á\' as x;`, ESTRING);
+  rejects(`comment on table public.permissions is e'שירות';`, ESTRING);
+  rejects(`comment on table public.permissions is E'a\\nb ×';`, ESTRING);
+  rejects(`create function private.f() returns text language sql as $$ select e'é' $$;`, ESTRING);
+  passes(`comment on table public.permissions is 'שירות'; comment on table public.role_permissions is e'a\\nb';`);
+  passes(`insert into public.call_types (label_he) values ('תיקון');`);
+});
+
+test("V2-2 (fix round 3): a writer with a quoted mixed-case name is a writer (select, call, perform, default, trigger)", () => {
+  const CALLS = /the migration calls (\w+)\(\), a function that writes data/;
+  const wf = `create function private."Wf"() returns int language plpgsql set search_path = '' as $$
+    begin update public.permissions set label_he = 'Fake label'; return 1; end $$;`;
+  // A1c, A1f, A1b
+  rejects(`${wf} select private."Wf"();`, CALLS);
+  rejects(`${wf} do $$ begin perform private."Wf"(); end $$;`, CALLS);
+  rejects(`${wf} create table public.call_types (id integer primary key, label_he text not null, n int default private."Wf"(),
+    is_test boolean not null default false); insert into public.call_types (id, label_he) values (1, 'Service');`, CALLS);
+  // A1g: a procedure
+  rejects(`create procedure private."P"() language plpgsql set search_path = '' as $$ begin update public.permissions set label_he = 'Fake label'; end $$;
+    call private."P"();`, CALLS);
+  // A1: an AFTER INSERT trigger runs the writer for each reference row
+  rejects(`create table public.call_types (id integer primary key, label_he text not null, is_test boolean not null default false);
+    create function private."Fake"() returns trigger language plpgsql set search_path = '' as $$
+      begin update public.permissions set label_he = 'Fake label'; return null; end $$;
+    create trigger t50_fake after insert on public.call_types for each row execute function private."Fake"();
+    insert into public.call_types (id, label_he) values (1, 'Service');`, CALLS);
+  // Through a wrapper (the writer closure compares lower-cased too), and the other way round.
+  rejects(`${wf} create function private.g() returns int language sql as $$ select private."Wf"() $$; select private.g();`, /the migration calls g\(\)/);
+  rejects(`create function private."WG"() returns int language sql as $$ select private."Wf"() $$; ${wf} select private."WG"();`, /the migration calls wg\(\)/);
+  rejects(`${WRITER_W} select private."W"();`, /the migration calls w\(\)/);
+  // A writer listed in ALLOWED_WRITERS, called with a quoted upper-case name; and an entry whose
+  // own name is mixed case is compared lower-cased too.
+  rejects(`select private."WRITE_AUDIT"('a', 'b', null, null);`, /the migration calls write_audit\(\)/);
+  rejects(`select private."Writer"('a');`, /the migration calls writer\(\)/, writer("private.Writer(text)", ["public.audit_logs"]));
+});
+
+test("V2-3 (fix round 3): a function named in a string option of CREATE/ALTER AGGREGATE, OPERATOR, TYPE or TEXT SEARCH fails", () => {
+  const OPTION = /a string value for the option (\w+) of CREATE\/ALTER AGGREGATE, OPERATOR, TYPE or TEXT SEARCH is not allowed/;
+  const w2 = `create function public.w(s integer, v integer) returns integer language plpgsql set search_path = '' as $$
+    begin update public.permissions set label_he = 'Fake label'; return coalesce(s, 0) + v; end $$;`;
+  // H1, H2: sfunc = 'w' and function = 'w' ran w (the guard saw no name).
+  rejects(`${w2} create aggregate public.agg(integer) (sfunc = 'w', stype = integer); select public.agg(1);`, OPTION);
+  rejects(`${w2} create operator public.#%# (function = 'w', leftarg = integer, rightarg = integer); select 1 operator(public.#%#) 2;`, OPTION);
+  for (const sql of [
+    `create aggregate public.a(int) (sfunc = int4pl, stype = int, finalfunc = 'w');`,
+    `create aggregate public.a(int) (sfunc = int4pl, stype = int, combinefunc = 'public.w');`,
+    `create aggregate public.a (basetype = int, sfunc = 'w', stype = int);`,
+    `CREATE AGGREGATE public.a(int) (SFUNC = 'W', STYPE = int);`,
+    `create aggregate public.a(int) ("sfunc" = 'w', stype = int);`,
+    `create aggregate public.a(int) (sfunc = int4pl, stype = int, msfunc = int4pl, minvfunc = 'w', mstype = int);`,
+    `create operator public.### (procedure = 'w', leftarg = int, rightarg = int);`,
+    `create operator public.### (function = int4pl, leftarg = int, rightarg = int, restrict = 'w');`,
+    `alter operator public.###(int, int) set (restrict = 'w');`,
+    `create type public.t (input = 'w', output = int4out);`,
+    `alter type public.t set (receive = 'w');`,
+    `create type public.r as range (subtype = int4, subtype_diff = 'w');`,
+    `create text search parser public.p (start = 'w', gettoken = prsd_nexttoken, end = prsd_end, lextypes = prsd_lextype);`,
+    `create text search template public.t (lexize = 'w');`,
+    `do $$ begin create aggregate public.a(int) (sfunc = 'w', stype = int); end $$;`,
+    // A key that may take a string takes only a plain '...' string.
+    `create aggregate public.a(int) (sfunc = int4pl, stype = int, initcond = e'0');`,
+  ]) {
+    rejects(sql, OPTION);
+  }
+  passes(`create aggregate public.a(int) (sfunc = int4pl, stype = int, initcond = '0');
+    create type public.k as enum ('screen', 'data');`);
+});
+
+test("V2-4 (fix round 3): ADD exclude <type> adds a column named exclude, not a constraint", () => {
+  // A2, K2, A2b-e: each filled every existing row through a column named exclude.
+  for (const sql of [
+    `alter table public.permissions add exclude text not null default 'Fake note';`,
+    `ALTER TABLE public.permissions ADD EXCLUDE TEXT NOT NULL DEFAULT 'Fake note';`,
+    `alter table public.permissions add exclude information_schema.time_stamp;`,
+    `alter table public.permissions add exclude int generated always as identity;`,
+    `alter table public.permissions add exclude bigserial;`,
+    `alter table public.permissions add exclude text generated always as ('Fake ' || label_he) stored;`,
+    `alter table public.permissions add column if not exists x int, add exclude int default 1;`,
+  ]) {
+    rejects(sql, EXISTING_REWRITE);
+  }
+  // A3: a reference table's column named exclude must have a built-in type too.
+  rejects(`create table public.call_types (id integer primary key, label_he text not null, exclude information_schema.time_stamp,
+    is_test boolean not null default false); insert into public.call_types (id, label_he) values (1, 'x');`,
+  /a column of reference table call_types has type information_schema\.time_stamp/);
+  // EXCLUDE USING / EXCLUDE ( is still a constraint.
+  passes(`alter table public.permissions add exclude using btree (key with =);
+    alter table public.permissions add exclude (key with =);
+    create table public.call_types (id integer primary key, label_he text not null, exclude using btree (label_he with =));`);
+});
+
+test("V2-5 (fix round 3): MERGE ... THEN INSERT in a function body is an INSERT into the MERGE target", () => {
+  const MERGE_INSERT = /INSERT \(a MERGE \.\.\. THEN INSERT action\) into "(\w+)" is not allowed/;
+  // H4: a reviewed writer pinned to audit_logs inserted into technicians through MERGE.
+  rejects(`create or replace function private.write_audit(p_action text, p_target text, p_target_id uuid, p_details jsonb)
+    returns void language plpgsql set search_path = '' as $$
+    begin
+      merge into public.technicians t using (select p_target_id as id) src on t.profile_id = src.id
+        when not matched then insert (profile_id) values (p_target_id);
+    end $$;`, MERGE_INSERT);
+  // H3: any other function (here run through an aggregate) may not insert through MERGE either.
+  rejects(`create function public.w(s integer, v integer) returns integer language plpgsql set search_path = '' as $$
+    begin
+      merge into public.customers c using (select 1 as id) src on c.id = src.id
+        when not matched then insert (id, name, is_test) values (1, 'Fake Customer Ltd', true);
+      return coalesce(s, 0) + v;
+    end $$;`, MERGE_INSERT);
+  for (const action of ["insert default values", "insert values (p_target_id)", "INSERT (profile_id) OVERRIDING SYSTEM VALUE VALUES (p_target_id)"]) {
+    rejects(`create function private.write_audit(p_action text, p_target text, p_target_id uuid, p_details jsonb)
+      returns void language plpgsql set search_path = '' as $$ begin
+      MERGE INTO ONLY public.technicians t USING (select 1) s ON false WHEN NOT MATCHED BY TARGET THEN ${action}; end $$;`, MERGE_INSERT);
+  }
+  // Into its pinned table it is allowed, as a plain INSERT is (also MERGE INTO ONLY).
+  passes(`create function private.write_audit(p_action text, p_target text, p_target_id uuid, p_details jsonb)
+    returns void language plpgsql set search_path = '' as $$ begin
+      merge into public.audit_logs a using (select 1) s on false when not matched then insert (action) values (p_action);
+      merge into only public.audit_logs a using (select 1) s on false when not matched then insert default values; end $$;`);
+  // In a statement that runs, MERGE fails as before, and its INSERT action too.
+  rejects(`merge into public.call_types c using (select 1) s on false when not matched then insert (label_he) values ('x');`,
+    /MERGE \.\.\. THEN INSERT is not allowed in migrations/);
+});
+
+test("V2-6 (fix round 3): pgTAP and extension functions that run SQL text fail as any name", () => {
+  const RUNS = /\(\) is not allowed in migrations \(pgTAP or extension function that runs SQL text given as an argument\)/;
+  // B1: lives_ok ran the UPDATE in its text. ts_stat('select private.w()') ran a writer on the local
+  // database (rolled back).
+  rejects(`select no_plan(); select lives_ok('update public.permissions set label_he = ''Fake label''');`, RUNS);
+  for (const name of ["lives_ok", "throws_ok", "throws_like", "throws_ilike", "throws_matching", "throws_imatching", "dies_ok",
+    "results_eq", "results_ne", "set_eq", "set_ne", "set_has", "set_hasnt", "bag_eq", "bag_ne", "bag_has", "bag_hasnt", "is_empty",
+    "isnt_empty", "row_eq", "performs_ok", "performs_within", "runtests", "do_tap", "cmp_ok", "_def_is", "_time_trials", "_runner",
+    "_runem", "_query", "_temptable",
+    "xpath_table", "crosstab", "crosstab2", "connectby", "ts_stat", "ts_rewrite"]) {
+    rejects(`select ${name}('update public.permissions set label_he = ''x''');`, RUNS);
+  }
+  rejects(`select extensions."results_eq"('select 1', 'select 1');`, RUNS);
+  rejects(`create function private.f() returns setof text language sql as $$ select * from extensions.runtests() $$;`, RUNS);
+  rejects(`create operator public.### (function = lives_ok, leftarg = text, rightarg = text);`, RUNS);
+});
+
+test("V2-8 (fix round 3): ALTER TABLE ... OF and ALTER TYPE ... ADD ATTRIBUTE fail (they fill a typed table's rows)", () => {
+  // G1: the typed table's existing rows got now() from the attribute's domain.
+  const g1 = `create type public.permissions_shape as (key text, label_he text, enforcement text, sort_order smallint);
+    alter table public.permissions of public.permissions_shape;
+    alter type public.permissions_shape add attribute changed_at information_schema.time_stamp cascade;`;
+  rejects(g1, /ALTER TABLE \.\.\. OF <type> \(a typed table\) is not allowed/);
+  rejects(g1, /ALTER TYPE \.\.\. ADD ATTRIBUTE is not allowed/);
+  rejects(`alter table public.permissions of public.s;`, /ALTER TABLE \.\.\. OF <type>/);
+  rejects(`alter table if exists only public.permissions owner to postgres, of public.s;`, /ALTER TABLE \.\.\. OF <type>/);
+  rejects(`alter type public.s add attribute c text;`, /ALTER TYPE \.\.\. ADD ATTRIBUTE is not allowed/);
+  passes(`alter table public.permissions not of;`);
+});
+
+test("V2-9 (fix round 3): a reference INSERT is allowed only as a top-level statement, never in a DO block", () => {
+  const TOP = /INSERT into "role_permissions" is allowed only as a top-level statement of the file, not inside a DO block/;
+  // I1: an IF decided whether the reference row was inserted.
+  rejects(`do $$
+    begin
+      if exists (select 1 from public.profiles) then
+        perform 1;
+        insert into public.role_permissions (role, permission_key, allowed, value_status) values ('manager', 'usage', false, 'temporary');
+      end if;
+    end
+    $$;`, TOP);
+  rejects(`do $$ begin perform 1; insert into public.role_permissions (role, permission_key, allowed, value_status) values ('manager', 'usage', false, 'temporary'); end $$;`, TOP);
+  passes(`insert into public.role_permissions (role, permission_key, allowed, value_status) values ('manager', 'usage', false, 'temporary');`);
 });
