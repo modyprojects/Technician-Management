@@ -974,6 +974,64 @@ test("V1-7: every column of a reference table has a built-in type or a type the 
       constraint u unique (label_he), check (sort_order >= 0));`);
 });
 
+test("V1-1 (verification round 2): each name reader fails closed on its own, and FOR UPDATE <name> SET is an UPDATE whatever the name", () => {
+  // The INSERT reader reports a target it cannot read, independently of the three-part rule.
+  rejects(`insert into postgres.public.call_types (label_he) values ('x');`, /an INSERT target the guard cannot read is not allowed/);
+  // A view named like a locking-clause word: OPEN ... FOR UPDATE nowait SET rewrote all 13 labels
+  // through public.nowait on the local database (rolled back).
+  const UPDATE = /UPDATE is not allowed in migrations/;
+  const cursor = (target) => `do $$ declare c refcursor; n int; begin open c for update ${target} label_he = 'Fake label' returning 1; fetch c into n; end $$;`;
+  rejects(`create view public.nowait as select * from public.permissions; ${cursor("nowait set")}`, UPDATE);
+  for (const target of ["skip s set", "cascade as x set", "restrict * set", "set set", "of.permissions set", "no n set"]) rejects(cursor(target), UPDATE);
+});
+
+test("V1-4 (verification round 2): an E'' string in a search_path fails (its escapes spell a denied schema)", () => {
+  // e'\x76ault' is vault: on the local database (rolled back) it made create_secret reachable
+  // unqualified; for cron.schedule or pgmq.send no denied function name would appear at all.
+  const ESTRING = /an E'' string in a search_path is not allowed in migrations/;
+  for (const sql of [
+    String.raw`set local search_path = e'\x63ron', public; select schedule('j', '* * * * *', 'update public.permissions set label_he = ''Fake''');`,
+    String.raw`set local search_path = public, e'pg\x6dq'; select send('q', '{}'::jsonb);`,
+    String.raw`set search_path to e'\x76ault';`,
+    String.raw`create function private.f() returns void language sql set search_path = e'\x63ron' as $$ select 1 $$;`,
+    String.raw`alter role postgres set search_path = E'gr\141phql';`,
+  ]) {
+    rejects(sql, ESTRING);
+  }
+  passes(`set local search_path = '', public; create function private.f() returns void language sql set search_path = '' as $$ select 1 $$;`);
+});
+
+test("V1-7 (verification round 2): no type or domain named like a built-in type, and the type rules stand on their own", () => {
+  // With search_path = public, pg_catalog an unqualified `date` is public.date: on the local
+  // database (rolled back) every one of the 13 existing rows got now().
+  const SHADOW = /a type or domain named like the built-in type (\w+) is not allowed/;
+  rejects(`create domain public.date as information_schema.time_stamp; set local search_path = public, pg_catalog;
+    alter table public.permissions add column c date;`, SHADOW);
+  rejects(`create type public."text" as enum ('a');`, SHADOW);
+  rejects(`do $$ begin create domain uuid as information_schema.time_stamp; end $$;`, SHADOW);
+  rejects(`create function private.f() returns void language plpgsql as $$ begin create domain private.jsonb as pg_catalog.jsonb; end $$;`, SHADOW);
+  passes(`create domain public.label as text; create type public.kind as enum ('a'); create table public.date_ranges (id int);`);
+  // Only an unqualified or pg_catalog built-in counts as built-in.
+  rejects(`alter table public.permissions add column c public.text;`, /ADD COLUMN of type public\.text/);
+  // A type created by a statement inside a DO block may not have been created (IF false): it does
+  // not count, so the type of that name that exists outside the files is the column's type.
+  rejects(`do $$ begin if false then perform 1; create domain information_schema.time_stamp as text; end if; end $$;
+    alter table public.permissions add column c information_schema.time_stamp;`, /ADD COLUMN of type information_schema\.time_stamp/);
+  // A type counts only after the statement that creates it: a later statement or file may fail
+  // because the type already exists outside the files, after the column took its default.
+  const LATER = /ADD COLUMN of type public\.r /;
+  rejects(`alter table public.permissions add column c public.r; create type public.r as enum ('a');`, LATER);
+  const files = checkFiles([
+    { name: "1.sql", sql: "alter table public.permissions add column c public.r;" },
+    { name: "2.sql", sql: "create type public.r as enum ('a');" },
+  ]);
+  assert.ok(files.some((p) => p.startsWith("1.sql: ") && LATER.test(p)), JSON.stringify(files));
+  const body = `create function private.f() returns void language plpgsql as $$ begin alter table public.permissions add column c public.r; end $$;`;
+  rejects(`${body} create type public.r as enum ('a');`, LATER);
+  passes(`create type public.r as enum ('a'); ${body}`);
+  assert.deepEqual(checkFiles([{ name: "1.sql", sql: "create type public.r as enum ('a');" }, { name: "2.sql", sql: body }]), []);
+});
+
 test("V1-9 / rule 9: what the guard on main rejected is still rejected, text PostgreSQL never runs included", () => {
   for (const sql of [
     // The two text-only differences verification round 1 found.

@@ -62,23 +62,25 @@
 //    not (query_to_xml and relatives, dblink, http, set_config, large-object and file functions,
 //    create_secret, update_secret, resolve), and so do the names of the cron, vault, net, pgsodium,
 //    realtime, supabase_functions, dblink, graphql, graphql_public, pgmq and pgmq_public schemas,
-//    quoted or not, followed by "." or not, and inside a search_path string. CREATE EXTENSION only
-//    for names in ALLOWED_EXTENSIONS; ALTER EXTENSION, subscriptions, foreign servers and foreign
-//    tables fail. standard_conforming_strings, backslash_quote and session_replication_role may not
-//    be named.
+//    quoted or not, followed by "." or not, and inside a search_path string; an E'' string in a
+//    search_path fails (its escapes spell any name). CREATE EXTENSION only for names in
+//    ALLOWED_EXTENSIONS; ALTER EXTENSION, subscriptions, foreign servers and foreign tables fail.
+//    standard_conforming_strings, backslash_quote and session_replication_role may not be named.
 // 7. No other data change in statements that run: UPDATE (any form: ONLY, parentheses, "*",
 //    aliases, in a CTE; after DO, in a rule action or ON CONFLICT, always; after FOR, as in OPEN
-//    ... FOR UPDATE, unless a word of a locking clause or a policy follows), DELETE FROM, MERGE
-//    INTO, TRUNCATE, CREATE TABLE ... AS (any form), SELECT/WITH ... INTO, materialized views
-//    (create or refresh), ALTER COLUMN ... TYPE ... USING.
+//    ... FOR UPDATE, unless a word of a locking clause or a policy follows and no <name> [alias] SET
+//    follows), DELETE FROM, MERGE INTO, TRUNCATE, CREATE TABLE ... AS (any form), SELECT/WITH ...
+//    INTO, materialized views (create or refresh), ALTER COLUMN ... TYPE ... USING.
 //    Schema changes that rewrite existing rows fail too (fix round 1, N1). ALTER TABLE is read
 //    wherever it starts in a statement (also after BEGIN or THEN, and in function bodies). On an
 //    existing table, ALTER TABLE may not DROP COLUMN, change a column's type (TYPE, SET DATA TYPE),
 //    SET EXPRESSION, or ADD COLUMN with a DEFAULT other than null (SET DEFAULT only as ON
 //    DELETE/UPDATE SET DEFAULT; fix round 2, V1-5), GENERATED, a serial type, or a type that is
-//    neither a built-in type (BUILTIN_TYPES, unquoted) nor a type created schema-qualified by a
-//    top-level statement of the files, a domain there only over a built-in type (a domain default,
-//    also one inherited from a base domain, fills every row; fix round 2, V1-7).
+//    neither a built-in type (BUILTIN_TYPES, unquoted) nor a type created schema-qualified by an
+//    earlier top-level statement of the files, a domain there only over a built-in type (a domain
+//    default, also one inherited from a base domain, fills every row; fix round 2, V1-7). No type
+//    or domain may be named like a built-in type (with search_path it would take the built-in's
+//    place).
 //    "Existing" is every table except one created earlier in the same file by a plain top-level
 //    CREATE TABLE <schema>.<name> (not IF NOT EXISTS, not temporary, not in a DO block or function
 //    body) that no INSERT in the file has targeted yet; in function bodies every table is existing.
@@ -784,6 +786,15 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
       if (t.value === "constraint" && isName(next) && isWord(tokens[k + 2], "default")) {
         add("CONSTRAINT <name> DEFAULT is not allowed in migrations; write DEFAULT without a constraint name");
       }
+      // A type or domain named like a built-in type (public.date) replaces it in an unqualified
+      // column type once search_path lists its schema before pg_catalog, so a domain default would
+      // fill every existing row through rule 7's built-in exception (fix round 2, verification round 2).
+      if (t.value === "create" && isWord(next, "type", "domain")) {
+        const created = qualifiedNameAt(tokens, k + 2);
+        if (created && BUILTIN_TYPES.has(created.name)) {
+          add(`a type or domain named like the built-in type ${created.name} is not allowed in migrations (through search_path it would replace the built-in type)`);
+        }
+      }
     }
     if (isName(t)) {
       // Fix round 2, V1-3/V1-4: quoted or not, followed by "." or not (a search_path list).
@@ -799,6 +810,11 @@ function anywhereProblems(tokens, where, { topLevel, sqlBody, newTables = new Se
         let m = k + 1;
         if (isWord(tokens[m], "to") || (tokens[m] && tokens[m].type === "op" && tokens[m].value === "=")) m += 1;
         for (; tokens[m] && (isName(tokens[m]) || tokens[m].type === "string"); m += 2) {
+          // An E'' string's escapes (e'\x76ault') spell any schema name: fail closed (fix round 2,
+          // verification round 2).
+          if (tokens[m].type === "string" && tokens[m].prefix !== "") {
+            add(`an ${tokens[m].prefix.toUpperCase()}'' string in a search_path is not allowed in migrations (its escapes can spell a denied schema); write the schema names plainly`);
+          }
           if (tokens[m].type === "string") {
             for (const part of tokens[m].value.toLowerCase().split(/[\s,"]+/)) {
               if (DENIED_SCHEMAS.has(part)) add(`the ${part} schema is not allowed in migrations, also not in a search_path string`);
@@ -1203,6 +1219,9 @@ export function checkFiles(files, options = {}) {
           bodyStatements: [],
         };
         definitions.push(definition);
+        // The position of the statement that defines it (or that defines the function it is
+        // nested in): only types created before it count for its columns (rule 7).
+        definition.runIndex = mode === "run" ? running.length : owner.runIndex;
         if (mode === "run") running.push({ file, statement, topLevel, definition });
         else owner.bodyStatements.push({ tokens: statement.tokens, language: statement.language, nested: true });
         walk(statement.body ?? [], file, "body", definition, false);
@@ -1221,8 +1240,10 @@ export function checkFiles(files, options = {}) {
   // only over a built-in type: a domain over another domain inherits that domain's default (one
   // over information_schema.time_stamp fills every row with now()). A name that any CREATE DOMAIN
   // anywhere in the files (also in a DO block or a function body, in any schema or unqualified)
-  // defines over another type never counts, in any schema.
-  const createdTypes = new Set();
+  // defines over another type never counts, in any schema. A type counts only for statements after
+  // the one that creates it, in file order (verification round 2): a type created by a later
+  // statement or file may already exist outside the files, with a default, when the column is added.
+  const createdAt = new Map();
   const unsafeTypes = new Set();
   const everyStatement = [...running.map((r) => r.statement.tokens), ...definitions.flatMap((d) => d.bodyStatements.map((b) => b.tokens))];
   for (const tokens of everyStatement) {
@@ -1234,17 +1255,20 @@ export function checkFiles(files, options = {}) {
       if (!builtinTypeAt(tokens, base)) unsafeTypes.add(name.name);
     });
   }
-  for (const { statement, topLevel } of running) {
-    if (!topLevel || !isWord(statement.tokens[0], "create") || !isWord(statement.tokens[1], "type", "domain")) continue;
+  running.forEach(({ statement, topLevel }, index) => {
+    if (!topLevel || !isWord(statement.tokens[0], "create") || !isWord(statement.tokens[1], "type", "domain")) return;
     const name = qualifiedNameAt(statement.tokens, 2);
-    if (name && name.schema !== null && !unsafeTypes.has(name.name)) createdTypes.add(`${name.schema}.${name.name}`);
-  }
+    const key = name && name.schema !== null ? `${name.schema}.${name.name}` : null;
+    if (key && !unsafeTypes.has(name.name) && !createdAt.has(key)) createdAt.set(key, index);
+  });
+  const typesBefore = (index) => new Set([...createdAt].filter(([, at]) => at < index).map(([key]) => key));
 
   // Rule 4: readable bodies and allowed inserts; every function that changes data is a writer.
   const writers = new Set([...allowedWriters.keys()].map((signature) => signature.replace(/\(.*$/, "").split(".").pop()));
   writers.add(BOOTSTRAP);
   for (const d of definitions) {
     const where = `${d.file}: function ${d.qualifiedName}`;
+    const createdTypes = typesBefore(d.runIndex);
     if (!d.readable) {
       problems.push(`${d.file}: the body of ${d.qualifiedName} must be dollar-quoted (AS $$ ... $$) in LANGUAGE sql or plpgsql; string-literal, BEGIN ATOMIC and RETURN bodies are not allowed, because the guard cannot read them`);
       if (d.name) writers.add(d.name);
@@ -1315,8 +1339,9 @@ export function checkFiles(files, options = {}) {
   // plain top-level CREATE TABLE <schema>.<name> that no INSERT has targeted yet.
   let currentFile = null;
   let newTables = new Set();
-  for (const { file, statement, topLevel, definition } of running) {
+  for (const [index, { file, statement, topLevel, definition }] of running.entries()) {
     const { tokens } = statement;
+    const createdTypes = typesBefore(index);
     if (file !== currentFile) {
       currentFile = file;
       newTables = new Set();
