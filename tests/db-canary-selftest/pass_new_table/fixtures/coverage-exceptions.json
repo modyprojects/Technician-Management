@@ -1,0 +1,7 @@
+[
+  {
+    "table": "public.visits",
+    "column": "archived_at",
+    "reason": "Self-test: set only by a later archive step, so a fresh canary row leaves it null."
+  }
+]
