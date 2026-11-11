@@ -1,5 +1,13 @@
 # Work Log (English only)
 
+## 2026-11-11 — Step 1, PR 1.5: Migration 3 (service calls, visits and their history), local only
+- Branch `claude/step1-pr15-calls-visits`, stacked on PR 1.4 (`a33617d`). The build workflow of 2026-11-06 stopped at the weekly usage limit; the uncommitted work was checkpointed as-is (`03e4267`, owner-approved) and finished sequentially under D58.
+- **Migration** `20261106120000_service_calls_visits.sql`: seven tables (`service_calls`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports`, `visit_events`, `entity_changes`), the view `visit_time_current`, ten SELECT policies, the narrow read functions `previous_visits` (D36), `visit_rep_contact` (D40) and `my_visit_details`, the call-status writer (D38), the field-history writer, four deferred constraint triggers; rollback script and canary fixture. **Not applied** to any remote database.
+- **MIG-1 fixed** (`e9d1d9e`): the warranty CHECK accepted a warranty month while the status was NULL.
+- **Tests** (D58 (5) priorities): new `180_calls_visits_rls` (40), `190_visit_functions` (20), `200_time_reports` (16); `170` completed (88). Local: 24 files, 1196 assertions pass; canary-rows check PASS (3 migrations, no coverage exception); migration guard passed; `tests/ci` 166 pass. No mutation testing (D58).
+- **Docs:** `docs/review/step1-pr15/README.md` (objects, who can do what, tests, approval items A1-A4, TEMPORARY behaviours OQ-1 to OQ-15), `docs/PROJECT-MAP.md`, `docs/testing.md`.
+- **Gates:** A1 (the `write_entity_change` writer in the protected migration guard) before any merge; apply only after Migrations 1 and 2 are applied and merged and OQ-13 is answered, with a separate approval of the exact file.
+
 ## 2026-11-05 — Owner decisions D56: canary exceptions for `role_permissions`; dashboard service-KPI period
 - **Owner (2026-11-05), recorded as D56:** (1) approved the three canary-rows coverage exceptions of PR #12 for `public.role_permissions` (`approved_by`, `approved_at`, `updated_by`), limited to these columns and to the current migration and test scope, with the D47 and D54 safeguards unchanged; to be reassessed when real approval data exists (Step 10, D51). (2) The Manager dashboard's General-tab service KPIs use the current calendar month in Asia/Jerusalem as their initial aggregation period, shown on the screen (`docs/design/manager-dashboard-spec.md` §4.4 gap).
 - **Not authorized by D56:** merging PR #12 or PR #14, applying any migration, any remote Supabase operation.
