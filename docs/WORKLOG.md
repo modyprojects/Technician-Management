@@ -1,5 +1,9 @@
 # Work Log (English only)
 
+## 2026-11-11 — D59 working rules; Migration 1 applied
+- **D59** recorded (`docs/decisions.md`): read-only Supabase operations (project `ooxozvvrljjkyfduuiks` only, enforced with `set transaction read only;`), repository reading, local development and tests, commits, feature-branch pushes and draft PRs need no approval; remote writes, migrations, deletions, rollbacks and history repairs, merges into `main` and Production deployments, protected or security-sensitive configuration, changes to approved requirements, roles or permissions, and anything that could expose credentials or delete important data still need the owner's explicit approval. Aligned: `CLAUDE.md`, `docs/security.md` (both protected: this PR needs the owner's merge approval), `docs/ROADMAP.md`.
+- **Migration 1** was applied to the remote project with the owner's explicit approval and verified read-only; the record is on PR #12 (`docs/review/step1-pr13/README.md` section 17). Recorded remote version `20261111125920` (file version `20261104120000`), not repaired.
+
 ## 2026-11-11 — Status audit follow-up: D58 and development order
 - **Audit (read-only)** after the usage-limit pause: the owner's decisions on it are recorded here. Both recurring progress-report schedules stay disabled.
 - **PR 1.5 checkpoint:** the uncommitted Migration 3 work was committed as-is and pushed to `claude/step1-pr15-calls-visits` (`03e4267`, work in progress, no PR); known defect MIG-1 is recorded in the commit message.
