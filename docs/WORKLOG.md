@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-11 — Step 1 / PR 1.3: B1 confirmed, B2 pre-apply check, pre-apply security review (not applied)
+- **B1:** the owner configured and verified the D50 Supabase Auth and Data API settings himself and confirmed it (Claude Code has no tool for these settings and changed nothing).
+- **B2** (D55 (3), remote project `ooxozvvrljjkyfduuiks` only, four read-only SELECTs): apply role `postgres`; `public` empty; `postgres` and `supabase_admin` default privileges in `public` permissive (expected); `supabase_migrations.schema_migrations` does not exist yet, so `postgres`'s DELETE on it is checked after the apply. Remote PostgreSQL 17.11.
+- **Independent security review** (D58, one reviewer, local probes only) of Migration 1 at `daec926`, including the unreviewed fix round `9229949`: APPROVE, no must or should finding, six nits. **N2 fixed:** migration section 15 fails closed when any hardening leftover remains (verified against 10 injected leaks). N1, N4-N6 recorded; N3 resolved (PostgreSQL 17.11). Details: `docs/review/step1-pr13/README.md` section 16.
+- Branch synced with `main` `2eecf52` (merge, PROJECT-MAP conflict resolved). Migration 1 sha256 `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7`. Local: pgTAP 554/554, `tests/ci` 122/122, guard passed, canary PASS. **Not applied**; the apply waits for the owner's explicit approval.
+
 ## 2026-11-11 — Status audit follow-up: D58 and development order
 - **Audit (read-only)** after the usage-limit pause: the owner's decisions on it are recorded here. Both recurring progress-report schedules stay disabled.
 - **PR 1.5 checkpoint:** the uncommitted Migration 3 work was committed as-is and pushed to `claude/step1-pr15-calls-visits` (`03e4267`, work in progress, no PR); known defect MIG-1 is recorded in the commit message.
