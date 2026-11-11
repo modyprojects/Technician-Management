@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "table": "public.role_permissions",
+    "column": "approved_by",
+    "reason": "Migration 20261104120000 inserts all 26 (role, permission_key) pairs its CHECKs allow (2 roles x the closed 13-key catalogue), so the primary key leaves no room for a canary row and a fixture only adds rows; the table has no test marker, so it counts as real and the one-way rule (D47) forbids it to name a test profile. Set only when the owner approves the final values (Step 10, D51)."
+  },
+  {
+    "table": "public.role_permissions",
+    "column": "approved_at",
+    "reason": "Migration 20261104120000 inserts all 26 (role, permission_key) pairs its CHECKs allow (2 roles x the closed 13-key catalogue), so the primary key leaves no room for a canary row and a fixture only adds rows. Set together with approved_by only when the owner approves the final values (Step 10, D51; CHECK role_permissions_approval_check)."
+  },
+  {
+    "table": "public.role_permissions",
+    "column": "updated_by",
+    "reason": "Migration 20261104120000 inserts all 26 (role, permission_key) pairs its CHECKs allow (2 roles x the closed 13-key catalogue), so the primary key leaves no room for a canary row and a fixture only adds rows; the table has no test marker, so it counts as real and the one-way rule (D47) forbids it to name a test profile. Set only by the Creator's admin_set_role_permission (D33)."
+  }
+]
