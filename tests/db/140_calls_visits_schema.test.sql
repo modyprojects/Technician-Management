@@ -451,7 +451,7 @@ select results_eq(
      ('service_calls_status_check', 'CHECK ((status = ANY (ARRAY[''open''::text, ''resolved''::text, ''awaiting_followup''::text, ''awaiting_scheduling''::text])))'),
      ('service_calls_warranty_raw_status_check', 'CHECK (((warranty_status IS NULL) = (warranty_raw IS NULL)))'),
      ('service_calls_warranty_status_check', 'CHECK ((warranty_status = ANY (ARRAY[''yes''::text, ''no''::text])))'),
-     ('service_calls_warranty_until_check', 'CHECK (((warranty_until IS NULL) OR ((warranty_status IS NOT NULL) AND (warranty_status = ''yes''::text) AND (EXTRACT(day FROM warranty_until) = (1)::numeric))))'),
+     ('service_calls_warranty_until_check', 'CHECK (((warranty_until IS NULL) OR ((warranty_status IS NOT NULL) AND (warranty_status = ''yes''::text) AND isfinite(warranty_until) AND (EXTRACT(day FROM warranty_until) = (1)::numeric))))'),
      ('visit_events_event_type_check', 'CHECK ((event_type = ANY (ARRAY[''created''::text, ''status_changed''::text])))'),
      ('visit_events_event_type_from_status_check', 'CHECK (((event_type = ''created''::text) = (from_status IS NULL)))'),
      ('visit_events_from_status_check', 'CHECK ((from_status = ANY (ARRAY[''scheduled''::text, ''en_route''::text, ''in_progress''::text, ''done''::text, ''followup''::text, ''cancelled''::text])))'),
@@ -470,7 +470,7 @@ select results_eq(
      ('visits_closed_at_check', 'CHECK (((status = ANY (ARRAY[''done''::text, ''followup''::text])) = (closed_at IS NOT NULL)))'),
      ('visits_followup_check', 'CHECK (((status <> ''followup''::text) OR ((followup_reason_id IS NOT NULL) AND (next_visit_notes IS NOT NULL))))'),
      ('visits_open_not_cancelled_check', 'CHECK (((status <> ALL (ARRAY[''scheduled''::text, ''en_route''::text, ''in_progress''::text])) OR (cancelled_at IS NULL)))'),
-     ('visits_schedule_check', 'CHECK ((scheduled_end >= scheduled_start))'),
+     ('visits_schedule_check', 'CHECK ((isfinite(scheduled_start) AND isfinite(scheduled_end) AND (scheduled_end >= scheduled_start)))'),
      ('visits_status_check', 'CHECK ((status = ANY (ARRAY[''scheduled''::text, ''en_route''::text, ''in_progress''::text, ''done''::text, ''followup''::text, ''cancelled''::text])))'),
      ('visits_task_number_check', 'CHECK ((((char_length(task_number) >= 1) AND (char_length(task_number) <= 40)) AND (task_number ~ ''^[!-~]+( [!-~]+)*$''::text)))'),
      ('visits_visit_number_check', 'CHECK (((visit_number >= 1) AND (visit_number <= 999)))') $$,
@@ -1018,7 +1018,9 @@ from (values
   (8, 'yes without the raw text', 'yes', null, null, '23514 service_calls_warranty_raw_status_check'),
   (9, 'raw text without a status (an unparseable value is not ingested)', null, null, 'אולי', '23514 service_calls_warranty_raw_status_check'),
   (10, 'another status', 'maybe', null, 'אולי', '23514 service_calls_warranty_status_check'),
-  (11, 'upper-case YES', 'YES', null, 'כן', '23514 service_calls_warranty_status_check')
+  (11, 'upper-case YES', 'YES', null, 'כן', '23514 service_calls_warranty_status_check'),
+  (12, 'yes until infinity (no day: the CHECK must not pass on NULL)', 'yes', 'infinity', 'כן', '23514 service_calls_warranty_until_check'),
+  (13, 'yes until -infinity', 'yes', '-infinity', 'כן', '23514 service_calls_warranty_until_check')
 ) c (n, label, st, until, raw, expected)
 order by c.n;
 select results_eq(
@@ -1115,6 +1117,10 @@ from (values
    '2, ''T-2'', now(), now() - interval ''1 minute'', ''scheduled''', '23514 visits_schedule_check'),
   (11, 'end equal to start', 'visit_number, task_number, scheduled_start, scheduled_end, status',
    '2, ''T-2'', now(), now(), ''scheduled''', 'ok'),
+  (11.1, 'start -infinity', 'visit_number, task_number, scheduled_start, scheduled_end, status',
+   '2, ''T-2'', ''-infinity'', now(), ''scheduled''', '23514 visits_schedule_check'),
+  (11.2, 'end infinity', 'visit_number, task_number, scheduled_start, scheduled_end, status',
+   '2, ''T-2'', now(), ''infinity'', ''scheduled''', '23514 visits_schedule_check'),
   (12, 'scheduled start missing', 'visit_number, task_number, scheduled_end, status', '2, ''T-2'', now(), ''scheduled''',
    '23502 scheduled_start'),
   (13, 'version 0', 'visit_number, task_number, scheduled_start, scheduled_end, status, version',

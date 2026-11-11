@@ -30,7 +30,7 @@
 -- subtransaction (V22). Every scenario runs through pg_temp.tm_run, which undoes it.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(88);
+select plan(89);
 
 -- ---------------------------------------------------------------------------------------------
 -- Test-only helpers (pg_temp, rolled back)
@@ -390,6 +390,8 @@ select is(pg_temp.tm_run(
   $$ select (v.cancelled_at = now()) || ' ' || (v.cancelled_by = pg_temp.tm_id('manager')) || ' ' || (v.closed_at is null)
      from public.visits v where v.id = pg_temp.tm_id('P1') $$),
   'true true true', 'a cancellation gets cancelled_at = now(); cancelled_by is the writer''s');
+select is(pg_temp.tm_run($$ update public.visits v set cancelled_by = pg_temp.tm_id('creator') where v.id = pg_temp.tm_id('R1') $$),
+  '55000 visits: cancelled_by is kept once the visit is cancelled', 'who cancelled a visit never changes (independent review N2)');
 select is(pg_temp.tm_run($$ update public.visits v set closed_at = now() where v.id = pg_temp.tm_id('Q2') $$),
   '55000 visits: closed_at is set by the server', 'the closure time of a closed visit never changes');
 select is(pg_temp.tm_run($$ update public.visits v set cancelled_at = now() where v.id = pg_temp.tm_id('R1') $$),

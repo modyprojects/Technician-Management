@@ -6,6 +6,7 @@
 - **MIG-1 fixed** (`e9d1d9e`): the warranty CHECK accepted a warranty month while the status was NULL.
 - **Tests** (D58 (5) priorities): new `180_calls_visits_rls` (40), `190_visit_functions` (20), `200_time_reports` (16); `170` completed (88). Local: 24 files, 1196 assertions pass; canary-rows check PASS (3 migrations, no coverage exception); migration guard passed; `tests/ci` 166 pass. No mutation testing (D58).
 - **Docs:** `docs/review/step1-pr15/README.md` (objects, who can do what, tests, approval items A1-A4, TEMPORARY behaviours OQ-1 to OQ-15), `docs/PROJECT-MAP.md`, `docs/testing.md`.
+- **Independent review (D58, one review, head `eba7971`):** APPROVE WITH SHOULD-FIXES, no must. Fixed: S1 (warranty CHECK and infinite dates), S2 (180 named rows through a join with `visits`; now a postgres-owned lookup and direct counts), N1 (infinite schedule times), N2 (`cancelled_by` frozen), N3, N4 (Asia/Jerusalem day boundary, re-assignment cases), N5. Recorded: S3 as DEV-17 with a `c50` proposal for the first writer PR, N2 rest as DEV-18, N6 as a Step 4 hand-off. Reviewer's OQ-13 answer: yes, with conditions (README section 12). After the fixes: 24 files, 1202 assertions pass; canary PASS; guard and `tests/ci` pass.
 - **Gates:** A1 (the `write_entity_change` writer in the protected migration guard) before any merge; apply only after Migrations 1 and 2 are applied and merged and OQ-13 is answered, with a separate approval of the exact file.
 
 ## 2026-11-05 — Owner decisions D56: canary exceptions for `role_permissions`; dashboard service-KPI period

@@ -26,7 +26,7 @@
 --   call U (open, rep = Technician B's profile): U1 A scheduled.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(22);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -79,7 +79,9 @@ as $f$
     ('reason', '00000000-0000-4000-8000-000000190f01'::uuid), ('place', '00000000-0000-4000-8000-000000190e01'::uuid),
     ('P', '00000000-0000-4000-8000-000000190a01'::uuid), ('Q', '00000000-0000-4000-8000-000000190a02'::uuid),
     ('Y', '00000000-0000-4000-8000-000000190a03'::uuid), ('R', '00000000-0000-4000-8000-000000190a04'::uuid),
-    ('U', '00000000-0000-4000-8000-000000190a05'::uuid),
+    ('U', '00000000-0000-4000-8000-000000190a05'::uuid), ('J', '00000000-0000-4000-8000-000000190a06'::uuid),
+    ('K', '00000000-0000-4000-8000-000000190a07'::uuid),
+    ('J1', '00000000-0000-4000-8000-000000190b61'::uuid), ('K1', '00000000-0000-4000-8000-000000190b71'::uuid),
     ('P1', '00000000-0000-4000-8000-000000190b11'::uuid), ('P2', '00000000-0000-4000-8000-000000190b12'::uuid),
     ('P3', '00000000-0000-4000-8000-000000190b13'::uuid), ('P4', '00000000-0000-4000-8000-000000190b14'::uuid),
     ('P5', '00000000-0000-4000-8000-000000190b15'::uuid), ('Q1', '00000000-0000-4000-8000-000000190b21'::uuid),
@@ -145,7 +147,9 @@ from (values
   ('Q', 'R-1902', null, null, null, 'נציג לא פעיל', 'manager_off', 'resolved', 2),
   ('Y', 'R-1903', null, null, null, 'נציג פעיל', 'manager', 'resolved', 2),
   ('R', 'R-1904', null, null, null, 'נציג', null, 'awaiting_scheduling', 2),
-  ('U', 'R-1905', null, null, null, 'טכנאי כנציג', 'tech_b_profile', 'open', 2)
+  ('U', 'R-1905', null, null, null, 'טכנאי כנציג', 'tech_b_profile', 'open', 2),
+  ('J', 'R-1906', null, null, null, 'נציג פעיל', 'manager', 'resolved', 2),
+  ('K', 'R-1907', null, null, null, 'נציג פעיל', 'manager', 'resolved', 2)
 ) as x (name, req, w_status, w_until, w_raw, rep_name, rep, status, next_n);
 insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
                            status, city, street, pickup_location_id, followup_reason_id, next_visit_notes, cancelled_by,
@@ -163,17 +167,20 @@ from (values
   ('Q1', 'Q', 'tech_a', 1, '2026-11-10 08:00:00+00', 'done', null, null, null),
   ('Y1', 'Y', 'tech_a', 1, '2026-11-08 08:00:00+00', 'done', null, null, null),
   ('R1', 'R', 'tech_a', 1, '2026-11-23 08:00:00+00', 'cancelled', null, null, null),
-  ('U1', 'U', 'tech_a', 1, '2026-11-24 08:00:00+00', 'scheduled', null, null, null)
+  ('U1', 'U', 'tech_a', 1, '2026-11-24 08:00:00+00', 'scheduled', null, null, null),
+  ('J1', 'J', 'tech_a', 1, '2026-11-10 06:00:00+00', 'done', null, null, null),
+  ('K1', 'K', 'tech_a', 1, '2026-11-09 06:00:00+00', 'done', null, null, null)
 ) as x (name, call, tech, n, day, status, place, reason, notes);
 insert into public.visit_reports (visit_id, summary_text, summary_source)
 select pg_temp.tm_id(x.name), x.summary, 'written'
 from (values ('P1', 'אובחנה תקלה; נדרש חלק'), ('P5', 'סיכום מאוחר של טכנאי ב'), ('Q1', 'סיכום של טכנאי א'),
-             ('Y1', 'סיכום ישן של טכנאי א')) as x (name, summary);
+             ('Y1', 'סיכום ישן של טכנאי א'), ('J1', 'סיכום של טכנאי א'), ('K1', 'סיכום של טכנאי א')) as x (name, summary);
 insert into public.visit_signatures (visit_id, signer_name, signed_ack_text, ack_text_sha256, operation_id)
 select pg_temp.tm_id(x.name), 'חותם בדיקה', 'אני מאשר/ת שהטיפול בוצע.',
        encode(sha256(convert_to('אני מאשר/ת שהטיפול בוצע.', 'UTF8')), 'hex'), x.op::uuid
 from (values ('P5', '00000000-0000-4000-8000-000000190f15'), ('Q1', '00000000-0000-4000-8000-000000190f21'),
-             ('Y1', '00000000-0000-4000-8000-000000190f31')) as x (name, op);
+             ('Y1', '00000000-0000-4000-8000-000000190f31'), ('J1', '00000000-0000-4000-8000-000000190f61'),
+             ('K1', '00000000-0000-4000-8000-000000190f71')) as x (name, op);
 insert into public.visit_events (visit_id, version_after, event_type, to_status)
 select v.id, 1, 'created', v.status from public.visits v where v.source_ref like 'pr15-190-%';
 -- Deactivated after use: their labels must still be returned.
@@ -185,6 +192,15 @@ set constraints all deferred;
 alter table public.visits disable trigger t12_visit_state;
 update public.visits v set closed_at = now() - interval '2 days' where v.id = pg_temp.tm_id('Y1');
 update public.service_calls c set resolved_at = now() - interval '2 days' where c.id = pg_temp.tm_id('Y');
+-- The Asia/Jerusalem day boundary (independent review N4): J1 closed at 00:30 local time today (the
+-- previous UTC day), K1 at 23:30 local time yesterday.
+update public.visits v
+set closed_at = case v.id
+  when pg_temp.tm_id('J1') then (date_trunc('day', now() at time zone 'Asia/Jerusalem') + interval '30 minutes') at time zone 'Asia/Jerusalem'
+  else (date_trunc('day', now() at time zone 'Asia/Jerusalem') - interval '30 minutes') at time zone 'Asia/Jerusalem' end
+where v.id in (pg_temp.tm_id('J1'), pg_temp.tm_id('K1'));
+update public.service_calls c set resolved_at = v.closed_at
+from public.visits v where v.service_call_id = c.id and c.id in (pg_temp.tm_id('J'), pg_temp.tm_id('K'));
 select lives_ok('set constraints all immediate', 'the back-dated fixture still passes every deferred check');
 alter table public.visits enable trigger t12_visit_state;
 set constraints all deferred;
@@ -233,9 +249,9 @@ select results_eq(
   $$ select x.who, pg_temp.tm_readable(pg_temp.tm_id(x.who))
      from unnest(array['tech_a_profile', 'tech_b_profile', 'manager', 'cs', 'creator', 'manager_off', 'no_profile'])
           with ordinality as x (who, n) order by x.n $$,
-  $$ values ('tech_a_profile', 'P1,P3,Q1,R1,U1,Y1'), ('tech_b_profile', 'P1,P2,P4,P5'),
-            ('manager', 'P1,P2,P3,P4,P5,Q1,R1,U1,Y1'), ('cs', 'P1,P2,P3,P4,P5,Q1,R1,U1,Y1'),
-            ('creator', 'P1,P2,P3,P4,P5,Q1,R1,U1,Y1'), ('manager_off', '-'), ('no_profile', '-') $$,
+  $$ values ('tech_a_profile', 'J1,K1,P1,P3,Q1,R1,U1,Y1'), ('tech_b_profile', 'P1,P2,P4,P5'),
+            ('manager', 'J1,K1,P1,P2,P3,P4,P5,Q1,R1,U1,Y1'), ('cs', 'J1,K1,P1,P2,P3,P4,P5,Q1,R1,U1,Y1'),
+            ('creator', 'J1,K1,P1,P2,P3,P4,P5,Q1,R1,U1,Y1'), ('manager_off', '-'), ('no_profile', '-') $$,
   'can_read_visit: Technician A reads his own visits and B''s earlier closed P1 (D36), never B''s cancelled P2, open P4 or later closed P5; office keys read all; inactive or profile-less users nothing');
 
 -- ---------------------------------------------------------------------------------------------
@@ -358,9 +374,27 @@ select results_eq(
             ('visit_rep_contact', 's', true), ('my_visit_details', 's', false), ('previous_visits', 's', false),
             ('visit_rep_contact', 's', false) $$,
   'the bodies are STABLE SECURITY DEFINER (each checks its caller); the public wrappers are STABLE SECURITY INVOKER');
+select results_eq(
+  $$ select x.visit,
+            pg_temp.tm_call('00000000-0000-4000-8000-0000000000d1',
+              $q$ select coalesce(string_agg(c.rep_name, ','), '-') from public.visit_rep_contact(pg_temp.tm_id('$q$ || x.visit || $q$')) c $q$),
+            pg_temp.tm_call('00000000-0000-4000-8000-0000000000d1',
+              $q$ select coalesce(string_agg(d.request_number, ','), '-') from public.my_visit_details(pg_temp.tm_id('$q$ || x.visit || $q$')) d $q$)
+     from unnest(array['J1', 'K1']) with ordinality as x (visit, n) order by x.n $$,
+  $$ values ('J1', 'נציג פעיל', 'R-1906'), ('K1', '42501', '42501') $$,
+  '"closed today" is the Asia/Jerusalem day: a visit closed at 00:30 local time today (the previous UTC day) is served, one closed at 23:30 local time yesterday is refused (TEMPORARY OQ-10)');
+select results_eq(
+  $$ select x.fn, pg_temp.tm_call('00000000-0000-4000-8000-0000000000d1', x.q,
+       $s$ update public.visits v set technician_id = pg_temp.tm_id('tech_b') where v.id = pg_temp.tm_id('P3') $s$)
+     from (values
+       ('visit_rep_contact', $q$ select count(*)::text from public.visit_rep_contact(pg_temp.tm_id('P3')) $q$),
+       ('my_visit_details', $q$ select count(*)::text from public.my_visit_details(pg_temp.tm_id('P3')) $q$)
+     ) as x (fn, q) $$,
+  $$ values ('visit_rep_contact', '42501'), ('my_visit_details', '42501') $$,
+  'after P3 is re-assigned to B, Technician A gets 42501 from visit_rep_contact and my_visit_details at once');
 select is((select count(*)::integer from public.entity_changes), 0, 'no history row was written by any read');
-select is((select count(*)::integer from public.visits v where v.source_ref like 'pr15-190-%' and v.technician_id = pg_temp.tm_id('tech_a')), 5,
-  'every scenario was undone: Technician A still has his five fixture visits');
+select is((select count(*)::integer from public.visits v where v.source_ref like 'pr15-190-%' and v.technician_id = pg_temp.tm_id('tech_a')), 7,
+  'every scenario was undone: Technician A still has his seven fixture visits');
 
 select * from finish();
 rollback;

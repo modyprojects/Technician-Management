@@ -26,7 +26,7 @@
 --   Two entity_changes rows (one on call P, one on visit Q1) and a created event per visit.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(43);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -44,8 +44,15 @@ exception when others then
 end
 $f$;
 
+-- tm_names: fixture visit ids and names, filled by postgres after the fixture.
+create temporary table tm_names (id uuid primary key, name text not null) on commit drop;
+grant select on pg_temp.tm_names to anon, authenticated, service_role;
+
 -- tm_seen: what the caller reads in each relation, by fixture name (task numbers for visits and
--- their child rows, request numbers for calls, counts for history rows).
+-- their child rows, request numbers for calls, counts for history rows). Summaries and signatures
+-- are named through pg_temp.tm_names (written by postgres, no RLS), never through public.visits,
+-- so a row the caller reads is listed even when its visit is hidden from him (independent review
+-- S2: a join with visits would hide it for the wrong reason).
 create function pg_temp.tm_seen()
 returns text
 language sql
@@ -54,10 +61,10 @@ as $f$
                                from public.service_calls c), '-')
     || ' | visits ' || coalesce((select string_agg(v.task_number, ',' order by v.task_number collate "C")
                                  from public.visits v), '-')
-    || ' | reports ' || coalesce((select string_agg(v.task_number, ',' order by v.task_number collate "C")
-                                  from public.visit_reports r join public.visits v on v.id = r.visit_id), '-')
-    || ' | signatures ' || coalesce((select string_agg(v.task_number, ',' order by v.task_number collate "C")
-                                     from public.visit_signatures s join public.visits v on v.id = s.visit_id), '-')
+    || ' | reports ' || coalesce((select string_agg(coalesce(n.name, '?'), ',' order by n.name collate "C")
+                                  from public.visit_reports r left join pg_temp.tm_names n on n.id = r.visit_id), '-')
+    || ' | signatures ' || coalesce((select string_agg(coalesce(n.name, '?'), ',' order by n.name collate "C")
+                                     from public.visit_signatures s left join pg_temp.tm_names n on n.id = s.visit_id), '-')
     || ' | times ' || (select count(*) from public.visit_time_reports)
     || ' | current ' || (select count(*) from public.visit_time_current)
     || ' | events ' || (select count(*) from public.visit_events)
@@ -189,6 +196,7 @@ select private.write_entity_change('visits', '00000000-0000-4000-8000-000000180b
   '"רחוב קודם"', '"רחוב הבדיקה 1"', 'edit', 'pr15-180-change-2');
 select lives_ok('set constraints all immediate', 'the fixture passes every deferred check');
 set constraints all deferred;
+insert into tm_names select v.id, v.task_number from public.visits v where v.source_ref like 'pr15-180-%';
 
 create temporary table tm_expected (who text primary key, seen text) on commit drop;
 insert into tm_expected values
@@ -332,6 +340,8 @@ select is((select count(*)::integer from public.visits v where v.id = '00000000-
   'Technician A does not see B''s later visit P3 of the same call (D36: never future or concurrent visits of others)');
 select is((select count(*)::integer from public.service_calls c where c.id = '00000000-0000-4000-8000-000000180a02'), 0,
   'Technician A does not read his own closed call Q (status, resolved_at and updated_at would reveal later visits)');
+select is((select count(*)::integer from public.visit_signatures s where s.visit_id = '00000000-0000-4000-8000-000000180b11'), 0,
+  'Technician A reads neither B''s signature nor its signer name on the earlier visit P1 (direct count, D36)');
 select is(pg_temp.tm_writes(), '42501', 'Technician A has no direct write');
 reset role;
 
@@ -339,6 +349,9 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select is(pg_temp.tm_seen(), (select e.seen from tm_expected e where e.who = 'tech_b'),
   'Technician B: only his own visits, summary and signature; nothing of Technician A');
+select is((select count(*)::integer from public.visit_reports r where r.visit_id = '00000000-0000-4000-8000-000000180b21')
+          + (select count(*)::integer from public.visit_signatures s where s.visit_id = '00000000-0000-4000-8000-000000180b21'), 0,
+  'Technician B reads neither A''s summary nor A''s signature of Q1 (direct counts)');
 reset role;
 
 -- ---------------------------------------------------------------------------------------------
@@ -436,6 +449,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select is(pg_temp.tm_seen(), (select e.seen from tm_expected e where e.who = 'none'),
   'Manager with `card` only reads nothing (`card` alone opens no summary or signature)');
+select is((select count(*)::integer from public.visit_reports) + (select count(*)::integer from public.visit_signatures), 0,
+  'Manager with `card` only: direct counts of summaries and signatures are 0 (TEMPORARY OQ-4)');
 reset role;
 
 select is((select count(*)::integer from public.visits v where v.source_ref like 'pr15-180-%'), 6,

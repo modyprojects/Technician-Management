@@ -59,9 +59,11 @@
 --
 -- Definer-writer invariant (restated from Migration 1, section 4): every writer of these tables is
 -- a SECURITY DEFINER body owned by postgres, so the SECURITY INVOKER triggers read consistent data.
--- The new trigger functions do not depend on it: they read each referenced row with SELECT ...
--- INTO and raise 23503 when it is missing or not visible to the caller (fail closed). Migration
--- 1's tg_one_way_people (an EXISTS check) is attached unchanged and relies on the invariant.
+-- The marker, one-way and history triggers do not depend on it: they read each referenced row with
+-- SELECT ... INTO and raise 23503 when it is missing or not visible to the caller (fail closed).
+-- These do rely on it: Migration 1's tg_one_way_people (an EXISTS check, attached unchanged), the
+-- visit-number guard (max() over the call's visits) and compute_call_status (it reads the call's
+-- visits); c20 re-checks next_visit_number at COMMIT with its owner's rights, not creation order.
 --
 -- Error codes:
 --   42501 "not authorized" (narrow functions; generic, also for unknown, cancelled, earlier-day or
@@ -133,7 +135,8 @@ create table public.service_calls (
   warranty_until date
     constraint service_calls_warranty_until_check check (
       warranty_until is null
-      or (warranty_status is not null and warranty_status = 'yes' and extract(day from warranty_until) = 1)),
+      or (warranty_status is not null and warranty_status = 'yes' and isfinite(warranty_until)
+          and extract(day from warranty_until) = 1)),
   warranty_raw text
     constraint service_calls_warranty_raw_check check (
       warranty_raw = btrim(warranty_raw) and char_length(warranty_raw) between 1 and 60 and warranty_raw is nfc normalized
@@ -285,7 +288,8 @@ create table public.visits (
   constraint visits_service_call_id_visit_number_key unique (service_call_id, visit_number),
   constraint visits_service_call_id_fkey foreign key (service_call_id, is_test)
     references public.service_calls (id, is_test) on delete restrict,
-  constraint visits_schedule_check check (scheduled_end >= scheduled_start),
+  constraint visits_schedule_check check (
+    isfinite(scheduled_start) and isfinite(scheduled_end) and scheduled_end >= scheduled_start),
   -- "המשך טיפול" needs a reason and next-visit notes.
   constraint visits_followup_check check (
     status <> 'followup' or (followup_reason_id is not null and next_visit_notes is not null)),
@@ -738,6 +742,9 @@ begin
     raise exception using errcode = '55000', message = 'visits: closed_at is set by the server';
   end if;
 
+  if old.status = 'cancelled' and new.cancelled_by is distinct from old.cancelled_by then
+    raise exception using errcode = '55000', message = 'visits: cancelled_by is kept once the visit is cancelled';
+  end if;
   if new.status = 'cancelled' and old.status <> 'cancelled' then
     new.cancelled_at := now();
   elsif new.cancelled_at is distinct from old.cancelled_at then
