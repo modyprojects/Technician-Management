@@ -65,6 +65,52 @@ export type CommandResult<T = void> =
       error: string;
     };
 
+/**
+ * What a versioned edit returns (Step 2 PR 2.2): the record's version as stored after it. Every
+ * Migration 1 edit function returns the new version; a simulated edit stored nothing, so it
+ * returns the version it checked (unchanged).
+ */
+export type VersionedResult = { version: number };
+
+/**
+ * The version to send with the next edit of the same record (`expectedVersion`): the one a STORED
+ * edit returned (the database bumped it), otherwise the one read. A failed or simulated result, or
+ * one without a valid version, keeps the version read: a screen never invents one.
+ */
+export function versionAfter(result: CommandResult<unknown>, read: number): number {
+  if (!result.ok || result.simulated) return read;
+  const data: unknown = result.data;
+  const version = typeof data === "object" && data !== null ? (data as { version?: unknown }).version : undefined;
+  return typeof version === "number" && Number.isSafeInteger(version) && version >= 1 ? version : read;
+}
+
+/** The version to send with each edit of one record, kept across edits (versionTracker). */
+export type VersionTracker = {
+  /** The version the next edit sends: the one read, then the one the last STORED edit returned. */
+  readonly current: number;
+  /** Records an edit's result (versionAfter) and returns the new current version. */
+  record(result: CommandResult<unknown>): number;
+};
+
+/**
+ * Tracks the version of one record across repeated edits on a screen (Step 2 PR 2.3; closes the
+ * PR 2.2 untested `storedVersion` wiring, CA-5): it starts at the version read; a stored result
+ * moves it to the version the command returned; a simulated or failed result keeps it
+ * (versionAfter). A screen keeps one per record (for example in a ref) and never hard-codes one.
+ */
+export function versionTracker(read: number): VersionTracker {
+  let current = read;
+  return {
+    get current() {
+      return current;
+    },
+    record(result) {
+      current = versionAfter(result, current);
+      return current;
+    },
+  };
+}
+
 /** Hard upper bound of every list query (docs/security.md: query bounds). */
 export const MAX_PAGE_LIMIT = 100;
 

@@ -18,6 +18,27 @@ export const ACTION_MESSAGES = {
 } as const;
 
 /**
+ * Account-request refusals that the shared validators also return (features/accounts/data/validate.ts),
+ * so the simulated commands and the real adapter show the same text.
+ */
+export const REQUEST_MESSAGES = {
+  cannotCancel: "לא ניתן לבטל את הבקשה.",
+  notPending: "הבקשה כבר טופלה.",
+  needsCreator: "הפעולה דורשת אישור של היוצר.",
+  /** An open creation that can no longer be completed (not approved, or an account is bound; 55000). */
+  noLongerApplies: "הבקשה כבר אינה רלוונטית.",
+} as const;
+
+/**
+ * Technician field-profile refusals ("השלמה" of "פרופיל טכנאי חסר", Migration 1
+ * `admin_create_technician`, 55000) that the shared validators also return.
+ */
+export const TECHNICIAN_MESSAGES = {
+  notTechnician: "החשבון אינו חשבון טכנאי.",
+  hasProfile: "לטכנאי כבר יש פרופיל טכנאי.",
+} as const;
+
+/**
  * Sign-in messages (plan §3.4): one message for every credential failure (wrong password, unknown
  * email, inactive account, no profile), one for every service failure (not configured,
  * unreachable, rate-limited, database objects missing). Neither reveals anything about an account.
@@ -91,13 +112,13 @@ const DATABASE_KINDS: ReadonlyMap<string, DatabaseErrorKind> = new Map([
 const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["an open request exists", "קיימת כבר בקשה פתוחה."],
   ["a pending request exists", "קיימת כבר בקשה פתוחה."],
-  ["the request is not pending", "הבקשה כבר טופלה."],
+  ["the request is not pending", REQUEST_MESSAGES.notPending],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
-  ["the request no longer applies", "הבקשה כבר אינה רלוונטית."],
-  ["the request cannot be cancelled", "לא ניתן לבטל את הבקשה."],
-  ["requires the Creator's approval", "הפעולה דורשת אישור של היוצר."],
-  ["the profile is not a Technician", "החשבון אינו חשבון טכנאי."],
-  ["the Technician already has a field profile", "לטכנאי כבר יש פרופיל טכנאי."],
+  ["the request no longer applies", REQUEST_MESSAGES.noLongerApplies],
+  ["the request cannot be cancelled", REQUEST_MESSAGES.cannotCancel],
+  ["requires the Creator's approval", REQUEST_MESSAGES.needsCreator],
+  ["the profile is not a Technician", TECHNICIAN_MESSAGES.notTechnician],
+  ["the Technician already has a field profile", TECHNICIAN_MESSAGES.hasProfile],
   ["profiles: a profile with a technician record keeps its role", "לא ניתן לשנות את התפקיד של חשבון טכנאי."],
   ["profiles: the last active Creator cannot be demoted or deactivated", "לא ניתן להשבית את היוצר הפעיל האחרון או לשנות את תפקידו."],
   ["value locked until an open owner decision", "הערך נעול עד להחלטת הבעלים."],

@@ -4,16 +4,17 @@
 // action that would change data, call, navigate outside or send shows this toast instead.
 // - Any element with data-sim="detail" (also in Server Components) shows the toast on click;
 //   the click's default action is prevented. data-sim is only for navigation affordances (dial,
-//   Waze) and for the two features that have no port yet (export OF-14, recording playback
-//   OF-06; TODOs at their buttons). Data actions go through useCommands().
+//   Waze), for the two features that have no port yet (export OF-14, recording playback OF-06;
+//   TODOs at their buttons) and for "יציאה" (DemoSignOut, Step 2 PR 2.3: a server action in the
+//   real app, plan §3.4, not a port). Data actions go through useCommands().
 // - Client components call useSimulate()("detail").
 // - Bottom-nav and sidebar buttons without a link (screens outside the demo) say so, under the
 //   title "לא בהדגמה" (nothing was attempted, so "לא נשמר" would not fit).
 // - The toast never takes clicks (styles/ui.css .toast, pointer-events: none) and, on technician
 //   screens, sits above the footer and bottom navigation, so it never blocks the main buttons.
 import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { SIMULATED_TITLE } from "./simulated-commands";
 
-export const SIMULATED_TITLE = "פעולה מדומה · לא נשמר";
 const NOT_IN_DEMO = "המסך הזה אינו חלק מההדגמה";
 /** Title of the "not in the demo" toast: nothing was attempted, so nothing "was not saved". */
 const NOT_IN_DEMO_TITLE = "לא בהדגמה";

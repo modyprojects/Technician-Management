@@ -532,3 +532,231 @@ test.describe("ui-demo-5 review screenshots", () => {
     });
   }
 });
+
+// Manager dashboard, navigation and the MODY logo (D57; spec-final §12): app screens at 390 / 820 /
+// 1440 and the approved visual reference (docs/design/manager-dashboard-demo.html) for comparison.
+// Fictional, test-marked data only. Run only this block:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "manager-dashboard"
+const OUT_DASH = path.resolve("docs/review/manager-dashboard");
+const DASH_REFERENCE_URL = pathToFileURL(path.resolve("docs/design/manager-dashboard-demo.html")).href;
+
+test.describe("manager-dashboard review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`manager-dashboard screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(300_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_DASH, `${size.width}-${name}.png`);
+      const shot = (name: string, fullPage = true) => appShot(page, file(name), fullPage);
+      const ready = () => expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+      const dash = "/dev/demo/office/mgr/analytics";
+
+      // Set A: the white logo in the existing dark headers.
+      await openPage(page, "/dev/demo/tech");
+      await shot("tech-home-logo", false);
+      await page.locator(".ph-head").screenshot({ path: file("logo-tech-header") });
+      await openPage(page, "/dev/demo/tech/visit/48213/1");
+      await shot("tech-visit-logo", false);
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.locator(size.width > 900 ? ".side .logo" : ".side").screenshot({ path: file("logo-office-sidebar") });
+      await shot("office-calls-logo", false);
+
+      // Set B: navigation (Manager and Creator sidebars with the "מסכים נוספים" row, Customer
+      // Service unchanged, the Manager's Settings › משתמשים and a closed Settings tab).
+      for (const [name, url] of [
+        ["nav-mgr-calls", "/dev/demo/office/mgr/calls"],
+        ["nav-creator-calls", "/dev/demo/office/creator/calls"],
+        ["nav-cs-home", "/dev/demo/office/cs"],
+        ["mgr-settings-accounts", "/dev/demo/office/mgr/settings/accounts"],
+        ["mgr-settings-places-no-access", "/dev/demo/office/mgr/settings/places"],
+      ] as const) {
+        await openPage(page, url);
+        await shot(name, false);
+      }
+
+      // Set C: the General tab, its dialog and the 12-month chart with the data table open.
+      await openPage(page, dash);
+      await ready();
+      await shot("dash-general");
+      await openPage(page, `${dash}?detail=today.missed`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("dash-general-dialog", false);
+      await openPage(page, `${dash}?months=12`);
+      await ready();
+      await page.locator(".ma-details > summary").click();
+      await shot("dash-general-12m");
+      // The loading state: the sidebar link prefetches it; the page response is held back.
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.waitForLoadState("networkidle");
+      await page.route(/\/analytics/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await route.continue();
+      });
+      await page.locator(".side").getByRole("link", { name: "דשבורד" }).click();
+      await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+      await page.screenshot({ path: file("dash-loading") });
+      await ready();
+      await page.unroute(/\/analytics/);
+
+      // Set D: Technicians (month, previous month, week, custom range and its error, reports) and
+      // Products & Suppliers (with a supplier's calls in the dialog).
+      for (const [name, url] of [
+        ["dash-tech-month", `${dash}?tab=tech&tech=y`],
+        ["dash-tech-prev", `${dash}?tab=tech&tech=y&offset=-1`],
+        ["dash-tech-week", `${dash}?tab=tech&tech=y&period=week`],
+        ["dash-tech-custom", `${dash}?tab=tech&tech=s&period=custom&from=2026-10-01&to=2026-10-21`],
+        ["dash-tech-custom-error", `${dash}?tab=tech&tech=y&period=custom&from=2026-10-10&to=2026-10-01`],
+        ["dash-tech-reports", `${dash}?tab=tech&tech=y&view=reports`],
+        ["dash-products", `${dash}?tab=prod`],
+      ] as const) {
+        await openPage(page, url);
+        await ready();
+        await shot(name);
+      }
+      await openPage(page, `${dash}?tab=prod&detail=prod.bySupplier&group=${encodeURIComponent("מ.ס. יבוא")}`);
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("dash-products-dialog", false);
+
+      // Set E (D57 (9), owner message 6): "נפתחה" (opened_at) and "תחילת טיפול" (first arrival) with
+      // their own labels on the customer card (48213: opened 19.10, not started; the return counted
+      // from opened_at) and on the products screen's "נוצר מזימון".
+      await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+      await shot("customer-card-dates");
+      await openPage(page, "/dev/demo/office/mgr/products");
+      await shot("products-dates", false);
+
+      // The reference, tab by tab, and its dialog ("לא בוצעו במועד").
+      const refShot = async (name: string, fullPage = true) => {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: file(`ref-${name}`), fullPage });
+      };
+      await page.goto(DASH_REFERENCE_URL);
+      await refShot("general");
+      await page.locator('[data-tab="tech"]').click();
+      await refShot("tech");
+      await page.locator('[data-tab="products"]').click();
+      await refShot("products");
+      await page.locator('[data-tab="general"]').click();
+      await page.locator(".kpi", { hasText: "לא בוצעו במועד" }).click();
+      await expect(page.locator("#overlay")).toHaveClass(/open/);
+      await refShot("modal", false);
+    });
+  }
+});
+
+// Step 2 PR 2.2 (port alignment): the two visible demo changes. "+ הוספת משתמש" no longer offers
+// "יוצר" (a disabled "יוצר · ממתין להחלטת בעלים" and a note, TEMPORARY Q9), and the Manager's
+// "+ בקשת חשבון שירות לקוחות" has no phone field. The demo counterpart of the Creator's form is
+// docs/review/ui-demo-3/<w>-demo-settings-users.png (docs/demo.html's "+ הוספת משתמש" is a toast);
+// docs/demo.html has no request form. A closed native select hides its options, so a crop of the
+// form shows the role list opened as a list box (size attribute set for the shot only). Run only
+// this block:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-pr22"
+const OUT_PR22 = path.resolve("docs/review/step2-pr22");
+
+test.describe("step2-pr22 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-pr22 screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_PR22, `${size.width}-${name}.png`);
+
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
+      const account = page.getByRole("form", { name: "הוספת משתמש" });
+      await expect(account).toBeVisible();
+      await appShot(page, file("creator-add-user-form"), true);
+      // The role options as a list (screenshot only): "יוצר · ממתין להחלטת בעלים" is greyed out.
+      await account.getByLabel("הרשאה").evaluate((el) => el.setAttribute("size", "3"));
+      await account.scrollIntoViewIfNeeded();
+      await account.screenshot({ path: file("creator-add-user-roles") });
+
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await page.getByRole("button", { name: "+ בקשת חשבון שירות לקוחות" }).click();
+      const request = page.getByRole("form", { name: "בקשת חשבון שירות לקוחות" });
+      await expect(request).toBeVisible();
+      await appShot(page, file("mgr-cs-request-form"), true);
+      await request.scrollIntoViewIfNeeded();
+      await request.screenshot({ path: file("mgr-cs-request-form-crop") });
+    });
+  }
+});
+
+// Step 2 PR 2.3 "screens first" (fake data, all PROPOSED): the sign-in prototype in its four states,
+// the temporary start screens (Q18), "יציאה" (Q4), the Creator's notices and credential dialogs, the
+// routine edit and the incomplete creations. Dialogs are shot open and empty (no typed password in
+// any image). Run only this block, from a local production build:
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-ui"
+const OUT_STEP2_UI = path.resolve("docs/review/step2-ui");
+
+test.describe("step2-ui review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-ui screens at ${size.width}px`, async ({ page }) => {
+      test.setTimeout(240_000);
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_STEP2_UI, `${size.width}-${name}.png`);
+      /** A dialog, open and untouched: the viewport (the drawer is fixed over the page). */
+      const dialogShot = async (opener: string, name: string) => {
+        await page.getByRole("button", { name: opener }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: file(name) });
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+      };
+
+      for (const [name, url] of [
+        ["login-form", "/dev/demo/login"],
+        ["login-failed", "/dev/demo/login?state=failed"],
+        ["login-unavailable", "/dev/demo/login?state=unavailable"],
+        ["login-no-access", "/dev/demo/login?state=no-access"],
+        ["start-creator", "/dev/demo/start/creator"],
+        ["start-mgr", "/dev/demo/start/mgr"],
+        ["start-cs", "/dev/demo/start/cs"],
+        ["start-tech", "/dev/demo/start/tech"],
+        ["start-tech-profile", "/dev/demo/start/tech/profile"],
+      ] as const) {
+        await openPage(page, url);
+        await appShot(page, file(name));
+      }
+
+      // "יציאה": the top of an office page (the end of the top bar at 900 px and below) and the
+      // technician profile's "חשבון".
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      await page.screenshot({ path: file("office-signout-topbar") });
+      if (size.width <= 900) {
+        // Customer Service's top bar, where the button's slot adds a nav row (review UI-2).
+        await openPage(page, "/dev/demo/office/cs/calls");
+        await page.screenshot({ path: file("cs-signout-topbar") });
+      }
+      await openPage(page, "/dev/demo/tech/profile");
+      await appShot(page, file("tech-profile-signout"));
+
+      // The Creator's Settings › "משתמשים והרשאות": notices, the table with the intent and גלעד, areq-6.
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      const notices = page.locator(".set-body > .card").first();
+      await notices.scrollIntoViewIfNeeded();
+      await notices.screenshot({ path: file("creator-notices") });
+      await dialogShot("סיסמה · הגדרת סיסמה לחשבון של שיראל", "creator-password-dialog");
+      await dialogShot("מייל · שינוי כתובת המייל של הדס", "creator-email-dialog");
+      await dialogShot("עריכה · הפרטים של יורם", "creator-edit-tech");
+      await dialogShot("השלמה · פרופיל הטכנאי של גלעד", "complete-technician");
+      await dialogShot("השלמת יצירה: יצירת חשבון · נציגת ערב", "creator-complete-request");
+      await openPage(page, "/dev/demo/office/creator/settings/users");
+      await appShot(page, file("creator-users"));
+
+      // The Manager's Settings › "משתמשים".
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await dialogShot("עריכה · הפרטים של אדי", "mgr-edit-tech");
+      await dialogShot("עריכה · הפרטים של שיראל", "mgr-edit-cs");
+      await dialogShot("השלמת יצירה · טכנאי חדש", "mgr-complete-creation");
+      await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+      await appShot(page, file("mgr-accounts"));
+    });
+  }
+});

@@ -9,7 +9,7 @@ import { DemoOfficeFrame } from "../../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../../_data/adapter";
 import { TODAY } from "../../../../_data/dates";
 import { officeCustomerParams } from "../../../../_data/params";
-import { customersOffered, isOfficeRole, officeHomeLabel, productsOffered } from "../../../../_data/roles";
+import { customersOffered, demoLandingBack, isOfficeRole, productsOffered } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { NoAccessPlaceholder } from "../../_Placeholder";
 import { RETURN_WINDOW_NOTE } from "../../_pendingNotes";
@@ -56,8 +56,7 @@ export default async function OfficeCustomerPage({ params }: PageProps<"/dev/dem
         <NoAccessPlaceholder
           id="customer-no-access"
           text="לתפקיד הזה אין צפייה בקריאות ובלקוחות."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
+          {...demoLandingBack(role, permissions)}
         />
       </DemoOfficeFrame>
     );

@@ -4,8 +4,10 @@
 // no such screen, so it follows the calls table (docs/demo.html callsTable(), L824-832) and the
 // Settings tables: a card with a sideways scroller, short columns centred and sized to content
 // (G-07), 🧪 on test products (SIM-17), brand and supplier "לא הוזן" when empty (PR-04, OF-07).
-// - "נוצר מזימון": the invitation that created the product (PR-04): request, date and source
-//   (SIM-14), linked to the call card when the caller passes the address.
+// - "נוצר מזימון": the invitation that created the product (PR-04): request and source (SIM-14),
+//   linked to the call card when the caller passes the address, with the creating call's
+//   "נפתחה" (opened_at) and "תחילת טיפול" (first arrival, "טרם התחיל" before it), each with its own
+//   label (D57 (9); never a visit date under "נפתחה").
 // - Edit (PR-06): only when `canEdit` (the page decides from the role's capabilities; display
 //   only, the server checks `products` itself, G-04). "עריכה" opens a form under the row: name,
 //   brand and supplier (existing, active options; "לא הוזן" clears). The SKU is never edited
@@ -33,8 +35,10 @@ const SAVE_FAILED = "המוצר לא עודכן. נסה שוב.";
 
 export type ProductsTableRow = {
   product: ProductListItem;
-  /** Date of the creating invitation as the list shows it ("20.08"); "" when unknown. */
-  firstSeenDate: string;
+  /** "נפתחה": the creating call's opened_at date as the list shows it ("18.08"); "" when unknown (D57 (9)). */
+  firstSeenOpened: string;
+  /** "תחילת טיפול": the creating call's first arrival ("20.08 10:03"); null before any arrival ("טרם התחיל", D57 (9)). */
+  firstSeenWorkStart: string | null;
   /** Call card of the creating invitation; null when the viewer has no calls list. */
   firstSeenHref: string | null;
   /** The calls list searched by this SKU; null when the viewer has no calls list. */
@@ -248,7 +252,7 @@ export function ProductsTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ product: p, firstSeenDate, firstSeenHref, callsHref }) => {
+              {rows.map(({ product: p, firstSeenOpened, firstSeenWorkStart, firstSeenHref, callsHref }) => {
                 const s = shown(p);
                 const isOpen = editing === p.sku;
                 const fs = p.firstSeen;
@@ -262,7 +266,17 @@ export function ProductsTable({
                     ) : (
                       <span className="num">{fs.req}</span>
                     )}
-                    {firstSeenDate && <span className="num">{` · ${firstSeenDate}`}</span>}
+                    {firstSeenOpened && (
+                      <span className="sub" style={{ display: "block" }} data-call-start={fs.req}>
+                        <span data-field="opened">
+                          נפתחה: <span className="num">{firstSeenOpened}</span>
+                        </span>{" "}
+                        ·{" "}
+                        <span data-field="work-start">
+                          תחילת טיפול: {firstSeenWorkStart ? <span className="num">{firstSeenWorkStart}</span> : "טרם התחיל"}
+                        </span>
+                      </span>
+                    )}
                   </>
                 ) : (
                   "—"
