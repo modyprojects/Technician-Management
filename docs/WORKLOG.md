@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-11 — Step 1 / PR 1.3: Migration 1 applied to the remote project (owner-approved)
+- **Apply:** with the owner's explicit approval (Migration 1 only; MCP `apply_migration`; residual atomicity risk accepted on an empty database), Migration 1 (`3139628`, sha256 `30e0c8b0…89f7`) was applied once to `ooxozvvrljjkyfduuiks` under the name `access_and_permissions`: `{"success":true}`. The query string was compared byte for byte with the approved file before the call.
+- **Verification (read-only):** the stored statement's sha256 equals the approved hash; six tables with RLS; 13 permission keys and 26 TEMPORARY values; 54 functions, all owned by `postgres` with the pinned `search_path`, EXECUTE for `authenticated` on 36 and for `anon`/`service_role` on none; tables grant `authenticated` SELECT only; the section 15 assertion finds no leftover privilege; the catalog fingerprint equals the local database built from the same file. Security advisors: one WARN (`auth_leaked_password_protection`, an Auth setting). History table owned by `postgres` with DELETE (B2 check 4 closed). Details: `docs/review/step1-pr13/README.md` section 17.
+- **Discrepancy (documented, not repaired):** expected file version `20261104120000`; recorded version **`20261111125920`** (server-assigned by the Management API), name `access_and_permissions`. The down script matches by version or name, so it still finds the row. Any history repair needs the owner's explicit approval.
+- **Not done:** B4 (remote `010` run, a write), rollback, history repair, merge of PR #12.
+
 ## 2026-11-11 — Step 1 / PR 1.3: B1 confirmed, B2 pre-apply check, pre-apply security review (not applied)
 - **B1:** the owner configured and verified the D50 Supabase Auth and Data API settings himself and confirmed it (Claude Code has no tool for these settings and changed nothing).
 - **B2** (D55 (3), remote project `ooxozvvrljjkyfduuiks` only, four read-only SELECTs): apply role `postgres`; `public` empty; `postgres` and `supabase_admin` default privileges in `public` permissive (expected); `supabase_migrations.schema_migrations` does not exist yet, so `postgres`'s DELETE on it is checked after the apply. Remote PostgreSQL 17.11.

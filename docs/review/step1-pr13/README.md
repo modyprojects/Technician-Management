@@ -504,3 +504,30 @@ The remote runs PostgreSQL 17.11 (`get_project`, 2026-11-11), the version the lo
 
 **After N2:** migration sha256 `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7` (1933 lines). Local: `supabase db reset --local --no-seed` then `supabase test db tests/db` 554/554; `node --test tests/ci/*.test.mjs` 122/122; migration guard passed; canary-rows check PASS; Gitleaks clean. Section 15 was written after the review; whether that change needs another review is D58 (9), open (owner decides). Not applied.
 
+## 17. Remote apply (2026-11-11)
+
+**Approval:** the owner's explicit execution approval of 2026-11-11 for Migration 1 only: project `ooxozvvrljjkyfduuiks`, name `access_and_permissions`, file at commit `3139628`, sha256 `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7`. The owner chose MCP `apply_migration` and accepted that its server-side transaction atomicity cannot be verified (closed-source Management API), because the database was empty.
+
+**Before the call:** the file hash at `3139628` was checked again (unchanged); the query string sent was first written to a scratch file and compared byte for byte with the approved file (`cmp`: identical, same sha256).
+
+**Apply:** MCP `apply_migration` (project `ooxozvvrljjkyfduuiks`, name `access_and_permissions`) returned `{"success":true}`. Applied once.
+
+**Read-only verification after the apply** (project `ooxozvvrljjkyfduuiks` only):
+
+| Check | Result |
+|---|---|
+| `list_migrations` | one row: version **`20261111125920`**, name `access_and_permissions` |
+| Stored statement | one statement of 99,964 bytes whose sha256 is `30e0c8b0…89f7`: exactly the approved file |
+| `list_tables` (`public`, `private`) | the six tables in `public`, RLS on each; rows: `permissions` 13, `role_permissions` 26 (all `temporary`), `profiles`, `technicians`, `account_requests`, `audit_logs` 0; no relation in `private` |
+| Catalog fingerprint (functions, policies, columns, constraints, indexes, triggers, relation ACLs and owners, schema ACLs, the reference rows) | all 12 values identical to the local database built from the same file |
+| Functions | 54; 20 SECURITY DEFINER; every one owned by `postgres` with `search_path = pg_catalog, pg_temp`; EXECUTE for `authenticated` on 36, for `anon` or `service_role` on 0 |
+| Table grants | each table: owner `postgres`, `authenticated=r` only |
+| Section 15 assertion, re-run as a SELECT | no leftover privilege |
+| `postgres` default privileges | `public` (tables, sequences, functions) and the global function default: owner only. The `storage` schema keeps Supabase's own permissive defaults for objects `postgres` creates there (not touched by Migration 1; relevant when Storage is added in Step 4) |
+| History table | owned by `postgres`; `postgres` has DELETE and INSERT on it (closes B2 check 4: the down script can remove the history row) |
+| `get_advisors` (security) | one WARN, `auth_leaked_password_protection` (Auth setting, not created by the migration) |
+
+**Version discrepancy (recorded, not repaired):** the file version is `20261104120000`; the Management API recorded the server-assigned version `20261111125920` (as section 10 and OPS-1 anticipated). The name `access_and_permissions` matches, so the down script still finds the row (it matches the version or the name). The local CLI history would list the file version; aligning the remote history (`supabase migration repair` or an UPDATE) is a remote write and needs the owner's explicit approval. No history repair was made.
+
+**Not run:** B4 (`010` assertions against the remote, a write operation), any rollback, any data write.
+
