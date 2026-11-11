@@ -1,16 +1,1227 @@
--- PR 1.3 and PR 1.4: the rollback (down) scripts, tested inside this transaction and rolled back
--- (docs/database-schema.md "Migration order and approval checklist" item 6). The blocks between
--- the markers are byte-identical copies of the down scripts; tests/ci/rollback.test.mjs fails if
--- they differ. The PR 1.4 script runs first (newest migration first): the PR 1.3 script cannot
--- run while PR 1.4 objects depend on its tables and helpers. Manual runs on the local stack
--- (down, catalog checks, re-apply) are in docs/review/step1-pr13/README.md and
--- docs/review/step1-pr14/README.md.
+-- PR 1.3, PR 1.4 and PR 1.5: the rollback (down) scripts, tested inside this transaction and
+-- rolled back (docs/database-schema.md "Migration order and approval checklist" item 6). The blocks
+-- between the markers are byte-identical copies of the down scripts; tests/ci/rollback.test.mjs
+-- fails if they differ. The newest migration's script runs first: the PR 1.5 script, then the
+-- PR 1.4 script (which cannot run while PR 1.5 objects depend on its tables), then the PR 1.3
+-- script (which cannot run while PR 1.4 objects depend on its tables and helpers). Manual runs on
+-- the local stack (down, catalog checks, re-apply) are in docs/review/step1-pr13/README.md,
+-- docs/review/step1-pr14/README.md and docs/review/step1-pr15/README.md.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(41);
+select plan(64);
 
 select ok(to_regnamespace('private') is not null and to_regclass('public.profiles') is not null,
   'positive control: the migration is applied before the rollback runs');
+
+-- ---------------------------------------------------------------------------------------------
+-- PR 1.5 (Migration 3) down script
+-- ---------------------------------------------------------------------------------------------
+select ok(
+  to_regclass('public.service_calls') is not null and to_regclass('public.visit_time_current') is not null
+  and to_regprocedure('public.previous_visits(uuid)') is not null
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261106120000'),
+  'PR 1.5 positive control: Migration 3 is applied before its rollback runs');
+
+-- Fail closed: a service call with its first visit and its 'created' event, written as the Step 6
+-- ingestion will write them (every trigger active; inserted inside the tested statement, so they
+-- are rolled back with it, deferred checks included).
+select throws_ok($rollback$
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values ('00000000-0000-4000-8000-0000000099e1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'tech-990@example.test', now(), now());
+insert into public.profiles (id, role, full_name) values ('00000000-0000-4000-8000-0000000099e1', 'technician', 'טכנאי בדיקת שחזור');
+insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email)
+  values ('00000000-0000-4000-8000-0000000099f1', '00000000-0000-4000-8000-0000000099e1', true, 'טכנאי בדיקת שחזור', 't-y',
+          'tech-990-o@example.test');
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000099c1', 'C-99015', 'לקוח בדיקת שחזור', '050-000-9915', 'automated_test', 'pr15-990-1');
+insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000099d1', 'RB-99015', 'RB-99015', 'מוצר בדיקת שחזור', 'automated_test', 'pr15-990-1');
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref)
+  select '00000000-0000-4000-8000-0000000099a1', 'R-99015', '00000000-0000-4000-8000-0000000099c1',
+         '00000000-0000-4000-8000-0000000099d1', t.id, 'תקלת בדיקת שחזור', 'נציגת בדיקה', 'open', 2,
+         'automated_test', 'pr15-990-1'
+  from public.call_types t where t.sort_order = 1;
+insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
+                           status, city, street, source_ref)
+  values ('00000000-0000-4000-8000-0000000099b1', '00000000-0000-4000-8000-0000000099a1', '00000000-0000-4000-8000-0000000099f1',
+          1, 'T-99015', now() + interval '1 day', now() + interval '1 day 2 hours', 'scheduled', 'עיר בדיקה', 'רחוב בדיקה',
+          'pr15-990-1');
+insert into public.visit_events (visit_id, version_after, event_type, to_status)
+  values ('00000000-0000-4000-8000-0000000099b1', 1, 'created', 'scheduled');
+-- >>> BEGIN supabase/rollback/20261106120000_service_calls_visits.down.sql
+-- Rollback (down) script for supabase/migrations/20261106120000_service_calls_visits.sql
+-- (Step 1 / PR 1.5). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.5 data exists. It refuses to run when any row exists in the seven
+-- PR 1.5 tables (service_calls, visits, visit_reports, visit_signatures, visit_time_reports,
+-- visit_events, entity_changes), when a later migration is recorded in the history (roll that one
+-- back first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restore
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the PR 1.4 function that the migration replaced (public.test_data_census, a
+-- byte-identical body; CREATE OR REPLACE keeps its grants), then drops the PR 1.5 objects in
+-- reverse order, with no CASCADE: an unexpected dependent object makes it fail instead of silently
+-- dropping more. The PR 1.3 and PR 1.4 objects, their grants and the hardening stay; the PR 1.4
+-- delete RPCs keep their bodies (their "in use" path simply has no referencing table again). The
+-- four constraint-trigger functions are owned by postgres (TEMPORARY, PR 1.5 OQ-2), so no role is
+-- dropped. Run it before the PR 1.4 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261106120000' or h.name = 'service_calls_visits') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261106120000' or h.name = 'service_calls_visits')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.5 row (calls, visits, their reports, signatures, field times, status history or
+  -- field history): nothing is dropped. These rows are append-only or never deleted, so the
+  -- script is valid only before any PR 1.5 data.
+  if exists (select 1 from public.service_calls) or exists (select 1 from public.visits)
+     or exists (select 1 from public.visit_reports) or exists (select 1 from public.visit_signatures)
+     or exists (select 1 from public.visit_time_reports) or exists (select 1 from public.visit_events)
+     or exists (select 1 from public.entity_changes) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data';
+  end if;
+
+  -- 1. The PR 1.4 census, restored to its PR 1.4 text (same ACL). Its body is copied byte for byte
+  --    from the PR 1.4 migration, so it is not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+
+  -- 2. The view, then the public API wrappers.
+  drop view public.visit_time_current;
+  drop function public.my_visit_details(uuid);
+  drop function public.visit_rep_contact(uuid);
+  drop function public.previous_visits(uuid);
+
+  -- 3. The private functions: the narrow bodies, the visit-read helper, the call-status functions
+  --    and the field-history writer.
+  drop function private.my_visit_details(uuid);
+  drop function private.visit_rep_contact(uuid);
+  drop function private.previous_visits(uuid);
+  drop function private.can_read_visit(uuid);
+  drop function private.recalc_call_status(uuid);
+  drop function private.compute_call_status(uuid);
+  drop function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text);
+
+  -- 4. Tables, in reverse dependency order. Their triggers, constraint triggers, policies, indexes,
+  --    identity sequences and constraints go with them (DROP is neither DELETE nor TRUNCATE, so the
+  --    row triggers do not fire).
+  drop table public.entity_changes;
+  drop table public.visit_events;
+  drop table public.visit_time_reports;
+  drop table public.visit_signatures;
+  drop table public.visit_reports;
+  drop table public.visits;
+  drop table public.service_calls;
+
+  -- 5. The ten trigger functions and the four constraint-trigger functions.
+  drop function private.tg_visit_marker();
+  drop function private.tg_visit_child_marker();
+  drop function private.tg_history_server_time();
+  drop function private.tg_entity_change_target();
+  drop function private.tg_one_way_call_refs();
+  drop function private.tg_one_way_visit_refs();
+  drop function private.tg_visit_number_guard();
+  drop function private.tg_service_call_guard();
+  drop function private.tg_visit_state_guard();
+  drop function private.tg_time_report_derive();
+  drop function private.ct_visit_rules();
+  drop function private.ct_service_call_rules();
+  drop function private.ct_signature_rules();
+  drop function private.ct_report_rules();
+
+  -- 6. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'service_calls_visits'. Every row with either is removed (step 0 refused when none
+  --    exists; the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261106120000' or name = 'service_calls_visits';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261106120000_service_calls_visits.down.sql
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses to run once a service call and its visit exist (fail closed)');
+select ok(
+  to_regclass('public.service_calls') is not null and to_regprocedure('private.recalc_call_status(uuid)') is not null
+  and (select count(*) from public.service_calls) + (select count(*) from public.visits) + (select count(*) from public.visit_events) = 0
+  and not exists (select 1 from public.technicians)
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261106120000'),
+  'PR 1.5: after the refused run nothing was dropped and the fixture is gone');
+
+-- A later migration is recorded: refused with a clear message (not a dependency error at DROP time).
+select throws_ok($rollback$
+insert into supabase_migrations.schema_migrations (version, name) values ('20261201000000', 'later_migration_probe');
+-- >>> BEGIN supabase/rollback/20261106120000_service_calls_visits.down.sql
+-- Rollback (down) script for supabase/migrations/20261106120000_service_calls_visits.sql
+-- (Step 1 / PR 1.5). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.5 data exists. It refuses to run when any row exists in the seven
+-- PR 1.5 tables (service_calls, visits, visit_reports, visit_signatures, visit_time_reports,
+-- visit_events, entity_changes), when a later migration is recorded in the history (roll that one
+-- back first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restore
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the PR 1.4 function that the migration replaced (public.test_data_census, a
+-- byte-identical body; CREATE OR REPLACE keeps its grants), then drops the PR 1.5 objects in
+-- reverse order, with no CASCADE: an unexpected dependent object makes it fail instead of silently
+-- dropping more. The PR 1.3 and PR 1.4 objects, their grants and the hardening stay; the PR 1.4
+-- delete RPCs keep their bodies (their "in use" path simply has no referencing table again). The
+-- four constraint-trigger functions are owned by postgres (TEMPORARY, PR 1.5 OQ-2), so no role is
+-- dropped. Run it before the PR 1.4 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261106120000' or h.name = 'service_calls_visits') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261106120000' or h.name = 'service_calls_visits')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.5 row (calls, visits, their reports, signatures, field times, status history or
+  -- field history): nothing is dropped. These rows are append-only or never deleted, so the
+  -- script is valid only before any PR 1.5 data.
+  if exists (select 1 from public.service_calls) or exists (select 1 from public.visits)
+     or exists (select 1 from public.visit_reports) or exists (select 1 from public.visit_signatures)
+     or exists (select 1 from public.visit_time_reports) or exists (select 1 from public.visit_events)
+     or exists (select 1 from public.entity_changes) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data';
+  end if;
+
+  -- 1. The PR 1.4 census, restored to its PR 1.4 text (same ACL). Its body is copied byte for byte
+  --    from the PR 1.4 migration, so it is not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+
+  -- 2. The view, then the public API wrappers.
+  drop view public.visit_time_current;
+  drop function public.my_visit_details(uuid);
+  drop function public.visit_rep_contact(uuid);
+  drop function public.previous_visits(uuid);
+
+  -- 3. The private functions: the narrow bodies, the visit-read helper, the call-status functions
+  --    and the field-history writer.
+  drop function private.my_visit_details(uuid);
+  drop function private.visit_rep_contact(uuid);
+  drop function private.previous_visits(uuid);
+  drop function private.can_read_visit(uuid);
+  drop function private.recalc_call_status(uuid);
+  drop function private.compute_call_status(uuid);
+  drop function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text);
+
+  -- 4. Tables, in reverse dependency order. Their triggers, constraint triggers, policies, indexes,
+  --    identity sequences and constraints go with them (DROP is neither DELETE nor TRUNCATE, so the
+  --    row triggers do not fire).
+  drop table public.entity_changes;
+  drop table public.visit_events;
+  drop table public.visit_time_reports;
+  drop table public.visit_signatures;
+  drop table public.visit_reports;
+  drop table public.visits;
+  drop table public.service_calls;
+
+  -- 5. The ten trigger functions and the four constraint-trigger functions.
+  drop function private.tg_visit_marker();
+  drop function private.tg_visit_child_marker();
+  drop function private.tg_history_server_time();
+  drop function private.tg_entity_change_target();
+  drop function private.tg_one_way_call_refs();
+  drop function private.tg_one_way_visit_refs();
+  drop function private.tg_visit_number_guard();
+  drop function private.tg_service_call_guard();
+  drop function private.tg_visit_state_guard();
+  drop function private.tg_time_report_derive();
+  drop function private.ct_visit_rules();
+  drop function private.ct_service_call_rules();
+  drop function private.ct_signature_rules();
+  drop function private.ct_report_rules();
+
+  -- 6. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'service_calls_visits'. Every row with either is removed (step 0 refused when none
+  --    exists; the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261106120000' or name = 'service_calls_visits';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261106120000_service_calls_visits.down.sql
+$rollback$,
+  '55000', 'rollback refused: a later migration is recorded; roll it back first',
+  'PR 1.5: the down script refuses while a later migration is recorded');
+select ok(
+  to_regclass('public.visits') is not null
+  and not exists (select 1 from supabase_migrations.schema_migrations where version = '20261201000000'),
+  'PR 1.5: after that refusal nothing was dropped and the probe row is gone');
+
+-- OPS-1 (as in PR 1.3 and PR 1.4): without a history row (the CLI's version or the MCP name) the
+-- rollback is refused before anything is dropped. The history row is deleted inside the tested
+-- statement.
+select throws_ok($rollback$
+delete from supabase_migrations.schema_migrations where version = '20261106120000' or name = 'service_calls_visits';
+-- >>> BEGIN supabase/rollback/20261106120000_service_calls_visits.down.sql
+-- Rollback (down) script for supabase/migrations/20261106120000_service_calls_visits.sql
+-- (Step 1 / PR 1.5). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.5 data exists. It refuses to run when any row exists in the seven
+-- PR 1.5 tables (service_calls, visits, visit_reports, visit_signatures, visit_time_reports,
+-- visit_events, entity_changes), when a later migration is recorded in the history (roll that one
+-- back first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restore
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the PR 1.4 function that the migration replaced (public.test_data_census, a
+-- byte-identical body; CREATE OR REPLACE keeps its grants), then drops the PR 1.5 objects in
+-- reverse order, with no CASCADE: an unexpected dependent object makes it fail instead of silently
+-- dropping more. The PR 1.3 and PR 1.4 objects, their grants and the hardening stay; the PR 1.4
+-- delete RPCs keep their bodies (their "in use" path simply has no referencing table again). The
+-- four constraint-trigger functions are owned by postgres (TEMPORARY, PR 1.5 OQ-2), so no role is
+-- dropped. Run it before the PR 1.4 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261106120000' or h.name = 'service_calls_visits') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261106120000' or h.name = 'service_calls_visits')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.5 row (calls, visits, their reports, signatures, field times, status history or
+  -- field history): nothing is dropped. These rows are append-only or never deleted, so the
+  -- script is valid only before any PR 1.5 data.
+  if exists (select 1 from public.service_calls) or exists (select 1 from public.visits)
+     or exists (select 1 from public.visit_reports) or exists (select 1 from public.visit_signatures)
+     or exists (select 1 from public.visit_time_reports) or exists (select 1 from public.visit_events)
+     or exists (select 1 from public.entity_changes) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data';
+  end if;
+
+  -- 1. The PR 1.4 census, restored to its PR 1.4 text (same ACL). Its body is copied byte for byte
+  --    from the PR 1.4 migration, so it is not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+
+  -- 2. The view, then the public API wrappers.
+  drop view public.visit_time_current;
+  drop function public.my_visit_details(uuid);
+  drop function public.visit_rep_contact(uuid);
+  drop function public.previous_visits(uuid);
+
+  -- 3. The private functions: the narrow bodies, the visit-read helper, the call-status functions
+  --    and the field-history writer.
+  drop function private.my_visit_details(uuid);
+  drop function private.visit_rep_contact(uuid);
+  drop function private.previous_visits(uuid);
+  drop function private.can_read_visit(uuid);
+  drop function private.recalc_call_status(uuid);
+  drop function private.compute_call_status(uuid);
+  drop function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text);
+
+  -- 4. Tables, in reverse dependency order. Their triggers, constraint triggers, policies, indexes,
+  --    identity sequences and constraints go with them (DROP is neither DELETE nor TRUNCATE, so the
+  --    row triggers do not fire).
+  drop table public.entity_changes;
+  drop table public.visit_events;
+  drop table public.visit_time_reports;
+  drop table public.visit_signatures;
+  drop table public.visit_reports;
+  drop table public.visits;
+  drop table public.service_calls;
+
+  -- 5. The ten trigger functions and the four constraint-trigger functions.
+  drop function private.tg_visit_marker();
+  drop function private.tg_visit_child_marker();
+  drop function private.tg_history_server_time();
+  drop function private.tg_entity_change_target();
+  drop function private.tg_one_way_call_refs();
+  drop function private.tg_one_way_visit_refs();
+  drop function private.tg_visit_number_guard();
+  drop function private.tg_service_call_guard();
+  drop function private.tg_visit_state_guard();
+  drop function private.tg_time_report_derive();
+  drop function private.ct_visit_rules();
+  drop function private.ct_service_call_rules();
+  drop function private.ct_signature_rules();
+  drop function private.ct_report_rules();
+
+  -- 6. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'service_calls_visits'. Every row with either is removed (step 0 refused when none
+  --    exists; the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261106120000' or name = 'service_calls_visits';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261106120000_service_calls_visits.down.sql
+$rollback$,
+  '55000', 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped',
+  'PR 1.5: the down script refuses when the history table holds no row for the migration');
+select ok(
+  to_regclass('public.entity_changes') is not null and to_regprocedure('public.my_visit_details(uuid)') is not null
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261106120000'),
+  'PR 1.5: after that refusal nothing was dropped and the history row is still there');
+
+-- Review TEST-2 (as in PR 1.4): each refusal condition alone. One more byte-identical copy, inside a
+-- function, runs the same DO block after a single fixture made inside each tested statement (so
+-- every fixture, every ALTER and every queued deferred check rolls back with it). A child table
+-- holds a row on its own only after its parent foreign keys are dropped and its triggers disabled
+-- inside the tested statement (no other PR 1.5 table has a row then).
+create function pg_temp.tm_pr15_down()
+returns void
+language plpgsql
+as $fn$
+begin
+-- >>> BEGIN supabase/rollback/20261106120000_service_calls_visits.down.sql
+-- Rollback (down) script for supabase/migrations/20261106120000_service_calls_visits.sql
+-- (Step 1 / PR 1.5). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.5 data exists. It refuses to run when any row exists in the seven
+-- PR 1.5 tables (service_calls, visits, visit_reports, visit_signatures, visit_time_reports,
+-- visit_events, entity_changes), when a later migration is recorded in the history (roll that one
+-- back first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restore
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the PR 1.4 function that the migration replaced (public.test_data_census, a
+-- byte-identical body; CREATE OR REPLACE keeps its grants), then drops the PR 1.5 objects in
+-- reverse order, with no CASCADE: an unexpected dependent object makes it fail instead of silently
+-- dropping more. The PR 1.3 and PR 1.4 objects, their grants and the hardening stay; the PR 1.4
+-- delete RPCs keep their bodies (their "in use" path simply has no referencing table again). The
+-- four constraint-trigger functions are owned by postgres (TEMPORARY, PR 1.5 OQ-2), so no role is
+-- dropped. Run it before the PR 1.4 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261106120000' or h.name = 'service_calls_visits') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261106120000' or h.name = 'service_calls_visits')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.5 row (calls, visits, their reports, signatures, field times, status history or
+  -- field history): nothing is dropped. These rows are append-only or never deleted, so the
+  -- script is valid only before any PR 1.5 data.
+  if exists (select 1 from public.service_calls) or exists (select 1 from public.visits)
+     or exists (select 1 from public.visit_reports) or exists (select 1 from public.visit_signatures)
+     or exists (select 1 from public.visit_time_reports) or exists (select 1 from public.visit_events)
+     or exists (select 1 from public.entity_changes) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data';
+  end if;
+
+  -- 1. The PR 1.4 census, restored to its PR 1.4 text (same ACL). Its body is copied byte for byte
+  --    from the PR 1.4 migration, so it is not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+
+  -- 2. The view, then the public API wrappers.
+  drop view public.visit_time_current;
+  drop function public.my_visit_details(uuid);
+  drop function public.visit_rep_contact(uuid);
+  drop function public.previous_visits(uuid);
+
+  -- 3. The private functions: the narrow bodies, the visit-read helper, the call-status functions
+  --    and the field-history writer.
+  drop function private.my_visit_details(uuid);
+  drop function private.visit_rep_contact(uuid);
+  drop function private.previous_visits(uuid);
+  drop function private.can_read_visit(uuid);
+  drop function private.recalc_call_status(uuid);
+  drop function private.compute_call_status(uuid);
+  drop function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text);
+
+  -- 4. Tables, in reverse dependency order. Their triggers, constraint triggers, policies, indexes,
+  --    identity sequences and constraints go with them (DROP is neither DELETE nor TRUNCATE, so the
+  --    row triggers do not fire).
+  drop table public.entity_changes;
+  drop table public.visit_events;
+  drop table public.visit_time_reports;
+  drop table public.visit_signatures;
+  drop table public.visit_reports;
+  drop table public.visits;
+  drop table public.service_calls;
+
+  -- 5. The ten trigger functions and the four constraint-trigger functions.
+  drop function private.tg_visit_marker();
+  drop function private.tg_visit_child_marker();
+  drop function private.tg_history_server_time();
+  drop function private.tg_entity_change_target();
+  drop function private.tg_one_way_call_refs();
+  drop function private.tg_one_way_visit_refs();
+  drop function private.tg_visit_number_guard();
+  drop function private.tg_service_call_guard();
+  drop function private.tg_visit_state_guard();
+  drop function private.tg_time_report_derive();
+  drop function private.ct_visit_rules();
+  drop function private.ct_service_call_rules();
+  drop function private.ct_signature_rules();
+  drop function private.ct_report_rules();
+
+  -- 6. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'service_calls_visits'. Every row with either is removed (step 0 refused when none
+  --    exists; the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261106120000' or name = 'service_calls_visits';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261106120000_service_calls_visits.down.sql
+end
+$fn$;
+
+select throws_ok($rollback$
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000099c1', 'C-99015', 'לקוח בדיקת שחזור', '050-000-9915', 'automated_test', 'pr15-990-1');
+insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000099d1', 'RB-99015', 'RB-99015', 'מוצר בדיקת שחזור', 'automated_test', 'pr15-990-1');
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref)
+  select '00000000-0000-4000-8000-0000000099a1', 'R-99015', '00000000-0000-4000-8000-0000000099c1',
+         '00000000-0000-4000-8000-0000000099d1', t.id, 'תקלת בדיקת שחזור', 'נציגת בדיקה', 'open', 2,
+         'automated_test', 'pr15-990-1'
+  from public.call_types t where t.sort_order = 1;
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a service call exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visits disable trigger user;
+alter table public.visits drop constraint visits_service_call_id_fkey, drop constraint visits_technician_id_fkey;
+insert into public.visits (service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end, status,
+                           city, street, source_ref, is_test)
+  values (gen_random_uuid(), gen_random_uuid(), 1, 'T-99016', now(), now(), 'scheduled', 'עיר בדיקה', 'רחוב בדיקה', 'pr15-990-2', true);
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a visit exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_reports disable trigger user;
+alter table public.visit_reports drop constraint visit_reports_visit_id_fkey;
+insert into public.visit_reports (visit_id, summary_text, summary_source, is_test)
+  values (gen_random_uuid(), 'סיכום בדיקת שחזור', 'written', true);
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a treatment summary exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_signatures disable trigger user;
+alter table public.visit_signatures drop constraint visit_signatures_visit_id_fkey;
+insert into public.visit_signatures (visit_id, signer_name, signed_ack_text, ack_text_sha256, operation_id, is_test)
+  values (gen_random_uuid(), 'חותם בדיקה', 'נוסח אישור בדיקה',
+          encode(sha256(convert_to('נוסח אישור בדיקה', 'UTF8')), 'hex'), gen_random_uuid(), true);
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a signature exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_time_reports disable trigger user;
+alter table public.visit_time_reports drop constraint visit_time_reports_visit_id_fkey,
+  drop constraint visit_time_reports_technician_id_fkey, drop constraint visit_time_reports_reported_by_profile_id_fkey;
+insert into public.visit_time_reports (visit_id, reported_by_profile_id, technician_id, kind, reported_at, device_tz,
+                                       device_utc_offset_min, device_sent_at, clock_skew_ms, source, operation_id, is_test)
+  values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'departed', now(), 'Asia/Jerusalem', 120, now(), 0,
+          'device', gen_random_uuid(), true);
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a field time report exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_events disable trigger user;
+alter table public.visit_events drop constraint visit_events_visit_id_fkey;
+insert into public.visit_events (visit_id, version_after, event_type, to_status, is_test)
+  values (gen_random_uuid(), 1, 'created', 'scheduled', true);
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a visit status event exists (review TEST-2)');
+select throws_ok($rollback$
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000099c2', 'C-99017', 'לקוח בדיקת שחזור ב', '050-000-9917', 'automated_test', 'pr15-990-3');
+insert into public.entity_changes (entity_table, entity_id, field, old_value, new_value, source, source_ref)
+  values ('customers', '00000000-0000-4000-8000-0000000099c2', 'phone', '"050-000-9916"', '"050-000-9917"', 'invitation', 'pr15-990-3');
+select pg_temp.tm_pr15_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data',
+  'PR 1.5: the down script refuses when only a field-history row exists (a customer change; review TEST-2)');
+select ok(
+  to_regclass('public.service_calls') is not null and to_regprocedure('private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)') is not null
+  and (select count(*) from public.service_calls) + (select count(*) from public.visits) + (select count(*) from public.visit_reports)
+      + (select count(*) from public.visit_signatures) + (select count(*) from public.visit_time_reports)
+      + (select count(*) from public.visit_events) + (select count(*) from public.entity_changes)
+      + (select count(*) from public.customers) + (select count(*) from public.products) = 0
+  and (select count(*) from pg_constraint k
+       where k.conname in ('visits_service_call_id_fkey', 'visits_technician_id_fkey', 'visit_reports_visit_id_fkey',
+                           'visit_signatures_visit_id_fkey', 'visit_time_reports_visit_id_fkey',
+                           'visit_time_reports_technician_id_fkey', 'visit_time_reports_reported_by_profile_id_fkey',
+                           'visit_events_visit_id_fkey')) = 8
+  and not exists (select 1 from pg_trigger t
+                  where t.tgrelid in ('public.visits'::regclass, 'public.visit_reports'::regclass, 'public.visit_signatures'::regclass,
+                                      'public.visit_time_reports'::regclass, 'public.visit_events'::regclass)
+                    and not t.tgisinternal and t.tgenabled <> 'O'),
+  'PR 1.5: after those refusals nothing was dropped, every fixture is gone, and the foreign keys and triggers are back');
+
+-- The run on the empty tables, with an MCP-style history row next to the CLI's (both removed).
+insert into supabase_migrations.schema_migrations (version, name) values ('20261111093013', 'service_calls_visits');
+
+-- >>> BEGIN supabase/rollback/20261106120000_service_calls_visits.down.sql
+-- Rollback (down) script for supabase/migrations/20261106120000_service_calls_visits.sql
+-- (Step 1 / PR 1.5). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.5 data exists. It refuses to run when any row exists in the seven
+-- PR 1.5 tables (service_calls, visits, visit_reports, visit_signatures, visit_time_reports,
+-- visit_events, entity_changes), when a later migration is recorded in the history (roll that one
+-- back first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restore
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the PR 1.4 function that the migration replaced (public.test_data_census, a
+-- byte-identical body; CREATE OR REPLACE keeps its grants), then drops the PR 1.5 objects in
+-- reverse order, with no CASCADE: an unexpected dependent object makes it fail instead of silently
+-- dropping more. The PR 1.3 and PR 1.4 objects, their grants and the hardening stay; the PR 1.4
+-- delete RPCs keep their bodies (their "in use" path simply has no referencing table again). The
+-- four constraint-trigger functions are owned by postgres (TEMPORARY, PR 1.5 OQ-2), so no role is
+-- dropped. Run it before the PR 1.4 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 6) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261106120000' or h.name = 'service_calls_visits') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261106120000' or h.name = 'service_calls_visits')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.5 row (calls, visits, their reports, signatures, field times, status history or
+  -- field history): nothing is dropped. These rows are append-only or never deleted, so the
+  -- script is valid only before any PR 1.5 data.
+  if exists (select 1 from public.service_calls) or exists (select 1 from public.visits)
+     or exists (select 1 from public.visit_reports) or exists (select 1 from public.visit_signatures)
+     or exists (select 1 from public.visit_time_reports) or exists (select 1 from public.visit_events)
+     or exists (select 1 from public.entity_changes) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.5 data exists (service calls, visits or their history); this down script is valid only before any PR 1.5 data';
+  end if;
+
+  -- 1. The PR 1.4 census, restored to its PR 1.4 text (same ACL). Its body is copied byte for byte
+  --    from the PR 1.4 migration, so it is not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+
+  -- 2. The view, then the public API wrappers.
+  drop view public.visit_time_current;
+  drop function public.my_visit_details(uuid);
+  drop function public.visit_rep_contact(uuid);
+  drop function public.previous_visits(uuid);
+
+  -- 3. The private functions: the narrow bodies, the visit-read helper, the call-status functions
+  --    and the field-history writer.
+  drop function private.my_visit_details(uuid);
+  drop function private.visit_rep_contact(uuid);
+  drop function private.previous_visits(uuid);
+  drop function private.can_read_visit(uuid);
+  drop function private.recalc_call_status(uuid);
+  drop function private.compute_call_status(uuid);
+  drop function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text);
+
+  -- 4. Tables, in reverse dependency order. Their triggers, constraint triggers, policies, indexes,
+  --    identity sequences and constraints go with them (DROP is neither DELETE nor TRUNCATE, so the
+  --    row triggers do not fire).
+  drop table public.entity_changes;
+  drop table public.visit_events;
+  drop table public.visit_time_reports;
+  drop table public.visit_signatures;
+  drop table public.visit_reports;
+  drop table public.visits;
+  drop table public.service_calls;
+
+  -- 5. The ten trigger functions and the four constraint-trigger functions.
+  drop function private.tg_visit_marker();
+  drop function private.tg_visit_child_marker();
+  drop function private.tg_history_server_time();
+  drop function private.tg_entity_change_target();
+  drop function private.tg_one_way_call_refs();
+  drop function private.tg_one_way_visit_refs();
+  drop function private.tg_visit_number_guard();
+  drop function private.tg_service_call_guard();
+  drop function private.tg_visit_state_guard();
+  drop function private.tg_time_report_derive();
+  drop function private.ct_visit_rules();
+  drop function private.ct_service_call_rules();
+  drop function private.ct_signature_rules();
+  drop function private.ct_report_rules();
+
+  -- 6. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'service_calls_visits'. Every row with either is removed (step 0 refused when none
+  --    exists; the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261106120000' or name = 'service_calls_visits';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261106120000 or name service_calls_visits; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261106120000_service_calls_visits.down.sql
+
+select ok(
+  to_regclass('public.service_calls') is null and to_regclass('public.visits') is null
+  and to_regclass('public.visit_reports') is null and to_regclass('public.visit_signatures') is null
+  and to_regclass('public.visit_time_reports') is null and to_regclass('public.visit_events') is null
+  and to_regclass('public.entity_changes') is null and to_regclass('public.visit_time_current') is null
+  and to_regclass('public.visit_time_reports_id_seq') is null and to_regclass('public.visit_events_id_seq') is null
+  and to_regclass('public.entity_changes_id_seq') is null
+  and not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname in ('public', 'private')
+                    and p.proname in ('tg_visit_marker', 'tg_visit_child_marker', 'tg_history_server_time',
+                                      'tg_entity_change_target', 'tg_one_way_call_refs', 'tg_one_way_visit_refs',
+                                      'tg_visit_number_guard', 'tg_service_call_guard', 'tg_visit_state_guard',
+                                      'tg_time_report_derive', 'ct_visit_rules', 'ct_service_call_rules', 'ct_signature_rules',
+                                      'ct_report_rules', 'compute_call_status', 'recalc_call_status', 'write_entity_change',
+                                      'can_read_visit', 'previous_visits', 'visit_rep_contact', 'my_visit_details')),
+  'PR 1.5: the seven tables, the view, the identity sequences and the 24 functions are gone');
+-- The replaced PR 1.4 census is back to its PR 1.4 text, and tg_audit_target (not touched by
+-- PR 1.5) keeps its PR 1.4 text: md5(prosrc) and md5(pg_get_functiondef) as computed on a database
+-- built from the PR 1.3 and PR 1.4 migrations (PostgreSQL 17; docs/review/step1-pr14/README.md
+-- section 9, docs/review/step1-pr15/README.md).
+select results_eq(
+  $$ select p.proname::text collate "default", md5(p.prosrc) collate "default", md5(pg_get_functiondef(p.oid)) collate "default"
+     from pg_proc p where p.oid in ('private.tg_audit_target()'::regprocedure, 'public.test_data_census()'::regprocedure)
+     order by p.proname::text collate "C" $$,
+  $$ values ('test_data_census', '0dbefb7f4ee3841621188838db7bd002', 'b72dcff406dea4acd841d6ab62200401'),
+            ('tg_audit_target', 'd25cf9e179600a75b7812b9a04c23d29', 'bef804c030ce770fd7c2ba2a11dc3700') $$,
+  'PR 1.5: test_data_census is restored byte for byte to PR 1.4; tg_audit_target keeps its PR 1.4 text');
+select is(
+  (select pg_catalog.md5(pg_catalog.string_agg(pg_catalog.pg_get_functiondef(p.oid), '|' order by p.proname, p.oid))
+   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'private'
+     and p.proname = any (array['audit_row_hash', 'audit_chain_verify', 'write_audit', 'tg_audit_target', 'tg_audit_chain',
+                                'tg_reject_update_delete', 'tg_reject_truncate', 'tg_one_way_people']::name[])),
+  'd30c54fba69e0689cd53735e46f99404',
+  'PR 1.5: the audit anchor''s functions fingerprint is the PR 1.3 + PR 1.4 value (PR 1.5 replaced no audit function)');
+select ok(
+  not exists (select 1 from supabase_migrations.schema_migrations where version = '20261106120000' or name = 'service_calls_visits')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261105120000')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261104120000'),
+  'PR 1.5: its history rows are removed (CLI version and MCP name); the PR 1.3 and PR 1.4 rows stay');
+select results_eq(
+  $$ select c.relname::text collate "default", a.privilege_type::text
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+     where n.nspname in ('public', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
+       and a.grantee = 'authenticated'::regrole
+     order by c.relname::text collate "C", a.privilege_type::text $$,
+  $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('brands', 'SELECT'), ('call_types', 'SELECT'),
+            ('collection_locations', 'SELECT'), ('customers', 'SELECT'), ('followup_reasons', 'SELECT'),
+            ('permissions', 'SELECT'), ('products', 'SELECT'), ('profiles', 'SELECT'), ('role_permissions', 'SELECT'),
+            ('suppliers', 'SELECT'), ('technicians', 'SELECT') $$,
+  'PR 1.5: the PR 1.3 and PR 1.4 table grants are intact (SELECT for authenticated on their thirteen tables)');
+-- The PR 1.4 delete RPCs keep their bodies (README section 9 pins of docs/review/step1-pr14), and
+-- the Migration 1 and 2 trigger functions that PR 1.5 attached to its tables are still there.
+select results_eq(
+  $$ select p.proname::text collate "default", md5(p.prosrc) collate "default"
+     from pg_proc p
+     where p.oid in ('private.delete_followup_reason(uuid,integer)'::regprocedure,
+                     'private.delete_collection_location(uuid,integer)'::regprocedure,
+                     'private.tg_immutable_except()'::regprocedure)
+     order by p.proname::text collate "C" $$,
+  $$ values ('delete_collection_location', 'ccd8b95405e0d3dfa4c71eddd13abe90'),
+            ('delete_followup_reason', '9476621392a7287d19d0a51cb5996fe6'),
+            ('tg_immutable_except', '7aab821ecfdd2a14c42dcba975a9a4de') $$,
+  'PR 1.5: the PR 1.4 delete RPCs and tg_immutable_except keep their PR 1.4 text');
+select ok(
+  to_regprocedure('private.tg_bump_version()') is not null and to_regprocedure('private.tg_immutable_markers()') is not null
+  and to_regprocedure('private.tg_reject_update_delete()') is not null and to_regprocedure('private.tg_reject_delete()') is not null
+  and to_regprocedure('private.tg_reject_truncate()') is not null and to_regprocedure('private.tg_one_way_people()') is not null
+  and has_function_privilege('authenticated', 'public.test_data_census()', 'execute')
+  and not has_function_privilege('anon', 'public.test_data_census()', 'execute')
+  and not has_function_privilege('service_role', 'public.test_data_census()', 'execute'),
+  'PR 1.5: the shared Migration 1 trigger functions remain and the restored census keeps its grants');
+select results_eq(
+  $$ select t from (select distinct c.table_name as t from public.test_data_census() c) x order by t collate "C" $$,
+  $$ values ('account_requests'), ('audit_logs'), ('brands'), ('call_types'), ('collection_locations'), ('customers'),
+            ('followup_reasons'), ('permissions'), ('products'), ('profiles'), ('role_permissions'), ('storage'),
+            ('suppliers'), ('technicians') $$,
+  'PR 1.5: the census covers the PR 1.3 and PR 1.4 tables again');
 
 -- ---------------------------------------------------------------------------------------------
 -- PR 1.4 (Migration 2) down script

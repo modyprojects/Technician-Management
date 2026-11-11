@@ -824,14 +824,11 @@ select results_eq(
   'I: an audit row for each change of a real (target_is_test false) or test reason, none for the refusals');
 
 -- =================================================================================================
--- J. Conditional deletes: a row in use (simulated PR 1.5 foreign key) and a delete that removes
---    no row (simulated by a trigger that skips it) fail without an audit row.
+-- J. Conditional deletes: a row in use (PR 1.5: a real visit whose foreign keys
+--    visits_followup_reason_id_fkey and visits_pickup_location_id_fkey reference the reason and the
+--    place; until PR 1.5 a scratch table simulated them) and a delete that removes no row
+--    (simulated by a trigger that skips it) fail without an audit row.
 -- =================================================================================================
-create schema pr14_scratch;
-create table pr14_scratch.visits (
-  id uuid primary key default gen_random_uuid(),
-  followup_reason_id uuid references public.followup_reasons (id) on delete restrict,
-  pickup_location_id uuid references public.collection_locations (id) on delete restrict);
 create function pg_temp.tm_skip_delete()
 returns trigger
 language plpgsql
@@ -852,8 +849,27 @@ select results_eq(
   $$ values ('reason in use', 'ok true'), ('place in use', 'ok true'), ('reason to skip', 'ok true'), ('place to skip', 'ok true') $$,
   'the Creator adds a reason and a place that will be in use, and a reason and a place whose delete will be skipped');
 reset role;
-insert into pr14_scratch.visits (followup_reason_id, pickup_location_id)
-select (select t.id from pg_temp.tm_ids t where t.k = 'r_used'), (select t.id from pg_temp.tm_ids t where t.k = 'p_used');
+-- A test call whose closed visit continues with the reason and took the item to the place, written
+-- as postgres with every trigger active (the deferred checks never run: the file rolls back).
+insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email)
+  values ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y',
+          'tech-a@example.test');
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000012c1', 'C-1201', 'לקוח בדיקה', '050-000-1201', 'automated_test', 'pr15-120-1');
+insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000012d1', 'PB-1201', 'PB-1201', 'מוצר בדיקה', 'automated_test', 'pr15-120-1');
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000012a1', 'R-1201', '00000000-0000-4000-8000-0000000012c1',
+          '00000000-0000-4000-8000-0000000012d1', (select t.id from pg_temp.tm_ids t where t.k = 'ct1'), 'תקלת בדיקה',
+          'נציגת בדיקה', 'awaiting_followup', 2, 'automated_test', 'pr15-120-1');
+insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
+                           status, city, street, pickup_item, pickup_location_id, followup_reason_id, next_visit_notes,
+                           source_ref)
+  values ('00000000-0000-4000-8000-0000000012b1', '00000000-0000-4000-8000-0000000012a1', '00000000-0000-4000-8000-0000000000e1',
+          1, 'T-1201', now(), now() + interval '1 hour', 'followup', 'עיר בדיקה', 'רחוב בדיקה', 'חלק לבדיקה',
+          (select t.id from pg_temp.tm_ids t where t.k = 'p_used'), (select t.id from pg_temp.tm_ids t where t.k = 'r_used'),
+          'לחזור עם חלק', 'pr15-120-1');
 create trigger t96_tm_skip before delete on public.followup_reasons
   for each row when (old.label_he = 'סיבה לדילוג') execute function pg_temp.tm_skip_delete();
 create trigger t96_tm_skip before delete on public.collection_locations

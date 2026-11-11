@@ -6,7 +6,10 @@
 --   OQ-1  no write path for products (no update_product);
 --   OQ-2  products, brands and suppliers are read with `cal` or `calls` only (not `products`);
 --   OQ-3  no write path for brands and suppliers;
---   OQ-12 Technicians read no customer, product, brand or supplier row until PR 1.5.
+--   OQ-12 Technicians read no customer, product, brand or supplier row directly. From PR 1.5 the
+--         customer and product fields of a Technician's own open (or closed today) visit come only
+--         from the narrow function my_visit_details (PR 1.5 OQ-10, OQ-12; tests/db/190), never
+--         from these tables.
 -- Matrix values are the TEMPORARY D51 defaults: `cal` and `calls` on for Manager and Customer
 -- Service, `products` and `dashProd` on for Manager only, `settings` off for both.
 begin;
@@ -261,7 +264,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select is(pg_temp.tm_visible(),
   'brands 0, suppliers 0, products 0, customers 0, call_types 2, followup_reasons 6, collection_locations 1',
-  'Technician A: active Settings rows only; no customer, product, brand or supplier row (TEMPORARY OQ-12, until PR 1.5)');
+  'Technician A: active Settings rows only; no customer, product, brand or supplier row (TEMPORARY OQ-12; from PR 1.5 served only by my_visit_details)');
 select ok(
   (select bool_and(c.is_active) from public.call_types c) and (select bool_and(r.is_active) from public.followup_reasons r)
   and (select bool_and(l.is_active) from public.collection_locations l),
@@ -503,7 +506,9 @@ select is(pg_temp.tm_visible(),
 -- Structural checks (D19; TEMPORARY OQ-1, OQ-3): no function in public or private writes
 -- products, customers, brands or suppliers, or touches the SKU or the customer number. When
 -- update_product (OQ-1) or the brand and supplier RPCs (OQ-3) are built, they become the only
--- allowed matches and these checks are updated with them.
+-- allowed matches and these checks are updated with them. PR 1.5: private.my_visit_details reads
+-- sku_display and customer_number for the Technician's own visit; it is the one listed reader (the
+-- write check above covers its body too, so it is a read only).
 -- =================================================================================================
 -- tm_writes_ref: whether a body writes one of the four tables. Double quotes and the spaces around
 -- dots are removed first, so a quoted or spaced name ("public"."products", public . brands) is
@@ -546,11 +551,13 @@ select is_empty(
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
        and pg_temp.tm_writes_ref(p.prosrc) $$,
   'no function inserts into, updates, deletes from, merges into or truncates products, customers, brands or suppliers');
-select is_empty(
-  $$ select p.oid::regprocedure::text from pg_proc p
+select results_eq(
+  $$ select p.oid::regprocedure::text collate "default" from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
-       and p.prosrc ~* '\m(sku_display|sku_normalized|customer_number)\M' $$,
-  'no function touches the SKU or the customer number (D19: the SKU never changes; D39: the customer number never changes)');
+       and p.prosrc ~* '\m(sku_display|sku_normalized|customer_number)\M'
+     order by p.oid::regprocedure::text collate "C" $$,
+  $$ values ('private.my_visit_details(uuid)') $$,
+  'no function touches the SKU or the customer number except the PR 1.5 read my_visit_details (D19: the SKU never changes; D39: the customer number never changes)');
 select results_eq(
   $$ select p.oid::regprocedure::text collate "default" from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
