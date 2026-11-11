@@ -11,6 +11,13 @@
 - Before pilot: independent security assessment, documented backup/restore demonstration, retention/privacy review, MFA setup, realistic load/storage tests.
 - Step 0 automated checks (`tests/e2e`, run in CI at 390 / 820 / 1440 px): Hebrew RTL, no horizontal overflow, layout per breakpoint and boundary widths (520/521, 599/600, 900/901), control sizes from the demo, every token equal to `docs/demo.html`, fonts loaded, security headers, and the `/dev` gate: every branch of the gate logic (including Vercel Preview and Production before and after go-live), a positive control on the open server, and for every `/dev` page on the closed server and with a non-local Host: 404 without the page's own content for document, RSC, prefetch, segment-prefetch, `.rsc` and segment-file requests. `responsive.spec.ts` asserts the fixed bottom navigation proposed as TE-32 and changes if the owner rejects it. Negative auth/RLS tests start in Steps 1–2.
 
+## Development process (D58, owner, 2026-11-11)
+- Automated tests and CI continue unchanged (build, lint, typecheck, unit, end-to-end and database tests, the migration guard, the canary-rows check, secret scanning). D58 weakens no mandatory check.
+- Database tests prioritize RLS, permissions, role isolation, data integrity and migration safety (forward apply, rollback, the migration guard and the canary-rows check).
+- No mutation testing. Earlier mutation results recorded below are history, not a requirement.
+- One independent review per PR involving security, permissions, database or deployment changes; no multi-reviewer panels.
+- Screenshots only for screens a PR modifies, at 390 / 820 / 1440 px.
+
 ## Step 1 database tests (approved Step 1 plan, 2026-11-03)
 - **Where they run:** pgTAP tests against a local Supabase database started by the pinned Supabase CLI in CI (the `Database tests` workflow, `.github/workflows/db.yml`). No secrets and no connection to the remote project. Local fixtures are marked `automated_test` and exist only in local CI, never in migrations (D47). Down migrations are tested in CI.
 - **Remote project:** migrations are applied to the existing development project only with the owner's explicit approval for each apply. After each approved apply, only read-only verification (for example the applied migration list and the test-data census). Tests never write to the remote project.
