@@ -8,8 +8,8 @@
 -- Content: seven tables (brands, suppliers, products, customers, call_types, followup_reasons,
 -- collection_locations), three trigger functions, the audit extension for the Settings actions
 -- (TEMPORARY, owner question OQ-9), eight Settings RPC bodies and their eight SECURITY INVOKER
--- wrappers (key `settings`), ten SELECT policies, per-object grants, the census extension and the
--- owner-approved D48 initial values.
+-- wrappers (key `settings`), ten SELECT policies, per-object grants, the census extension, the
+-- owner-approved D48 initial values and a read-only fail-closed hardening check (section 11).
 --
 -- Data: schema plus the owner-approved D48 initial values only (2 call types, 5 continuation
 -- reasons; D47, D48). No test or fictitious rows. brands, suppliers, products, customers and
@@ -1092,7 +1092,7 @@ grant execute on function
 to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
--- 10. Owner-approved initial values (D48), last in the file. Defaults supply is_active = true,
+-- 10. Owner-approved initial values (D48), the last writes in the file. Defaults supply is_active = true,
 --     is_test = false, is_user_added = false, created_by = null and version = 1. Validation with
 --     customer service before go-live is owner task O3.
 -- ---------------------------------------------------------------------------------------------
@@ -1106,3 +1106,115 @@ insert into public.followup_reasons (label_he, sort_order) values
   ('נדרשת בדיקת מתקין', 3),
   ('הזמנת מוצר חדש', 4),
   ('לקוח לא נמצא', 5);
+
+-- ---------------------------------------------------------------------------------------------
+-- 11. Fail closed when the hardening did not take effect (owner, 2026-11-11: consistent with the
+--     PR 1.3 migration, section 15). Read-only; any leftover raises, and the whole migration then
+--     rolls back. Checked over everything in public and private after this migration:
+--     - the PR 1.3 section 15 privilege checks, unchanged: CREATE on public or private for PUBLIC
+--       or an API role; any table, view, sequence or column privilege for PUBLIC, anon or
+--       service_role, and anything but SELECT on tables for authenticated; EXECUTE on a function
+--       for PUBLIC, anon or service_role; postgres's default privileges in public, and its global
+--       function defaults (a missing global row is the built-in EXECUTE for PUBLIC), for PUBLIC
+--       or an API role;
+--     - a table without row level security;
+--     - a table, sequence or function not owned by postgres;
+--     - a policy for any role but authenticated;
+--     - a function whose search_path is not exactly pg_catalog, pg_temp (PR 1.3 SEC-1);
+--     - a view or materialized view (none is designed; one would read the tables without RLS).
+--     The exact grant lists are asserted by tests/db/010 and 130; tests/db/140 runs a copy of this
+--     block (kept identical by tests/ci/hardening-assertion.test.mjs) against injected leaks.
+-- ---------------------------------------------------------------------------------------------
+do $$
+declare
+  v_api oid[];
+  v_authenticated oid;
+  v_leaks text;
+begin
+  select pg_catalog.array_agg(r.oid) into v_api
+  from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated', 'service_role');
+  select r.oid into v_authenticated from pg_catalog.pg_roles r where r.rolname = 'authenticated';
+
+  select pg_catalog.string_agg(x.leak, '; ' order by x.leak) into v_leaks
+  from (
+    select 'schema ' || n.nspname || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text as leak
+    from pg_catalog.pg_namespace n
+    cross join lateral pg_catalog.aclexplode(coalesce(n.nspacl, pg_catalog.acldefault('n'::"char", n.nspowner))) a
+    where n.nspname in ('public', 'private') and a.privilege_type = 'CREATE'
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'relation ' || c.oid::regclass::text || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text
+    from pg_catalog.pg_class c
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(c.relacl, pg_catalog.acldefault((case when c.relkind = 'S' then 's' else 'r' end)::"char", c.relowner))) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated)
+           or (a.grantee = v_authenticated and (c.relkind = 'S' or a.privilege_type <> 'SELECT')))
+    union all
+    select 'column ' || c.oid::regclass::text || '.' || t.attname || ' ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_attribute t
+    join pg_catalog.pg_class c on c.oid = t.attrelid
+    cross join lateral pg_catalog.aclexplode(t.attacl) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and t.attacl is not null
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.pg_proc p
+    cross join lateral pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f'::"char", p.proowner))) a
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated))
+    union all
+    select 'default privileges of postgres (' || d.defaclobjtype::text || ') ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_default_acl d
+    cross join lateral pg_catalog.aclexplode(d.defaclacl) a
+    where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 'public'::regnamespace
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    -- No global entry means the built-in default (EXECUTE for PUBLIC), so a missing row is a leak.
+    select 'global default privileges of postgres (f) EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.aclexplode(coalesce(
+      (select d.defaclacl from pg_catalog.pg_default_acl d
+       where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f'),
+      pg_catalog.acldefault('f'::"char", 'postgres'::regrole))) a
+    where a.grantee = 0 or a.grantee = any (v_api)
+    union all
+    select 'table ' || c.oid::regclass::text || ' without row level security'
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p') and not c.relrowsecurity
+    union all
+    select 'relation ' || c.oid::regclass::text || ' owned by ' || c.relowner::regrole::text
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S') and c.relowner <> 'postgres'::regrole
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' owned by ' || p.proowner::regrole::text
+    from pg_catalog.pg_proc p
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and p.proowner <> 'postgres'::regrole
+    union all
+    select 'policy ' || o.polname || ' on ' || o.polrelid::regclass::text || ' for a role other than authenticated'
+    from pg_catalog.pg_policy o
+    join pg_catalog.pg_class c on c.oid = o.polrelid
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and o.polroles is distinct from array[v_authenticated]::oid[]
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' without search_path pg_catalog, pg_temp'
+    from pg_catalog.pg_proc p
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and p.proconfig is distinct from array['search_path=pg_catalog, pg_temp']::text[]
+    union all
+    select 'view ' || c.oid::regclass::text
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('v', 'm')
+  ) x;
+
+  if v_leaks is not null then
+    raise exception 'hardening check failed, nothing is applied: %', v_leaks;
+  end if;
+end
+$$;

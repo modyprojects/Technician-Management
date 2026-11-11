@@ -1,0 +1,58 @@
+// The fail-closed hardening check of Migration 2 (section 11; owner, 2026-11-11).
+// tests/db/140_hardening_assertion.test.sql runs a copy of the section 11 DO body against injected
+// leaks; this test keeps that copy byte-identical, shows that section 11 keeps the PR 1.3
+// section 15 privilege checks unchanged (it only adds checks), and that the check is the last
+// statement of the migration (it runs after every write it checks).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const read = (path) => readFileSync(join(root, path), "utf8");
+
+function doBody(text, header, file) {
+  const at = text.indexOf(header);
+  assert.notEqual(at, -1, `${file}: missing "${header}"`);
+  const open = "\ndo $$\n";
+  const start = text.indexOf(open, at);
+  assert.notEqual(start, -1, `${file}: no DO block after "${header}"`);
+  const stop = text.indexOf("\n$$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${file}: unterminated DO block`);
+  return { body: text.slice(start + open.length, stop), end: stop + "\n$$;\n".length };
+}
+
+const m1File = "supabase/migrations/20261104120000_access_and_permissions.sql";
+const m2File = "supabase/migrations/20261105120000_reference_customers_products.sql";
+const testFile = "tests/db/140_hardening_assertion.test.sql";
+const m1 = read(m1File);
+const m2 = read(m2File);
+
+test("tests/db/140 runs a byte-identical copy of the Migration 2 section 11 check", () => {
+  const { body } = doBody(m2, "-- 11. Fail closed", m2File);
+  const text = read(testFile);
+  const open = "language plpgsql as $assert$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${testFile}: missing the copy`);
+  const stop = text.indexOf("\n$assert$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${testFile}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("section 11 keeps the PR 1.3 section 15 privilege checks unchanged and only adds checks", () => {
+  const { body: m1Body } = doBody(m1, "-- 15. Fail closed", m1File);
+  const { body: m2Body } = doBody(m2, "-- 11. Fail closed", m2File);
+  const split = "\n  ) x;\n";
+  const [m1Head, m1Tail, ...m1Rest] = m1Body.split(split);
+  const [m2Head, m2Tail, ...m2Rest] = m2Body.split(split);
+  assert.deepEqual([m1Rest.length, m2Rest.length], [0, 0]);
+  assert.ok(m2Head.startsWith(m1Head), "the section 15 union is a prefix of the section 11 union");
+  assert.ok(m2Head.slice(m1Head.length).startsWith("\n    union all\n"), "section 11 adds branches with UNION ALL only");
+  assert.equal(m2Tail, m1Tail, "the raise is unchanged");
+});
+
+test("the section 11 check is the last statement of Migration 2", () => {
+  const { end } = doBody(m2, "-- 11. Fail closed", m2File);
+  assert.equal(m2.slice(end), "");
+});
