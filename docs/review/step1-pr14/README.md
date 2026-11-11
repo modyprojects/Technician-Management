@@ -1,14 +1,14 @@
 # Step 1 / PR 1.4 — Migration 2: reference data, customers and products (test report)
 
-**Status (2026-11-05): prepared and tested locally only. Not applied to any Supabase project.** Nothing contacted the remote project (no MCP Supabase tool, no `link`, no `--linked`/`--project-ref`); every database run used an isolated local copy with its own project id and ports; `supabase/config.toml` is unchanged. Branch `claude/step1-pr14-reference-data`, stacked on PR 1.3 (draft PR #12, base `9229949`, itself not applied; its final-review fix round was independently checked: VERIFIED). Pushed as draft PR #14 (base: the PR 1.3 branch).
+**Status (2026-11-11): ready for the owner's apply approval; not applied.** Migration 1 (PR 1.3, PR #12) is applied to the remote project (owner-approved, recorded version `20261111125920`) and merged into `main` (`fe370df`); this PR is based on `main`. On 2026-11-11 the owner asked for steps 1-3 before the apply: a fail-closed hardening check (migration section 11), one independent review (D58) and the read-only preflight on the remote project. All three are done (section 15). The apply, the merge of this PR and every remote write need the owner's separate approval (D52 rule 4, D59). History (2026-11-05): prepared and tested on isolated local copies only; stacked on PR 1.3 at the time.
 
-- **Independent review (D53): round 1 done and fixed** (plan T16; section 12: security and conformance lenses, 2 findings and 9 nits, each fixed or recorded). PR 1.4 adds authorization code (8 SECURITY DEFINER bodies, 10 policies, grants) and changes the migration guard; the fix round changes CHECKs, tests and the down script, so an independent check of the fix round on the exact merge candidate is still required before merge (D53). The integration pass (section 12) is not that review.
+- **Independent review (D53): round 1 done and fixed** (plan T16; section 12: security and conformance lenses, 2 findings and 9 nits, each fixed or recorded). **Pre-apply independent review (D58, 2026-11-11, section 15): APPROVE WITH FIXES** on `77fb618`: every round-1 fix holds, no security defect in the SQL, one documentation fix (F-1, done), no migration change.
 - **Owner acceptance of the three new `ALLOWED_WRITERS` entries (section 8): approved by the owner on 2026-11-05 (C1; recorded as D55 (1)); A3 (PR 1.3 Q1) approved in principle.** The merge of this PR still needs the owner's separate approval (D55 (10)).
 - **Apply prerequisites (plan §1.3):** PR 1.3 applied and merged first; then the owner's separate approval of this exact file (D52 rule 4, D53), applied separately from PR 1.3, never as a batch (owner, 2026-11-05: C2, D55 (5)); the approved checks before and after it (sections 9 and 10; approval item 3): read-only checks, plus the post-apply `010` run, which is a write operation (section 10).
 
 | File | sha256 (pinned; any byte change needs renewed approval, D52 rule 4) |
 |---|---|
-| `supabase/migrations/20261105120000_reference_customers_products.sql` | `d07cfd34dde40041b9f3bc0f1dd99618d6303b4429e56a98a416ff174e52672a` |
+| `supabase/migrations/20261105120000_reference_customers_products.sql` | `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363` (1220 lines, since `77fb618`: section 11; `d07cfd34…` superseded) |
 | `supabase/rollback/20261105120000_reference_customers_products.down.sql` | `cefde1d3f81f4c4179908586135ef8db005ee29f91411473905d0dd2edadcc3a` |
 
 ## 1. Files
@@ -27,6 +27,8 @@
 | `tests/db/110_reference_markers.test.sql` | New (34): markers, generated `is_test` (V1 control), fail-closed sources, pre-go-live CHECKs, one-way rule, `UNIQUE (id, is_test)`, census |
 | `tests/db/120_settings_rpcs.test.sql` | New (87): the eight Settings RPCs per caller, versions, validation and masked errors, last active reason, conditional deletes, 100-row cap, advisory locks, the caller recorded in `updated_by` (review TEST-1), audit rows |
 | `tests/db/130_reference_rls.test.sql` | New (53): RLS, policies, grants, reads per role and matrix key, no direct writes, structural D19 checks with positive and negative controls (review SEC-4) |
+| `tests/db/140_hardening_assertion.test.sql` | New (27, 2026-11-11): a byte-identical copy of migration section 11 run against 25 injected leaks (each named in the error), plus two clean runs |
+| `tests/ci/hardening-assertion.test.mjs` | New (3, 2026-11-11): the `140` copy equals section 11; section 11 keeps PR 1.3 section 15's checks unchanged and only adds `UNION ALL` branches; section 11 is the last statement |
 | `tests/db/990_rollback.test.sql` | 15 → 41: the PR 1.4 down script (four refusals at top level, eight single-condition refusals through a sixth copy inside a test function (review TEST-2), and the empty run) before the PR 1.3 down script |
 | `docs/review/step1-pr14/README.md` | This report |
 | `docs/WORKLOG.md`, `docs/PROJECT-MAP.md`, `docs/ROADMAP.md`, `docs/testing.md`, `docs/deployment.md` | Entry, map, PR 1.4 status line, testing note, go-live checklist item |
@@ -34,6 +36,8 @@
 Not edited: `docs/database-schema.md` and `docs/decisions.md` (deviations stay here until the owner answers, as in PR 1.3), `docs/security.md`, `CLAUDE.md`, `.github/workflows/**` (`db.yml` already runs on `supabase/**`, `tests/db/**` and the guard). No UI change, so no Hebrew guide and no screenshots.
 
 ## 2. Objects the migration creates (for the apply approval)
+
+**Section 11 (2026-11-11)** creates nothing: a read-only DO block, last in the file, that raises and so rolls the whole migration back when a hardening leftover remains (section 15).
 
 **Tables (7), RLS enabled, no FORCE, owner `postgres`:** `brands`, `suppliers`, `products`, `customers`, `call_types`, `followup_reasons`, `collection_locations`.
 
@@ -289,6 +293,8 @@ Commands, on an isolated copy (integration pass: project `tmpr14int`; review fix
 | `990_rollback` | 41 | The PR 1.4 down script: refused with PR 1.4 data, with a changed D48 row, with a later migration and without a history row; refused for each data condition alone through a sixth copy inside a test function (a customer, a product, a supplier, a pickup place, a missing D48 call type, a missing D48 reason, a changed D48 reason, PR 1.4 audit rows only; TEST-2); the empty run before the PR 1.3 down script, then `md5(prosrc)`, `pg_get_functiondef`, the anchor fingerprint and the audit CHECKs equal PR 1.3's; then the PR 1.3 checks |
 | **Total** | **838/838** | 17 files (821 before the review fix round) |
 
+**Since 2026-11-11 (section 11):** `140_hardening_assertion` 27, so `supabase test db tests/db` **865/865** (18 files) and `npm run test:ci` **153/153** (section 15). The totals below are those of 2026-11-05.
+
 **Node tests (`npm run test:ci`): 105/105:** guard 66 (the pin of nine writers; the three entries accept only their exact signature and table; without them the PR 1.4 file fails exactly at its three writers; a migration that calls a Settings RPC fails; a D48 INSERT with a marker column or a non-constant value fails), rollback 7, anchor files 10, source text 22 (a positive control and one test per SQL file). `npm run lint` and `npm run typecheck` pass. The guard passes.
 
 **Negative controls (mutants).** 35 mutants, each injected after `select plan(N);` into every `tests/db` file (inside each file's rolled-back transaction) on the isolated stack; every one makes at least one test fail. No survivor.
@@ -516,7 +522,103 @@ Each question is asked in Hebrew in the owner message (plan T17). Until it is an
 **Hand-offs:**
 - **Commit (review OPS-1):** stage explicit paths. The worktree's `node_modules` is an untracked symlink, and `.gitignore`'s `node_modules/` matches directories only, so `git add -A` would stage it. `.gitignore` is not changed in this PR.
 - **PR 1.5:** FKs and static one-way triggers from `service_calls`/`visits` to `call_types`, `collection_locations` and `followup_reasons`; `is_test` NOT NULL on every child (G-3); Technician reads of his calls' customer and product through a column-limited function (D46: a policy on `customers` would expose `source_ref`, `data_source`, `created_by`, `phone_alt`); `update_product` if the owner chooses OQ-1 (c) with `entity_changes`; the "in use" checks of the delete RPCs; labels and addresses of deactivated values on visits through `can_read_visit`-limited functions.
+- **Step 6 and PR 1.5 (pre-apply review F-7, 2026-11-11):** every writer of products, brands, customers or people is a SECURITY DEFINER body owned by `postgres`. `tg_one_way_product_refs` and `tg_one_way_people` are SECURITY INVOKER, so under a caller's RLS a hidden referenced row would let the D47 one-way check pass when it should fail.
 - **PR 1.6:** stored rejected submissions (D44), `sku_change`/`customer_change` review items, JSON references in the delete RPCs.
 - **Step 6:** the ingestion writer (`INSERT … ON CONFLICT (sku_normalized) DO NOTHING`, never updates `name`, `data_source` passed in, `source_ref` per its pattern), D39 phone updates, intake matching (OQ-7), invalid values listed as not ingested (OQ-8).
 - **Step 8:** neutralise values that start with `+` or `-` (customer phones) in exports against formula injection.
 - **UI data layer (later steps):** `version` on the Settings types; `place_type` labels; SKU normalisation aligned with ASCII-ID; Zod mirrors of TEXT-SAFE, KEY-SAFE (INT-1 to INT-3, REV-1 NFKC and REV-2 included) and the phone pattern; "at least one active reason" and the 100-row cap in the simulated commands; URL-encoded Waze addresses; the reason resolved to an active id by the server adapter.
+
+## 15. Pre-apply round (owner, 2026-11-11): section 11, independent review (D58), read-only preflight
+
+The owner approved steps 1-3 before the apply: add a fail-closed privilege-hardening check consistent with Migration 1; run the tests and one independent review (D58); run the read-only preflight on the remote project. Not applied; PR #14 not merged; no remote write.
+
+### 15.1 Section 11 (commit `77fb618`)
+
+Section 11 is the last statement of the file. It is a read-only DO block: it reads the catalog, and any leftover raises `hardening check failed, nothing is applied: <list>`, which rolls the whole migration back. It checks everything in `public` and `private` after the migration:
+
+| Check | Source |
+|---|---|
+| CREATE on `public`/`private` for PUBLIC or an API role; any table, view, sequence or column privilege for PUBLIC, `anon` or `service_role`; anything but SELECT on tables for `authenticated`; EXECUTE for PUBLIC, `anon` or `service_role`; `postgres`'s default privileges in `public` and its global function defaults (a missing global row is the built-in EXECUTE for PUBLIC) | PR 1.3 section 15, unchanged (enforced by `tests/ci/hardening-assertion.test.mjs`) |
+| A table without row level security (partitions included) | new |
+| A table, view, sequence or function not owned by `postgres` | new |
+| A policy for any role but exactly `authenticated` | new |
+| A function whose `proconfig` is not exactly `search_path=pg_catalog, pg_temp` (PR 1.3 SEC-1) | new |
+| Any view or materialized view (none is designed; one could read the tables without RLS) | new |
+
+Tests: `tests/db/140_hardening_assertion.test.sql` (27) runs a byte-identical copy against 25 injected leaks, one per case, each named in the error: table, column and sequence privileges, schema CREATE, function EXECUTE for `anon` and PUBLIC, default and global defaults, RLS off, a new table, owners, policies for `anon`, PUBLIC and `authenticated, anon`, `search_path` reset or changed, a new function, a view and a materialized view. It also does a clean run before and after. `tests/ci/hardening-assertion.test.mjs` (3) keeps the copy identical, shows the PR 1.3 checks are kept as a prefix, and shows the block is last.
+
+Local results (`77fb618`, PostgreSQL 17.11): `supabase db reset --local --no-seed` applies both migrations, so section 11 passes on the clean build. `supabase test db tests/db` passed **865/865** (18 files). `npm run test:ci` passed **153/153**. The migration guard passed; canary-rows check **PASS** (2 migrations); `npm run lint` and `npm run typecheck` are clean.
+
+**Migration sha256 `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363`** (1220 lines). The down script is unchanged (`cefde1d3…cc3a`): section 11 creates nothing. The function fingerprints in section 9 are unchanged for the same reason.
+
+### 15.2 Independent pre-apply review (D58, 2026-11-11)
+
+One reviewer who did not write the code, on an isolated worktree at `77fb618`, local database only (no remote contact). **Verdict: APPROVE WITH FIXES.** No security defect in the SQL; the file goes to the owner with no byte change.
+
+**Round-1 fixes (section 12), each re-verified independently. All hold:**
+- **SEC-1:** NFKC is on the five keys. Wide Hebrew, fullwidth, mathematical and ligature twins give 22023. Removing NFKC fails `100` and `120`.
+- **SEC-2:** the class is identical on all 10 columns. 4,317 forbidden code points are rejected; normal Hebrew is accepted.
+- **SEC-4:** the 13 controls pass. Quoted or commented injected writes fail `130`.
+- **TEST-1, TEST-2, TEST-3:** each mutant fails its test. The 6 copies of the down script are byte-identical.
+- **DOC-2:** the header and the pinned sha `cefde1d3…` match.
+
+**Authorization probes** (local, rolled back):
+- `anon` and `service_role` are refused everywhere.
+- These callers get the generic 42501 on all 8 RPCs: no profile, a Technician, and a Manager or Customer Service user without `settings`. Calling a private body directly also gives 42501.
+- A test Manager with `settings` can add values, but every real D48 target gives 42501.
+- No direct table writes for any role.
+- Errors are masked (22023 and 23505 with no detail; 42501 for unknown or foreign ids; PT409 for a stale version).
+- No dynamic SQL.
+- A two-session race on the last two active reasons is serialized by the advisory lock: the second session gets 55000. It was not run before.
+
+| Id | Severity | Finding | Disposition |
+|---|---|---|---|
+| F-1 | must (approval record) | The README pinned `d07cfd34…` (before section 11); section 11 and its tests were not documented | **Fixed** (this commit). This README: the status, the pin `874742…`, sections 1, 2, 7, 14 and 15. Also `docs/WORKLOG.md`, `docs/testing.md` and `docs/PROJECT-MAP.md`. The approval request quotes `874742…`. |
+| F-2 | should (pre-apply step) | Section 11 adds checks never run on the remote; a false positive would fail the apply | **Done** (15.3): the section 11 checks run read-only on the remote find **0** leftovers |
+| F-3 | nit (residual, INFERRED) | Failing closed depends on the apply being one transaction | Recorded in the approval details, as for Migration 1. If the apply returns an error, check read-only first whether `public.products` exists. |
+| F-4 | nit | Section 11 does not catch these leaks (gaps shared with PR 1.3 section 15):<br>- a grant with GRANT OPTION;<br>- API role membership;<br>- `postgres` defaults in `private` or globally for tables;<br>- a disabled trigger;<br>- USAGE on `private` for `anon`;<br>- an extra EXECUTE for `authenticated`. | **No migration change** (it would need a new hash and another review). The migration creates none of these. The exact grant lists are pinned by `010` and `130`, and 15.3 shows the remote has none of them. |
+| F-5 | nit (TEMPORARY) | "At least one active reason" counts test rows: after the go-live test cleanup, no active reason could remain | Go-live item added to `docs/deployment.md` (item 10). Changing the rule is an owner choice (OQ-4, OQ-13). |
+| F-6 | nit (OQ-8) | A label of only a combining mark, and unassigned code points, are accepted | Already recorded under OQ-8; never described as blocked |
+| F-7 | nit (INFERRED, hand-off) | The one-way triggers are SECURITY INVOKER; a future writer running as `authenticated` could defeat the D47 check under RLS | Hand-off in section 14 (Step 6 and PR 1.5 writers are SECURITY DEFINER bodies owned by `postgres`) |
+
+Reviewer commands: `supabase test db tests/db` 865/865, `node --test tests/ci/*.test.mjs` 153/153, guard passed, canary PASS, 10 extra mutants all killed, final local reset.
+
+### 15.3 Read-only preflight on the remote project (D59, 2026-11-11)
+
+Project `ooxozvvrljjkyfduuiks` only. Every `execute_sql` started with `set transaction read only;` and returned `transaction_read_only = on`. No row content was read; only counts.
+
+| Check | Result |
+|---|---|
+| `get_project` | ACTIVE_HEALTHY, PostgreSQL 17.11.0.003, eu-central-1 |
+| `list_migrations` | One row, `20261111125920 access_and_permissions` |
+| Catalog fingerprint (12 values: functions, policies, columns, constraints, indexes, triggers, relations, schemas, both permission tables) | Equal to the local build of Migration 1 alone on all 12; no drift since the apply |
+| Section 11's checks as a SELECT on the current remote (review F-2) | **0** leftovers |
+| F-4 gaps on the remote | No grantable grants to an API role. No API role membership. No `postgres` default privileges for an API role in `private` or globally. No disabled trigger. On `private`, only `authenticated` has USAGE (by design). `service_role` has BYPASSRLS (Supabase default) and no grant in `public` or `private`. |
+| Name collisions with Migration 2's 7 tables and 11 function names | None |
+| Rows (counts only) | `profiles`, `technicians`, `account_requests`, `audit_logs`: 0. `permissions` 13, `role_permissions` 26. `auth.users` 1 (not read; no profile) |
+| Audit anchor (section 9, step 1) | No audit rows. The anchor `functions_md5` equals the PR 1.3-only value `b3b1ee52…5effb820`. `md5(prosrc)` of `tg_audit_target` (`e40c9e2a…`) and `test_data_census` (`3211abf9…`) equal the PR 1.3 values. |
+| Event triggers | The 6 standard Supabase ones (owner `supabase_admin`), the same as local |
+| Extensions | `pg_stat_statements`, `pgcrypto`, `uuid-ossp` (in `extensions`), `plpgsql`, `supabase_vault`. Migration 2 needs none (`gen_random_uuid` is core). |
+| History table | Owner `postgres`; `postgres` has DELETE (the down script can remove its row) |
+| Security advisors | One WARN, `auth_leaked_password_protection` (an Auth setting; unchanged) |
+
+### 15.4 What the apply approval covers (for the owner)
+
+- **The operation:** one MCP `apply_migration` on `ooxozvvrljjkyfduuiks`, name `reference_customers_products`, as `postgres`.
+  - The query is the exact bytes of `supabase/migrations/20261105120000_reference_customers_products.sql`, sha256 `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363`, at commit `77fb618` or a later commit of this PR whose file hash is unchanged.
+  - The hash is checked again right before the call; any difference stops the apply.
+- **Expected history row:** a server-assigned version, not `20261105120000` (as with Migration 1). It is documented and not repaired. The down script finds the row by name too.
+- **After the apply, read-only only:**
+  - the stored statement's sha256 equals the approved hash;
+  - the catalog fingerprint equals the local build of both migrations;
+  - section 9 step 2 (function hashes and the anchor `functions_md5` `d30c54fb…`);
+  - the 7 tables, 10 policies and grants;
+  - D48 rows (2 call types, 5 reasons);
+  - the advisors;
+  - the history.
+- **Not covered:**
+  - the `010` run against the remote (a write; it needs its own approval, section 10);
+  - a history repair;
+  - a rollback;
+  - the merge of PR #14 (it needs its own approval and the D31 checks).
+- **Failure handling, as for Migration 1:** stop and do not retry. Check read-only what exists, including whether `public.products` exists (F-3), and report.

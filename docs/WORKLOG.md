@@ -1,5 +1,39 @@
 # Work Log (English only)
 
+## 2026-11-11 — Step 1 / PR 1.4: Migration 2 pre-apply round (section 11, D58 review, read-only preflight; not applied)
+- **Owner approval (2026-11-11):** steps 1-3 for Migration 2. Not approved: the apply, the merge of PR #14 and any remote write. PR #26 stays a draft.
+- **Section 11** (`77fb618`): a read-only, fail-closed hardening check, last in the file. It keeps PR 1.3 section 15's privilege checks unchanged and adds checks for:
+  - a table without RLS;
+  - a table, sequence or function not owned by `postgres`;
+  - a policy for any role but `authenticated`;
+  - a function without the exact pinned `search_path`;
+  - any view or materialized view.
+- **Tests for section 11:**
+  - `tests/db/140` (27) runs a byte-identical copy against 25 injected leaks.
+  - `tests/ci/hardening-assertion.test.mjs` (3) keeps the copy identical, the section 15 checks unchanged and the block last.
+- **Local results:** pgTAP 865/865 (18 files), node 153/153, migration guard passed, canary PASS, lint and typecheck clean.
+- **Migration sha256** `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363` (1220 lines; it was `d07cfd34…`). The down script is unchanged (`cefde1d3…`).
+- **Independent review (D58, one reviewer, local only): APPROVE WITH FIXES.**
+  - Every round-1 fix holds; there is no security defect in the SQL.
+  - F-1, the stale pin in the README: fixed in the docs.
+  - F-2, run section 11 read-only on the remote: done, 0 leftovers.
+  - F-3 to F-7: recorded in `docs/review/step1-pr14/README.md` section 15.2. F-5 became a go-live item in `docs/deployment.md`; F-7 became a hand-off.
+  - The migration is unchanged, so no further review round is needed.
+- **Read-only preflight** (`ooxozvvrljjkyfduuiks` only; every SQL `set transaction read only;`, verified on):
+  - History holds `20261111125920 access_and_permissions` only.
+  - The catalog fingerprint equals the local build of Migration 1 on all 12 values.
+  - Section 11's checks find 0 leftovers, and none of review F-4's gaps are present.
+  - No name collisions.
+  - Row counts: `profiles` and `audit_logs` 0; `auth.users` 1 (not read).
+  - The audit anchor equals the PR 1.3-only value.
+  - Advisors: one WARN (`auth_leaked_password_protection`).
+  - Details: README section 15.3.
+- **CI on `77fb618`:**
+  - `pgtap` passed (pgTAP, canary-rows check).
+  - `checks` failed twice in `Install Chromium for Playwright`: the runner's Ubuntu apt mirror timed out. PR #26 failed the same way. Every code step before it passed.
+  - A fix would touch the protected `ci.yml`, so none was made. A comment is on PR #14 and PR #26.
+- **Not done:** apply, `010` remote run, history repair, rollback, merge of PR #14.
+
 ## 2026-11-11 — Step 1 / PR 1.3: Migration 1 applied to the remote project (owner-approved)
 - **Apply:** with the owner's explicit approval (Migration 1 only; MCP `apply_migration`; residual atomicity risk accepted on an empty database), Migration 1 (`3139628`, sha256 `30e0c8b0…89f7`) was applied once to `ooxozvvrljjkyfduuiks` under the name `access_and_permissions`: `{"success":true}`. The query string was compared byte for byte with the approved file before the call.
 - **Verification (read-only):** the stored statement's sha256 equals the approved hash; six tables with RLS; 13 permission keys and 26 TEMPORARY values; 54 functions, all owned by `postgres` with the pinned `search_path`, EXECUTE for `authenticated` on 36 and for `anon`/`service_role` on none; tables grant `authenticated` SELECT only; the section 15 assertion finds no leftover privilege; the catalog fingerprint equals the local database built from the same file. Security advisors: one WARN (`auth_leaked_password_protection`, an Auth setting). History table owned by `postgres` with DELETE (B2 check 4 closed). Details: `docs/review/step1-pr13/README.md` section 17.
