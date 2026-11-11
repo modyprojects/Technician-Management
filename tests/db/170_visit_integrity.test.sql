@@ -30,7 +30,7 @@
 -- subtransaction (V22). Every scenario runs through pg_temp.tm_run, which undoes it.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(84);
+select plan(88);
 
 -- ---------------------------------------------------------------------------------------------
 -- Test-only helpers (pg_temp, rolled back)

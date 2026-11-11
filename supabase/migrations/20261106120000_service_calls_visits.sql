@@ -132,7 +132,8 @@ create table public.service_calls (
     constraint service_calls_warranty_status_check check (warranty_status in ('yes', 'no')),
   warranty_until date
     constraint service_calls_warranty_until_check check (
-      warranty_until is null or (warranty_status = 'yes' and extract(day from warranty_until) = 1)),
+      warranty_until is null
+      or (warranty_status is not null and warranty_status = 'yes' and extract(day from warranty_until) = 1)),
   warranty_raw text
     constraint service_calls_warranty_raw_check check (
       warranty_raw = btrim(warranty_raw) and char_length(warranty_raw) between 1 and 60 and warranty_raw is nfc normalized

@@ -451,7 +451,7 @@ select results_eq(
      ('service_calls_status_check', 'CHECK ((status = ANY (ARRAY[''open''::text, ''resolved''::text, ''awaiting_followup''::text, ''awaiting_scheduling''::text])))'),
      ('service_calls_warranty_raw_status_check', 'CHECK (((warranty_status IS NULL) = (warranty_raw IS NULL)))'),
      ('service_calls_warranty_status_check', 'CHECK ((warranty_status = ANY (ARRAY[''yes''::text, ''no''::text])))'),
-     ('service_calls_warranty_until_check', 'CHECK (((warranty_until IS NULL) OR ((warranty_status = ''yes''::text) AND (EXTRACT(day FROM warranty_until) = (1)::numeric))))'),
+     ('service_calls_warranty_until_check', 'CHECK (((warranty_until IS NULL) OR ((warranty_status IS NOT NULL) AND (warranty_status = ''yes''::text) AND (EXTRACT(day FROM warranty_until) = (1)::numeric))))'),
      ('visit_events_event_type_check', 'CHECK ((event_type = ANY (ARRAY[''created''::text, ''status_changed''::text])))'),
      ('visit_events_event_type_from_status_check', 'CHECK (((event_type = ''created''::text) = (from_status IS NULL)))'),
      ('visit_events_from_status_check', 'CHECK ((from_status = ANY (ARRAY[''scheduled''::text, ''en_route''::text, ''in_progress''::text, ''done''::text, ''followup''::text, ''cancelled''::text])))'),
