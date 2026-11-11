@@ -84,7 +84,7 @@ Step 1 runs as separate PRs. Since D53 (2026-11-03) a PR starts and is squash-me
   - Negative tests for tables, sequences and functions.
   - Preserve the permissions that Supabase-managed components need.
   - No apply without the owner's approval (D52 rule 4, D53).
-  - Known finding: Supabase's default privileges grant `anon` SELECT, UPDATE and USAGE on new sequences (observed locally in PR 1.2 with a probe sequence in `public`). Smoke test 7 (`tests/db/000_smoke.test.sql`) guards it; Migration 1 must revoke these default privileges.
+  - Known finding: Supabase's default privileges grant `anon` SELECT, UPDATE and USAGE on new sequences (observed locally in PR 1.2 with a probe sequence in `public`). Smoke test 3 (`tests/db/000_smoke.test.sql`) guards it; Migration 1 must revoke these default privileges.
 - Deployment protection: Claude Code verifies it (read-only) before each merge and after each Production deployment; a failed or inconclusive check stops further merges until the owner confirms (D31, D53).
 
 ## Stop immediately if
