@@ -1,9 +1,10 @@
 // FICTITIOUS DATA ONLY: the demo's product catalogue as the "מוצרים" screen sees it (PR-01 to
 // PR-07, D19). Allowed only under app/dev (G-05). Server-side, for the fixture adapter only.
-// Each product's first-seen invitation is its earliest call's first visit; brand and supplier ids
-// come from the BRANDS and SUPPLIERS names ("" = not entered, PR-04).
+// Each product's first-seen invitation is its earliest opened call (opened_at, D57 (9)) and that
+// call's first visit; brand and supplier ids come from the BRANDS and SUPPLIERS names ("" = not
+// entered, PR-04).
 import "server-only";
-import { openedOn } from "./customers";
+import { byOpening } from "./customers";
 import { CALLS } from "./queries";
 import { BRANDS, CATALOGUE, SUPPLIERS } from "./reference";
 import type { Call, Product } from "./types";
@@ -12,7 +13,7 @@ export type DemoCatalogueProduct = {
   product: Product;
   brandId: string | null;
   supplierId: string | null;
-  /** The product's calls, oldest first (by opening date). */
+  /** The product's calls, oldest opened first (opened_at, D57 (9)). */
   calls: readonly Call[];
   customerCount: number;
   /** Row version (D44): 1 at creation; TB-75 had its brand added once (PR-06). */
@@ -29,7 +30,7 @@ const EDITED: Readonly<Record<string, number>> = { "TB-75": 2 };
 export const CATALOGUE_BY_SKU: readonly DemoCatalogueProduct[] = [...CATALOGUE]
   .sort((a, b) => a.sku.localeCompare(b.sku))
   .map((p) => {
-    const calls = CALLS.filter((c) => c.sku === p.sku).sort((a, b) => openedOn(a).localeCompare(openedOn(b)) || a.req.localeCompare(b.req));
+    const calls = CALLS.filter((c) => c.sku === p.sku).sort(byOpening);
     return {
       product: p,
       brandId: idOf(BRANDS, p.brand),

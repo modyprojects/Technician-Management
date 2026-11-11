@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { DashboardRow } from "@/components/office/DashboardRow";
-import { KpiGrid, type KpiTile } from "@/components/office/KpiGrid";
 import { Pager } from "@/components/ui/Pager";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge } from "@/components/ui/TestBadge";
 import type { IsoDate } from "@/features/data-access/common";
 import type { TechnicianDetail, TechnicianVisitFilter } from "@/features/dashboards/data/types";
-import type { TechnicianId, TechnicianRef } from "@/features/reference/data/types";
 import { ddmm, minutesLabel, SHORT_COL } from "./AnalyticsParts";
 
-// Technician drill-down (docs/demo.html dashTechDetail(), L904-925): the technician's figures for
-// the period, chips to switch technician and filter the visits, and the visits table (a row opens
-// the call card). Here the technician, the filter and the page are in the URL and every chip is a
-// real link (UI demo, D53); the rows are one server page (TechnicianDetail.visits, at most 100).
+// "דוחות הביקורים" of one technician (D57 (3); spec-final §6.6; was docs/demo.html dashTechDetail(),
+// L904-925): the technician's visits in the selected period, filtered by chips, one server page,
+// each row opening the call card (visit details, summaries, photos and results; spec §7.5). The
+// toolbar above it selects the technician and the period. No KPI tiles, no technician chips and no
+// counts on the filter chips (D57 (2)-(3)).
+// Data keys (display only, G-04; no matrix value changes): the rows are visit records, so they need
+// `calls` (without it the page shows only a sentence and reads no rows); "תיעוד" and "חתימה" describe
+// report content and need `card`; the 🎙 marker additionally needs `recordings` (as the call card).
 
 const FILTERS: readonly (readonly [TechnicianVisitFilter, string])[] = [
   ["all", "הכל"],
@@ -22,98 +24,64 @@ const FILTERS: readonly (readonly [TechnicianVisitFilter, string])[] = [
   ["cancel", "בוטלה"],
 ];
 
-const count = (value: number) => ({ value, unit: "count" as const });
-
-export function AnalyticsTechDetail({
-  detail,
-  technicians,
-  today,
-  periodName,
-  backHref,
-  techHref,
-  filterHref,
-  pageHref,
-  callHref,
-  describedBy,
-}: {
+export type TechReportsRows = {
   detail: TechnicianDetail;
-  /** The technicians offered as chips (switching keeps the filter). */
-  technicians: readonly Pick<TechnicianRef, "id" | "name">[];
-  /** Rows on this date show "היום". */
-  today: IsoDate;
-  /** Period name for the visits tile ("אוקטובר"). */
-  periodName: string;
-  /** Back to the dashboard tab. */
-  backHref: string;
-  techHref: (id: TechnicianId, filter: TechnicianVisitFilter) => string;
   filterHref: (filter: TechnicianVisitFilter) => string;
   pageHref: (page: number) => string;
   callHref: (req: string) => string;
+  columns: { documentation: boolean; signature: boolean; recording: boolean };
+};
+
+export function AnalyticsTechDetail({
+  name,
+  periodLabel,
+  today,
+  backHref,
+  rows,
+  describedBy,
+}: {
+  name: string;
+  /** "אוקטובר 2026", "18.10–24.10.2026", … */
+  periodLabel: string;
+  /** Rows on this date show "היום". */
+  today: IsoDate;
+  /** Back to the technician's metrics (same technician and period). */
+  backHref: string;
+  /** The visit rows; null when the role is not offered `calls` (no rows are read). */
+  rows: TechReportsRows | null;
   /** Id of the "נתוני בדיקה" note (SIM-13). */
   describedBy?: string;
 }) {
-  const { stats, visitCounts: counts, visits } = detail;
-  const t = stats.technician;
-  const closedRate = stats.closed ? Math.round((stats.done / stats.closed) * 100) : null;
-  const tiles: KpiTile[] = [
-    { key: "all", label: "ביקורים", metric: count(counts.all), detail: `${periodName}, כולל מתוכננים` },
-    {
-      key: "done",
-      label: "טופל",
-      metric: count(counts.done),
-      color: "var(--s-done)",
-      detail: closedRate == null ? "אין עדיין ביקורים שנסגרו" : `${closedRate}% מהביקורים שנסגרו`,
-    },
-    {
-      key: "cont",
-      label: "המשך טיפול",
-      metric: count(counts.cont),
-      color: "var(--s-cont)",
-      detail: `סיבה מובילה: ${detail.topReason ?? "—"}`,
-    },
-    {
-      key: "fix",
-      label: "נסגר בביקור ראשון",
-      metric: stats.firstVisitFixRate,
-      detail: `מתוך ${detail.firstVisitCalls} קריאות`,
-    },
-    { key: "travel", label: "זמן נסיעה ממוצע", metric: stats.avgTravelMinutes },
-    { key: "treat", label: "זמן טיפול ממוצע", metric: stats.avgTreatMinutes },
-  ];
+  return (
+    <section className="ma-section" aria-labelledby="ma-reports-h" aria-describedby={describedBy}>
+      <div className="ma-sec-head">
+        <h2 id="ma-reports-h">
+          דוחות הביקורים של {name} · <span className="num">{periodLabel}</span>
+        </h2>
+        <Link className="ma-link" href={backHref} prefetch={false}>
+          <span aria-hidden="true">›&nbsp;</span>
+          חזרה למדדי הטכנאי
+        </Link>
+      </div>
+      {rows ? <ReportsTable name={name} today={today} {...rows} /> : <div className="ma-card ma-empty">פירוט הרשומות אינו מוצג לתפקיד הזה.</div>}
+    </section>
+  );
+}
+
+function ReportsTable({
+  name,
+  today,
+  detail,
+  filterHref,
+  pageHref,
+  callHref,
+  columns,
+}: TechReportsRows & { name: string; today: IsoDate }) {
+  const { visits } = detail;
   const first = (visits.page - 1) * visits.limit + 1;
   const last = first + visits.items.length - 1;
-
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Link className="btn" href={backHref} prefetch={false}>
-            <span aria-hidden="true">› </span>
-            חזרה לדשבורד
-          </Link>
-          <h2 style={{ fontSize: 22 }}>
-            <span className="dot" aria-hidden="true" style={{ background: t.color, width: 12, height: 12 }} /> {t.name} · כל
-            הביקורים
-          </h2>
-        </div>
-        <nav aria-label="מעבר לטכנאי אחר" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {technicians.map((x) => (
-            <Link
-              key={x.id}
-              href={techHref(x.id, detail.filter)}
-              prefetch={false}
-              scroll={false}
-              className={x.id === t.id ? "chip on" : "chip"}
-              aria-current={x.id === t.id ? "page" : undefined}
-            >
-              {x.name}
-            </Link>
-          ))}
-        </nav>
-      </div>
-
-      <KpiGrid tiles={tiles} label={`מדדי ${t.name}`} describedBy={describedBy} />
-
       <nav aria-label="סינון הביקורים" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {FILTERS.map(([key, label]) => (
           <Link
@@ -124,17 +92,14 @@ export function AnalyticsTechDetail({
             className={detail.filter === key ? "chip on" : "chip"}
             aria-current={detail.filter === key ? "true" : undefined}
           >
-            {label}{" "}
-            <span className="num" style={{ opacity: 0.6 }}>
-              {counts[key]}
-            </span>
+            {label}
           </Link>
         ))}
       </nav>
 
       <section className="card" style={{ overflow: "hidden" }}>
         <div className="scrollx">
-          <table aria-label={`הביקורים של ${t.name}`}>
+          <table aria-label={`הביקורים של ${name}`}>
             <thead>
               <tr>
                 <th scope="col" className={SHORT_COL}>
@@ -166,12 +131,16 @@ export function AnalyticsTechDetail({
                 <th scope="col" className={SHORT_COL}>
                   טיפול
                 </th>
-                <th scope="col" className={SHORT_COL}>
-                  תיעוד
-                </th>
-                <th scope="col" className={SHORT_COL}>
-                  חתימה
-                </th>
+                {columns.documentation && (
+                  <th scope="col" className={SHORT_COL}>
+                    תיעוד
+                  </th>
+                )}
+                {columns.signature && (
+                  <th scope="col" className={SHORT_COL}>
+                    חתימה
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -180,12 +149,7 @@ export function AnalyticsTechDetail({
                   <td className={`${SHORT_COL} num`}>{v.date === today ? "היום" : ddmm(v.date)}</td>
                   <td className={`${SHORT_COL} num`}>{v.start}</td>
                   <td className={SHORT_COL}>
-                    <Link
-                      href={callHref(v.req)}
-                      prefetch={false}
-                      className="lnk num"
-                      aria-label={`פנייה ${v.req} · ${v.customerName}`}
-                    >
+                    <Link href={callHref(v.req)} prefetch={false} className="lnk num" aria-label={`פנייה ${v.req} · ${v.customerName}`}>
                       {v.req}
                     </Link>
                   </td>
@@ -209,32 +173,36 @@ export function AnalyticsTechDetail({
                   </td>
                   <td className={`${SHORT_COL} num`}>{minutesLabel(v.travelMinutes)}</td>
                   <td className={`${SHORT_COL} num`}>{minutesLabel(v.treatMinutes)}</td>
-                  <td className={`${SHORT_COL} sub`}>
-                    {v.mediaCount > 0 && (
-                      <span role="img" aria-label={`${v.mediaCount} תמונות וסרטונים`} title="תמונות וסרטונים">
-                        📷 <span className="num">{v.mediaCount}</span>
-                      </span>
-                    )}
-                    {v.hasRecording && (
-                      <span role="img" aria-label="הקלטה" title="הקלטה">
-                        {" "}
-                        🎙
-                      </span>
-                    )}
-                    {v.hasSummary && (
-                      <span role="img" aria-label="סיכום טיפול" title="סיכום טיפול">
-                        {" "}
-                        ✎
-                      </span>
-                    )}
-                  </td>
-                  <td className={SHORT_COL}>
-                    {v.signed && (
-                      <span role="img" aria-label="נחתם" title="נחתם">
-                        ✓
-                      </span>
-                    )}
-                  </td>
+                  {columns.documentation && (
+                    <td className={`${SHORT_COL} sub`}>
+                      {v.mediaCount > 0 && (
+                        <span role="img" aria-label={`${v.mediaCount} תמונות וסרטונים`} title="תמונות וסרטונים">
+                          📷 <span className="num">{v.mediaCount}</span>
+                        </span>
+                      )}
+                      {columns.recording && v.hasRecording && (
+                        <span role="img" aria-label="הקלטה" title="הקלטה">
+                          {" "}
+                          🎙
+                        </span>
+                      )}
+                      {v.hasSummary && (
+                        <span role="img" aria-label="סיכום טיפול" title="סיכום טיפול">
+                          {" "}
+                          ✎
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {columns.signature && (
+                    <td className={SHORT_COL}>
+                      {v.signed && (
+                        <span role="img" aria-label="נחתם" title="נחתם">
+                          ✓
+                        </span>
+                      )}
+                    </td>
+                  )}
                 </DashboardRow>
               ))}
             </tbody>

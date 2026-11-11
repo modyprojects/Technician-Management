@@ -18,15 +18,21 @@ export function TechBottomNav({
   active,
   hrefs,
   current = true,
+  tabs,
 }: {
   active: TechTab;
   hrefs?: TechNavHrefs;
+  /**
+   * The tabs to show, in the demo's order; default all three. A screen offers only built screens
+   * (Step 2 PR 2.3 start prototype, Q18: "היום" and "פרופיל", no "יומן").
+   */
+  tabs?: readonly TechTab[];
   /** False when the screen belongs to the tab but is not the tab's page (a visit opened from it): the tab looks selected without aria-current. */
   current?: boolean;
 }) {
   return (
     <nav className="ph-nav" aria-label="ניווט ראשי">
-      {TABS.map((tab) => {
+      {TABS.filter((tab) => !tabs || tabs.includes(tab.key)).map((tab) => {
         const on = tab.key === active;
         const ariaCurrent = on && current ? "page" : undefined;
         const href = hrefs?.[tab.key];

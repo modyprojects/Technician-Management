@@ -10,7 +10,7 @@ import type { AccountRole } from "@/features/accounts/data/types";
 import { offers, offersAnyDashboard } from "@/features/reference/data/permissions";
 import { isOfficeRole, OFFICE_ROLE_VALUES, type OfficeRole, type RolePermissions } from "@/features/reference/data/types";
 import { reviewScreenOffered } from "@/features/review/data/permissions";
-import { type OpenDecisionId, SETTINGS_SECTION_VALUES, type SettingsSection } from "@/features/settings/data/types";
+import { CREATOR_SETTINGS_SECTIONS, type OpenDecisionId, type SettingsSection } from "@/features/settings/data/types";
 import type { RoleArea } from "./redirects";
 
 // ---------------------------------------------------------------------------------------------
@@ -119,18 +119,24 @@ export const productsOffered = (permissions: RolePermissions): boolean => offers
 /**
  * The Settings tabs a role's screens offer. Display only (G-04): the server checks the Creator
  * role (matrix, accounts, D33/D34) and `settings` (operational settings, D35) itself.
- * - Creator: every tab (fixed capabilities, D33).
- * - A matrix role whose `settings` value is on: the operational settings of D35 (places, reasons
- *   with the "טופל" text, call types, template labels). "משתמשים והרשאות" stays Creator-only (the
- *   matrix is Creator-only, D33; the Manager's account administration is the "משתמשים" screen).
- *   "טכנאים" and "מיילים והתראות" are not D35 operational settings: deny by default until the
- *   owner says otherwise (the Manager manages technician accounts on "משתמשים", D34).
- * - Otherwise none (the default for Manager and Customer Service: `settings` off, SE-03).
+ * - Creator: the seven Creator tabs (fixed capabilities, D33; CREATOR_SETTINGS_SECTIONS), never
+ *   "accounts" (the Creator administers every account on "משתמשים והרשאות").
+ * - The Manager: "משתמשים" ("accounts"), the account administration of D34 (a fixed capability,
+ *   D57 (1)), whatever the matrix values: it never comes from `settings` (SE-03).
+ * - A matrix role whose `settings` value is on: also the operational settings of D35 (places,
+ *   reasons with the "טופל" text, call types, template labels). "משתמשים והרשאות" stays
+ *   Creator-only (the matrix is Creator-only, D33). "טכנאים" and "מיילים והתראות" are not D35
+ *   operational settings: deny by default until the owner says otherwise (the Manager manages
+ *   technician accounts on "משתמשים", D34).
+ * - Otherwise none (Customer Service by default: `settings` off, SE-03).
  */
 export function settingsTabsOffered(role: OfficeRole, permissions: RolePermissions): readonly SettingsSection[] {
-  if (role === "creator") return SETTINGS_SECTION_VALUES;
-  if (!offers(permissions, "settings")) return [];
-  return ["places", "reasons", "types", "template"];
+  if (role === "creator") return CREATOR_SETTINGS_SECTIONS;
+  const tabs: SettingsSection[] = [];
+  // D34 fixed capability (D57 (1)); never `settings` (SE-03).
+  if (accountAdminScope(role) === "cs-tech") tabs.push("accounts");
+  if (offers(permissions, "settings")) tabs.push("places", "reasons", "types", "template");
+  return tabs;
 }
 
 /**
@@ -147,7 +153,8 @@ export function accountAdminScope(role: OfficeRole): "all" | "cs-tech" | null {
 
 /**
  * The office home's title: the dashboard home ("לוח בקרה") where the role's matrix value offers
- * `dashGen`, otherwise the work queue ("בית"). Display only (G-04).
+ * `dashGen`, otherwise the work queue ("בית"). Display only (G-04). Since D57 the Manager and the
+ * Creator land on "דשבורד" instead (officeLanding); this rule names Customer Service's home.
  */
 export const officeHomeLabel = (permissions: RolePermissions): string => (offers(permissions, "dashGen") ? "לוח בקרה" : "בית");
 
@@ -165,20 +172,44 @@ export type OfficeNavHrefs = Partial<Readonly<Record<Exclude<OfficeNavKey, "sett
 };
 
 /**
- * Office sidebar items, from the role's permission values, in the demo's NAV order (L724-730) with
- * the spec's new screens (OF-02) in the order of the spec's office screens table: "לקוחות", "זימונים
- * שלא נקלטו" and "חזרו מהשטח" after "קריאות", "מוצרים" after "דשבורד". Display only: it hides menu
- * items, it does not protect routes (G-04): each page checks what it offers itself.
- * - "לקוחות": with `calls`. "זימונים שלא נקלטו" and "חזרו מהשטח": every office role, a TEMPORARY
- *   fixed rule (open #15, d23; workQueueScreensOffered). "פריטים לבדיקה" (D39, D44): with
- *   `conflicts`, right after the two work queues (which stay adjacent: they share the #15 rule).
- *   "מוצרים": with `products`.
- * - The mock outbox (X-06) is a /dev developer tool, never a sidebar item.
- * - "משתמשים" (account administration, D34): the Manager only (a fixed capability, SE-03); the
- *   Creator administers accounts on Settings › משתמשים והרשאות.
- * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; a matrix role only
- *   with `settings`), linking to the first offered tab.
- * - "מדדי שימוש" is never in the menu (OF-15 PENDING d13: the usage screen is not built).
+ * D57: office roles whose sidebar and home are unchanged (customers, work queues, review items and
+ * products in the sidebar; home "בית"/"לוח בקרה"). D57 changes the Manager and the Creator only.
+ */
+export const SIDEBAR_WORK_SCREEN_ROLES: readonly OfficeRole[] = ["cs"];
+const keepsWorkScreens = (role: OfficeRole): boolean => SIDEBAR_WORK_SCREEN_ROLES.includes(role);
+
+/**
+ * D57 (1): the role's landing item, from one rule for the sidebar's first item, the office home
+ * route and every "חזרה ל…" link (label and address always agree).
+ * - Manager/Creator: "דשבורד" when any dashboard tab is offered and the caller has its address;
+ *   otherwise "בית" (never "לוח בקרה", D57 (1)).
+ * - Customer Service: today's rule, unchanged ("לוח בקרה" with `dashGen`, else "בית").
+ * Display only (G-04): each page checks what it offers itself.
+ */
+export function officeLanding(role: OfficeRole, permissions: RolePermissions, hrefs: OfficeNavHrefs): OfficeNavLink | null {
+  if (!keepsWorkScreens(role) && offersAnyDashboard(permissions) && hrefs.analytics !== undefined) {
+    return { key: "analytics", label: "דשבורד", href: hrefs.analytics };
+  }
+  if (hrefs.home === undefined) return null;
+  return { key: "home", label: keepsWorkScreens(role) ? officeHomeLabel(permissions) : "בית", href: hrefs.home };
+}
+
+/**
+ * Office sidebar items, from the role's permission values. Display only: it hides menu items, it
+ * does not protect routes (G-04): each page checks what it offers itself.
+ * - Manager and Creator (D57 (1)): exactly "דשבורד" (the landing, officeLanding; "בית" without any
+ *   dashboard tab), "יומן טכנאים" (with `cal`), "קריאות", "זימונים שלא נקלטו" (the TEMPORARY #15
+ *   rule, workQueueScreensOffered) and "הגדרות". "לקוחות", "חזרו מהשטח", "פריטים לבדיקה" and
+ *   "מוצרים" leave the sidebar: their routes stay, reached from the "מסכים נוספים" row on
+ *   "קריאות" (callsAreaLinks). "משתמשים" is the Settings tab "accounts" (D34), not an item.
+ * - Customer Service (SIDEBAR_WORK_SCREEN_ROLES): unchanged by D57: the demo's NAV order (L724-730)
+ *   with the spec's new screens (OF-02): "לקוחות" with `calls`; "זימונים שלא נקלטו" and "חזרו
+ *   מהשטח" (#15); "פריטים לבדיקה" (D39, D44) with `conflicts` and `card`; "דשבורד" with any
+ *   dashboard key; "מוצרים" with `products`.
+ * - "הגדרות": where settingsTabsOffered() offers a tab (the Creator always; the Manager always,
+ *   for "משתמשים", D34; Customer Service only with `settings`), linking to the first offered tab.
+ * - The mock outbox (X-06) is a /dev developer tool, never a sidebar item. "מדדי שימוש" is never in
+ *   the menu (OF-15 PENDING d13: the usage screen is not built). No role has a "משתמשים" item.
  */
 export function officeNav(role: OfficeRole, permissions: RolePermissions, hrefs: OfficeNavHrefs): OfficeNavLink[] {
   const items: OfficeNavLink[] = [];
@@ -186,19 +217,72 @@ export function officeNav(role: OfficeRole, permissions: RolePermissions, hrefs:
     const href = hrefs[key];
     if (href !== undefined) items.push({ key, label, href });
   };
-  add("home", officeHomeLabel(permissions));
-  if (offers(permissions, "cal")) add("cal", "יומן טכנאים");
-  add("calls", "קריאות");
-  if (customersOffered(permissions)) add("customers", "לקוחות");
-  if (workQueueScreensOffered(role)) {
-    add("unparsed", "זימונים שלא נקלטו");
-    add("back", "חזרו מהשטח");
+  if (keepsWorkScreens(role)) {
+    // D57 does not change Customer Service.
+    add("home", officeHomeLabel(permissions));
+    if (offers(permissions, "cal")) add("cal", "יומן טכנאים");
+    add("calls", "קריאות");
+    if (customersOffered(permissions)) add("customers", "לקוחות");
+    if (workQueueScreensOffered(role)) {
+      add("unparsed", "זימונים שלא נקלטו");
+      add("back", "חזרו מהשטח");
+    }
+    if (reviewItemsOffered(permissions)) add("review", "פריטים לבדיקה");
+    if (offersAnyDashboard(permissions)) add("analytics", "דשבורד");
+    if (productsOffered(permissions)) add("products", "מוצרים");
+  } else {
+    const landing = officeLanding(role, permissions, hrefs);
+    if (landing) items.push(landing);
+    if (offers(permissions, "cal")) add("cal", "יומן טכנאים");
+    add("calls", "קריאות");
+    if (workQueueScreensOffered(role)) add("unparsed", "זימונים שלא נקלטו");
   }
-  if (reviewItemsOffered(permissions)) add("review", "פריטים לבדיקה");
-  if (offersAnyDashboard(permissions)) add("analytics", "דשבורד");
-  if (productsOffered(permissions)) add("products", "מוצרים");
-  if (accountAdminScope(role) === "cs-tech") add("users", "משתמשים");
   const tabs = settingsTabsOffered(role, permissions);
   if (tabs[0] && hrefs.settings) items.push({ key: "settings", label: "הגדרות", href: hrefs.settings(tabs[0]) });
   return items;
+}
+
+/** A screen reached from the "מסכים נוספים" row on "קריאות" (D57). */
+export type CallsAreaLink = { key: "customers" | "back" | "review" | "products"; label: string; href: string };
+
+/**
+ * D57 (1)-(2): the screens a role is offered that are not in its sidebar, for the unobtrusive
+ * "מסכים נוספים" row on "קריאות" (no counts, TEMPORARY #26 (b)), in the order לקוחות, חזרו מהשטח,
+ * פריטים לבדיקה, מוצרים. Each follows its own rule (customersOffered, the #15 rule,
+ * reviewItemsOffered, productsOffered). Empty for Customer Service (they are in its sidebar). A
+ * screen without an address is skipped. Display only (G-04): each page checks what it offers.
+ */
+export function callsAreaLinks(role: OfficeRole, permissions: RolePermissions, hrefs: OfficeNavHrefs): CallsAreaLink[] {
+  if (keepsWorkScreens(role)) return [];
+  const links: CallsAreaLink[] = [];
+  const add = (key: CallsAreaLink["key"], label: string) => {
+    const href = hrefs[key];
+    if (href !== undefined) links.push({ key, label, href });
+  };
+  if (customersOffered(permissions)) add("customers", "לקוחות");
+  if (workQueueScreensOffered(role)) add("back", "חזרו מהשטח");
+  if (reviewItemsOffered(permissions)) add("review", "פריטים לבדיקה");
+  if (productsOffered(permissions)) add("products", "מוצרים");
+  return links;
+}
+
+/**
+ * The sidebar item that stands for a screen without its own item (highlighting only, never
+ * access; D57): for Manager and Creator, the screens of the "מסכים נוספים" row belong to
+ * "קריאות", and the former "משתמשים" address to "הגדרות". Null for Customer Service (every screen
+ * has its own item, unchanged) and for keys that are items themselves.
+ */
+export function officeNavParent(role: OfficeRole, key: OfficeNavKey): OfficeNavKey | null {
+  if (keepsWorkScreens(role)) return null;
+  switch (key) {
+    case "customers":
+    case "back":
+    case "review":
+    case "products":
+      return "calls";
+    case "users":
+      return "settings";
+    default:
+      return null;
+  }
 }

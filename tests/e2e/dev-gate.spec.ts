@@ -69,6 +69,12 @@ test.describe("/dev gate", () => {
       "/dev/demo/office/creator/products?q=kt-2041",
       "/dev/demo/office/mgr/review?status=resolved&page=2",
       "/dev/demo/outbox?page=2&id=ob-47969-1",
+      // D57: the dashboard's views and the Manager's Settings › "משתמשים".
+      "/dev/demo/office/mgr/analytics?tab=tech&period=custom&from=2026-10-01&to=2026-10-21",
+      "/dev/demo/office/mgr/analytics?detail=today.missed",
+      "/dev/demo/office/mgr/settings/accounts",
+      // Step 2 PR 2.3: the sign-in prototype's states.
+      "/dev/demo/login?state=no-access",
     ]) {
       const variants: Record<string, string>[] = [{}, { RSC: "1" }, { RSC: "1", "Next-Router-Prefetch": "1" }];
       for (const headers of variants) {
@@ -76,6 +82,15 @@ test.describe("/dev gate", () => {
         expect(res.status(), path).toBe(404);
         expect(await res.text(), path).not.toContain("FIXTURE-SENTINEL");
       }
+    }
+  });
+
+  test("the office landing's redirect (D57) never leaks past a closed gate: 404, no location", async ({ request }) => {
+    for (const path of ["/dev/demo/office/mgr", "/dev/demo/office/creator", "/dev/demo/office/mgr/users"]) {
+      const res = await request.get(`${CLOSED_URL}${path}`, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(404);
+      expect(res.headers().location, path).toBeUndefined();
+      expect(await res.text(), path).not.toContain("FIXTURE-SENTINEL");
     }
   });
 

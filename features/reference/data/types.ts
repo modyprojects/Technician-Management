@@ -37,6 +37,19 @@ export const TECHNICIAN_COLOR_NAMES: Readonly<Record<TechnicianColorToken, strin
 /** The CSS of an allowlisted colour token: `var(--t-…)`. Never CSS from input or storage. */
 export const technicianColorCss = (token: TechnicianColorToken): string => `var(--${token})`;
 
+/** `var(--t-…)` → its token, for the allowlisted tokens only (a Map, so "__proto__" is never found). */
+const TECHNICIAN_COLOR_BY_CSS: ReadonlyMap<string, TechnicianColorToken> = new Map(
+  TECHNICIAN_COLOR_TOKENS.map((token) => [technicianColorCss(token), token]),
+);
+
+/**
+ * The inverse of technicianColorCss over the allowlist: the token of `var(--t-y)` and the like, so
+ * an edit form can preselect the stored colour. Anything else (a bare token, an unknown colour, any
+ * other CSS or a non-string) is null: the form then shows no colour chosen (deny by default).
+ */
+export const technicianColorTokenOf = (css: unknown): TechnicianColorToken | null =>
+  typeof css === "string" ? (TECHNICIAN_COLOR_BY_CSS.get(css) ?? null) : null;
+
 /** What other DTOs carry about a technician. */
 export type TechnicianRef = Pick<Technician, "id" | "name" | "color" | "phone">;
 

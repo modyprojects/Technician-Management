@@ -6,7 +6,7 @@ import { SimulatedCommandsProvider } from "../../../../_components/SimulatedComm
 import { demoDataAccess } from "../../../../_data/adapter";
 import { notificationTimeLabel } from "../../../../_data/dates";
 import { officeReviewParams } from "../../../../_data/params";
-import { isOfficeRole, officeHomeLabel, reviewItemsOffered, reviewResolutionOffered, VIEWPOINTS } from "../../../../_data/roles";
+import { demoLandingBack, isOfficeRole, reviewItemsOffered, reviewResolutionOffered, VIEWPOINTS } from "../../../../_data/roles";
 import { demoHref } from "../../../../_data/routes";
 import { NoAccessPlaceholder } from "../../_Placeholder";
 import { reviewState } from "../../_simulatedState";
@@ -48,8 +48,7 @@ export default async function OfficeReviewItemPage({ params }: PageProps<"/dev/d
         <NoAccessPlaceholder
           id="review-item-no-access"
           text="לתפקיד הזה אין גישה לפריטים לבדיקה."
-          backHref={demoHref.officeHome(role)}
-          backLabel={officeHomeLabel(permissions)}
+          {...demoLandingBack(role, permissions)}
         />
       </DemoOfficeFrame>
     );

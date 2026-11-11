@@ -33,8 +33,8 @@ Code written by Claude Code under the direction of the repository owner.
 - [ ] `docs/PROJECT-MAP.md` updated, or not needed
 - [ ] `docs/WORKLOG.md` updated
 - [ ] `docs/decisions.md` / `docs/demo-deviations.md` updated if needed
-- [ ] UI: screenshots at 390 / 820 / 1440 px, or N/A
+- [ ] UI: screenshots of the modified screens at 390 / 820 / 1440 px (D58), or N/A
 - [ ] Preview stays owner-only (D29)
-- [ ] Independent review recorded (authentication, authorization, proxy/gate, environment handling or deployment-configuration changes; D53), or N/A
+- [ ] Independent review recorded: one review for a PR involving security, permissions, database or deployment changes (D58), including authentication, authorization, proxy/gate, environment handling or deployment-configuration changes (D53); or N/A
 - [ ] Merge per D53: every mandatory check green on the exact approved head (any later commit needs the checks and reviews again); the owner's approval if this PR weakens protections in `CLAUDE.md`, `docs/security.md`, `.github/workflows/**`, `vercel.json`, `proxy.ts`, `app/dev/_gate.ts`, `config/release.json`, the canary-rows check's own files (`scripts/db-canary.mjs`, `tests/db-canary/**`, `tests/db-canary-selftest/**`; D54) or the static migration guard (`scripts/check-migrations.mjs`; D55)
 - [ ] Deployment protection (D31, D53): Claude Code's read-only checks before the merge and after the Production deployment (CI, commit SHA, READY, Vercel Authentication on All Deployments, Production domains); any check it cannot perform reported; a failed or inconclusive check stops further merges until the owner confirms

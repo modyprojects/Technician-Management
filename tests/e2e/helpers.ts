@@ -95,6 +95,20 @@ export const DEMO_PAGES = [
   "/dev/demo/outbox",
   "/dev/demo/tech/done/47963/1",
   "/dev/demo/tech/visit/47963/1",
+  // D57: Settings › "משתמשים" (the Manager's account administration; no access for customer
+  // service; a pointer for the Creator). /dev/demo/office/mgr and /mgr/users above redirect (307):
+  // page.goto follows them.
+  "/dev/demo/office/mgr/settings/accounts",
+  "/dev/demo/office/cs/settings/accounts",
+  "/dev/demo/office/creator/settings/accounts",
+  // Step 2 PR 2.3 prototypes: the sign-in screen, each role's temporary start screen (Q18) and the
+  // technician's minimal profile.
+  "/dev/demo/login",
+  "/dev/demo/start/creator",
+  "/dev/demo/start/mgr",
+  "/dev/demo/start/cs",
+  "/dev/demo/start/tech",
+  "/dev/demo/start/tech/profile",
 ] as const;
 
 /** The fixture sentinel every showcase and demo page carries (app/dev/showcase/_fixtures.ts). */

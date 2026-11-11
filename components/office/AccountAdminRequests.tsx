@@ -5,43 +5,66 @@
 // New UI in the demo's visual language (card + rows like its lists, pills like its statuses).
 // - mode "decide" (the Creator, Settings › "משתמשים והרשאות", section "בקשות לאישור"): approve, or
 //   reject with a required reason typed into an inline field (accounts.decideAccountRequest).
-// - mode "own" (the Manager, "ניהול משתמשים", section "הבקשות שלי"): cancel a pending request
-//   (accounts.cancelAccountRequest).
+// - mode "own" (the Manager, Settings › "משתמשים", section "הבקשות שלי"): cancel his own pending
+//   request, or his own approved creation that has no account yet (requesterMayCancel;
+//   accounts.cancelAccountRequest). The Creator never cancels a Manager's pending request: he
+//   rejects it with a reason. Each action sends the request's version (`expectedVersion`) and
+//   keeps the version a stored action returns (versionAfter), so a later action on the same
+//   request never gets a false "data changed". A cancelled approved creation keeps its decider and
+//   time (cancelledRequest): the row reads "אושרה על ידי … · בוטלה".
+// An approved creation whose account was not created (Variant B; TEMPORARY, Step 2 plan Q15; Step 2
+// PR 2.3, SE-20): "החשבון עוד לא נוצר". The Creator ("decide") completes it ("השלמת יצירה",
+// CompleteCreationForm; requestCompletionOffered) or cancels it ("ביטול"; creatorCancelOffered),
+// never a pending request's cancel (he rejects it with a reason). The Manager ("own") keeps "ביטול
+// הבקשה" and reads that the Creator completes it. A cancel keeps the approval's decider and time
+// (cancelledEntryLabel). Approving and creating in one action is PR 2.6.
 // Nothing changes while a request is pending; every step is audited; no automatic expiry (D25).
 // The screen reads each result: a SIMULATED one (the UI demo) shows the outcome on its row, marked
 // "לא נשמר · פעולה מדומה", with no further action, and says "בהדגמה … לא נשמר"; a stored one says
 // what was done (TE-23). Display only (G-04): the server decides who may act.
 import { useEffect, useId, useRef, useState } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
-import type { AccountRef, AccountRequest } from "@/features/accounts/data/types";
+import { creatorCancelOffered, requestCompletionOffered, type AccountAdminScope } from "@/features/accounts/data/offers";
+import {
+  cancelledRequest,
+  isOpenCreation,
+  requesterMayCancel,
+  type AccountRef,
+  type AccountRequest,
+  type CompletedCreation,
+} from "@/features/accounts/data/types";
 import { accountDecisionError, REJECTION_REASON_MAX } from "@/features/accounts/data/validate";
 import { useCommands } from "@/features/data-access/commands-context";
-import type { CommandResult } from "@/features/data-access/common";
+import type { CommandResult, VersionedResult } from "@/features/data-access/common";
 import {
   ActionMessage,
   RequestStatusPill,
   requestOutcomeText,
   requestRoleText,
   requestTitle,
+  said,
   type AccountRequestEntry,
   type ActionMessageValue,
 } from "./AccountAdminParts";
+import { cancelInput, cancelledEntryLabel, decisionInput, requestEntryAfter } from "./AccountAdminRules";
+import { CompleteCreationForm } from "./AccountCompletionForms";
 import { SettingsCardHead, SettingsMore, SettingsNotSaved } from "./SettingsShell";
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 const SMALL_BTN = { padding: "5px 12px", fontSize: 13 } as const;
 
-/** The result line: what a simulated command would have done, or what a stored one did. */
-const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
-
 export function AccountAdminRequests({
   mode,
+  scope,
   entries,
   total,
   self,
   onUpdate,
+  onComplete,
 }: {
   mode: "decide" | "own";
+  /** The viewer's account scope (display rules, offers.ts). */
+  scope: AccountAdminScope;
   entries: readonly AccountRequestEntry[];
   /** Matching requests before the list cap (at most 100 are shown). */
   total: number;
@@ -49,6 +72,8 @@ export function AccountAdminRequests({
   self: AccountRef | null;
   /** Replaces one request after a successful (simulated) action. */
   onUpdate: (entry: AccountRequestEntry) => void;
+  /** "השלמת יצירה" succeeded: the created account (and technician) as returned, for the accounts table. */
+  onComplete: (created: CompletedCreation, simulated: boolean) => void;
 }) {
   const { accounts } = useCommands();
   const id = useId();
@@ -61,6 +86,10 @@ export function AccountAdminRequests({
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   /** The row whose action just finished: it takes focus, since its buttons are gone. */
   const [focusRow, setFocusRow] = useState<string | null>(null);
+  /** The request whose "השלמת יצירה" dialog is open. */
+  const [completing, setCompleting] = useState<AccountRequestEntry | null>(null);
+  const selfId = self?.id ?? null;
+  const completeOpenerId = (requestId: string) => `${id}-complete-${requestId}`;
 
   useEffect(() => {
     if (rejecting) reasonRef.current?.focus();
@@ -73,26 +102,41 @@ export function AccountAdminRequests({
   const pendingCount = entries.filter((e) => e.request.status === "pending" && !e.local).length;
   const title = mode === "decide" ? "בקשות לאישור" : "הבקשות שלי";
 
-  /** The request after a successful action; `local` (no further action) when it was simulated. */
-  function done(entry: AccountRequestEntry, patch: Partial<AccountRequest>, simulated: boolean) {
+  /**
+   * The request after a successful action, with the version a stored action returned; `local` (no
+   * further action) when it was simulated.
+   */
+  function done(
+    entry: AccountRequestEntry,
+    request: AccountRequest,
+    result: Extract<CommandResult<VersionedResult>, { ok: true }>,
+    decidedLabel: string | null,
+  ) {
     setFocusRow(entry.request.id);
-    onUpdate({
-      ...entry,
-      request: { ...entry.request, ...patch, decidedBy: self, decidedAt: new Date().toISOString() },
-      decidedLabel: "עכשיו",
-      local: simulated,
-    });
+    onUpdate(requestEntryAfter(entry, request, result, decidedLabel));
   }
 
+  /** A decision: the Creator is its decider, now. */
+  const decided = (entry: AccountRequestEntry, patch: Partial<AccountRequest>): AccountRequest => ({
+    ...entry.request,
+    ...patch,
+    decidedBy: self,
+    decidedAt: new Date().toISOString(),
+  });
+
   /** Runs one command for one request; ignores taps while another action runs. */
-  async function act(key: string, run: () => Promise<CommandResult>, onOk: (simulated: boolean) => void) {
+  async function act(
+    key: string,
+    run: () => Promise<CommandResult<VersionedResult>>,
+    onOk: (result: Extract<CommandResult<VersionedResult>, { ok: true }>) => void,
+  ) {
     if (running.current) return;
     running.current = true;
     setBusy(key);
     setMessage(null);
     try {
       const r = await run();
-      if (r.ok) onOk(r.simulated);
+      if (r.ok) onOk(r);
       else setMessage({ kind: "error", text: r.error });
     } catch {
       setMessage({ kind: "error", text: FAILED });
@@ -105,13 +149,13 @@ export function AccountAdminRequests({
   function approve(entry: AccountRequestEntry) {
     void act(
       `approve-${entry.request.id}`,
-      () => accounts.decideAccountRequest(entry.request.id, { outcome: "approve" }),
-      (simulated) => {
-        done(entry, { status: "approved" }, simulated);
+      () => accounts.decideAccountRequest(decisionInput(entry, { outcome: "approve" })),
+      (r) => {
+        done(entry, decided(entry, { status: "approved" }), r, "עכשיו");
         const title = requestTitle(entry.request);
         setMessage({
           kind: "ok",
-          text: said(simulated, `הבקשה "${title}" הייתה מאושרת ונכנסת לתוקף.`, `הבקשה "${title}" אושרה ונכנסה לתוקף.`),
+          text: said(r.simulated, `הבקשה "${title}" הייתה מאושרת ונכנסת לתוקף.`, `הבקשה "${title}" אושרה ונכנסה לתוקף.`),
         });
       },
     );
@@ -127,16 +171,16 @@ export function AccountAdminRequests({
     }
     void act(
       `reject-${entry.request.id}`,
-      () => accounts.decideAccountRequest(entry.request.id, { outcome: "reject", reason: text }),
-      (simulated) => {
-        done(entry, { status: "rejected", reason: text }, simulated);
+      () => accounts.decideAccountRequest(decisionInput(entry, { outcome: "reject", reason: text })),
+      (r) => {
+        done(entry, decided(entry, { status: "rejected", reason: text }), r, "עכשיו");
         setRejecting(null);
         setReason("");
         setReasonError(null);
         const title = requestTitle(entry.request);
         setMessage({
           kind: "ok",
-          text: said(simulated, `הבקשה "${title}" הייתה נדחית, והסיבה נשמרת איתה.`, `הבקשה "${title}" נדחתה, והסיבה נשמרה איתה.`),
+          text: said(r.simulated, `הבקשה "${title}" הייתה נדחית, והסיבה נשמרת איתה.`, `הבקשה "${title}" נדחתה, והסיבה נשמרה איתה.`),
         });
       },
     );
@@ -145,13 +189,25 @@ export function AccountAdminRequests({
   function cancel(entry: AccountRequestEntry) {
     void act(
       `cancel-${entry.request.id}`,
-      () => accounts.cancelAccountRequest(entry.request.id),
-      (simulated) => {
-        done(entry, { status: "cancelled" }, simulated);
+      () => accounts.cancelAccountRequest(cancelInput(entry)),
+      (r) => {
+        // An approved creation keeps its decider and time (Migration 1): only a pending one is "now".
+        const request = cancelledRequest(entry.request, self, new Date().toISOString());
+        done(entry, request, r, cancelledEntryLabel(entry, request));
         const title = requestTitle(entry.request);
-        setMessage({ kind: "ok", text: said(simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
+        setMessage({ kind: "ok", text: said(r.simulated, `הבקשה "${title}" הייתה מבוטלת.`, `הבקשה "${title}" בוטלה.`) });
       },
     );
+  }
+
+  /** "השלמת יצירה" succeeded: the request now has its account (no further action), the table gets the row. */
+  function completed(entry: AccountRequestEntry, created: CompletedCreation, simulated: boolean) {
+    setCompleting(null);
+    onUpdate({ ...entry, request: { ...entry.request, account: { id: created.account.id, name: created.account.name } }, local: simulated });
+    onComplete(created, simulated);
+    setFocusRow(entry.request.id);
+    const name = entry.request.target.name;
+    setMessage({ kind: "ok", text: said(simulated, `החשבון של ${name} היה נוצר מיד.`, `החשבון של ${name} נוצר.`) });
   }
 
   return (
@@ -181,6 +237,12 @@ export function AccountAdminRequests({
             const outcome = requestOutcomeText(entry);
             const actionable = r.status === "pending" && !entry.local;
             const isRejecting = rejecting === r.id && actionable && mode === "decide";
+            // The requester cancels a pending request or an approved creation with no account yet.
+            const cancellable = mode === "own" && !entry.local && requesterMayCancel(r);
+            // Variant B (Q15): an approved creation with no account yet.
+            const open = isOpenCreation(r) && !entry.local;
+            const completable = mode === "decide" && open && requestCompletionOffered(scope, r, selfId);
+            const creatorCancel = mode === "decide" && open && creatorCancelOffered(scope, r, selfId);
             const reasonId = `${id}-${r.id}-reason`;
             const reasonErrorId = `${id}-${r.id}-reason-error`;
             return (
@@ -215,6 +277,11 @@ export function AccountAdminRequests({
                   </div>
                   {outcome && <div className="sub">{outcome}</div>}
                   {r.status === "rejected" && r.reason && <div className="sub">סיבת הדחייה: {r.reason}</div>}
+                  {open && (
+                    <div className="sub" style={{ color: "var(--warn-fg)", fontWeight: 700 }}>
+                      {mode === "decide" ? "החשבון עוד לא נוצר" : "החשבון עוד לא נוצר · היוצר משלים את היצירה"}
+                    </div>
+                  )}
                   {entry.local && (
                     <div>
                       <SettingsNotSaved />
@@ -252,7 +319,35 @@ export function AccountAdminRequests({
                       </button>
                     </>
                   )}
-                  {actionable && mode === "own" && (
+                  {completable && (
+                    <button
+                      type="button"
+                      id={completeOpenerId(r.id)}
+                      className="btn pri"
+                      style={SMALL_BTN}
+                      disabled={busy !== null}
+                      aria-label={`השלמת יצירה: ${requestTitle(r)}`}
+                      onClick={() => {
+                        setMessage(null);
+                        setCompleting(entry);
+                      }}
+                    >
+                      השלמת יצירה
+                    </button>
+                  )}
+                  {creatorCancel && (
+                    <button
+                      type="button"
+                      className="btn"
+                      style={SMALL_BTN}
+                      disabled={busy !== null}
+                      aria-label={`ביטול: ${requestTitle(r)}`}
+                      onClick={() => cancel(entry)}
+                    >
+                      {busy === `cancel-${r.id}` ? "מבטל…" : "ביטול"}
+                    </button>
+                  )}
+                  {cancellable && (
                     <button
                       type="button"
                       className="btn"
@@ -319,6 +414,18 @@ export function AccountAdminRequests({
       )}
       <SettingsMore shown={entries.length} total={total} />
       <ActionMessage message={message} style={{ padding: message ? "0 18px 12px" : 0 }} />
+      {completing && (
+        <CompleteCreationForm
+          source={{ kind: "request", request: completing.request, label: completing.decidedLabel ?? "" }}
+          onClose={() => {
+            const requestId = completing.request.id;
+            setCompleting(null);
+            // Back to the button that opened it (after the dialog is gone).
+            requestAnimationFrame(() => document.getElementById(completeOpenerId(requestId))?.focus());
+          }}
+          onDone={(created, simulated) => completed(completing, created, simulated)}
+        />
+      )}
     </section>
   );
 }

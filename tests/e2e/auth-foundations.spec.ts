@@ -6,14 +6,18 @@ import { parseSupabasePublicEnv } from "@/features/auth/env-schema";
 import { AREA_START, NEXT_PATH_MAX_LENGTH, postSignInPath, safeNextPath } from "@/features/auth/redirects";
 import {
   accountAdminScope,
+  callsAreaLinks,
   DB_ROLE_VALUES,
   dbRoleOf,
   isDbRole,
+  officeLanding,
   officeNav,
   type OfficeNavHrefs,
+  officeNavParent,
   officeRoleOf,
   roleArea,
   settingsTabsOffered,
+  SIDEBAR_WORK_SCREEN_ROLES,
   uiRoleOf,
 } from "@/features/auth/roles";
 import { isHttpsRequest, sessionCookieOptions } from "@/features/auth/session-cookies";
@@ -28,7 +32,7 @@ import {
   signInFailureMessage,
 } from "@/features/data-access/supabase-errors";
 import { PERMISSION_KEYS, type PermissionKey, type RolePermissions } from "@/features/reference/data/types";
-import { SETTINGS_SECTION_VALUES } from "@/features/settings/data/types";
+import { CREATOR_SETTINGS_SECTIONS } from "@/features/settings/data/types";
 import { onlyInProject } from "./helpers";
 
 // Unit tests of the Step 2 foundations (Step 2 plan §5.1): the pure modules in features/ that the
@@ -261,79 +265,102 @@ const ALL_HREFS: OfficeNavHrefs = {
 test.describe("navigation helpers per role (display only, G-04)", () => {
   onlyInProject("desktop");
 
+  /** D57 (1): the Manager's and the Creator's sidebar with the default values. */
+  const D57_KEYS = ["analytics", "cal", "calls", "unparsed", "settings"] as const;
+  const D57_LABELS = ["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"];
+  const keysOf = (role: "mgr" | "cs" | "creator", p: RolePermissions, hrefs: OfficeNavHrefs = ALL_HREFS) =>
+    officeNav(role, p, hrefs).map((item) => item.key);
+  const areaKeys = (role: "mgr" | "cs" | "creator", p: RolePermissions) => callsAreaLinks(role, p, ALL_HREFS).map((link) => link.key);
+  const flip = (base: RolePermissions, key: PermissionKey): RolePermissions => ({
+    ...base,
+    values: { ...base.values, [key]: !base.values[key] },
+  });
+
   test("account administration is a fixed capability: Creator all, Manager Customer Service and Technicians, Customer Service none", () => {
     expect(accountAdminScope("creator")).toBe("all");
     expect(accountAdminScope("mgr")).toBe("cs-tech");
     expect(accountAdminScope("cs")).toBeNull();
   });
 
-  test("Settings tabs: the Creator every tab; a matrix role only the D35 tabs and only with `settings`", () => {
-    expect(settingsTabsOffered("creator", CREATOR_FIXED)).toEqual(SETTINGS_SECTION_VALUES);
-    expect(settingsTabsOffered("mgr", MANAGER_DEFAULT)).toEqual([]);
+  test("Settings tabs: the Creator's seven; the Manager 'משתמשים' (D34) without `settings`; the D35 tabs only with `settings`", () => {
+    expect(settingsTabsOffered("creator", CREATOR_FIXED)).toEqual(CREATOR_SETTINGS_SECTIONS);
+    expect(CREATOR_SETTINGS_SECTIONS).not.toContain("accounts");
+    expect(settingsTabsOffered("mgr", MANAGER_DEFAULT)).toEqual(["accounts"]);
+    expect(MANAGER_DEFAULT.values.settings).toBe(false);
     expect(settingsTabsOffered("cs", CS_DEFAULT)).toEqual([]);
-    const withSettings = permissions("mgr", ["settings"]);
-    expect(settingsTabsOffered("mgr", withSettings)).toEqual(["places", "reasons", "types", "template"]);
+    expect(settingsTabsOffered("mgr", permissions("mgr", ["settings"]))).toEqual(["accounts", "places", "reasons", "types", "template"]);
+    // "accounts" is the Manager's fixed capability: never from `settings`, never for another role.
+    expect(settingsTabsOffered("mgr", permissions("mgr", []))).toEqual(["accounts"]);
+    for (const on of [[], [...PERMISSION_KEYS]] as const) {
+      expect(settingsTabsOffered("cs", permissions("cs", on))).not.toContain("accounts");
+      expect(settingsTabsOffered("creator", permissions("creator", on))).not.toContain("accounts");
+    }
   });
 
-  test("sidebar per role with the default values, in the demo's order", () => {
-    const keys = (role: "mgr" | "cs" | "creator", p: RolePermissions) => officeNav(role, p, ALL_HREFS).map((item) => item.key);
-    expect(keys("mgr", MANAGER_DEFAULT)).toEqual(["home", "cal", "calls", "customers", "unparsed", "back", "review", "analytics", "products", "users"]);
-    expect(keys("cs", CS_DEFAULT)).toEqual(["home", "cal", "calls", "customers", "unparsed", "back"]);
-    expect(keys("creator", CREATOR_FIXED)).toEqual([
-      "home",
-      "cal",
-      "calls",
-      "customers",
-      "unparsed",
-      "back",
-      "review",
-      "analytics",
-      "products",
-      "settings",
-    ]);
+  test("sidebar per role with the default values: Manager and Creator the five D57 items; Customer Service unchanged", () => {
+    expect(keysOf("mgr", MANAGER_DEFAULT)).toEqual(D57_KEYS);
+    expect(officeNav("mgr", MANAGER_DEFAULT, ALL_HREFS).map((item) => item.label)).toEqual(D57_LABELS);
+    expect(officeNav("mgr", MANAGER_DEFAULT, ALL_HREFS).at(-1)).toEqual({ key: "settings", label: "הגדרות", href: "/x/settings/accounts" });
+    expect(keysOf("cs", CS_DEFAULT)).toEqual(["home", "cal", "calls", "customers", "unparsed", "back"]);
+    expect(keysOf("creator", CREATOR_FIXED)).toEqual(D57_KEYS);
     const creatorNav = officeNav("creator", CREATOR_FIXED, ALL_HREFS);
+    expect(creatorNav.map((item) => item.label)).toEqual(D57_LABELS);
     expect(creatorNav.find((item) => item.key === "settings")).toEqual({ key: "settings", label: "הגדרות", href: "/x/settings/users" });
-    expect(creatorNav[0]).toEqual({ key: "home", label: "לוח בקרה", href: "/x/home" });
+    expect(creatorNav[0]).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
+    expect(officeNav("mgr", MANAGER_DEFAULT, ALL_HREFS)[0]).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
     expect(officeNav("cs", CS_DEFAULT, ALL_HREFS)[0]?.label).toBe("בית");
+    // No "לוח בקרה" and no "משתמשים" item for the Manager or the Creator.
+    for (const role of ["mgr", "creator"] as const) {
+      const labels = officeNav(role, role === "mgr" ? MANAGER_DEFAULT : CREATOR_FIXED, ALL_HREFS).map((item) => item.label);
+      expect(labels, role).not.toContain("לוח בקרה");
+      expect(labels, role).not.toContain("משתמשים");
+    }
   });
 
-  test("per key, from the Manager's default values: each key changes only its own item", () => {
-    const base = ["home", "cal", "calls", "customers", "unparsed", "back", "review", "analytics", "products", "users"] as const;
-    const without = (...gone: string[]) => base.filter((key) => !gone.includes(key));
-    // Flip one key at a time. A key no menu item reads must not change the menu ("פריטים לבדיקה"
-    // reads `card` and `conflicts`; "מדדי שימוש", `usage`, is never in it, OF-15).
-    const expected: Record<PermissionKey, readonly string[]> = {
-      cal: without("cal"),
-      calls: without("customers"),
-      card: without("review"),
-      cancel: base,
-      dashGen: base,
-      dashTech: base,
-      dashProd: base,
-      export: base,
-      settings: [...base, "settings"],
-      usage: base,
-      products: without("products"),
-      conflicts: without("review"),
-      recordings: base,
+  test("per key, from the Manager's default values: only `cal` changes the five items; the entry row follows its own keys", () => {
+    const without = (...gone: string[]) => D57_KEYS.filter((key) => !gone.includes(key));
+    const area = ["customers", "back", "review", "products"] as const;
+    const areaWithout = (...gone: string[]) => area.filter((key) => !gone.includes(key));
+    const expected: Record<PermissionKey, { nav: readonly string[]; area: readonly string[] }> = {
+      cal: { nav: without("cal"), area },
+      calls: { nav: D57_KEYS, area: areaWithout("customers") },
+      card: { nav: D57_KEYS, area: areaWithout("review") },
+      cancel: { nav: D57_KEYS, area },
+      dashGen: { nav: D57_KEYS, area },
+      dashTech: { nav: D57_KEYS, area },
+      dashProd: { nav: D57_KEYS, area },
+      export: { nav: D57_KEYS, area },
+      settings: { nav: D57_KEYS, area },
+      usage: { nav: D57_KEYS, area },
+      products: { nav: D57_KEYS, area: areaWithout("products") },
+      conflicts: { nav: D57_KEYS, area: areaWithout("review") },
+      recordings: { nav: D57_KEYS, area },
     };
+    expect(areaKeys("mgr", MANAGER_DEFAULT)).toEqual(area);
     for (const key of PERMISSION_KEYS) {
-      const flipped: RolePermissions = { ...MANAGER_DEFAULT, values: { ...MANAGER_DEFAULT.values, [key]: !MANAGER_DEFAULT.values[key] } };
+      const flipped = flip(MANAGER_DEFAULT, key);
       const nav = officeNav("mgr", flipped, ALL_HREFS);
       expect(
         nav.map((item) => item.key),
         key,
-      ).toEqual(expected[key]);
-      // The home item stays whatever the key; only its title follows `dashGen`.
-      expect(nav[0]?.label, key).toBe(key === "dashGen" ? "בית" : "לוח בקרה");
+      ).toEqual(expected[key].nav);
+      expect(areaKeys("mgr", flipped), key).toEqual(expected[key].area);
+      // Two dashboard keys stay on, so the landing stays "דשבורד" whatever the key.
+      expect(nav[0], key).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
+      // "הגדרות" opens "משתמשים" (D34) first, also with `settings` on.
+      expect(nav.at(-1), key).toEqual({ key: "settings", label: "הגדרות", href: "/x/settings/accounts" });
     }
-    const withSettings = officeNav("mgr", permissions("mgr", ["settings"]), ALL_HREFS);
-    expect(withSettings.find((item) => item.key === "settings")?.href).toBe("/x/settings/places");
+    expect(callsAreaLinks("mgr", MANAGER_DEFAULT, ALL_HREFS)).toEqual([
+      { key: "customers", label: "לקוחות", href: "/x/customers" },
+      { key: "back", label: "חזרו מהשטח", href: "/x/back" },
+      { key: "review", label: "פריטים לבדיקה", href: "/x/review" },
+      { key: "products", label: "מוצרים", href: "/x/products" },
+    ]);
   });
 
   test("per key, from Customer Service's default values: a key that is on adds its item; never account administration", () => {
     const base = ["home", "cal", "calls", "customers", "unparsed", "back"] as const;
-    const keys = (on: readonly PermissionKey[]) => officeNav("cs", permissions("cs", on), ALL_HREFS).map((item) => item.key);
+    const keys = (on: readonly PermissionKey[]) => keysOf("cs", permissions("cs", on));
     expect(keys(["calls", "card"])).toEqual(base.filter((key) => key !== "cal"));
     expect(keys(["cal", "card"])).toEqual(base.filter((key) => key !== "customers"));
     expect(keys(["cal", "calls"])).toEqual(base);
@@ -351,7 +378,25 @@ test.describe("navigation helpers per role (display only, G-04)", () => {
     expect(officeNav("cs", withSettings, ALL_HREFS).at(-1)).toEqual({ key: "settings", label: "הגדרות", href: "/x/settings/places" });
   });
 
-  test("dashboards: every dashboard key off hides 'דשבורד'; any one on shows it; 'לוח בקרה' only with `dashGen`", () => {
+  test("Customer Service is unchanged by D57 for every single-key flip: landing, no entry row, no parent highlighting", () => {
+    for (const key of PERMISSION_KEYS) {
+      const flipped = flip(CS_DEFAULT, key);
+      expect(officeLanding("cs", flipped, ALL_HREFS), key).toEqual({
+        key: "home",
+        label: flipped.values.dashGen ? "לוח בקרה" : "בית",
+        href: "/x/home",
+      });
+      expect(officeNav("cs", flipped, ALL_HREFS)[0], key).toEqual(officeLanding("cs", flipped, ALL_HREFS));
+      expect(callsAreaLinks("cs", flipped, ALL_HREFS), key).toEqual([]);
+    }
+    expect(callsAreaLinks("cs", permissions("cs", [...PERMISSION_KEYS]), ALL_HREFS)).toEqual([]);
+    for (const key of ["home", "cal", "calls", "customers", "unparsed", "back", "review", "analytics", "products", "users", "settings"] as const) {
+      expect(officeNavParent("cs", key), key).toBeNull();
+    }
+    expect(SIDEBAR_WORK_SCREEN_ROLES).toEqual(["cs"]);
+  });
+
+  test("dashboards: the Manager lands on 'דשבורד' with any one dashboard key, else on 'בית'; never 'לוח בקרה'", () => {
     const dashboards = ["dashGen", "dashTech", "dashProd"] as const;
     const managerWith = (on: readonly PermissionKey[]) =>
       permissions(
@@ -360,18 +405,26 @@ test.describe("navigation helpers per role (display only, G-04)", () => {
       );
     const noDashboards = officeNav("mgr", managerWith([]), ALL_HREFS);
     expect(noDashboards.map((item) => item.key)).not.toContain("analytics");
-    expect(noDashboards[0]?.label).toBe("בית");
+    expect(noDashboards[0]).toEqual({ key: "home", label: "בית", href: "/x/home" });
+    expect(officeLanding("mgr", managerWith([]), ALL_HREFS)).toEqual({ key: "home", label: "בית", href: "/x/home" });
     for (const key of dashboards) {
       const nav = officeNav("mgr", managerWith([key]), ALL_HREFS);
-      expect(
-        nav.map((item) => item.key),
-        key,
-      ).toContain("analytics");
-      expect(nav[0]?.label, key).toBe(key === "dashGen" ? "לוח בקרה" : "בית");
+      expect(nav[0], key).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
+      expect(nav.map((item) => item.key).filter((k) => k === "home"), key).toEqual([]);
+      expect(officeLanding("mgr", managerWith([key]), ALL_HREFS), key).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
+      expect(officeLanding("creator", permissions("creator", [key]), ALL_HREFS), key).toEqual({
+        key: "analytics",
+        label: "דשבורד",
+        href: "/x/analytics",
+      });
     }
+    // Without a dashboard address the landing is the home ("בית", never "לוח בקרה").
+    expect(officeLanding("mgr", MANAGER_DEFAULT, { home: "/office" })).toEqual({ key: "home", label: "בית", href: "/office" });
+    expect(officeLanding("mgr", MANAGER_DEFAULT, {})).toBeNull();
     for (const key of dashboards) {
       const nav = officeNav("cs", permissions("cs", ["cal", "calls", "card", key]), ALL_HREFS);
       expect(nav.find((item) => item.key === "analytics"), key).toEqual({ key: "analytics", label: "דשבורד", href: "/x/analytics" });
+      expect(nav[0]?.label, key).toBe(key === "dashGen" ? "לוח בקרה" : "בית");
     }
   });
 
@@ -380,20 +433,32 @@ test.describe("navigation helpers per role (display only, G-04)", () => {
       const nav = officeNav("creator", permissions("creator", on), ALL_HREFS);
       expect(nav.map((item) => item.key)).not.toContain("users");
       expect(nav.at(-1)).toEqual({ key: "settings", label: "הגדרות", href: "/x/settings/users" });
-      expect(settingsTabsOffered("creator", permissions("creator", on))).toEqual(SETTINGS_SECTION_VALUES);
+      expect(settingsTabsOffered("creator", permissions("creator", on))).toEqual(CREATOR_SETTINGS_SECTIONS);
+    }
+    // Every Creator-only screen stays reachable from the entry row with the fixed values.
+    expect(areaKeys("creator", CREATOR_FIXED)).toEqual(["customers", "back", "review", "products"]);
+  });
+
+  test("parent highlighting (D57): entry-row screens belong to 'קריאות', the former 'משתמשים' address to 'הגדרות'", () => {
+    for (const role of ["mgr", "creator"] as const) {
+      for (const key of ["customers", "back", "review", "products"] as const) expect(officeNavParent(role, key), `${role} ${key}`).toBe("calls");
+      expect(officeNavParent(role, "users"), role).toBe("settings");
+      for (const key of ["home", "cal", "calls", "unparsed", "analytics", "settings"] as const) {
+        expect(officeNavParent(role, key), `${role} ${key}`).toBeNull();
+      }
     }
   });
 
   test("a key that is off hides its item; an item without an address is not listed (only built screens)", () => {
     const noCal = permissions("mgr", ["calls"]);
-    expect(officeNav("mgr", noCal, ALL_HREFS).map((item) => item.key)).toEqual(["home", "calls", "customers", "unparsed", "back", "users"]);
+    expect(keysOf("mgr", noCal)).toEqual(["home", "calls", "unparsed", "settings"]);
     const builtOnly: OfficeNavHrefs = { home: "/office", users: "/office/users" };
-    expect(officeNav("mgr", MANAGER_DEFAULT, builtOnly)).toEqual([
-      { key: "home", label: "לוח בקרה", href: "/office" },
-      { key: "users", label: "משתמשים", href: "/office/users" },
-    ]);
-    expect(officeNav("creator", CREATOR_FIXED, { home: "/office" }).map((item) => item.key)).toEqual(["home"]);
+    expect(officeNav("mgr", MANAGER_DEFAULT, builtOnly)).toEqual([{ key: "home", label: "בית", href: "/office" }]);
+    expect(keysOf("creator", CREATOR_FIXED, { home: "/office" })).toEqual(["home"]);
     expect(officeNav("cs", CS_DEFAULT, {})).toEqual([]);
+    expect(callsAreaLinks("mgr", MANAGER_DEFAULT, { customers: "/office/customers" })).toEqual([
+      { key: "customers", label: "לקוחות", href: "/office/customers" },
+    ]);
   });
 });
 
