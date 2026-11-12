@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-11 (Step 1 / PR 1.4, branch `claude/step1-pr14-reference-data`: Migration 2 tested locally, independently reviewed and checked read-only against the remote project; ready for the owner's apply approval, **not applied**. Migration 1 (PR 1.3, PR #12) is merged into `main` (`fe370df`) and applied to the remote project (owner-approved, 2026-11-11). `main` also has the Step 2 PR 2.1 foundations (`features/auth/`, server-only `lib/supabase/`), the owner's decisions D55-D58, the Manager dashboard and office navigation (D57), the MODY brand assets and the runtime canary-rows check, PR #13, D54).
+Last updated: 2026-11-12 (D60: QA corrections 01 integrated into the roadmap, `docs/qa-corrections-01-integration.md`, documentation only; Step 1 / PR 1.4, branch `claude/step1-pr14-reference-data`: Migration 2 tested locally, independently reviewed and checked read-only against the remote project; ready for the owner's apply approval, **not applied**. Migration 1 (PR 1.3, PR #12) is merged into `main` (`fe370df`) and applied to the remote project (owner-approved, 2026-11-11). `main` also has the Step 2 PR 2.1 foundations (`features/auth/`, server-only `lib/supabase/`), the owner's decisions D55-D58, the Manager dashboard and office navigation (D57), the MODY brand assets and the runtime canary-rows check, PR #13, D54).
 
 ## 1. Purpose and how to read it
 
@@ -63,6 +63,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `docs/mfa-design.md` | MFA design (Step 2, PR 2.8): options, costs, recommended defaults and the owner's decision table for open decision 19 (enrolment, `aal2` enforcement, recovery, self-enrolment), the owner's runbook and the test plan. Design only, nothing decided or built |
 | `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
+| `docs/qa-corrections-01-integration.md` | QA corrections 01 (D60): 50 requirements (T, S, M, C, X) mapped to steps, acceptance criteria and tests, plus the future database changes. The source document is `docs/design/qa-corrections-01.md` (PR #28) |
 | `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16; `docs/review/ui-demo-5/` has the demo's mail view only); `docs/review/step1-pr13/` is the PR 1.3 database test report (`README.md`) and the audit anchor files (`audit-anchor-record.sql`, `audit-anchor-check.sql`); `docs/review/step1-pr14/README.md` is the PR 1.4 database test report (objects, ER diagram, who can do what, mutants, pinned hashes, owner questions OQ-1 to OQ-13); fictitious data only; `docs/review/db-canary/` holds the canary-rows check's design notes and measurements (no screenshots); `docs/review/step2-pr21/` the Step 2 package choices and runtime verifications (no screenshots: no UI change) |
 | `docs/user-guides/` | Hebrew user guides (D15): placeholders until features are tested |
 | `docs/history/` | Superseded context; not authoritative |
@@ -98,6 +99,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Dashboards | Planned | Step 9 |
 | Settings and hardening | Planned | Step 10 |
 | Microsoft 365 and pilot | Planned | Step 11 |
+| Usage analytics ("מדדי שימוש", Creator only; D60 (9)) | Planned (telemetry from Step 3, basic dashboard in Step 10, full dashboard in Step 12) | Steps 3, 10, 12 |
 | Hebrew user guides with real screenshots (D15) | Planned (written as features are tested) | From Step 3 |
 
 ## 4. Where things belong

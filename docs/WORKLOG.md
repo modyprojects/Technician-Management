@@ -1,5 +1,19 @@
 # Work Log (English only)
 
+## 2026-11-12 — D60: QA corrections 01 integrated into the roadmap (documentation only)
+- **Source:** the owner's QA document "קובץ תיקונים 01" (`docs/design/qa-corrections-01.md`, PR #28, not merged yet). The owner approved the Hebrew integration plan on 2026-11-12 with three decisions:
+  - Creator-only deletion, Option A;
+  - the simulator button inside "זימונים שלא נקלטו", only when enabled in a test environment;
+  - Managers cannot change roles.
+- **D60** recorded in `docs/decisions.md`. Open decisions 10 and 27 resolved; 7, 15 and 20 annotated.
+- **Mapping:** `docs/qa-corrections-01-integration.md` maps all 50 requirements (T-01 to T-10, S-01 to S-12, M-01 to M-10, C-01 to C-09, X-01 to X-09). Each has its current status, work, step, acceptance criteria and tests. **Nothing is implemented yet.**
+- **ROADMAP:** every step row names its QA IDs. Added PR 1.8 (Migration 5, accounts and permissions) and Step 12 (the full usage-analytics dashboard after the pilot), plus a "QA corrections 01" section and the current priority.
+- **Other documents:**
+  - `docs/demo-deviations.md` v1.6: QA-01 to QA-17 override the demo where they differ.
+  - `docs/database-schema.md`: the planned D60 changes (Migration 5, telemetry). Migrations 1–3 unchanged.
+  - `docs/PROJECT-MAP.md` updated.
+- **Merge order:** PR #28 first, then this PR. Both need the owner's merge approval. No code, migration or protected file changed.
+
 ## 2026-11-12 — Step 1 / PR 1.4: Migration 2 applied to the remote project (owner-approved)
 - **Apply:** the owner approved it and was present for Supabase's confirmation prompt. Migration 2 (sha256 `874742…b363`) was applied once to `ooxozvvrljjkyfduuiks`, name `reference_customers_products`: `{"success":true}`.
   - **Wrapper:** the file was sent inside a self-verifying wrapper, sha256 `04810116…0a92`. The server checks the embedded file's hash before running it, because the tool layer turns a typed `\uXXXX` (570 in the file) into the literal character.
