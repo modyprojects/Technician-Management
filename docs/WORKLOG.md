@@ -1,5 +1,17 @@
 # Work Log (English only)
 
+## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
+- **Owner decisions:**
+  - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.
+  - A1 approved: the `write_entity_change` guard writer.
+  - Section 12 needs no further review.
+  - Approved SQL sha256 for the preparation: `37b803db…eecb`.
+- **Read-only preflight:** history holds Migrations 1 and 2 only. The catalog fingerprint equals the post-Migration 2 values on 14/14. No Migration 3 object exists. Section 12's checks find 0 leftovers. Advisors are unchanged.
+- **Wrapper:** sha256 `8b9decd8…313d`.
+  - Locally, a corrupted copy was refused and nothing was created; the real one equals a normal apply on 14/14.
+  - A read-only full-size dry run on the remote returned the same wrapper and embedded hashes.
+- **Not done:** the apply, the merge of PR #25. Details: `docs/review/step1-pr15/README.md` section 16.
+
 ## 2026-11-12 — Step 1 / PR 1.5: Migration 3 prepared for the apply approval (not applied)
 - **Synced** with PR 1.4's head, which carries section 11, the Migration 2 apply record and the CI fix. The conflicts in `PROJECT-MAP.md` and `WORKLOG.md` are resolved.
 - **Section 12** is a fail-closed hardening check. It is Migration 2 section 11, except that it allows invoker-rights views such as `visit_time_current`, and any materialized view still fails.

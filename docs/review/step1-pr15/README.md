@@ -1,6 +1,6 @@
 # Step 1 / PR 1.5: Migration 3 (service calls, visits and their history)
 
-**Status (2026-11-12):** prepared and tested locally; **not applied**. The base is now `main` after PR 1.4 (Migration 2) was applied and merged; this branch was synced. Applying it needs the owner's separate approval of the exact file (D52 rule 4, D55). Merging needs the owner's acceptance of approval item A1 (section 8). Before the apply, open question OQ-13 must be answered (section 13). Section 15 covers the 2026-11-12 addition, a fail-closed hardening check (section 12 of the migration). History (2026-11-11): one independent review (D58), recorded in section 12.
+**Status (2026-11-12):** prepared and tested locally; **not applied**. The base is now `main` after PR 1.4 (Migration 2) was applied and merged; this branch was synced. Applying it needs the owner's separate approval of the exact file (D52 rule 4, D55). The owner approved A1 (section 8) and OQ-13 (section 13) on 2026-11-12. Merging still needs the owner's separate approval. Section 15 covers the 2026-11-12 addition, a fail-closed hardening check (section 12 of the migration). History (2026-11-11): one independent review (D58), recorded in section 12.
 
 | File | sha256 |
 |---|---|
@@ -61,7 +61,7 @@ SECURITY DEFINER bodies in `private` with `search_path = pg_catalog, pg_temp`, s
 Full local run: 24 files, 1202 assertions, all pass. Canary-rows check (D54): PASS, 3 migrations, 3 fixtures, no coverage exception for PR 1.5. Migration guard: passed. `tests/ci`: 166 pass. **MIG-1** (found during the build, fixed in `e9d1d9e`): the warranty CHECK accepted a month while the warranty status was NULL; 140 case 7 now fails as intended. The review fixes of section 12 (S1, N1) close the same class of hole for infinite dates. No mutation testing (D58).
 
 ## 8. Migration guard change (needs the owner's acceptance; merge gate)
-**A1:** `ALLOWED_WRITERS` gains `private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)` → `public.entity_changes` (the field-history writer of `docs/database-schema.md` §6; the actor is always `auth.uid()`). `scripts/check-migrations.mjs` is protected (D55 (8)): this PR is not merged before the owner accepts it.
+**A1 (owner, 2026-11-12: approved):** `ALLOWED_WRITERS` gains `private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)` → `public.entity_changes` (the field-history writer of `docs/database-schema.md` §6; the actor is always `auth.uid()`). `scripts/check-migrations.mjs` is protected (D55 (8)): this PR is not merged before the owner accepts it.
 
 ## 9. Audit
 No change to the PR 1.3 audit tables or their anchoring; field history goes to `entity_changes` (append-only, server time, actor = `auth.uid()`).
@@ -107,7 +107,7 @@ Each has a TEMPORARY behaviour that the tests assert; none is decided. The owner
 | OQ-10 | Technician access to own cancelled visits and visits closed before today | the bare `visits` row stays readable; the narrow functions serve only open visits and visits closed today |
 | OQ-11 | Time-flag thresholds; a second technician's report after re-assignment | 2 min future, 5 min offset, current assignment only; one device report per visit and kind (23505, PR 1.6 routes it to review) |
 | OQ-12 | Technician reads of whole `service_calls` rows | none; call fields only through `my_visit_details` |
-| OQ-13 | The narrow SECURITY DEFINER read functions as `docs/security.md` §5 "narrow server functions" | as built; to be confirmed by the independent review; **the migration is not applied before the owner answers** |
+| OQ-13 | The narrow SECURITY DEFINER read functions as `docs/security.md` §5 "narrow server functions" | **Answered by the owner on 2026-11-12: approved.** `previous_visits`, `visit_rep_contact` and `my_visit_details` are accepted as compliant with §5, based on the independent review. The review's conditions still apply: a later change to a body needs the same review. |
 | OQ-14 | Correcting a closed visit's outcome | no writer; the schema allows `done` → `followup` (reason and notes required, the signature stays) and `followup` → `done` only with a signature inserted in the same transaction |
 | OQ-15 | Signature version and media columns | added in Step 4 as nullable columns required for new signatures |
 
@@ -147,6 +147,42 @@ Carried: open decision 3 (d06): `c10` rule (b) requires a summary for a closed v
 
 **New migration sha256:** `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb`. The down script and the canary fixture are unchanged, because section 12 creates nothing.
 
-**Review:** the block is the reviewed Migration 2 check (independent review, PR 1.4 README section 15.2) with the view rule changed and tested. Whether it needs another independent review is the owner's call under D58 (9), which is open.
+**Review:** the block is the reviewed Migration 2 check (independent review, PR 1.4 README section 15.2) with the view rule changed and tested. **Owner, 2026-11-12:** no additional independent review is required, provided the implementation stays as described and all existing tests pass.
 
 **Apply delivery:** this file has 819 `\u` escapes, so the apply uses the same self-verifying wrapper as Migration 2 (PR 1.4 README section 15.5). The file is about 104 KB. Before the apply, a read-only `execute_sql` dry run will send the full wrapper as a literal and compare its sha256 on the server. That confirms the size and the exact transport before any write.
+
+## 16. Pre-apply preparation (2026-11-12): owner decisions, read-only preflight, wrapper, dry run
+
+**Owner decisions (2026-11-12):**
+- OQ-13: approved (section 13).
+- A1: approved (section 8).
+- Section 12 needs no further independent review.
+- The approved SQL sha256 for the preparation is `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb`.
+- Not approved: the apply, the merge of PR #25.
+
+**Local:**
+- The branch is synced with `main` `4509c6e` (PR 1.4 squash); the content is unchanged by the sync.
+- pgTAP 1259/1259 (26 files), node 174/174, guard passed, canary PASS, lint and typecheck clean.
+- CI on `951fcf3`: `checks` and `pgtap` passed.
+
+**Read-only preflight** (project `ooxozvvrljjkyfduuiks` only; every query `set transaction read only;`, verified `on`):
+
+| Check | Result |
+|---|---|
+| `list_migrations` | Two rows: `20261111125920 access_and_permissions`, `20261112093516 reference_customers_products` |
+| Catalog fingerprint (14 values: functions 73, policies 22, columns, constraints, indexes, triggers, relations, schemas, both permission tables, D48 rows) | Equal to the values verified after Migration 2's apply; no drift |
+| Audit anchor `functions_md5` | `d30c54fb…` (PR 1.4 value) |
+| Migration 3 objects (7 tables, the view, 7 function names) | None exist |
+| User rows (brands, suppliers, products, customers, places, profiles, audit) | 0 |
+| Section 12's checks as a SELECT on the current remote | **0** leftovers |
+| Security advisors | One WARN, `auth_leaked_password_protection` (unchanged) |
+
+**Self-verifying wrapper** (the same method as Migration 2; scratchpad only, not in the repository):
+- The file is 105,334 bytes, with 819 lowercase-u escapes and 195 capital-U escapes.
+- The wrapper is one DO block. It holds the exact file as a dollar-quoted literal, checks its sha256 against `37b803db…eecb`, and only then runs it with `execute`. On any difference it raises "Migration 3 payload hash mismatch, nothing is applied".
+- **Wrapper sha256:** `8b9decd8eed10c05575497168d0ef5122e32429566e3781f37ff0ffa0fb5313d` (105,865 bytes).
+- **Local test** on a database with Migrations 1 and 2:
+  - A copy with one character changed was refused, and no table was created.
+  - The real wrapper gave a catalog identical to a normal apply of all three migrations on 14/14 values.
+- **Full-size transport dry run (read-only, on the remote):** one `execute_sql` sent the complete wrapper (1,736 lines, about 110 KB as sent) as a literal inside a read-only transaction. It returned `ro` on, wrapper sha256 `8b9decd8…313d`, 105,865 bytes, and embedded SQL sha256 `37b803db…eecb`. All three equal the local values, so the full payload reaches the server byte for byte.
+- Migration 3 has no DROP statement, so Supabase may not ask for confirmation. The owner should still be available when it is applied.
