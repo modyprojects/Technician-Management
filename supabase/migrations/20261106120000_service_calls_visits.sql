@@ -13,7 +13,8 @@
 -- compute_call_status and recalc_call_status), the entity_changes writer, the visit-read helper
 -- can_read_visit, three narrow read functions for Technicians (previous_visits D36,
 -- visit_rep_contact D40, my_visit_details) with their SECURITY INVOKER wrappers, the view
--- visit_time_current (D45), ten SELECT policies, per-object grants and the census extension.
+-- visit_time_current (D45), ten SELECT policies, per-object grants, the census extension and a
+-- read-only fail-closed hardening check (section 12).
 --
 -- Data: schema only. No reference, test or fictitious rows (D47). No write path for any API role
 -- in PR 1.5: the writers arrive with Step 4 (field closure, times, summary, signature), Step 5
@@ -1601,3 +1602,115 @@ grant execute on function
   public.visit_rep_contact(uuid),
   public.my_visit_details(uuid)
 to authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- 12. Fail closed when the hardening did not take effect (owner, 2026-11-11 and 2026-11-12: as
+--     in the PR 1.4 migration, section 11). Read-only; any leftover raises, and the whole
+--     migration then rolls back. The PR 1.4 section 11 checks, unchanged, except views: a view
+--     without security_invoker (it would read the tables with its owner's rights) and any
+--     materialized view are leftovers; an invoker-rights view such as visit_time_current passes.
+--     tests/db/210 runs a copy of this block (kept identical by tests/ci/hardening-assertion.test.mjs)
+--     against injected leaks.
+-- ---------------------------------------------------------------------------------------------
+do $$
+declare
+  v_api oid[];
+  v_authenticated oid;
+  v_leaks text;
+begin
+  select pg_catalog.array_agg(r.oid) into v_api
+  from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated', 'service_role');
+  select r.oid into v_authenticated from pg_catalog.pg_roles r where r.rolname = 'authenticated';
+
+  select pg_catalog.string_agg(x.leak, '; ' order by x.leak) into v_leaks
+  from (
+    select 'schema ' || n.nspname || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text as leak
+    from pg_catalog.pg_namespace n
+    cross join lateral pg_catalog.aclexplode(coalesce(n.nspacl, pg_catalog.acldefault('n'::"char", n.nspowner))) a
+    where n.nspname in ('public', 'private') and a.privilege_type = 'CREATE'
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'relation ' || c.oid::regclass::text || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text
+    from pg_catalog.pg_class c
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(c.relacl, pg_catalog.acldefault((case when c.relkind = 'S' then 's' else 'r' end)::"char", c.relowner))) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated)
+           or (a.grantee = v_authenticated and (c.relkind = 'S' or a.privilege_type <> 'SELECT')))
+    union all
+    select 'column ' || c.oid::regclass::text || '.' || t.attname || ' ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_attribute t
+    join pg_catalog.pg_class c on c.oid = t.attrelid
+    cross join lateral pg_catalog.aclexplode(t.attacl) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and t.attacl is not null
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.pg_proc p
+    cross join lateral pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f'::"char", p.proowner))) a
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated))
+    union all
+    select 'default privileges of postgres (' || d.defaclobjtype::text || ') ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_default_acl d
+    cross join lateral pg_catalog.aclexplode(d.defaclacl) a
+    where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 'public'::regnamespace
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    -- No global entry means the built-in default (EXECUTE for PUBLIC), so a missing row is a leak.
+    select 'global default privileges of postgres (f) EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.aclexplode(coalesce(
+      (select d.defaclacl from pg_catalog.pg_default_acl d
+       where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f'),
+      pg_catalog.acldefault('f'::"char", 'postgres'::regrole))) a
+    where a.grantee = 0 or a.grantee = any (v_api)
+    union all
+    select 'table ' || c.oid::regclass::text || ' without row level security'
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p') and not c.relrowsecurity
+    union all
+    select 'relation ' || c.oid::regclass::text || ' owned by ' || c.relowner::regrole::text
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S') and c.relowner <> 'postgres'::regrole
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' owned by ' || p.proowner::regrole::text
+    from pg_catalog.pg_proc p
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and p.proowner <> 'postgres'::regrole
+    union all
+    select 'policy ' || o.polname || ' on ' || o.polrelid::regclass::text || ' for a role other than authenticated'
+    from pg_catalog.pg_policy o
+    join pg_catalog.pg_class c on c.oid = o.polrelid
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and o.polroles is distinct from array[v_authenticated]::oid[]
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' without search_path pg_catalog, pg_temp'
+    from pg_catalog.pg_proc p
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and p.proconfig is distinct from array['search_path=pg_catalog, pg_temp']::text[]
+    union all
+    -- A view runs with its owner's rights unless security_invoker is on; a materialized view
+    -- has no such option. Only invoker-rights views (the RLS of the reader applies) pass.
+    select 'view ' || c.oid::regclass::text || ' without security_invoker'
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind = 'v'
+      and not coalesce((select o.option_value::boolean from pg_catalog.pg_options_to_table(c.reloptions) o
+                        where o.option_name = 'security_invoker'), false)
+    union all
+    select 'materialized view ' || c.oid::regclass::text
+    from pg_catalog.pg_class c
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind = 'm'
+  ) x;
+
+  if v_leaks is not null then
+    raise exception 'hardening check failed, nothing is applied: %', v_leaks;
+  end if;
+end
+$$;
