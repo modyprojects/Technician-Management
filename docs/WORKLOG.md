@@ -1,5 +1,17 @@
 # Work Log (English only)
 
+## 2026-11-12 — D61: the real application and the demo
+- **Owner requirement (2026-11-12), recorded as D61:**
+  - `/dev/demo` stays a development and demonstration environment with fictional data. It is isolated from the real application, restricted to authorized development access, and not deleted yet.
+  - The real application uses only Supabase-backed data and Supabase Auth, and never shows demo records as operational data.
+  - The MODY design is the baseline; only the approved QA corrections (D60) change it, and they are applied while each real screen is built.
+- **Current controls (verified on `main` `4509c6e`):**
+  - The lint rules keep demo `_data` and `_components` out of every file outside `app/dev`, and keep `app/` imports out of `components/`, `features/` and `lib/`.
+  - Every demo screen carries the strip "🧪 נתוני בדיקה · פעולות מדומות".
+  - `/dev` opens in Production only during the testing period, behind Vercel Authentication (D31).
+  - The only real route today is the temporary home page.
+- **Gap and plan:** a file outside `app/dev` could still import other `app/dev/demo` modules. The first real-route PR (Step 2) widens the lint rule (no `app/dev` import outside `app/dev` except the gate) and adds tests that real routes never render the demo strip.
+
 ## 2026-11-12 — D60: QA corrections 01 integrated into the roadmap (documentation only)
 - **Source:** the owner's QA document "קובץ תיקונים 01" (`docs/design/qa-corrections-01.md`, PR #28, not merged yet). The owner approved the Hebrew integration plan on 2026-11-12 with three decisions:
   - Creator-only deletion, Option A;
