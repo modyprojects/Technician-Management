@@ -5,7 +5,7 @@
 // contact details come from the latest valid invitation (D39); the address belongs to each visit
 // (D39), so the customer card shows the latest visit's address and each call its own city.
 import type { Bounded, IsoDate, Page, PageRequest, TestMarker } from "@/features/data-access/common";
-import type { CallStatus, CallSummary } from "@/features/calls/data/types";
+import type { CallStartDates, CallStatus, CallSummary } from "@/features/calls/data/types";
 import type { Product } from "@/features/reference/data/types";
 
 export type Address = {
@@ -68,13 +68,14 @@ export type CustomersPage = Page<CustomerSummary>;
 /**
  * A return of a product at this customer (PRODUCT_RETURN_WINDOW_DAYS): call `req` was opened
  * `days` days after the latest closed visit of the customer's earlier call `previousReq` for the
- * same SKU.
+ * same SKU. "Opened" is the call's `opened_at` (D57 (9)), never its first visit's date.
  */
 export type ProductReturn = {
   req: string;
   previousReq: string;
-  /** First visit date of `req`. */
-  date: IsoDate;
+  /** "נפתחה": the Asia/Jerusalem date of `req`'s `opened_at` (D57 (9)). */
+  openedDate: IsoDate;
+  /** Whole days from the earlier call's latest closed visit to `openedDate`. */
   days: number;
 };
 
@@ -89,9 +90,12 @@ export type CustomerProduct = {
   product: Product;
   /** The customer's calls for this SKU. */
   callCount: number;
-  /** First visit date of the customer's first and latest call for this SKU. */
-  firstDate: IsoDate;
-  lastDate: IsoDate;
+  /**
+   * The customer's first and latest call for this SKU by opening time (the same call when there is
+   * one), each with "נפתחה" and "תחילת טיפול" (D57 (9)).
+   */
+  firstCall: CallStartDates;
+  latestCall: CallStartDates;
   /** True when at least one call was a return within the window ("חזר"). */
   cameBack: boolean;
   /** The returns, oldest first (at most CUSTOMER_PRODUCTS_LIMIT). */
@@ -112,7 +116,7 @@ export type CustomerDetail = TestMarker & {
   statusCounts: Record<CallStatus, number>;
   /** The customer's calls, newest first (at most CUSTOMER_CALLS_LIMIT), with service-call status and visits summary. */
   calls: Bounded<CallSummary>;
-  /** Products by latest call, newest first; returned products first (at most CUSTOMER_PRODUCTS_LIMIT). */
+  /** Products by latest call (opening time), newest first; returned products first (at most CUSTOMER_PRODUCTS_LIMIT). */
   products: Bounded<CustomerProduct>;
   /**
    * The return window (days) the server used for `cameBack` and the returns (TEMPORARY,

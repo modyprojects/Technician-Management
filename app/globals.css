@@ -37,6 +37,22 @@
   --collect-line: #F0D9A8;   /* divider between pickup places in "מה לאסוף" */
   --collect-done: #7A6A4F;   /* collected pickup item text */
   --scrim: rgba(15, 22, 30, .4); /* .drawer-bg overlay */
+
+  /* Manager dashboard palette (D57; docs/design/manager-dashboard-spec.md §9, plus the reference's
+     derived shades). Named next to the app tokens; used only by the dashboard (ma-*) classes. */
+  --dash-blue: #4677D5;        /* main blue: data marks, progress done, opened bars (graphics only: 4.32:1) */
+  --dash-ink: #222831;         /* KPI values */
+  --dash-muted: #6B7280;       /* secondary text on cards (4.83:1 on white; on --bg use --muted) */
+  --dash-compare: #697586;     /* comparison gray: closed bars, supplier bars (4.68:1) */
+  --dash-bg: #F3F5F8;          /* dashboard background (the shell's --bg #F2F4F6 is visually identical; not repainted) */
+  --dash-card: #FFFFFF;
+  --dash-line: #E2E7EE;        /* light borders */
+  --dash-danger: #C14F4F;      /* subtle red (spec §9; not the reference's #b5474f, C26): genuine exceptions only (4.67:1) */
+  --dash-blue-strong: #315EB5; /* reference link/active blue; filled controls with white text (6.18:1); PROPOSED, C23 */
+  --dash-blue-soft: #E8EFFC;   /* reference active-tab background (--dash-blue-strong on it: 5.35:1) */
+  --dash-track: #E9EDF2;       /* reference bar and progress track */
+  --dash-remaining: #B9C1CD;   /* reference "טרם בוצעו" segment */
+  --dash-pill-line: #DCE2EA;   /* unselected technician / period pill border (spec §7.2, reference .pill) */
 }
 
 /* Tailwind utility names for the tokens (bg-card, text-ink, font-display, ...). */

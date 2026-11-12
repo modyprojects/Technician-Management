@@ -24,7 +24,7 @@ import { DemoOfficeFrame } from "../../../_components/DemoFrames";
 import { demoDataAccess } from "../../../_data/adapter";
 import { dayAndDate, TODAY } from "../../../_data/dates";
 import { officeRoleParams } from "../../../_data/params";
-import { isOfficeRole, officeHomeLabel, VIEWPOINTS } from "../../../_data/roles";
+import { demoLandingBack, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 
 export const dynamicParams = false;
@@ -82,7 +82,7 @@ export default async function OfficeCalendarPage({ params, searchParams }: PageP
         <div className="ptitle">
           <h1>יומן טכנאים</h1>
         </div>
-        <CalendarNoAccess backHref={demoHref.officeHome(role)} backLabel={officeHomeLabel(permissions)} />
+        <CalendarNoAccess {...demoLandingBack(role, permissions)} />
       </DemoOfficeFrame>
     );
   }

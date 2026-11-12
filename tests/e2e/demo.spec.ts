@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage, verticalPageOverflow } from "./helpers";
 
 // UI demo with fictional data (D53, /dev/demo). Runs in the phone (390), tablet (820) and desktop
@@ -12,6 +13,15 @@ const DEMO_VIEWS = [
   "/dev/demo/office/mgr/analytics?tab=tech",
   "/dev/demo/office/mgr/analytics?tab=prod",
   "/dev/demo/office/mgr/analytics?tab=tech&tech=y",
+  // D57 dashboard: chart range, periods, custom range, reports view, dialogs, sort, the Creator.
+  "/dev/demo/office/mgr/analytics?months=12",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=y&period=week",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=s&period=custom&from=2026-10-01&to=2026-10-21",
+  "/dev/demo/office/mgr/analytics?tab=tech&tech=y&view=reports",
+  "/dev/demo/office/mgr/analytics?detail=today.missed",
+  "/dev/demo/office/mgr/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041",
+  "/dev/demo/office/mgr/analytics?tab=prod&sort=calls-asc",
+  "/dev/demo/office/creator/analytics?tab=tech",
   "/dev/demo/office/mgr/calls?status=followup",
   // Calendars (OF-03, TE-27): views, another date, a technician filter and the open drawer.
   "/dev/demo/office/mgr/calendar?view=week",
@@ -24,6 +34,10 @@ const DEMO_VIEWS = [
   "/dev/demo/tech/calendar?view=month",
   "/dev/demo/tech/calendar?date=2026-10-19",
   "/dev/demo/tech/done/47800/1?view=week&date=2026-10-21",
+  // Step 2 PR 2.3: the sign-in prototype's other states.
+  "/dev/demo/login?state=failed",
+  "/dev/demo/login?state=unavailable",
+  "/dev/demo/login?state=no-access",
 ] as const;
 
 /** Console errors and uncaught page errors while the test runs. */
@@ -38,6 +52,15 @@ function collectErrors(page: Page): string[] {
 
 const toast = (page: Page) => page.locator(".toast");
 
+/** An account of the Manager or Creator role in a page's payload (escaped or not). */
+const MANAGER_OR_CREATOR_ACCOUNT = /role\\?"\s*:\s*\\?"(creator|mgr)\\?"/;
+
+/** The white MODY logo in a dark header (D57 (6)): one per page. */
+const officeLogo = (page: Page) => page.locator('.side img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+const techLogo = (page: Page) => page.locator('.ph-head .ph-brand img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+/** Step 2 PR 2.3 (AU-01 PROPOSED): the white logo on the sign-in prototype's dark page. */
+const loginLogo = (page: Page) => page.locator('.login img[alt="MODY"][src*="/brand/mody-logo-white.png"]');
+
 test.describe("demo pages render", () => {
   for (const path of [...DEMO_PAGES, ...DEMO_VIEWS]) {
     test(`${path}: sentinel, test-data strip, no overflow, no console errors`, async ({ page }) => {
@@ -50,6 +73,14 @@ test.describe("demo pages render", () => {
       await expect(strip).toBeVisible();
       await expect(strip).toContainText("נתוני בדיקה");
       await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+      // D57 (6): one white MODY logo in the screen's dark header; never the dark file, never a light strip.
+      if (path.startsWith("/dev/demo/office/")) await expect(officeLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/tech")) await expect(techLogo(page)).toHaveCount(1);
+      // Step 2 PR 2.3 prototypes: the office and technician start screens, and the sign-in page's own logo.
+      if (/^\/dev\/demo\/start\/(creator|mgr|cs)$/.test(path)) await expect(officeLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/start/tech")) await expect(techLogo(page)).toHaveCount(1);
+      if (path.startsWith("/dev/demo/login")) await expect(loginLogo(page)).toHaveCount(1);
+      await expect(page.locator('img[src*="mody-logo.png"], .work-brand')).toHaveCount(0);
       expect(await horizontalOverflow(page)).toEqual([]);
       expect(await verticalPageOverflow(page), "the document scrolls past the app frame").toBe(0);
       // Let prefetches and hydration finish before reading the console.
@@ -65,6 +96,10 @@ test.describe("demo pages render", () => {
       "/dev/demo/tech/visit/99999/1",
       "/dev/demo/tech/visit/47800/1/work",
       "/dev/demo/tech/visit/47800/1/close",
+      // Step 2 PR 2.3: an unknown viewpoint, and the minimal profile is the technician's only.
+      "/dev/demo/start/xx",
+      "/dev/demo/start/mgr/profile",
+      "/dev/demo/start/creator/profile",
     ]) {
       const res = await request.get(path);
       expect(res.status(), path).toBe(404);
@@ -177,6 +212,8 @@ test.describe("simulated toast", () => {
 
   test("office navigation: every sidebar item is a link; \"יומן טכנאים\" opens the calendar", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr");
+    // D57 (1): the Manager's office home lands on the dashboard.
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/analytics$/);
     await expect(page.locator(".side .nav button")).toHaveCount(0);
     await page.locator(".side").getByRole("link", { name: "יומן טכנאים" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calendar$/);
@@ -185,14 +222,17 @@ test.describe("simulated toast", () => {
 });
 
 test.describe("dashboards and access", () => {
-  test("manager home: KPI tiles, test-data note, awaiting call listed, technician drill-down links", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr");
-    const kpis = page.getByRole("region", { name: "מדדי היום" });
-    await expect(kpis.locator(".kpi")).toHaveCount(6);
-    await expect(page.locator(".od-test-note")).toContainText("נתוני בדיקה");
-    // The awaiting-scheduling call is never hidden behind older follow-ups (sorted first).
-    await expect(page.getByRole("table", { name: "קריאות שדורשות טיפול" })).toContainText("48230");
-    await expect(page.locator('a[href*="/analytics?tab=tech&tech="]').first()).toBeVisible();
+  test("landing (D57 (1)): Manager and Creator are redirected (307) to \"דשבורד\"; Customer Service keeps its home", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      const res = await page.request.get(`/dev/demo/office/${role}`, { maxRedirects: 0 });
+      expect(res.status(), role).toBe(307);
+      expect(res.headers().location, role).toMatch(new RegExp(`/dev/demo/office/${role}/analytics$`));
+    }
+    const cs = await page.request.get("/dev/demo/office/cs", { maxRedirects: 0 });
+    expect(cs.status()).toBe(200);
+    await openPage(page, "/dev/demo/office/creator");
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/analytics$/);
+    await expect(sideNav(page).getByRole("link", { name: "דשבורד", exact: true })).toHaveAttribute("aria-current", "page");
   });
 
   test("customer-service home: work queue with test-data note, no dashboard links", async ({ page }) => {
@@ -202,7 +242,7 @@ test.describe("dashboards and access", () => {
     await expect(page.locator('a[href*="/analytics"]')).toHaveCount(0);
   });
 
-  test("manager analytics: tabs, KPI tiles, test-data note and the technician drill-down", async ({ page }) => {
+  test("manager analytics (D57): three tabs, KPI tiles, test-data note and the technician's reports", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr/analytics");
     await expect(page.getByRole("navigation", { name: "לשוניות הדשבורד" }).getByRole("link")).toHaveCount(3);
     await expect(page.locator(".kpis .kpi").first()).toBeVisible();
@@ -211,8 +251,11 @@ test.describe("dashboards and access", () => {
 
     await page.getByRole("navigation", { name: "לשוניות הדשבורד" }).getByRole("link", { name: "טכנאים" }).click();
     await expect(page).toHaveURL(/tab=tech/);
-    await page.getByRole("link", { name: /פירוט הטכנאי/ }).first().click();
-    await expect(page).toHaveURL(/tech=/);
+    const technicians = page.getByRole("group", { name: "טכנאי:" });
+    await expect(technicians.getByRole("link", { name: "יורם" })).toBeVisible();
+    await expect(technicians.getByRole("link", { name: "אדי" })).toBeVisible();
+    await page.getByRole("link", { name: "הצג דוחות ‹" }).click();
+    await expect(page).toHaveURL(/view=reports/);
     await expect(page.locator("table").first()).toBeVisible();
   });
 
@@ -684,7 +727,8 @@ test.describe("technician notifications and profile", () => {
     await page.getByRole("button", { name: /חיוג למשרד/ }).click();
     await expect(toast(page)).toContainText("לא מתבצעת שיחה");
     await expect(page.getByRole("button", { name: "דיווח" })).toBeDisabled();
-    // No sign-out entry: it is not in the demo or the spec (open question to the owner).
+    // Step 2 PR 2.3 (Q4 TEMPORARY): sign-out is in "חשבון" (the wording is owner question Q-B; E2).
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: "התנתקות" })).toHaveCount(0);
   });
 });
@@ -696,7 +740,7 @@ const SETTINGS_TABS = ["users", "techs", "places", "reasons", "types", "mail", "
 const sideNav = (page: Page) => page.locator(".side").getByRole("navigation", { name: "ניווט ראשי" });
 
 test.describe("office navigation per role (phase E)", () => {
-  test("Creator has \"הגדרות\" and no \"משתמשים\"; Manager has \"משתמשים\" and no \"הגדרות\"; customer service has neither", async ({
+  test("Creator and Manager have \"הגדרות\" and no \"משתמשים\" item (D57: the Manager's opens Settings › משתמשים); customer service has neither", async ({
     page,
   }) => {
     await openPage(page, "/dev/demo/office/creator");
@@ -704,8 +748,8 @@ test.describe("office navigation per role (phase E)", () => {
     await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/mgr");
-    await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveAttribute("href", "/dev/demo/office/mgr/users");
-    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveCount(0);
+    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveAttribute("href", "/dev/demo/office/mgr/settings/accounts");
+    await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/cs");
     await expect(sideNav(page).getByRole("link", { name: "משתמשים", exact: true })).toHaveCount(0);
@@ -772,8 +816,8 @@ test.describe("settings access (display only, G-04)", () => {
       const usersLink = page.getByRole("link", { name: "לניהול משתמשים" });
       await openPage(page, `/dev/demo/office/${role}/settings/users`);
       if (role === "mgr") {
-        await expect(usersLink).toHaveAttribute("href", "/dev/demo/office/mgr/users");
-        await expect(page.getByText(/מנוהלים במסך "משתמשים"/)).toBeVisible();
+        await expect(usersLink).toHaveAttribute("href", "/dev/demo/office/mgr/settings/accounts");
+        await expect(page.getByText(/מנוהלים בלשונית "משתמשים"/)).toBeVisible();
       } else {
         await expect(usersLink).toHaveCount(0);
         // Account administration and the matrix are fixed Creator capabilities: no matrix wording.
@@ -792,13 +836,23 @@ test.describe("settings access (display only, G-04)", () => {
     });
   }
 
-  test("customer service has no account administration; the Creator's \"משתמשים\" page points to Settings", async ({ page }) => {
+  test("customer service has no account administration; the Creator's \"משתמשים\" page points to Settings; the Manager's redirects", async ({
+    page,
+  }) => {
     await openPage(page, "/dev/demo/office/cs/users");
     await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
     await expect(page.locator("main table, main form")).toHaveCount(0);
     await openPage(page, "/dev/demo/office/creator/users");
     await page.getByRole("link", { name: "למשתמשים והרשאות" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/settings\/users$/);
+    // D57 (1): the former address of the Manager's account administration redirects (307).
+    const res = await page.request.get("/dev/demo/office/mgr/users", { maxRedirects: 0 });
+    expect(res.status()).toBe(307);
+    expect(res.headers().location).toMatch(/\/dev\/demo\/office\/mgr\/settings\/accounts$/);
+    await openPage(page, "/dev/demo/office/mgr/users");
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/settings\/accounts$/);
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" })).toBeVisible();
   });
 });
 
@@ -844,20 +898,45 @@ test.describe("permission matrix (SE-02, D33, D51)", () => {
 });
 
 test.describe("account administration (SE-01, D34)", () => {
-  test("Creator: every account with 🧪, own row without actions, no password or email editing", async ({ page }) => {
+  test("Creator: every account with 🧪, own row with \"עריכה\" only, credential actions on the other rows only", async ({ page }) => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const users = page.getByRole("table", { name: "משתמשים", exact: true });
-    await expect(users.locator("tbody tr")).toHaveCount(10);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(10);
+    // Step 2 PR 2.3: 11 accounts (with גלעד, a Technician account without a field profile) and the
+    // Creator's own open creation intent ("יצירה שלא הושלמה").
+    await expect(users.locator("tbody tr")).toHaveCount(12);
+    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(12);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
-    await expect(own.getByRole("button")).toHaveCount(0);
+    // The own row: only "עריכה" (no state change of himself; no credential dialogs, TEMPORARY Q22).
+    await expect(own.getByRole("button")).toHaveCount(1);
+    await expect(own.getByRole("button")).toHaveAccessibleName(/^עריכה/);
+    // No password field until a dialog opens.
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /סיסמה|שינוי מייל/ })).toHaveCount(0);
+    // "סיסמה" and "מייל" on every other account row (10 accounts), never on the own row.
+    await expect(users.getByRole("button", { name: /^סיסמה · / })).toHaveCount(10);
+    await expect(users.getByRole("button", { name: /^מייל · שינוי כתובת המייל/ })).toHaveCount(10);
+    await expect(own.getByRole("button", { name: /סיסמה|שינוי מייל|מייל ·/ })).toHaveCount(0);
     await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
     const form = page.getByRole("form", { name: "הוספת משתמש" });
-    await expect(form.getByLabel("הרשאה").locator("option")).toHaveText(["שירות לקוחות", "מנהל", "יוצר"]);
+    // Step 2 PR 2.2 (Q9, TEMPORARY): a Creator account is not offered; the option says why and is disabled.
+    const roles = form.getByLabel("הרשאה").locator("option");
+    await expect(roles).toHaveText(["שירות לקוחות", "מנהל", "יוצר · ממתין להחלטת בעלים"]);
+    await expect(roles.last()).toHaveJSProperty("disabled", true);
+    await expect(roles.first()).toHaveJSProperty("disabled", false);
+    await expect(form.getByLabel("הרשאה")).toHaveValue("cs");
+    await expect(form.locator('option[value="creator"]')).toHaveCount(0);
+    await expect(form.getByText("יצירת חשבון יוצר: ממתין להחלטת בעלים.", { exact: false })).toBeVisible();
     await expect(form.locator('input[type="password"]')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("Creator: \"בקשות לאישור\" offers approve and reject only, never a cancel of a Manager's request (PR 2.2 g)", async ({
+    page,
+  }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    await expect(requests.getByRole("button", { name: /^אישור: / })).toHaveCount(2);
+    await expect(requests.getByRole("button", { name: /^דחייה: / })).toHaveCount(2);
+    await expect(requests.getByRole("button", { name: /^ביטול הבקשה/ })).toHaveCount(0);
   });
 
   test("Creator: rejecting without a reason is blocked; with a reason it is simulated", async ({ page }) => {
@@ -889,8 +968,10 @@ test.describe("account administration (SE-01, D34)", () => {
     await openPage(page, "/dev/demo/office/creator/settings/users");
     const requests = page.getByRole("list", { name: "בקשות לאישור" });
     const orit = page.getByRole("table", { name: "משתמשים", exact: true }).locator("tbody tr").filter({ hasText: "אורית" });
-    // A pending request is decided here, not by a direct activation on the account row (F12).
-    await expect(orit.getByRole("button")).toHaveCount(0);
+    // A pending request is decided here, not by a direct activation on the account row (F12). Step 2
+    // PR 2.3: the row's only buttons are the routine edit and the Creator's credential dialogs.
+    await expect(orit.getByRole("button")).toHaveText(["עריכה", "סיסמה", "מייל"]);
+    await expect(orit.getByRole("button", { name: /^(הפעלה|השבתה)( ·|$)/ })).toHaveCount(0);
     await expect(orit).toContainText("להחלטה בבקשות");
     await requests.getByRole("button", { name: "אישור: הפעלה מחדש · אורית" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
@@ -907,9 +988,11 @@ test.describe("account administration (SE-01, D34)", () => {
   test("Manager: CS and technician accounts only; \"+ בקשת חשבון שירות לקוחות\" makes a pending request (simulated)", async ({
     page,
   }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
-    await expect(accounts.locator("tbody tr")).toHaveCount(8);
+    // Step 2 PR 2.3: 9 accounts (with גלעד, a Technician account without a field profile) and the
+    // Manager's own open creation intent.
+    await expect(accounts.locator("tbody tr")).toHaveCount(10);
     await expect(accounts.getByText("מנהל", { exact: true })).toHaveCount(0);
     await expect(accounts.getByText("יוצר", { exact: true })).toHaveCount(0);
     // אורית (inactive Customer Service) already has a pending reactivation request.
@@ -933,8 +1016,11 @@ test.describe("account administration (SE-01, D34)", () => {
     await expect(form.getByLabel("מייל", { exact: true })).toHaveAttribute("aria-invalid", "true");
     await expect(form.getByLabel("שם", { exact: true })).not.toHaveAttribute("aria-invalid", "true");
 
+    // Step 2 PR 2.2 (h): a request stores no phone; it is added after the account is created.
+    await expect(form.getByLabel("טלפון", { exact: true })).toHaveCount(0);
+    await expect(form.locator('input[type="tel"]')).toHaveCount(0);
+    await expect(form).toContainText("את הטלפון מוסיפים אחרי שהחשבון נוצר.");
     await form.getByLabel("מייל", { exact: true }).fill("rep4@example.test");
-    await form.getByLabel("טלפון", { exact: true }).fill("050-000-0199");
     await form.getByRole("button", { name: "שליחה לאישור היוצר" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
     await expect(toast(page)).toContainText("בקשה לאישור היוצר");
@@ -948,8 +1034,10 @@ test.describe("account administration (SE-01, D34)", () => {
   });
 
   test("Manager: deactivation asks to confirm, is immediate and simulated; a pending request can be cancelled", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
-    await page.getByRole("button", { name: "השבתת החשבון של שיראל" }).click();
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    // שיראל's stored version is 3 (two routine updates): the screen sends the version it read, so
+    // the simulated check passes (a screen that sent 1 would be refused as stale, PT409).
+    await page.getByRole("button", { name: "השבתה · החשבון של שיראל" }).click();
     const confirm = page.getByRole("group", { name: /להשבית את החשבון של שיראל/ });
     await expect(confirm).toContainText("היוצר מקבל התראה באפליקציה");
     await expect(confirm.getByRole("button", { name: "השבתה" })).toBeFocused();
@@ -960,6 +1048,7 @@ test.describe("account administration (SE-01, D34)", () => {
     const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "שיראל" });
     await expect(row).toContainText("לא פעיל");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
     // The confirm panel closed: focus moves to the changed row, never to <body> (F4).
     await expect(row).toBeFocused();
 
@@ -983,6 +1072,22 @@ test.describe("operational settings (SE-05 to SE-16)", () => {
     await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
     await expect(page.getByRole("form", { name: "הוספת טכנאי" })).toBeVisible();
     expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("technicians: \"פעיל\" of stored technicians sends their versions (PR 2.2 a) and toggles back (simulated)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/techs");
+    for (const name of ["יורם", "אדי"]) {
+      const active = page.getByRole("button", { name: `${name} פעיל – מקבל זימונים חדשים` });
+      await expect(active).toHaveAttribute("aria-pressed", "true");
+      await active.click();
+      await expect(active).toHaveAttribute("aria-pressed", "false");
+      await expect(toast(page).filter({ hasText: "טכנאי לא פעיל" })).toContainText(SIMULATED);
+      await active.click();
+      await expect(active).toHaveAttribute("aria-pressed", "true");
+      await expect(toast(page).filter({ hasText: "טכנאי פעיל · יקבל זימונים חדשים" })).toContainText(SIMULATED);
+    }
+    // No refusal ("הנתונים השתנו בינתיים", an unknown technician) on any switch.
+    await expect(page.locator("main .set-err")).toHaveCount(0);
   });
 
   test("places: the seeded places are in use (no delete); a new place can be added and deleted (SE-06)", async ({ page }) => {
@@ -1102,7 +1207,7 @@ test.describe("account activation paths (D34 a, c)", () => {
   test("Manager: an inactive Customer Service account without a request offers \"בקשת הפעלת חשבון\" (pending, simulated)", async ({
     page,
   }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const accounts = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
     const ronit = accounts.locator("tbody tr").filter({ hasText: "רונית" });
     await expect(ronit).toContainText("לא פעיל");
@@ -1120,10 +1225,10 @@ test.describe("account activation paths (D34 a, c)", () => {
   });
 
   test("Manager: a deactivated technician account is activated at once (simulated)", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     const beni = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "בני" });
     await expect(beni).toContainText("לא פעיל");
-    await beni.getByRole("button", { name: "הפעלת החשבון של בני" }).click();
+    await beni.getByRole("button", { name: "הפעלה · החשבון של בני" }).click();
     await expect(toast(page)).toContainText(SIMULATED);
     await expect(toast(page)).toContainText("הפעלת חשבון");
     await expect(beni).not.toContainText("לא פעיל");
@@ -1184,19 +1289,20 @@ test.describe("add forms (simulated submit flows)", () => {
   });
 
   test("Manager \"+ הוספת טכנאי\": immediate, a technician row with 🧪, not saved", async ({ page }) => {
-    await openPage(page, "/dev/demo/office/mgr/users");
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
     await page.getByRole("button", { name: "+ הוספת טכנאי" }).click();
     const form = page.getByRole("form", { name: "הוספת טכנאי" });
-    await form.getByLabel("שם", { exact: true }).fill("טכנאי חדש");
+    // Step 2 PR 2.3: not "טכנאי חדש", the name of the Manager's fictional creation intent (aint-1).
+    await form.getByLabel("שם", { exact: true }).fill("טכנאי מתלמד");
     await form.getByLabel("מייל ב-Outlook").fill("new-tech@example.test");
     await form.getByLabel("טלפון", { exact: true }).fill("050-000-0192");
     await form.getByRole("button", { name: "הוספה" }).click();
     await expect(toast(page)).toContainText("הוספת טכנאי");
-    const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי חדש" });
+    const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי מתלמד" });
     await expect(row).toContainText("🧪");
     await expect(row).toContainText("טכנאי");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
-    await expect(page.getByText(/בהדגמה: הטכנאי טכנאי חדש היה נוסף מיד/)).toBeVisible();
+    await expect(page.getByText(/בהדגמה: הטכנאי טכנאי מתלמד היה נוסף מיד/)).toBeVisible();
   });
 
   test("\"שמירת נוסח\": an empty text is blocked inline; a new text is a simulated new version", async ({ page }) => {
@@ -1238,14 +1344,40 @@ test.describe("what the browser receives (P1, P9)", () => {
 
   test("no sign-in times anywhere; account and request ids only on the account screens", async ({ page }) => {
     const html = async (path: string) => (await page.request.get(path)).text();
-    const managerUsers = await html("/dev/demo/office/mgr/users");
-    expect(managerUsers).not.toContain("lastSignIn");
-    expect(managerUsers).toContain("acc-shirel");
-    for (const path of ["/dev/demo/tech", "/dev/demo/tech/profile", "/dev/demo/office/mgr", "/dev/demo/office/creator/settings/techs"]) {
+    const managerAccounts = await html("/dev/demo/office/mgr/settings/accounts");
+    expect(managerAccounts).not.toContain("lastSignIn");
+    expect(managerAccounts).toContain("acc-shirel");
+    // The Manager's scope: Customer Service and Technician accounts only (D34). The Creator appears
+    // only as the decider of the Manager's own requests ("הבקשות שלי"), never as an account.
+    expect(managerAccounts).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    // The former address only redirects (D57): its response carries no account or request ids.
+    const redirect = await page.request.get("/dev/demo/office/mgr/users", { maxRedirects: 0 });
+    expect(redirect.status()).toBe(307);
+    const redirectBody = await redirect.text();
+    expect(redirectBody).not.toContain("acc-");
+    expect(redirectBody).not.toContain("areq-");
+    for (const path of [
+      "/dev/demo/tech",
+      "/dev/demo/tech/profile",
+      // Step 2 PR 2.3 prototypes: display text from the session user only.
+      "/dev/demo/login",
+      "/dev/demo/start/creator",
+      "/dev/demo/start/mgr",
+      "/dev/demo/start/cs",
+      "/dev/demo/start/tech",
+      "/dev/demo/start/tech/profile",
+      "/dev/demo/office/mgr",
+      "/dev/demo/office/mgr/analytics",
+      "/dev/demo/office/mgr/analytics?tab=tech",
+      "/dev/demo/office/mgr/analytics?tab=prod",
+      "/dev/demo/office/mgr/calls",
+      "/dev/demo/office/creator/settings/techs",
+    ]) {
       const body = await html(path);
       expect(body, path).not.toContain("acc-creator");
       expect(body, path).not.toContain("acc-shirel");
       expect(body, path).not.toContain("areq-");
+      expect(body, path).not.toMatch(/acc-[a-z]|aint-|aev-/);
     }
   });
 });
@@ -1306,46 +1438,75 @@ test.describe("office navigation per role (phase F, OF-02)", () => {
     ["חזרו מהשטח", "back-from-field"],
   ] as const;
 
-  test("customer service, Manager and Creator: customers and both work-queue screens; products only with `products`", async ({ page }) => {
-    for (const role of ["cs", "mgr", "creator"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
+  test("customer service: customers and both work-queue screens after \"קריאות\", no products (unchanged by D57)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs");
+    const nav = sideNav(page);
+    for (const [label, path] of NEW_ITEMS) {
+      await expect(nav.getByRole("link", { name: label, exact: true }), label).toHaveAttribute("href", `/dev/demo/office/cs/${path}`);
+    }
+    await expect(nav.getByRole("link", { name: "מוצרים", exact: true })).toHaveCount(0);
+    // Order: after "קריאות" come the three new screens.
+    const labels = await nav.getByRole("link").allInnerTexts();
+    const at = (l: string) => labels.findIndex((x) => x.trim() === l);
+    expect(at("קריאות")).toBeGreaterThan(-1);
+    expect(at("לקוחות")).toBe(at("קריאות") + 1);
+    expect(at("זימונים שלא נקלטו")).toBe(at("לקוחות") + 1);
+    expect(at("חזרו מהשטח")).toBe(at("זימונים שלא נקלטו") + 1);
+  });
+
+  test("Manager and Creator: exactly the five D57 items; customers, back from field and products only in the \"מסכים נוספים\" row", async ({
+    page,
+  }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/calls`);
       const nav = sideNav(page);
-      for (const [label, path] of NEW_ITEMS) {
-        await expect(nav.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveAttribute(
+      expect((await nav.getByRole("link").allInnerTexts()).map((l) => l.trim()), role).toEqual([
+        "דשבורד",
+        "יומן טכנאים",
+        "קריאות",
+        "זימונים שלא נקלטו",
+        "הגדרות",
+      ]);
+      await expect(nav.getByRole("link", { name: "זימונים שלא נקלטו", exact: true }), role).toHaveAttribute(
+        "href",
+        `/dev/demo/office/${role}/unparsed`,
+      );
+      for (const label of ["לקוחות", "חזרו מהשטח", "פריטים לבדיקה", "מוצרים", "משתמשים", "לוח בקרה"]) {
+        await expect(nav.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveCount(0);
+      }
+      const related = page.getByRole("navigation", { name: "מסכים נוספים" });
+      for (const [label, path] of [...NEW_ITEMS.filter(([, p]) => p !== "unparsed"), ["פריטים לבדיקה", "review"], ["מוצרים", "products"]] as const) {
+        await expect(related.getByRole("link", { name: label, exact: true }), `${role} ${label}`).toHaveAttribute(
           "href",
           `/dev/demo/office/${role}/${path}`,
         );
       }
-      const products = nav.getByRole("link", { name: "מוצרים", exact: true });
-      if (role === "cs") await expect(products).toHaveCount(0);
-      else await expect(products).toHaveAttribute("href", `/dev/demo/office/${role}/products`);
-      // Order: after "קריאות" come the three new screens; "מוצרים" follows "דשבורד".
-      const labels = await nav.getByRole("link").allInnerTexts();
-      const at = (l: string) => labels.findIndex((x) => x.trim() === l);
-      expect(at("קריאות"), role).toBeGreaterThan(-1);
-      expect(at("לקוחות"), role).toBe(at("קריאות") + 1);
-      expect(at("זימונים שלא נקלטו"), role).toBe(at("לקוחות") + 1);
-      expect(at("חזרו מהשטח"), role).toBe(at("זימונים שלא נקלטו") + 1);
-      if (role !== "cs") expect(at("מוצרים"), role).toBe(at("דשבורד") + 1);
     }
   });
 
-  test("each new screen marks its own sidebar item as the current page", async ({ page }) => {
-    for (const [label, path] of [...NEW_ITEMS, ["מוצרים", "products"] as const]) {
-      await openPage(page, `/dev/demo/office/mgr/${path}`);
+  test("each screen highlights its sidebar item: its own as the current page, an entry-row screen \"קריאות\" without aria-current", async ({
+    page,
+  }) => {
+    for (const [label, path] of NEW_ITEMS) {
+      await openPage(page, `/dev/demo/office/cs/${path}`);
       await expect(sideNav(page).getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
     }
-    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
-    await expect(sideNav(page).getByRole("link", { name: "לקוחות", exact: true })).toHaveAttribute("aria-current", "page");
+    await openPage(page, "/dev/demo/office/mgr/unparsed");
+    await expect(sideNav(page).getByRole("link", { name: "זימונים שלא נקלטו", exact: true })).toHaveAttribute("aria-current", "page");
+    for (const path of ["customers", "back-from-field", "products", "customers/cu-298747"]) {
+      await openPage(page, `/dev/demo/office/mgr/${path}`);
+      const calls = sideNav(page).getByRole("link", { name: "קריאות", exact: true });
+      await expect(calls, path).toHaveClass(/(^|\s)on(\s|$)/);
+      await expect(calls, path).not.toHaveAttribute("aria-current");
+      await expect(sideNav(page).locator("[aria-current]"), path).toHaveCount(0);
+    }
   });
 
-  test("office homes link to \"חזרו מהשטח\" from the follow-up work queue", async ({ page }) => {
-    for (const role of ["mgr", "cs"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
-      const link = page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true });
-      await expect(link, role).toHaveAttribute("href", `/dev/demo/office/${role}/back-from-field`);
-    }
-    await page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true }).click();
+  test("the customer-service home links to \"חזרו מהשטח\" from the follow-up work queue", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs");
+    const link = page.locator("main").getByRole("link", { name: "למסך חזרו מהשטח ›", exact: true });
+    await expect(link).toHaveAttribute("href", "/dev/demo/office/cs/back-from-field");
+    await link.click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/cs\/back-from-field$/);
     await expect(page.getByRole("heading", { level: 1, name: "חזרו מהשטח" })).toBeVisible();
   });
@@ -1443,6 +1604,58 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
     await expect(page.getByRole("heading", { level: 1, name: "משפחת לוי" })).toBeVisible();
     await page.getByRole("link", { name: "חזרה ללקוחות", exact: true }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/customers$/);
+  });
+});
+
+test.describe("D57 (9): \"נפתחה\" (opened_at) and \"תחילת טיפול\" (first arrival) are separate fields", () => {
+  // Fixture facts (fictional): 48213 (KT-2041, משפחת לוי) opened 19.10 11:21; its first visit is on
+  // 21.10 (TODAY, "היום") and has no arrival yet. 47490 (KT-2041) opened 18.08; its first visit
+  // arrived 20.08 10:03. 48205 (BT-1120, customer 235395) opened 15.10, first visit 19.10.
+  const startLine = (scope: ReturnType<Page["locator"]>, req: string) => scope.locator(`[data-call-start="${req}"]`).filter({ visible: true });
+
+  test("customer card: both labelled fields per call; never a first-visit date under \"נפתחה\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-298747");
+    const products = page.getByRole("region", { name: /מוצרים של הלקוח/ });
+    const latest = startLine(products, "48213");
+    await expect(latest).toHaveCount(1);
+    await expect(latest).toContainText("קריאה אחרונה");
+    await expect(latest.locator('[data-field="opened"]')).toHaveText("נפתחה: 19.10");
+    await expect(latest.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: טרם התחיל");
+    const first = startLine(products, "47490");
+    await expect(first).toContainText("קריאה ראשונה");
+    await expect(first.locator('[data-field="opened"]')).toHaveText("נפתחה: 18.08");
+    await expect(first.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: 20.08 10:03");
+    // The return rule and its text use opened_at: 48213 opened 26 days after 47690's closure on 23.9
+    // (by its first visit, 21.10 "היום", it would read 28 days).
+    await expect(products).toContainText("פנייה 48213 (19.10) נפתחה 26 ימים אחרי סגירת פנייה 47690");
+    const text = await products.innerText();
+    expect(text).not.toMatch(/\(היום\) נפתחה|נפתחה: היום|נפתחה: 20\.08|נפתחה 28 ימים/);
+  });
+
+  test("customer card: the return window counts from opened_at (48205: 21 days, not 25)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/customers/cu-235395");
+    const products = page.getByRole("region", { name: /מוצרים של הלקוח/ });
+    await expect(products).toContainText("פנייה 48205 (15.10) נפתחה 21 ימים אחרי סגירת פנייה 47700");
+    await expect(startLine(products, "48205").locator('[data-field="opened"]')).toHaveText("נפתחה: 15.10");
+  });
+
+  test("products screen: the creating call shows both labelled fields, opened_at under \"נפתחה\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/products");
+    const row = page.getByRole("table", { name: "מוצרים" }).locator("tbody tr").filter({ has: page.getByText("KT-2041", { exact: true }) });
+    const line = startLine(row, "47490");
+    await expect(line).toHaveCount(1);
+    await expect(line.locator('[data-field="opened"]')).toHaveText("נפתחה: 18.08");
+    await expect(line.locator('[data-field="work-start"]')).toHaveText("תחילת טיפול: 20.08 10:03");
+    // The first visit's date (20.08) never appears under "נפתחה".
+    expect(await row.innerText()).not.toContain("נפתחה: 20.08");
+  });
+
+  test("the dashboard dialog and the customer card agree on 48213's opening date", async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "runs in the desktop project only");
+    await openPage(page, `/dev/demo/office/mgr/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041`);
+    const row = page.getByRole("dialog").locator("tbody tr").filter({ has: page.getByRole("link", { name: /48213/ }) });
+    await expect(row).toContainText("19.10.2026");
+    await expect(row).not.toContainText("21.10.2026");
   });
 });
 
@@ -1716,25 +1929,26 @@ test.describe("phase G views render", () => {
 test.describe("review items: access per role (matrix key `conflicts`)", () => {
   onlyInProject("desktop");
 
-  test("Manager and Creator have \"פריטים לבדיקה\" after \"חזרו מהשטח\"; customer service has neither the item nor any item data", async ({
+  test("Manager and Creator reach \"פריטים לבדיקה\" from \"קריאות\" (D57, no count); customer service has neither the link nor any item data", async ({
     page,
   }) => {
     for (const role of ["mgr", "creator"] as const) {
-      await openPage(page, `/dev/demo/office/${role}`);
+      await openPage(page, `/dev/demo/office/${role}/calls`);
       const nav = sideNav(page);
-      await expect(nav.getByRole("link", { name: "פריטים לבדיקה", exact: true }), role).toHaveAttribute(
-        "href",
-        `/dev/demo/office/${role}/review`,
-      );
-      const labels = (await nav.getByRole("link").allInnerTexts()).map((l) => l.trim());
-      expect(labels.indexOf("פריטים לבדיקה"), role).toBe(labels.indexOf("חזרו מהשטח") + 1);
+      await expect(nav.getByRole("link", { name: "פריטים לבדיקה" }), role).toHaveCount(0);
+      const link = page.getByRole("navigation", { name: "מסכים נוספים" }).getByRole("link", { name: "פריטים לבדיקה", exact: true });
+      await expect(link, role).toHaveAttribute("href", `/dev/demo/office/${role}/review`);
       // The mock outbox is a /dev tool: never in the office sidebar (X-06).
       await expect(nav.locator('a[href*="/outbox"]'), role).toHaveCount(0);
     }
-    await openPage(page, "/dev/demo/office/mgr/review");
-    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
-    await openPage(page, "/dev/demo/office/mgr/review/rv-6");
-    await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה", exact: true })).toHaveAttribute("aria-current", "page");
+    for (const path of ["/dev/demo/office/mgr/review", "/dev/demo/office/mgr/review/rv-6"]) {
+      await openPage(page, path);
+      const calls = sideNav(page).getByRole("link", { name: "קריאות", exact: true });
+      await expect(calls, path).toHaveClass(/(^|\s)on(\s|$)/);
+      await expect(calls, path).not.toHaveAttribute("aria-current");
+    }
+    await openPage(page, "/dev/demo/office/cs/calls");
+    await expect(page.getByRole("navigation", { name: "מסכים נוספים" })).toHaveCount(0);
 
     await openPage(page, "/dev/demo/office/cs");
     await expect(sideNav(page).getByRole("link", { name: "פריטים לבדיקה" })).toHaveCount(0);
@@ -2434,3 +2648,1754 @@ test.describe("what the browser receives (phase G)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// D57 (owner, 2026-11-05): the Manager's and the Creator's five-item navigation with "דשבורד" as
+// the landing, the Manager's Settings › "משתמשים" (D34, never the matrix key `settings`), the
+// "מסכים נוספים" row on "קריאות" (no counts) and the white MODY logo in the existing dark headers.
+// Display only (G-04): every page keeps its own check.
+
+test.describe("D57: the \"מסכים נוספים\" row on \"קריאות\"", () => {
+  test("Manager and Creator: four links, no digits, each at least 24px tall; customer service has no row", async ({ page }) => {
+    for (const role of ["mgr", "creator"] as const) {
+      await openPage(page, `/dev/demo/office/${role}/calls`);
+      const row = page.getByRole("navigation", { name: "מסכים נוספים" });
+      await expect(row, role).toBeVisible();
+      await expect(row.getByRole("link"), role).toHaveText(["לקוחות", "חזרו מהשטח", "פריטים לבדיקה", "מוצרים"]);
+      expect(await row.innerText(), role).not.toMatch(/\d/);
+      for (const link of await row.getByRole("link").all()) {
+        const b = await link.boundingBox();
+        expect(b && b.height >= 24, `${role} ${await link.innerText()}`).toBe(true);
+      }
+      // The row sits between the title and the calls list.
+      const [title, rowBox, search] = await Promise.all([
+        page.locator(".ptitle").first().boundingBox(),
+        row.boundingBox(),
+        page.getByRole("searchbox").or(page.getByRole("textbox")).first().boundingBox(),
+      ]);
+      expect(title && rowBox && rowBox.y >= title.y + title.height - 1, role).toBe(true);
+      expect(rowBox && search && rowBox.y + rowBox.height <= search.y + 1, role).toBe(true);
+      expect(await horizontalOverflow(page), role).toEqual([]);
+    }
+    await openPage(page, "/dev/demo/office/cs/calls");
+    await expect(page.getByRole("navigation", { name: "מסכים נוספים" })).toHaveCount(0);
+  });
+
+  test("a link opens its screen with \"קריאות\" highlighted; the no-access card leads back to \"דשבורד\"", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls");
+    await page.getByRole("navigation", { name: "מסכים נוספים" }).getByRole("link", { name: "חזרו מהשטח", exact: true }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/back-from-field$/);
+    await expect(page.getByRole("heading", { level: 1, name: "חזרו מהשטח" })).toBeVisible();
+    await expect(sideNav(page).locator("a.on")).toHaveText("קריאות");
+    // Customer Service's no-access cards lead back to its unchanged home; the Manager's to "דשבורד".
+    await openPage(page, "/dev/demo/office/cs/products");
+    await expect(page.getByRole("link", { name: "חזרה לבית" })).toHaveAttribute("href", "/dev/demo/office/cs");
+    await openPage(page, "/dev/demo/office/mgr/settings/places");
+    await expect(page.getByRole("link", { name: "חזרה לדשבורד" })).toHaveAttribute("href", "/dev/demo/office/mgr/analytics");
+  });
+});
+
+test.describe("D57: the Manager's Settings › \"משתמשים\" (D34 fixed capability)", () => {
+  test("the account administration with no tab bar; \"הגדרות\" is the current page; no overflow", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "לשוניות ההגדרות" })).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "מטריצת ההרשאות" })).toHaveCount(0);
+    await expect(sideNav(page).getByRole("link", { name: "הגדרות", exact: true })).toHaveAttribute("aria-current", "page");
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+});
+
+test.describe("D57: Settings › \"משתמשים\" and the landing, negative access (raw responses)", () => {
+  onlyInProject("desktop");
+
+  const html = async (page: Page, path: string) => (await page.request.get(path)).text();
+
+  test("customer service: \"אין הרשאה\" and no account data; the Creator: a pointer to \"משתמשים והרשאות\" only", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/cs/settings/accounts");
+    await expect(page.getByRole("heading", { name: "אין הרשאה" })).toBeVisible();
+    await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
+    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toMatch(/acc-[a-z]|areq-|aint-|aev-/);
+
+    await openPage(page, "/dev/demo/office/creator/settings/accounts");
+    await expect(page.getByText("היוצר מנהל את כל החשבונות ומאשר את בקשות המנהל בלשונית משתמשים והרשאות.")).toBeVisible();
+    await expect(page.locator("main table, main form, main .tog")).toHaveCount(0);
+    expect(await html(page, "/dev/demo/office/creator/settings/accounts")).not.toMatch(/acc-[a-z]|areq-|aint-|aev-/);
+    await page.getByRole("link", { name: "למשתמשים והרשאות" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/office\/creator\/settings\/users$/);
+  });
+
+  test("the Manager's \"משתמשים\" never carries the matrix or the Creator's account; `settings` stays off", async ({ page }) => {
+    const body = await html(page, "/dev/demo/office/mgr/settings/accounts");
+    expect(body).toContain("acc-shirel");
+    // No Manager or Creator account (D34 scope); the Creator's own Settings tab has them (control).
+    expect(body).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    // Step 2 PR 2.3: no Creator notice and not the Creator's creation intent; only his own (aint-1).
+    expect(body).not.toContain("aev-");
+    expect(body).not.toContain("aint-2");
+    expect(body).toContain("aint-1");
+    expect(await html(page, "/dev/demo/office/creator/settings/users")).toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+    expect(body).not.toContain("מה כל הרשאה רואה");
+    // The matrix table (its name; the screen's own note may mention the matrix in words).
+    expect(body).not.toContain('aria-label="מטריצת ההרשאות"');
+    expect(body).not.toContain("כל האזנה נרשמת ביומן הביקורת");
+    // The matrix value is unchanged: the Manager's "הגדרות" key is still off (SE-03, D33).
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await expect(page.getByRole("button", { name: "הגדרות למנהל", exact: true })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the simulated commands' caller is the page's role: `selfRole` mgr on the Manager's tab, creator on the Creator's (PR 2.2 review CA-5)", async ({
+    page,
+  }) => {
+    const selfRole = { mgr: /selfRole\\?"\s*:\s*\\?"mgr\\?"/, creator: /selfRole\\?"\s*:\s*\\?"creator\\?"/ };
+    const manager = await html(page, "/dev/demo/office/mgr/settings/accounts");
+    expect(manager).toMatch(selfRole.mgr);
+    expect(manager).not.toMatch(selfRole.creator);
+    for (const path of ["/dev/demo/office/creator/settings/users", "/dev/demo/office/creator/settings/techs"]) {
+      const body = await html(page, path);
+      expect(body, path).toMatch(selfRole.creator);
+      expect(body, path).not.toMatch(selfRole.mgr);
+    }
+    // Customer Service gets no account state at all.
+    expect(await html(page, "/dev/demo/office/cs/settings/accounts")).not.toContain("selfRole");
+  });
+
+  test("the landing and the former \"משתמשים\" address answer 307 with the target and no account data", async ({ page }) => {
+    for (const [path, target] of [
+      ["/dev/demo/office/mgr", "/dev/demo/office/mgr/analytics"],
+      ["/dev/demo/office/creator", "/dev/demo/office/creator/analytics"],
+      ["/dev/demo/office/mgr/users", "/dev/demo/office/mgr/settings/accounts"],
+    ] as const) {
+      const res = await page.request.get(path, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(307);
+      expect(new URL(res.headers().location ?? "", "http://x").pathname, path).toBe(target);
+      expect(await res.text(), path).not.toMatch(/acc-[a-z]|areq-|FIXTURE-SENTINEL/);
+    }
+    // Not an office role: still a 404.
+    expect((await page.request.get("/dev/demo/office/tech", { maxRedirects: 0 })).status()).toBe(404);
+  });
+});
+
+test.describe("D57 (6): the white MODY logo in the existing dark headers", () => {
+  /** Width per header: the office sidebar above 900px, its narrow top bar, the technician header. */
+  const expected = (kind: "office" | "tech", viewportWidth: number) => (kind === "tech" ? 88 : viewportWidth > 900 ? 132 : 92);
+
+  for (const [kind, path] of [
+    ["office", "/dev/demo/office/mgr/calls"],
+    ["office", "/dev/demo/office/cs"],
+    ["office", "/dev/showcase/office"],
+    ["tech", "/dev/demo/tech"],
+    ["tech", "/dev/demo/tech/visit/48213/1"],
+    ["tech", "/dev/showcase/tech"],
+  ] as const) {
+    test(`${path}: proportions, size and a dark background behind it`, async ({ page }) => {
+      await openPage(page, path);
+      const img = kind === "office" ? officeLogo(page) : techLogo(page);
+      await expect(img).toHaveCount(1);
+      await expect(img).toBeVisible();
+      await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+      const facts = await img.evaluate((el: HTMLImageElement) => {
+        const r = el.getBoundingClientRect();
+        // The nearest painted background behind the logo (the header itself).
+        let behind = "";
+        for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+          const bg = getComputedStyle(n).backgroundColor;
+          if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+            behind = bg;
+            break;
+          }
+        }
+        const style = getComputedStyle(el);
+        return {
+          naturalWidth: el.naturalWidth,
+          naturalHeight: el.naturalHeight,
+          width: r.width,
+          height: r.height,
+          ownBackground: style.backgroundColor,
+          parentBackground: getComputedStyle(el.parentElement as HTMLElement).backgroundColor,
+          filter: style.filter,
+          blend: style.mixBlendMode,
+          behind,
+        };
+      });
+      expect(facts.naturalWidth).toBe(976);
+      expect(facts.naturalHeight).toBe(234);
+      expect(Math.abs(facts.width / facts.height - 976 / 234) / (976 / 234)).toBeLessThan(0.01);
+      expect(facts.width).toBeCloseTo(expected(kind, page.viewportSize()!.width), 0);
+      expect(facts.ownBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(facts.parentBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(facts.filter).toBe("none");
+      expect(facts.blend).toBe("normal");
+      // --ink (#18212B): the existing dark header, never a light strip.
+      expect(facts.behind).toBe("rgb(24, 33, 43)");
+      await expect(page.locator('img[src*="mody-logo.png"], .work-brand')).toHaveCount(0);
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
+  test("at 900px and below the product name stays for screen readers only and the top bar does not grow", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/calls");
+    const name = page.locator(".side .brand-name");
+    await expect(name).toHaveText("ניהול טכנאים");
+    const narrow = page.viewportSize()!.width <= 900;
+    const box = await name.boundingBox();
+    if (narrow) {
+      expect(box && box.width <= 1 && box.height <= 1).toBe(true);
+      // The logo sits in the nav row: not taller than a nav link, centred on the first link's row
+      // (never a row of its own, also when the nav wraps).
+      const [logo, link] = await Promise.all([officeLogo(page).boundingBox(), sideNav(page).getByRole("link").first().boundingBox()]);
+      expect(logo && link && logo.height <= link.height).toBe(true);
+      expect(logo && link && Math.abs(logo.y + logo.height / 2 - (link.y + link.height / 2))).toBeLessThanOrEqual(8);
+    } else {
+      await expect(name).toBeVisible();
+      const logo = await officeLogo(page).boundingBox();
+      expect(logo && box && box.y >= logo.y + logo.height - 1).toBe(true);
+    }
+  });
+
+  test("the technician header: the logo row is at the end side (left in RTL), above the screen's own header", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech");
+    const [brand, logo, head] = await Promise.all([
+      page.locator(".ph-head > .ph-brand").boundingBox(),
+      techLogo(page).boundingBox(),
+      page.locator(".ph-head > .ph-brand + *").boundingBox(),
+    ]);
+    expect(brand && logo && Math.abs(logo.x - brand.x) <= 1).toBe(true);
+    expect(brand && head && head.y >= brand.y + brand.height - 1).toBe(true);
+    await expect(page.locator(".ph-head > :first-child")).toHaveClass("ph-brand");
+  });
+});
+
+test.describe("D57 (6): the logo file", () => {
+  onlyInProject("desktop");
+
+  test("public/brand/mody-logo-white.png: 976×234, 8-bit RGBA, transparent corner", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { inflateSync } = await import("node:zlib");
+    const png = readFileSync("public/brand/mody-logo-white.png");
+    expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
+    expect(png.subarray(12, 16).toString("latin1")).toBe("IHDR");
+    expect(png.readUInt32BE(16)).toBe(976);
+    expect(png.readUInt32BE(20)).toBe(234);
+    expect(png[24]).toBe(8); // bit depth
+    expect(png[25]).toBe(6); // colour type: RGBA
+    expect(png[28]).toBe(0); // not interlaced
+    const idat: Buffer[] = [];
+    for (let at = 8; at < png.length; ) {
+      const length = png.readUInt32BE(at);
+      const type = png.subarray(at + 4, at + 8).toString("latin1");
+      if (type === "IDAT") idat.push(png.subarray(at + 8, at + 8 + length));
+      at += 12 + length;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    // Scanline 0: a filter byte, then RGBA per pixel. For the first pixel of the first row every
+    // PNG filter predicts 0, so the stored byte is the alpha value itself.
+    expect(raw[1 + 3]).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// D57: the manager dashboard (spec-final §10.2). Demo values at DEMO_NOW (21.10.2026 12:45),
+// computed from the fictional fixtures with the D57 formulas (the unit tests of the formulas are
+// in dashboard-metrics.spec.ts).
+
+const DASH = "/dev/demo/office/mgr/analytics";
+
+/** A dashboard tile by its exact label (a linked tile's label ends with " ›"). */
+const dashTile = (page: Page, label: string) =>
+  page.locator(".ma-kpis .kpi").filter({ has: page.locator(".l", { hasText: new RegExp(`^${label}( ›)?$`) }) });
+const dashValue = (page: Page, label: string) => dashTile(page, label).locator(".v");
+/** The visible label of the Technicians toolbar's period. */
+const periodLabel = (page: Page) => page.locator(".ma-plabel");
+const dialog = (page: Page) => page.getByRole("dialog");
+/** Rows of the open dialog's table. */
+const dialogRows = (page: Page) => dialog(page).locator("tbody tr");
+
+test.describe("D57 dashboard: numbers on screen", () => {
+  onlyInProject("desktop");
+
+  test("General: today, the current month's service metrics, the 30-day highlights and the chart table", async ({ page }) => {
+    await openPage(page, DASH);
+    await expect(dashValue(page, "מתוכננים")).toHaveText("11");
+    await expect(dashValue(page, "בוצעו")).toHaveText("2");
+    await expect(dashValue(page, "טרם בוצעו")).toHaveText("6");
+    await expect(dashValue(page, "לא בוצעו במועד")).toHaveText("3");
+    await expect(dashValue(page, "לא בוצעו במועד")).toHaveCSS("color", "rgb(193, 79, 79)");
+    await expect(page.locator(".ma-progress-pct")).toHaveText("18%");
+    await expect(page.locator(".ma-mini", { hasText: "2 מתוך 11 הושלמו" })).toBeVisible();
+
+    await expect(page.getByText("אוקטובר 2026 · החודש הנוכחי")).toBeVisible();
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("47 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("32 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("71%");
+    await expect(dashValue(page, "זמן סגירת קריאה")).toHaveText("3.8 ימים");
+
+    await expect(page.getByRole("list", { name: "3 ספקים מובילים" }).locator(".ma-bar-val")).toHaveText([/^106/, /^60/, /^25/]);
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-val")).toHaveText([/^50/, /^49/, /^39/, /^25/, /^21/]);
+
+    await page.locator(".ma-details > summary").click();
+    const rows = page.getByRole("table", { name: /מגמת קריאות שירות/ }).locator("tbody tr");
+    await expect(rows).toHaveCount(6);
+    const expected = [
+      ["אפריל 2026", "אין נתונים", "אין נתונים"],
+      ["מאי 2026", "אין נתונים", "אין נתונים"],
+      ["יוני 2026", "אין נתונים", "אין נתונים"],
+      ["יולי 2026", "1", "1"],
+      ["אוגוסט 2026", "2", "2"],
+      ["ספטמבר 2026", "28", "4"],
+    ];
+    for (const [i, cells] of expected.entries()) await expect(rows.nth(i).locator("td")).toHaveText(cells);
+
+    for (const months of [3, 12]) {
+      await openPage(page, `${DASH}?months=${months}`);
+      await page.locator(".ma-details > summary").click();
+      await expect(page.getByRole("table", { name: /מגמת קריאות שירות/ }).locator("tbody tr")).toHaveCount(months);
+    }
+    await expect(page.getByRole("navigation", { name: "טווח הגרף" }).getByRole("link", { name: "12 חודשים" })).toHaveAttribute("aria-current", "true");
+  });
+
+  test("Technicians: יורם by month, week and day; אדי's closure time in hours", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("70");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("52");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("47 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("31 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("71%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("3.9 ימים");
+    await expect(dashValue(page, "עמידה בתכנון")).toHaveText("הגדרה ממתינה");
+
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=week`);
+    await expect(periodLabel(page)).toHaveText("18.10–24.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("24");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("18");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("12");
+
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=day`);
+    await expect(periodLabel(page)).toHaveText("21.10.2026");
+    for (const label of ["זמן טיפול ממוצע", "זמן נסיעה ממוצע", "פתרון בביקור ראשון", "זמן סגירת קריאה ממוצע"]) {
+      await expect(dashValue(page, label), label).toHaveText(/^—\s*אין מספיק נתונים$/);
+      await expect(dashTile(page, label), label).toContainText("אין מספיק נתונים");
+    }
+
+    await openPage(page, `${DASH}?tab=tech&tech=e&period=day`);
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("47 שעות");
+  });
+
+  test("Products & Suppliers: unique calls, warranty and follow-up per SKU, columns and sorting", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const suppliers = page.getByRole("list", { name: "קריאות לפי ספק" });
+    await expect(suppliers.locator(".ma-bar-val")).toHaveText([/^108/, /^61/, /^26/, /^2/]);
+    await expect(suppliers.locator(".ma-bar-name").last()).toHaveText("לא הוזן");
+
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    await expect(table.locator("thead th")).toHaveText(["מק״ט", "מוצר", "מותג", "ספק", "קריאות", "באחריות", "% המשך טיפול", "תקלה נפוצה"]);
+    const row = (sku: string) => table.locator("tbody tr").filter({ has: page.locator("td:first-child", { hasText: new RegExp(`^${sku}$`) }) });
+    // Unique calls, not visits: KT-2041 14% and BT-1120 40% (visit-based rates would be 13% and 35%).
+    await expect(row("KT-2041").locator("td").nth(4)).toHaveText("52");
+    await expect(row("KT-2041").locator("td").nth(5)).toHaveText("87%");
+    await expect(row("KT-2041").locator("td").nth(6)).toHaveText("14%");
+    await expect(row("BT-1120").locator("td").nth(6)).toHaveText("40%");
+    await expect(row("MX-410").locator("td").nth(5)).toHaveText(/^—/);
+
+    const callsHeader = table.locator("thead th").nth(4);
+    await expect(callsHeader).toHaveAttribute("aria-sort", "descending");
+    await callsHeader.getByRole("link").click();
+    await expect(page).toHaveURL(/sort=calls-asc/);
+    await expect(table.locator("thead th").nth(4)).toHaveAttribute("aria-sort", "ascending");
+    // 1 call each: the tie between MX-410 and TB-75 is broken by SKU.
+    await expect(table.locator("tbody tr").first().locator("td").first()).toHaveText("MX-410");
+  });
+});
+
+test.describe("D57 dashboard: scope, no fabrication, colours", () => {
+  test("General: no follow-up or review counters, no work-queue links; computed metrics show numbers", async ({ page }) => {
+    await openPage(page, DASH);
+    const main = page.locator("main");
+    for (const text of ["דורש טיפול", "המשך טיפול פתוחים", "עכשיו בשטח", "דרשו המשך טיפול", "פריטים לבדיקה"]) {
+      await expect(main, text).not.toContainText(text);
+    }
+    await expect(main.locator('a[href*="/review"], a[href*="/back-from-field"], a[href*="/customers"], a[href*="/calls?"]')).toHaveCount(0);
+    await expect(dashValue(page, "לא בוצעו במועד")).not.toHaveText("הגדרה ממתינה");
+    await expect(dashValue(page, "זמן סגירת קריאה")).not.toHaveText("הגדרה ממתינה");
+    // A named group, not an image: an image's children are presentational and must not hold links
+    // (axe nested-interactive, WCAG 4.1.2). Its content is hidden from assistive technology.
+    const chart = page.getByRole("group", { name: /מגמת קריאות שירות לפי חודש/ });
+    await expect(chart).toBeVisible();
+    await expect(page.locator('[role="img"] a[href]')).toHaveCount(0);
+    expect(await chart.locator("a").count()).toBeGreaterThan(0);
+    for (const a of await chart.locator("a").all()) {
+      await expect(a).toHaveAttribute("aria-hidden", "true");
+      await expect(a).toHaveAttribute("tabindex", "-1");
+    }
+    // Gridlines at whole-number steps (September's 28 opened calls → a 40 scale: 10 / 20 / 30), never "12.5".
+    await expect(chart.locator(".ma-gridline span")).toHaveText(["10", "20", "30"]);
+    await expect(page.locator(".ma-gbar-o").last()).toHaveCSS("background-color", "rgb(70, 119, 213)");
+    await expect(page.locator(".ma-gbar-c").last()).toHaveCSS("background-color", "rgb(105, 117, 134)");
+    await expect(page.locator(".ma-progress .ma-seg-done")).toHaveCSS("background-color", "rgb(70, 119, 213)");
+    await expect(page.locator(".ma-progress .ma-seg-pending")).toHaveCSS("background-color", "rgb(185, 193, 205)");
+    await expect(page.locator(".ma-progress .ma-seg-missed")).toHaveCSS("background-color", "rgb(193, 79, 79)");
+    // 🧪 on the General SKU bars (SIM-17); SKUs are LTR text.
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".pill").first()).toContainText("🧪");
+    for (const sku of await page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-name bdi").all()) {
+      await expect(sku).toHaveAttribute("dir", "ltr");
+    }
+  });
+
+  test("every \"—\" value has an accessible name", async ({ page }) => {
+    for (const path of [`${DASH}?tab=tech&tech=y&period=day`, `${DASH}?tab=prod`]) {
+      await openPage(page, path);
+      const empties = page.locator(".ma-none");
+      expect(await empties.count(), path).toBeGreaterThan(0);
+      for (const el of await empties.all()) await expect(el).toContainText(/אין מספיק נתונים|אין נתונים/);
+    }
+  });
+
+  test("Technicians: three activity tiles in the owner's order, five performance tiles, one technician only", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await expect(page.locator(".ma-kpis-3 .kpi .l")).toHaveText([/^ביקורים מתוכננים/, /^ביקורים שבוצעו/, /^קריאות שנסגרו/]);
+    await expect(page.locator(".ma-kpis-5 .kpi")).toHaveCount(5);
+    await expect(page.locator(".ma-kpis .v", { hasText: "הגדרה ממתינה" })).toHaveCount(1);
+    await expect(dashTile(page, "עמידה בתכנון")).not.toHaveAttribute("href", /./);
+    // No other technician's name outside the technician buttons.
+    const body = await page.locator(".ma-dash").evaluate((el) => {
+      const copy = el.cloneNode(true) as HTMLElement;
+      copy.querySelector(".ma-cgroup-tech")?.remove();
+      return copy.textContent ?? "";
+    });
+    expect(body).not.toContain("אדי");
+    expect(body).not.toContain("שמואל");
+    // At the current period "next" is not a link; a future offset is treated as the current period.
+    await expect(page.getByRole("link", { name: "התקופה הבאה" })).toHaveCount(0);
+    await openPage(page, `${DASH}?tab=tech&tech=y&offset=1`);
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(page.getByRole("link", { name: "התקופה הבאה" })).toHaveCount(0);
+  });
+
+  test("Technicians: an invalid custom range shows the error and falls back to the current month", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=custom&from=2026-10-10&to=2026-10-01`);
+    await expect(page.locator("#ma-range-error")).toHaveText("טווח התאריכים לא תקין: עד היום ולא יותר משנה");
+    await expect(page.locator("#ma-range-error")).toHaveAttribute("role", "alert");
+    await expect(page.getByLabel("מתאריך")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("עד תאריך")).toHaveAttribute("aria-describedby", "ma-range-error");
+    await expect(page.locator(".ma-section .ma-label").first()).toContainText("אוקטובר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+  });
+
+  test("Technicians: the reports view has the visits table, no tiles and no counts on the filter chips", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&view=reports`);
+    await expect(page.getByRole("heading", { name: /דוחות הביקורים של יורם · אוקטובר 2026/ })).toBeVisible();
+    await expect(page.getByRole("table", { name: "הביקורים של יורם" })).toBeVisible();
+    await expect(page.locator(".kpis")).toHaveCount(0);
+    for (const chip of await page.getByRole("navigation", { name: "סינון הביקורים" }).getByRole("link").all()) {
+      await expect(chip).not.toHaveText(/\d/);
+    }
+    await page.getByRole("link", { name: /חזרה למדדי הטכנאי/ }).click();
+    await expect(page).not.toHaveURL(/view=reports/);
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+  });
+
+  test("Products: supplier card first, no date controls, \"תקלה נפוצה\" unavailable, test badges", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const supplier = page.getByRole("heading", { name: "קריאות לפי ספק" });
+    const brand = page.getByRole("heading", { name: "קריאות לפי מותג" });
+    const order = await supplier.evaluate((a, b) => Boolean(a.compareDocumentPosition(b as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await brand.elementHandle());
+    expect(order).toBe(true);
+    await expect(page.locator('input[type="date"], .ma-pill')).toHaveCount(0);
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    const issues = table.locator("tbody tr td:nth-child(8)");
+    await expect(issues).toHaveCount(8);
+    for (const cell of await issues.all()) await expect(cell).toHaveText("לא זמין");
+    await expect(page.locator("main")).not.toContainText("טפטוף");
+    await expect(table.locator("tbody td:first-child", { hasText: "MX-410" })).toHaveCount(1);
+    await expect(table.locator("tbody td:first-child", { hasText: "TB-75" })).toHaveCount(1);
+    await expect(table.locator("tbody tr").first().locator("td").nth(1)).toContainText("🧪");
+    for (const cell of await table.locator("tbody td:first-child").all()) await expect(cell).toHaveAttribute("dir", "ltr");
+  });
+});
+
+test.describe("D57 dashboard: Technicians toolbar (desktop)", () => {
+  onlyInProject("desktop");
+
+  test("order at 1440: technicians right, date navigation centre, periods left; previous right of the label", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    const [tech, date, periods, prev, label, next] = await Promise.all([
+      page.locator(".ma-cgroup-tech").boundingBox(),
+      page.locator(".ma-cgroup-date").boundingBox(),
+      page.locator(".ma-cgroup-period").boundingBox(),
+      page.getByRole("link", { name: "התקופה הקודמת" }).boundingBox(),
+      periodLabel(page).boundingBox(),
+      page.locator(".ma-pnav > :last-child").boundingBox(),
+    ]);
+    if (!tech || !date || !periods || !prev || !label || !next) throw new Error("toolbar not laid out");
+    expect(tech.x).toBeGreaterThan(date.x + date.width);
+    expect(date.x).toBeGreaterThan(periods.x + periods.width);
+    expect(prev.x).toBeGreaterThan(label.x + label.width - 1);
+    expect(next.x + next.width).toBeLessThan(label.x + 1);
+  });
+
+  test("date navigation: the previous month and back", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    await page.getByRole("link", { name: "התקופה הקודמת" }).click();
+    await expect(page).toHaveURL(/offset=-1/);
+    await expect(periodLabel(page)).toHaveText("ספטמבר 2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("1");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("1");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("1");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("48 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("29 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("100%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("2.1 ימים");
+    await page.getByRole("link", { name: "התקופה הבאה" }).click();
+    await expect(periodLabel(page)).toHaveText("אוקטובר 2026");
+    await expect(page).not.toHaveURL(/offset=/);
+  });
+
+  test("custom range: the form navigates without a full reload", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=s&period=custom`);
+    await page.evaluate(() => {
+      (window as unknown as { __maMarker: string }).__maMarker = "kept";
+    });
+    await page.getByLabel("מתאריך").fill("2026-10-01");
+    await page.getByLabel("עד תאריך").fill("2026-10-21");
+    await page.getByRole("button", { name: "הצג" }).click();
+    await expect(page).toHaveURL(/from=2026-10-01&to=2026-10-21/);
+    await expect(page.locator(".ma-section .ma-label").first()).toHaveText("1.10.2026 – 21.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("76");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("73");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("53");
+    await expect(dashValue(page, "זמן טיפול ממוצע")).toHaveText("44 דק׳");
+    await expect(dashValue(page, "זמן נסיעה ממוצע")).toHaveText("31 דק׳");
+    await expect(dashValue(page, "פתרון בביקור ראשון")).toHaveText("69%");
+    await expect(dashValue(page, "זמן סגירת קריאה ממוצע")).toHaveText("3.9 ימים");
+    expect(await page.evaluate(() => (window as unknown as { __maMarker?: string }).__maMarker)).toBe("kept");
+    // שמואל's values equal his full October ones, so they cannot show that the range reached the
+    // metrics. יורם's differ: 1–21.10 gives 74 planned (76 for October), 70 done, 52 closed.
+    await page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "יורם" }).click();
+    await expect(page).toHaveURL(/tech=y/);
+    await expect(page).toHaveURL(/from=2026-10-01&to=2026-10-21/);
+    await expect(page.locator(".ma-section .ma-label").first()).toHaveText("1.10.2026 – 21.10.2026");
+    await expect(dashValue(page, "ביקורים מתוכננים")).toHaveText("74");
+    await expect(dashValue(page, "ביקורים שבוצעו")).toHaveText("70");
+    await expect(dashValue(page, "קריאות שנסגרו")).toHaveText("52");
+  });
+
+  test("switching technician keeps the period", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y&period=week`);
+    await page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "אדי" }).click();
+    await expect(page).toHaveURL(/tech=e/);
+    await expect(page).toHaveURL(/period=week/);
+    await expect(periodLabel(page)).toHaveText("18.10–24.10.2026");
+    await expect(page.getByRole("group", { name: "טכנאי:" }).getByRole("link", { name: "אדי" })).toHaveAttribute("aria-current", "true");
+  });
+});
+
+test.describe("D57 dashboard: Technicians toolbar (phone)", () => {
+  onlyInProject("phone");
+
+  test("the three groups stack in DOM order; technicians are direct links; no select; no overflow", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=tech&tech=y`);
+    const [tech, date, periods] = await Promise.all([
+      page.locator(".ma-cgroup-tech").boundingBox(),
+      page.locator(".ma-cgroup-date").boundingBox(),
+      page.locator(".ma-cgroup-period").boundingBox(),
+    ]);
+    if (!tech || !date || !periods) throw new Error("toolbar not laid out");
+    expect(date.y).toBeGreaterThanOrEqual(tech.y + tech.height - 1);
+    expect(periods.y).toBeGreaterThanOrEqual(date.y + date.height - 1);
+    await expect(page.getByRole("group", { name: "טכנאי:" }).locator("a")).toHaveCount(3);
+    await expect(page.locator(".ma-controls select")).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("the chart's visible month labels do not overlap at 6 and 12 months", async ({ page }) => {
+    for (const months of [6, 12]) {
+      await openPage(page, `${DASH}${months === 12 ? "?months=12" : ""}`);
+      const boxes = await page.locator(".ma-mlabel").evaluateAll((els) =>
+        els.filter((el) => getComputedStyle(el).visibility !== "hidden").map((el) => el.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })),
+      );
+      expect(boxes.length, String(months)).toBeGreaterThan(0);
+      const sorted = boxes.sort((a, b) => a.left - b.left);
+      for (let i = 1; i < sorted.length; i++) expect(sorted[i]!.left, `${months} months, label ${i}`).toBeGreaterThanOrEqual(sorted[i - 1]!.right);
+    }
+  });
+});
+
+test.describe("D57 dashboard: details dialog", () => {
+  onlyInProject("desktop");
+
+  test("a tile opens an accessible dialog: focus inside, trapped, Escape / ✕ / backdrop close, focus returns", async ({ page }) => {
+    await openPage(page, DASH);
+    const tile = page.locator('[data-detail-key="today.missed"]');
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toHaveAccessibleName("לא בוצעו במועד · 21.10.2026");
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await expect(dialogRows(page)).toHaveCount(3);
+    await expect(dialogRows(page).locator("td:first-child")).toHaveText(["48213", "48219", "48226"]);
+    for (const row of await dialogRows(page).all()) {
+      await expect(row).toContainText(/נקלט אוטומטית מזימון Outlook|זימון בדיקה/);
+      await expect(row).toContainText("🧪");
+    }
+    // Tab and Shift+Tab stay inside.
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    }
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page).not.toHaveURL(/detail=/);
+    await expect(tile).toBeFocused();
+
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page).getByRole("link", { name: "סגירה" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page).not.toHaveURL(/detail=/);
+
+    // A press that starts inside the panel and ends on the backdrop keeps it open; a click on the backdrop closes it.
+    await tile.click();
+    await expect(dialog(page)).toBeVisible();
+    const panel = await dialog(page).boundingBox();
+    if (!panel) throw new Error("no dialog box");
+    await page.mouse.move(panel.x + panel.width / 2, panel.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(panel.x + panel.width / 2, Math.max(2, panel.y - 30), { steps: 4 });
+    await page.mouse.up();
+    await expect(dialog(page)).toBeVisible();
+    await page.mouse.click(panel.x + panel.width / 2, Math.max(2, panel.y - 30));
+    await expect(dialog(page)).toHaveCount(0);
+  });
+
+  test("a direct load opens the dialog with focus inside", async ({ page }) => {
+    await openPage(page, `${DASH}?detail=today.planned`);
+    await expect(dialog(page)).toBeVisible();
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await expect(dialogRows(page)).toHaveCount(11);
+  });
+
+  test("a supplier's 108 calls over 3 pages; focus stays inside after paging and returns to the row", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const row = page.locator('[data-detail-key="prod.bySupplier|מ.ס. יבוא"]');
+    await row.click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText("מציג 1–50 מתוך 108 קריאות");
+    await expect(dialogRows(page)).toHaveCount(50);
+    await dialog(page).getByRole("link", { name: "הבא ‹" }).click();
+    await expect(page).toHaveURL(/dpage=2/);
+    await expect(dialog(page)).toContainText("מציג 51–100 מתוך 108 קריאות");
+    await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await dialog(page).getByRole("link", { name: "הבא ‹" }).click();
+    await expect(dialogRows(page)).toHaveCount(8);
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(row).toBeFocused();
+  });
+
+  test("the chart table's September \"נפתחו\" opens 28 calls", async ({ page }) => {
+    await openPage(page, DASH);
+    await page.locator(".ma-details > summary").click();
+    await page.locator('[data-detail-key="trend.opened|2026-09"]').click();
+    await expect(dialog(page)).toHaveAccessibleName("קריאות שנפתחו · ספטמבר 2026");
+    await expect(dialogRows(page)).toHaveCount(28);
+  });
+
+  test("\"% המשך טיפול\" and \"נדרש המשך טיפול\" agree; the current status stays closed (D57 (5))", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod&detail=prod.skuCalls&group=KT-1800`);
+    await expect(dialogRows(page)).toHaveCount(21);
+    const header = await dialog(page).locator("thead th").allTextContents();
+    const col = header.indexOf("נדרש המשך טיפול");
+    expect(col).toBeGreaterThan(0);
+    const yes = dialogRows(page).filter({ has: page.locator(`td:nth-child(${col + 1}):text-is("כן")`) });
+    await expect(yes).toHaveCount(4);
+    expect((await yes.locator("td:first-child").allTextContents()).sort()).toEqual(["47877", "47881", "47882", "47925"]);
+    for (const req of ["47881", "47882"]) {
+      await expect(dialogRows(page).filter({ has: page.locator("td:first-child", { hasText: new RegExp(`^${req}$`) }) })).toContainText("טופלה");
+    }
+    for (const cell of await dialog(page).locator("tbody td[dir=ltr]").all()) await expect(cell).toHaveText("KT-1800");
+  });
+
+  test("no dialog for pending, unavailable, unknown or off-tab keys, or an unknown group", async ({ page }) => {
+    for (const q of [
+      "?tab=tech&detail=tech.planAdherence",
+      "?tab=prod&detail=prod.topIssue",
+      "?detail=bogus",
+      "?detail=tech.done",
+      "?tab=prod&detail=prod.skuCalls&group=BOGUS",
+      "?detail=trend.opened&group=2020-01",
+    ]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".ma-kpis, .ma-two").first(), q).toBeVisible();
+      await expect(dialog(page), q).toHaveCount(0);
+    }
+  });
+});
+
+test.describe("D57 dashboard: what customer service receives (raw responses)", () => {
+  onlyInProject("desktop");
+
+  test("no dashboard data and no dialog for a role without a dashboard tab", async ({ page }) => {
+    for (const path of [
+      "/dev/demo/office/cs/analytics?detail=today.planned",
+      "/dev/demo/office/cs/analytics?tab=prod&detail=prod.skuCalls&group=KT-2041",
+      "/dev/demo/office/cs/analytics?tab=tech&tech=y&view=reports",
+    ]) {
+      const body = await (await page.request.get(path)).text();
+      expect(body, path).toContain("אין הרשאה");
+      // The request URL itself is echoed in the payload, so the SKU's product name stands for it.
+      for (const text of ["48213", "48240", "ברז מטבח נשלף", "ma-dialog", "ma-kpis", "ma-controls"]) expect(body, `${path}: ${text}`).not.toContain(text);
+    }
+  });
+
+  test("the analytics route of a non-office role is 404", async ({ request }) => {
+    expect((await request.get("/dev/demo/office/tech/analytics")).status()).toBe(404);
+  });
+});
+
+test.describe("D57 dashboard: loading and error", () => {
+  onlyInProject("desktop");
+
+  for (const width of [390, 820]) {
+    test(`no layout shift at ${width}px: the skeleton renders inside the unchanged frame`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openPage(page, "/dev/demo/office/mgr/calls");
+      // The sidebar link prefetches the dashboard's loading state; wait for it, then slow the page.
+      await page.waitForResponse((r) => r.url().includes("/analytics") && r.request().headers()["next-router-prefetch"] !== undefined, {
+        timeout: 10_000,
+      }).catch(() => undefined);
+      await page.waitForLoadState("networkidle");
+      const frame = () =>
+        page.evaluate(() => ({
+          top: Math.round(document.querySelector("main.work")?.getBoundingClientRect().top ?? -1),
+          side: Math.round(document.querySelector(".side")?.getBoundingClientRect().height ?? -1),
+          links: document.querySelectorAll(".side .nav a").length,
+        }));
+      const before = await frame();
+      await page.route(/\/analytics/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      });
+      await page.locator(".side").getByRole("link", { name: "דשבורד" }).click();
+      // The loading text is a status outside the busy region (announced); the placeholders are busy.
+      const skeleton = page.locator('[aria-busy="true"]');
+      await expect(skeleton).toBeVisible();
+      await expect(page.getByRole("status").filter({ hasText: "טוען את הדשבורד…" })).toBeVisible();
+      await expect(skeleton.getByRole("status")).toHaveCount(0);
+      const during = await frame();
+      // The skeleton mirrors the page's blocks: the first tile does not move when the data arrives.
+      const top = (selector: string) => page.locator(selector).first().evaluate((el) => Math.round(el.getBoundingClientRect().top));
+      const skeletonTile = await top(".ma-skel .ma-skel-kpis .kpi");
+      await expect(page.locator(".ma-dash .ma-kpis").first()).toBeVisible({ timeout: 10_000 });
+      await expect(skeleton).toHaveCount(0);
+      const after = await frame();
+      expect(Math.abs((await top(".ma-dash .ma-kpis .kpi")) - skeletonTile)).toBeLessThanOrEqual(2);
+      for (const [a, b] of [
+        [before, during],
+        [during, after],
+      ] as const) {
+        expect(Math.abs(a.top - b.top)).toBeLessThanOrEqual(1);
+        expect(Math.abs(a.side - b.side)).toBeLessThanOrEqual(1);
+      }
+      expect([before.links, during.links, after.links]).toEqual([5, 5, 5]);
+    });
+  }
+
+  test("error.tsx: retry() and a link without search params; never the error's message or digest", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("app/dev/demo/office/[role]/analytics/error.tsx", "utf8");
+    expect(source).toContain('"use client"');
+    expect(source).toContain("retry()");
+    expect(source).toContain("useParams");
+    expect(source).not.toContain("error.message");
+    expect(source).not.toContain("digest");
+    // The frame comes from the segment layout; the page and the loading state never draw a second one.
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/layout.tsx", "utf8")).toContain("DemoOfficeFrame");
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/page.tsx", "utf8")).not.toContain("DemoOfficeFrame");
+    expect(readFileSync("app/dev/demo/office/[role]/analytics/loading.tsx", "utf8")).not.toContain("DemoOfficeFrame");
+  });
+
+  test("exactly one sidebar on every analytics view", async ({ page }) => {
+    for (const q of ["", "?tab=tech&tech=y&view=reports", "?tab=prod&detail=prod.bySupplier&group=__none__"]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".side"), q).toHaveCount(1);
+    }
+    await openPage(page, "/dev/demo/office/cs/analytics");
+    await expect(page.locator(".side")).toHaveCount(1);
+  });
+});
+
+test.describe("D57 dashboard: accessibility and layout details (review fixes)", () => {
+  test("SKU bars show the product name wherever the dashboard is at least 600px wide (tablet included)", async ({ page }) => {
+    await openPage(page, DASH);
+    const name = page.locator(".ma-bars-sku .ma-bar-pname").first();
+    if (page.viewportSize()!.width >= 820) await expect(name).toBeVisible();
+    else await expect(name).toBeHidden();
+  });
+
+  test("no two landmarks share a name; tile groups keep theirs", async ({ page }) => {
+    for (const q of ["", "?tab=tech&tech=y", "?tab=prod"]) {
+      await openPage(page, `${DASH}${q}`);
+      await expect(page.locator(".ma-dash section").first()).toBeVisible();
+      const names = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("main section[aria-label], main section[aria-labelledby], main [role='region']")].map((el) => {
+          const by = el.getAttribute("aria-labelledby");
+          return (by ? (document.getElementById(by)?.textContent ?? "") : (el.getAttribute("aria-label") ?? "")).trim();
+        }),
+      );
+      expect(names.length, q).toBeGreaterThan(0);
+      expect(new Set(names).size, `${q}: ${names.join(" | ")}`).toBe(names.length);
+    }
+    await openPage(page, DASH);
+    await expect(page.getByRole("region", { name: "פעילות היום" })).toHaveCount(1);
+  });
+
+  test("a ranked bar's link is named by its own visible text (WCAG 2.5.3)", async ({ page }) => {
+    await openPage(page, DASH);
+    const link = page.getByRole("list", { name: "3 ספקים מובילים" }).getByRole("link").first();
+    await expect(link).not.toHaveAttribute("aria-label", /./);
+    await expect(link).toHaveAccessibleName(/^מ\.ס\. יבוא\s*:\s*106 קריאות · פירוט$/);
+  });
+
+  test("dashboard tiles: no arrow glyph; the percent sign in the small unit style", async ({ page }) => {
+    await openPage(page, DASH);
+    await expect(page.locator(".ma-kpis .od-kpi-go").first()).toBeHidden();
+    const first = dashTile(page, "פתרון בביקור ראשון");
+    await expect(first.locator(".v")).toHaveText("71%");
+    await expect(first.locator(".kpi-pct")).toHaveCSS("font-size", "12px");
+  });
+
+  test("the SKU table: headers on one line; the SKU column stays in view while the table scrolls sideways", async ({ page }) => {
+    await openPage(page, `${DASH}?tab=prod`);
+    const table = page.getByRole("table", { name: "מק״טים עם הכי הרבה קריאות" });
+    await expect(table.locator("thead th")).toHaveCount(8);
+    for (const th of await table.locator("thead th").all()) await expect(th).toHaveCSS("white-space", "nowrap");
+    const heights = await table.locator("thead th").evaluateAll((ths) => ths.map((th) => Math.round(th.getBoundingClientRect().height)));
+    expect(new Set(heights).size, heights.join(",")).toBe(1);
+    await expect(table.locator("tbody td").first()).toHaveCSS("position", "sticky");
+    const scroller = page.getByRole("region", { name: "טבלת המק״טים" });
+    const scrolls = await scroller.evaluate((el) => el.scrollWidth > el.clientWidth);
+    if (scrolls) {
+      // RTL: scrolling towards the later columns is a negative scrollLeft.
+      await scroller.evaluate((el) => {
+        el.scrollLeft = -el.scrollWidth;
+      });
+      const [box, cell] = await Promise.all([scroller.boundingBox(), table.locator("tbody td").first().boundingBox()]);
+      expect(box && cell && cell.x + cell.width).toBeGreaterThan((box?.x ?? 0) + (box?.width ?? 0) - 3);
+    }
+  });
+
+  test("closing a dialog opened from a chart bar returns focus to the chart table's summary, not to <body>", async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "runs in the desktop project only");
+    await openPage(page, DASH);
+    await page.locator('a.ma-ghalf-o[href*="group=2026-09"]').click();
+    await expect(dialog(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(page.locator(".ma-details > summary")).toBeFocused();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Step 2 PR 2.3 "screens first" (fake data): the sign-in prototype, sign-out placements (Q4), role
+// start screens (Q18), the Creator's credential dialogs and notices, the routine edit and the
+// incomplete creations. Every action is simulated; the password-like values below are fictional
+// test strings that must never appear anywhere the page exposes.
+
+const LOGIN_PW = "Pw-Demo-73915!";
+const SET_PW = "Sim-Pass-4821!";
+
+/** Every console message while the test runs (any type), to check that no secret is logged. */
+function collectConsole(page: Page): string[] {
+  const lines: string[] = [];
+  page.on("console", (msg) => lines.push(msg.text()));
+  return lines;
+}
+
+/** Records the text of every toast shown from now on (a MutationObserver; the toast replaces itself). */
+async function recordToasts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __toasts: string[] };
+    w.__toasts = [];
+    new MutationObserver((records) => {
+      for (const r of records) {
+        for (const n of r.addedNodes) if (n instanceof HTMLElement && n.matches(".toast")) w.__toasts.push(n.innerText);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+}
+const toastsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? []);
+
+/** Where `secret` shows up: page HTML, visible text, URL, storage, input value attributes, toasts, console. */
+async function echoesOf(page: Page, secret: string, consoleLines: readonly string[]): Promise<string[]> {
+  const found: string[] = [];
+  if ((await page.content()).includes(secret)) found.push("page.content()");
+  if ((await page.evaluate(() => document.body.innerText)).includes(secret)) found.push("body.innerText");
+  if (page.url().includes(secret)) found.push("url");
+  const storage = await page.evaluate(() => {
+    const dump = (st: Storage) =>
+      Object.fromEntries(
+        Array.from({ length: st.length }, (_, i) => {
+          const key = st.key(i) ?? "";
+          return [key, st.getItem(key)];
+        }),
+      );
+    return JSON.stringify([dump(localStorage), dump(sessionStorage)]);
+  });
+  if (storage.includes(secret)) found.push("storage");
+  const attributes = await page.evaluate(() => [...document.querySelectorAll("input")].map((i) => i.getAttribute("value") ?? "").join("\n"));
+  if (attributes.includes(secret)) found.push("value attribute");
+  if ((await toast(page).allInnerTexts()).join("\n").includes(secret) || (await toastsSeen(page)).join("\n").includes(secret)) {
+    found.push("toast");
+  }
+  if (consoleLines.some((line) => line.includes(secret))) found.push("console");
+  return found;
+}
+
+/** The narrow test viewport where the drawer takes the whole width (no dimmed background to press). */
+const drawerCoversWidth = (page: Page) => page.viewportSize()!.width <= 440;
+
+/** A press on the dimmed background beside the drawer (the drawer is at the inline end, left in RTL). */
+async function pressBackdrop(page: Page) {
+  const { width } = page.viewportSize()!;
+  await page.mouse.click(width - 12, 240);
+}
+
+const usersTable = (page: Page) => page.getByRole("table", { name: "משתמשים", exact: true });
+const managerTable = (page: Page) => page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" });
+const rowOf = (table: ReturnType<typeof usersTable>, text: string) => table.locator("tbody tr").filter({ hasText: text });
+
+test.describe("Step 2 login (prototype)", () => {
+  test("the form: LTR email and password with sign-in autocomplete, no names, no sign-up and no reset", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    await expect(page.getByRole("heading", { level: 1, name: "כניסה" })).toBeVisible();
+    const email = page.getByLabel("אימייל", { exact: true });
+    await expect(email).toHaveAttribute("type", "email");
+    await expect(email).toHaveAttribute("dir", "ltr");
+    await expect(email).toHaveAttribute("autocomplete", "username");
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(password).toHaveAttribute("dir", "ltr");
+    await expect(password).toHaveAttribute("autocomplete", "current-password");
+    // No `name` on any input: a submit without JavaScript can never serialize the password.
+    await expect(page.locator(".login input")).toHaveCount(2);
+    await expect(page.locator(".login input[name]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "כניסה", exact: true })).toBeVisible();
+    // No sign-up and no "forgot password" control (Q2); the note's text is not a control.
+    const signUp = /הרשמה|הרשמו|שכחתי|sign ?up|forgot/i;
+    await expect(page.getByRole("link", { name: signUp })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: signUp })).toHaveCount(0);
+    await expect(page.getByText("אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת.")).toBeVisible();
+    // No real route in PR 2.3 (PR 2.5 adds /login).
+    for (const path of ["/dev/demo/signup", "/signup", "/login"]) {
+      expect((await page.request.get(path)).status(), path).toBe(404);
+    }
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("checks in the browser: focus and aria-invalid on the first invalid field; the password is kept after a refusal", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    const email = page.getByLabel("אימייל", { exact: true });
+    const password = page.getByLabel("סיסמה", { exact: true });
+    const submit = page.getByRole("button", { name: "כניסה", exact: true });
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("חסר מייל");
+    await expect(email).toBeFocused();
+    await expect(email).toHaveAttribute("aria-invalid", "true");
+
+    await email.fill("not-an-email");
+    await password.fill(LOGIN_PW);
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("כתובת מייל לא תקינה");
+    // Nothing was sent: the password stays, so only the email needs fixing.
+    expect(await password.inputValue()).toBe(LOGIN_PW);
+
+    await email.fill("user@example.test");
+    await password.fill("");
+    await submit.click();
+    await expect(page.locator(".login").getByRole("alert")).toHaveText("חסרה סיסמה");
+    await expect(password).toBeFocused();
+    await expect(password).toHaveAttribute("aria-invalid", "true");
+    await expect(email).not.toHaveAttribute("aria-invalid", "true");
+    await expect(toast(page)).toHaveCount(0);
+  });
+
+  test("no echo of the password before or after the (simulated) submit", async ({ page }) => {
+    const consoleLines = collectConsole(page);
+    await openPage(page, "/dev/demo/login");
+    await recordToasts(page);
+    const email = page.getByLabel("אימייל", { exact: true });
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await email.fill("user@example.test");
+    await password.fill(LOGIN_PW);
+    // Uncontrolled: typing never reaches the value attribute or the page's HTML (critique S1).
+    expect(await password.getAttribute("value")).toBeNull();
+    expect(await page.content()).not.toContain(LOGIN_PW);
+
+    await page.getByRole("button", { name: "כניסה", exact: true }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("בהדגמה אין חשבונות");
+    expect(await password.inputValue()).toBe("");
+    expect(page.url()).not.toContain(LOGIN_PW);
+    expect(page.url()).not.toContain("password");
+    expect(await echoesOf(page, LOGIN_PW, consoleLines)).toEqual([]);
+    // The email stays.
+    await expect(email).toHaveValue("user@example.test");
+  });
+
+  test("the states: one credentials message with the form, one service message without it, no access with sign-out", async ({ page }) => {
+    await openPage(page, "/dev/demo/login?state=failed");
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
+    await expect(page.getByLabel("אימייל", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("סיסמה", { exact: true })).toHaveValue("");
+
+    await openPage(page, "/dev/demo/login?state=unavailable");
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.service);
+    await expect(page.locator(".login input")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "כניסה", exact: true })).toHaveCount(0);
+
+    await openPage(page, "/dev/demo/login?state=no-access");
+    await expect(page.getByRole("heading", { level: 1, name: "אין גישה" })).toBeVisible();
+    await expect(page.getByText(SIGN_IN_MESSAGES.noAccess)).toBeVisible();
+    await expect(page.locator(".login").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".login input")).toHaveCount(0);
+    await page.getByRole("button", { name: "יציאה מהחשבון" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("יציאה מהחשבון");
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    // Anything else is the form (loginStateOf).
+    for (const query of ["?state=bogus", "?state=__proto__", "?state=failed&state=unavailable", "?state=FAILED"]) {
+      await openPage(page, `/dev/demo/login${query}`);
+      await expect(page.getByRole("heading", { level: 1, name: "כניסה" }), query).toBeVisible();
+      await expect(page.getByLabel("אימייל", { exact: true }), query).toBeVisible();
+      await expect(page.locator(".login").getByRole("alert"), query).toHaveCount(0);
+    }
+  });
+
+  test("the demo's state links switch states and mark the current one", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    const states = page.getByRole("navigation", { name: "מצבי המסך בהדגמה" });
+    await expect(states.getByRole("link")).toHaveText(["טופס", "פרטים שגויים", "כניסה לא זמינה", "אין גישה"]);
+    await expect(states.getByRole("link", { name: "טופס" })).toHaveAttribute("aria-current", "page");
+    await states.getByRole("link", { name: "כניסה לא זמינה" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login\?state=unavailable$/);
+    await expect(states.getByRole("link", { name: "כניסה לא זמינה" })).toHaveAttribute("aria-current", "page");
+    await expect(states.locator('[aria-current="page"]')).toHaveCount(1);
+    await states.getByRole("link", { name: "טופס" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login$/);
+
+    // A typed password never carries into another state (spec §2.1 "failed": the form with an empty
+    // password), also on a client-side switch: each state renders a fresh form (review AUTH-S1).
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await page.getByLabel("אימייל", { exact: true }).fill("user@example.test");
+    await password.fill(LOGIN_PW);
+    await states.getByRole("link", { name: "פרטים שגויים" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/login\?state=failed$/);
+    await expect(page.locator(".login").getByRole("alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
+    await expect(password).toHaveValue("");
+    expect(await password.getAttribute("value")).toBeNull();
+  });
+});
+
+test.describe("Step 2 sign-out placements (Q4)", () => {
+  for (const path of [
+    "/dev/demo/office/mgr/calls",
+    "/dev/demo/office/cs/calls",
+    "/dev/demo/office/creator/calls",
+    "/dev/demo/start/mgr",
+    "/dev/demo/start/cs",
+    "/dev/demo/start/creator",
+  ]) {
+    test(`${path}: one "יציאה" in the sidebar's user block (the end of the top bar at 900 px and below), simulated`, async ({ page }) => {
+      await openPage(page, path);
+      const out = page.getByRole("button", { name: "יציאה מהחשבון" });
+      await expect(out).toHaveCount(1);
+      await expect(out).toHaveText("יציאה");
+      await expect(page.locator(".side .me").getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+      if (page.viewportSize()!.width <= 900) {
+        // One top-bar row: the button is centred on the logo's row (as the logo on the nav's first row).
+        const [logo, button] = await Promise.all([officeLogo(page).boundingBox(), out.boundingBox()]);
+        expect(logo && button && Math.abs(logo.y + logo.height / 2 - (button.y + button.height / 2))).toBeLessThanOrEqual(8);
+        await expect(page.locator(".side .me .me-who")).toBeHidden();
+        await expect(page.locator(".side .me .av")).toBeHidden();
+        // The button's slot adds a nav row on some pages (review UI-2; AU-02 and the owner notice say
+        // so). Pinned at 390 px, so a later change to the button or the nav is noticed.
+        if (page.viewportSize()!.width === 390 && path.endsWith("/calls") && !path.includes("/creator/")) {
+          const rows = await page
+            .locator(".side .nav")
+            .evaluate((nav) => new Set([...nav.children].map((item) => Math.round(item.getBoundingClientRect().top))).size);
+          expect(rows, path).toBe(path.includes("/cs/") ? 3 : 2);
+        }
+      } else {
+        await expect(page.locator(".side .me .me-who")).toBeVisible();
+        await expect(page.locator(".side .me .me-who")).toContainText("הרשאה:");
+        // In the window without scrolling, also at the top of a long page (review UI-1: the user
+        // block stays at the bottom of the window).
+        await expect(out).toBeInViewport();
+      }
+      expect(await horizontalOverflow(page)).toEqual([]);
+      const url = page.url();
+      await out.click();
+      await expect(toast(page)).toContainText(SIMULATED);
+      await expect(toast(page)).toContainText("יציאה מהחשבון · בהדגמה אין חשבון מחובר");
+      expect(page.url()).toBe(url);
+    });
+  }
+
+  test("/dev/demo/tech/profile: \"חשבון\" with \"יציאה מהחשבון\" on this device only (simulated)", async ({ page }) => {
+    await openPage(page, "/dev/demo/tech/profile");
+    await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
+    const account = page.getByRole("region", { name: "חשבון" });
+    await expect(account).toContainText("יציאה מהחשבון");
+    await expect(account).toContainText("במכשיר הזה בלבד");
+    await account.getByRole("button", { name: "יציאה מהחשבון" }).click();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("יציאה מהחשבון");
+  });
+
+  test("/dev/showcase/office: no sign-out (the showcase passes no control)", async ({ page }) => {
+    await openPage(page, "/dev/showcase/office");
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toHaveCount(0);
+    await expect(page.locator(".side .me .signout")).toHaveCount(0);
+  });
+});
+
+test.describe("Step 2 role start screens (Q18)", () => {
+  for (const [role, who, roleLabel, items, settingsHref] of [
+    ["creator", "משתמש יוצר", "יוצר", ["בית", "הגדרות"], "/dev/demo/office/creator/settings/users"],
+    ["mgr", "דורון", "מנהל", ["בית", "הגדרות"], "/dev/demo/office/mgr/settings/accounts"],
+    ["cs", "שיראל", "שירות לקוחות", ["בית"], null],
+  ] as const) {
+    test(`/dev/demo/start/${role}: the landing label, the session user, the pending label and built items only`, async ({ page }) => {
+      await openPage(page, `/dev/demo/start/${role}`);
+      await expect(page.getByRole("heading", { level: 1, name: "בית" })).toBeVisible();
+      const main = page.locator("main.work");
+      await expect(main.getByRole("heading", { level: 2, name: `שלום, ${who}` })).toBeVisible();
+      await expect(main.locator(".start-hello")).toContainText("🧪");
+      await expect(main.getByText(`הרשאה: ${roleLabel}`, { exact: true })).toBeVisible();
+      await expect(main.getByText("מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.")).toBeVisible();
+      await expect(main.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+      await expect(sideNav(page).getByRole("link")).toHaveText([...items]);
+      await expect(sideNav(page).getByRole("link", { name: "בית" })).toHaveAttribute("aria-current", "page");
+      if (settingsHref) {
+        await expect(sideNav(page).getByRole("link", { name: "הגדרות" })).toHaveAttribute("href", settingsHref);
+      } else {
+        await expect(sideNav(page).getByRole("link", { name: "הגדרות" })).toHaveCount(0);
+        await expect(page.locator("main button")).toHaveCount(0);
+      }
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
+  test("/dev/demo/start/tech and the minimal profile: the session user, \"היום\" and \"פרופיל\" only, sign-out", async ({ page }) => {
+    await openPage(page, "/dev/demo/start/tech");
+    await expect(page.getByRole("heading", { level: 1, name: "שלום, יורם" })).toBeVisible();
+    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.getByText("הרשאה: טכנאי", { exact: true })).toBeVisible();
+    await expect(page.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+    const nav = page.locator(".ph-nav");
+    await expect(nav.getByRole("link")).toHaveText(["היום", "פרופיל"]);
+    await expect(nav.getByRole("link", { name: "היום" })).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("main").getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    await nav.getByRole("link", { name: "פרופיל" }).click();
+    await expect(page).toHaveURL(/\/dev\/demo\/start\/tech\/profile$/);
+    await expect(page.getByRole("heading", { level: 1, name: "יורם" })).toBeVisible();
+    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head")).toContainText("הרשאה: טכנאי");
+    await expect(page.locator(".ph-nav").getByRole("link", { name: "פרופיל" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "יציאה מהחשבון" })).toBeVisible();
+    // Identity and sign-out only (plan §4 #11).
+    await expect(page.getByText("ביקורים השבוע")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "התראות" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "עזרה" })).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const back = page.getByRole("link", { name: /^חזרה/ });
+    await expect(back).toHaveAttribute("href", "/dev/demo/start/tech");
+    await back.click();
+    await expect(page).toHaveURL(/\/dev\/demo\/start\/tech$/);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the start pages carry display text only: no account, request, intent or notice ids and no simulated state", async ({ page }) => {
+      for (const path of ["/dev/demo/start/creator", "/dev/demo/start/mgr", "/dev/demo/start/cs", "/dev/demo/start/tech", "/dev/demo/start/tech/profile"]) {
+        const body = await (await page.request.get(path)).text();
+        expect(body, path).toContain(FIXTURE_SENTINEL);
+        for (const marker of ["acc-", "areq-", "aint-", "aev-", "selfRole"]) expect(body, `${path} ${marker}`).not.toContain(marker);
+      }
+    });
+  });
+});
+
+test.describe("Step 2 credentials (Creator only)", () => {
+  test("Creator: a colleague's row offers \"עריכה\", \"סיסמה\", \"מייל\" and the state control", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await expect(rowOf(usersTable(page), "שיראל").getByRole("button")).toHaveText(["עריכה", "סיסמה", "מייל", "השבתה"]);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  });
+
+  test("\"הגדרת סיסמה\": focus, hidden username, notes, checks, trap, Escape, background, and no echo", async ({ page }) => {
+    const consoleLines = collectConsole(page);
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await recordToasts(page);
+    const opener = page.getByRole("button", { name: "סיסמה · הגדרת סיסמה לחשבון של שיראל" });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "הגדרת סיסמה · שיראל" });
+    const field = dialog.getByLabel("סיסמה חדשה");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute("type", "password");
+    await expect(field).toHaveAttribute("autocomplete", "new-password");
+    expect(await field.getAttribute("name")).toBeNull();
+    expect(await field.getAttribute("value")).toBeNull();
+    // A password manager files a save under the target user (critique S10).
+    const username = dialog.locator('input[autocomplete="username"]');
+    await expect(username).toHaveValue("shirel@example.test");
+    await expect(username).toHaveAttribute("tabindex", "-1");
+    await expect(username).toHaveAttribute("readonly", "");
+    await expect(dialog).toContainText("רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה.");
+    await expect(dialog).toContainText("עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.");
+    await expect(dialog).toContainText("חוזק הסיסמה נבדק במערכת ההתחברות.");
+    // No show/hide toggle and no confirmation field (owner question Q-C).
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(1);
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    const save = dialog.getByRole("button", { name: "שמירת הסיסמה" });
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("חסרה סיסמה");
+    await expect(field).toBeFocused();
+    const long = "a".repeat(73);
+    await field.fill(long);
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("הסיסמה ארוכה מדי");
+    expect(await field.inputValue()).toBe(long);
+
+    // Tab stays inside: from the last control to the first, and back.
+    const close = dialog.getByRole("button", { name: "סגירה" });
+    const cancel = dialog.getByRole("button", { name: "ביטול", exact: true });
+    await cancel.focus();
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(cancel).toBeFocused();
+
+    // Escape closes; focus returns to the opener.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+
+    if (!drawerCoversWidth(page)) {
+      // An untouched dialog closes on a press on the dimmed background.
+      await opener.click();
+      await expect(dialog).toBeVisible();
+      await pressBackdrop(page);
+      await expect(dialog).toHaveCount(0);
+    }
+
+    await opener.click();
+    await field.fill(SET_PW);
+    expect(await field.getAttribute("value")).toBeNull();
+    expect(await page.content()).not.toContain(SET_PW);
+    if (!drawerCoversWidth(page)) {
+      // Typed: the background no longer closes it.
+      await pressBackdrop(page);
+      await expect(dialog).toBeVisible();
+    }
+    await save.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(/בהדגמה: הסיסמה של שיראל הייתה נקבעת/)).toBeVisible();
+    await expect(toast(page)).toContainText(SIMULATED);
+    await expect(toast(page)).toContainText("הגדרת סיסמה · שיראל · הסיסמה לא נשמרה ולא נשלחה");
+    const row = rowOf(usersTable(page), "שיראל");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row).toBeFocused();
+    expect(await echoesOf(page, SET_PW, consoleLines)).toEqual([]);
+  });
+
+  test("\"שינוי כתובת מייל\": the current email, example.test only for a test account, no change, the new email on the row", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "מייל · שינוי כתובת המייל של הדס" }).click();
+    const dialog = page.getByRole("dialog", { name: "שינוי כתובת מייל · הדס" });
+    await expect(dialog.locator('[dir="ltr"]').filter({ hasText: "rep2@example.test" })).toBeVisible();
+    await expect(dialog).toContainText("רק היוצר משנה מייל של חשבון. זה המייל לכניסה לאפליקציה.");
+    await expect(dialog).toContainText("חשבון בדיקה: רק כתובות");
+    await expect(dialog).not.toContainText("Outlook");
+    const field = dialog.getByLabel("מייל חדש");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveAttribute("dir", "ltr");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const save = dialog.getByRole("button", { name: "שמירת המייל" });
+    await field.fill("hadas@example.com");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await field.fill("REP2@example.test");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+    await field.fill("hadas.new@example.test");
+    await save.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("שינוי כתובת מייל · הדס · לא נשמר");
+    const row = rowOf(usersTable(page), "הדס");
+    await expect(row).toContainText("hadas.new@example.test");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+
+    // A Technician's row: his Outlook email is not changed here (Q14).
+    await page.getByRole("button", { name: "מייל · שינוי כתובת המייל של יורם" }).click();
+    await expect(page.getByRole("dialog", { name: "שינוי כתובת מייל · יורם" })).toContainText(
+      "המייל ב-Outlook של הטכנאי לא משתנה כאן: הוא נערך ב\"עריכת פרטים\".",
+    );
+  });
+
+  test("negative, the Manager: no credential opener, and no edit dialog holds a password or a new email", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const table = managerTable(page);
+    await expect(page.getByRole("button", { name: /^(סיסמה|מייל)( ·|$)/ })).toHaveCount(0);
+    const edits = table.getByRole("button", { name: /^עריכה · / });
+    await expect(edits).toHaveCount(9);
+    for (let i = 0; i < 9; i += 1) {
+      await edits.nth(i).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toHaveAccessibleName(/^עריכת פרטים · /);
+      await expect(page.locator('input[type="password"]')).toHaveCount(0);
+      await expect(dialog.getByLabel("מייל חדש")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: /הגדרת סיסמה|שינוי כתובת מייל/ })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+    }
+    await expect(page.getByText(/הגדרת סיסמה|שינוי כתובת מייל/)).toHaveCount(0);
+  });
+
+  test("negative, Customer Service: \"אין הרשאה\" and no administration action", async ({ page }) => {
+    for (const path of ["/dev/demo/office/cs/settings/accounts", "/dev/demo/office/cs/settings/users"]) {
+      await openPage(page, path);
+      await expect(page.getByRole("heading", { name: "אין הרשאה" }), path).toBeVisible();
+      await expect(page.locator("main").getByRole("button", { name: /עריכה|סיסמה|מייל|השלמה|השלמת יצירה|ביטול|השבתה|הפעלה|^\+/ }), path).toHaveCount(0);
+    }
+  });
+
+  for (const [who, path, table] of [
+    ["Creator", "/dev/demo/office/creator/settings/users", usersTable],
+    ["Manager", "/dev/demo/office/mgr/settings/accounts", managerTable],
+  ] as const) {
+    test(`${who}: every row action is in view without scrolling sideways; one visible state per row`, async ({ page }) => {
+      await openPage(page, path);
+      const scroller = page.locator(".card .scrollx").filter({ has: table(page) });
+      // Review UI-3: at 520 px and below the state moves under the name (as the email and role), so
+      // the actions cell (up to five buttons) stays inside the visible part of the table.
+      const outside = await scroller.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const buttons = [...el.querySelectorAll("td.col-fit button")];
+        return {
+          count: buttons.length,
+          outside: buttons
+            .filter((b) => {
+              const r = b.getBoundingClientRect();
+              return r.left < box.left - 1 || r.right > box.right + 1;
+            })
+            .map((b) => b.getAttribute("aria-label") ?? b.textContent),
+          scroll: el.scrollWidth - el.clientWidth,
+        };
+      });
+      expect(outside.count).toBeGreaterThan(10);
+      expect(outside.outside).toEqual([]);
+      expect(outside.scroll).toBeLessThanOrEqual(1);
+      const narrow = page.viewportSize()!.width <= 520;
+      await expect(table(page).getByRole("columnheader", { name: "מצב" })).toHaveCount(narrow ? 0 : 1);
+      // The state shows once per row at every width (the copy under the name only when narrow).
+      const gilad = rowOf(table(page), "גלעד");
+      await expect(gilad.getByText("פרופיל טכנאי חסר", { exact: true }).filter({ visible: true })).toHaveCount(1);
+      await expect(gilad.getByText("פעיל", { exact: true }).filter({ visible: true })).toHaveCount(1);
+      await expect(table(page).locator("tbody tr").first().getByText("יצירה שלא הושלמה").filter({ visible: true })).toHaveCount(1);
+      expect(await horizontalOverflow(page)).toEqual([]);
+    });
+  }
+
+  test("the actions cell holds the row's buttons inside it (גלעד: five actions)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const row = rowOf(usersTable(page), "גלעד");
+    const buttons = row.getByRole("button");
+    await expect(buttons).toHaveText(["עריכה", "סיסמה", "מייל", "השלמה", "השבתה"]);
+    const cell = row.locator("td").last();
+    await cell.scrollIntoViewIfNeeded();
+    const td = await cell.boundingBox();
+    for (let i = 0; i < 5; i += 1) {
+      const b = await buttons.nth(i).boundingBox();
+      expect(td && b && b.x >= td.x - 1 && b.x + b.width <= td.x + td.width + 1, `button ${i}`).toBe(true);
+    }
+    // At most two buttons per line: five actions take three lines.
+    const tops = new Set<number>();
+    for (let i = 0; i < 5; i += 1) tops.add(Math.round((await buttons.nth(i).boundingBox())!.y));
+    expect(tops.size).toBe(3);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("Customer Service receives no account state, intent or notice", async ({ page }) => {
+      for (const path of ["/dev/demo/office/cs/settings/accounts", "/dev/demo/office/cs/settings/users"]) {
+        const body = await (await page.request.get(path)).text();
+        for (const marker of ["selfRole", "aint-", "aev-"]) expect(body, `${path} ${marker}`).not.toContain(marker);
+      }
+    });
+  });
+});
+
+test.describe("Step 2 notices (Creator)", () => {
+  test("\"התראות חשבונות\" is the tab's first card: five notices, newest first, each 🧪", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const first = page.locator(".set-body > .card").first();
+    await expect(first.getByRole("heading", { level: 2 })).toHaveText("התראות חשבונות");
+    await expect(first).toContainText("5 התראות");
+    const items = first.getByRole("list", { name: "התראות חשבונות" }).getByRole("listitem");
+    await expect(items).toHaveCount(5);
+    const expected: [string, string, string | null][] = [
+      ["בקשה ממתינה · הפעלה מחדש · אורית", "שירות לקוחות · על ידי דורון · היום 08:45", "להחלטה ב\"בקשות לאישור\""],
+      ["בקשה ממתינה · יצירת חשבון · נציגה 3", "שירות לקוחות · על ידי דורון · אתמול 11:30", "להחלטה ב\"בקשות לאישור\""],
+      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים"],
+      ["השבתה על ידי המנהל · אורית", "שירות לקוחות · על ידי דורון · 01.09 09:00", null],
+      ["השבתה על ידי המנהל · בני", "טכנאי · על ידי דורון · 14.08 16:30", null],
+    ];
+    for (const [i, [one, two, three]] of expected.entries()) {
+      const item = items.nth(i);
+      await expect(item.locator("b")).toHaveText(one);
+      await expect(item.locator(".sub").first()).toHaveText(two);
+      await expect(item.locator(".sub")).toHaveCount(three ? 2 : 1);
+      if (three) await expect(item.locator(".sub").nth(1)).toHaveText(three);
+      await expect(item).toContainText("🧪");
+    }
+    // Decided, cancelled and fulfilled requests are not notices.
+    for (const name of ["שמואל", "נציג זמני", "נציגת ערב", "הדס"]) await expect(first).not.toContainText(name);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("nobody but the Creator receives a notice", async ({ page }) => {
+      const paths = [
+        "/dev/demo/office/mgr/settings/accounts",
+        ...SETTINGS_TABS.map((t) => `/dev/demo/office/cs/settings/${t}`),
+        "/dev/demo/office/cs/settings/accounts",
+        "/dev/demo/start/creator",
+        "/dev/demo/start/mgr",
+        "/dev/demo/start/cs",
+        "/dev/demo/start/tech",
+        "/dev/demo/start/tech/profile",
+      ];
+      for (const path of paths) {
+        const body = await (await page.request.get(path)).text();
+        expect(body, path).not.toContain("aev-");
+        expect(body, path).not.toContain("התראות חשבונות");
+      }
+      // Control: the Creator's tab carries them.
+      const creator = await (await page.request.get("/dev/demo/office/creator/settings/users")).text();
+      expect(creator).toContain("aev-");
+      expect(creator).toContain("התראות חשבונות");
+    });
+  });
+});
+
+test.describe("Step 2 routine edit", () => {
+  test("Creator on יורם: every field with its value; a device change sends one technician update", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של יורם" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · יורם" });
+    await expect(dialog.getByLabel("שם", { exact: true })).toHaveValue("יורם");
+    await expect(dialog.getByLabel("שם", { exact: true })).toBeFocused();
+    await expect(dialog.getByLabel("טלפון עבודה")).toHaveValue("050-000-0001");
+    const alias = dialog.getByLabel("כינוי בזימונים");
+    await expect(alias).toHaveValue("");
+    await expect(alias).toHaveAttribute("maxlength", "60");
+    await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toBeVisible();
+    await expect(dialog.getByLabel("ירוק")).toBeChecked();
+    await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+    await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveValue("yoram@example.test");
+    await expect(dialog.getByRole("switch", { name: "פעיל · מקבל זימונים חדשים" })).toHaveAttribute("aria-checked", "true");
+    expect(await horizontalOverflow(page)).toEqual([]);
+
+    await recordToasts(page);
+    await dialog.getByLabel("מכשיר").fill("טאבלט");
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    const seen = await toastsSeen(page);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("עדכון פרטי טכנאי · יורם");
+    await expect(rowOf(usersTable(page), "יורם")).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText(/בהדגמה: הפרטים של יורם היו מתעדכנים מיד ונרשמים ביומן הביקורת/)).toBeVisible();
+  });
+
+  test("Creator's own row: name, phone and alias only", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של משתמש יוצר" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · משתמש יוצר" });
+    await expect(dialog.getByLabel("שם", { exact: true })).toHaveValue("משתמש יוצר");
+    await expect(dialog.getByLabel("טלפון עבודה")).toBeVisible();
+    await expect(dialog.getByLabel("כינוי בזימונים")).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toHaveCount(0);
+    await expect(dialog.locator("input")).toHaveCount(3);
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("checks: the error goes to its field; nothing changed is \"אין שינוי לשמור\"; a taken alias is refused", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "עריכה · הפרטים של יורם" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · יורם" });
+    const save = dialog.getByRole("button", { name: "שמירה" });
+    const name = dialog.getByLabel("שם", { exact: true });
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await name.fill("");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("חסר שם");
+    await expect(name).toBeFocused();
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await name.fill("יורם");
+    const phone = dialog.getByLabel("טלפון עבודה");
+    await phone.fill("abc");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("מספר טלפון לא תקין");
+    await expect(phone).toBeFocused();
+    await phone.fill("050-000-0001");
+    const outlook = dialog.getByLabel("מייל ב-Outlook");
+    await outlook.fill("a@b.com");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(outlook).toBeFocused();
+    await outlook.fill("yoram@example.test");
+    await save.click();
+    await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
+    await expect(toast(page)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // The invitation alias is unique: שיראל holds "שיראל" (23505, simulated over the listed accounts).
+    await page.getByRole("button", { name: "עריכה · הפרטים של הדס" }).click();
+    const hadas = page.getByRole("dialog", { name: "עריכת פרטים · הדס" });
+    await expect(hadas.getByLabel("כינוי בזימונים")).toHaveValue("הדס");
+    await hadas.getByLabel("כינוי בזימונים").fill("שיראל");
+    await hadas.getByRole("button", { name: "שמירה" }).click();
+    await expect(hadas.getByRole("alert")).toHaveText("הערך כבר בשימוש.");
+    await expect(hadas).toBeVisible();
+    // The refusal came back from the command (the form was disabled meanwhile): focus returns to
+    // the field it is about, inside the dialog, never to the page (review UI-4, AUTH-N1).
+    await expect(hadas.getByLabel("כינוי בזימונים")).toBeFocused();
+    await expect(hadas.getByLabel("כינוי בזימונים")).toHaveAttribute("aria-invalid", "true");
+    expect(await horizontalOverflow(page)).toEqual([]);
+  });
+
+  test("Manager on אדי: no Outlook email or \"פעיל\" (Q14 line); the colour change sends the technician's version", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "עריכה · הפרטים של אדי" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · אדי" });
+    await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveCount(0);
+    await expect(dialog.getByRole("switch")).toHaveCount(0);
+    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("מייל וסיסמה משנה היוצר בלבד.");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await dialog.getByLabel("כחול").check();
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    // אדי's technician record is version 2: the simulated check passes only with the version read.
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("עדכון פרטי טכנאי · אדי");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test("Manager on שיראל: a name change sends the account's version 3", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "עריכה · הפרטים של שיראל" }).click();
+    const dialog = page.getByRole("dialog", { name: "עריכת פרטים · שיראל" });
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await dialog.getByLabel("שם", { exact: true }).fill("שיראל כהן");
+    await dialog.getByRole("button", { name: "שמירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("עדכון פרטים · שיראל כהן · נרשם ביומן הביקורת");
+    const row = rowOf(managerTable(page), "שיראל כהן");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row).toBeFocused();
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the Manager's payload has no Outlook email and no Manager or Creator account; the Creator's has the Outlook email", async ({ page }) => {
+      const manager = await (await page.request.get("/dev/demo/office/mgr/settings/accounts")).text();
+      expect(manager).not.toMatch(MANAGER_OR_CREATOR_ACCOUNT);
+      expect(manager).not.toContain("outlookEmail");
+      expect(await (await page.request.get("/dev/demo/office/creator/settings/users")).text()).toContain("outlookEmail");
+    });
+  });
+});
+
+test.describe("Step 2 incomplete creations", () => {
+  test("Manager: his own intent heads the table; the Creator's is not there", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const first = managerTable(page).locator("tbody tr").first();
+    await expect(first).toContainText("טכנאי חדש");
+    await expect(first).toContainText("יצירה שלא הושלמה");
+    await expect(first).toContainText("התחילה אתמול 09:05");
+    await expect(first.getByRole("button")).toHaveText(["השלמת יצירה", "ביטול"]);
+    await expect(first.getByRole("button", { name: "השלמת יצירה · טכנאי חדש" })).toBeVisible();
+    await expect(first.getByRole("button", { name: "ביטול · היצירה של טכנאי חדש" })).toBeVisible();
+    await expect(page.getByText("מנהלת משמרת")).toHaveCount(0);
+  });
+
+  test("Manager: \"השלמת יצירה\" of a Technician: the stored row's details, a required colour, the row becomes the account", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "השלמת יצירה · טכנאי חדש" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · טכנאי חדש" });
+    const kv = dialog.locator(".kv");
+    await expect(kv).toContainText("תפקידטכנאי");
+    await expect(kv.locator('[dir="ltr"]')).toHaveText("tech-new@example.test");
+    await expect(kv).toContainText("התחילהאתמול 09:05");
+    await expect(dialog.getByLabel("טלפון")).toHaveValue("");
+    await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים");
+    expect(await horizontalOverflow(page)).toEqual([]);
+    const submit = dialog.getByRole("button", { name: "השלמת היצירה" });
+    await submit.click();
+    await expect(dialog.getByRole("alert")).toHaveText("צבע לא תקין");
+    await expect(toast(page)).toHaveCount(0);
+    await dialog.getByLabel("כחול").check();
+    await submit.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · טכנאי חדש · לא נוצר משתמש");
+    const row = rowOf(managerTable(page), "טכנאי חדש");
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toContainText("יצירה שלא הושלמה");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row.getByRole("button")).toHaveCount(0);
+    await expect(page.getByText("בהדגמה: החשבון של טכנאי חדש היה נוצר מיד. לא נשמר.")).toBeVisible();
+    await expect(managerTable(page).locator("tbody tr")).toHaveCount(10);
+  });
+
+  test("Manager: \"ביטול\" of his own intent (simulated): the row stays as \"בוטלה\", not saved", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    await page.getByRole("button", { name: "ביטול · היצירה של טכנאי חדש" }).click();
+    await expect(toast(page)).toContainText("ביטול יצירה שלא הושלמה");
+    const row = rowOf(managerTable(page), "טכנאי חדש");
+    await expect(row).toContainText("בוטלה");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(row.getByRole("button")).toHaveCount(0);
+  });
+
+  test("Creator: his own intent (a Manager) heads the table; completing it asks no colour or device", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const first = usersTable(page).locator("tbody tr").first();
+    await expect(first).toContainText("מנהלת משמרת");
+    await expect(first).toContainText("התחילה 19.10 13:40");
+    await expect(page.getByText("טכנאי חדש")).toHaveCount(0);
+    await first.getByRole("button", { name: "השלמת יצירה · מנהלת משמרת" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · מנהלת משמרת" });
+    await expect(dialog).toBeVisible();
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await expect(dialog.locator(".kv")).toContainText("תפקידמנהל");
+    await expect(dialog.getByRole("group", { name: "צבע ביומן" })).toHaveCount(0);
+    await expect(dialog.getByLabel("מכשיר")).toHaveCount(0);
+    await expect(dialog).not.toContainText("Outlook");
+    await dialog.getByRole("button", { name: "השלמת היצירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · מנהלת משמרת · לא נוצר משתמש");
+  });
+
+  for (const [who, path] of [
+    ["Creator", "/dev/demo/office/creator/settings/users"],
+    ["Manager", "/dev/demo/office/mgr/settings/accounts"],
+  ] as const) {
+    test(`${who}: גלעד's "פרופיל טכנאי חסר" and "השלמה"`, async ({ page }) => {
+      await openPage(page, path);
+      const row = page.locator("main table tbody tr").filter({ hasText: "גלעד" });
+      // The state is shown once: in its column, or under the name at 520 px and below (review UI-3).
+      await expect(row.getByText("פעיל", { exact: true }).filter({ visible: true })).toBeVisible();
+      await expect(row.getByText("פרופיל טכנאי חסר", { exact: true }).filter({ visible: true })).toBeVisible();
+      await row.getByRole("button", { name: "השלמה · פרופיל הטכנאי של גלעד" }).click();
+      const dialog = page.getByRole("dialog", { name: "השלמת פרופיל טכנאי · גלעד" });
+      await expect(dialog.locator('.kv [dir="ltr"]')).toHaveText("gilad@example.test");
+      await expect(dialog.locator('.kv input')).toHaveCount(0);
+      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים");
+      await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
+      expect(await horizontalOverflow(page)).toEqual([]);
+      await dialog.getByLabel("ירוק").check();
+      await dialog.getByRole("button", { name: "השלמה", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(toast(page)).toContainText("השלמת פרופיל טכנאי · גלעד");
+      await expect(row).not.toContainText("פרופיל טכנאי חסר");
+      await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    });
+  }
+
+  test("Creator: an approved creation with no account (areq-6) offers \"השלמת יצירה\" and \"ביטול\"; pending rows never a cancel", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    const row = requests.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("אושרה");
+    await expect(row).toContainText("החשבון עוד לא נוצר");
+    await expect(row.getByRole("button", { name: "השלמת יצירה: יצירת חשבון · נציגת ערב" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "ביטול: יצירת חשבון · נציגת ערב" })).toBeVisible();
+    // With no rejection form open, the only "ביטול:" is areq-6's.
+    await expect(requests.getByRole("button", { name: /^ביטול:/ })).toHaveCount(1);
+  });
+
+  test("Creator: \"ביטול\" of areq-6 keeps the approval's decider and time (version 2 sent)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    const requests = page.getByRole("list", { name: "בקשות לאישור" });
+    await requests.getByRole("button", { name: "ביטול: יצירת חשבון · נציגת ערב" }).click();
+    await expect(toast(page)).toContainText("ביטול הבקשה");
+    const row = requests.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("אושרה על ידי משתמש יוצר · 19.10 15:10 · בוטלה");
+    await expect(row).not.toContainText("עכשיו");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test("Creator: \"השלמת יצירה\" of areq-6 adds the account row (not saved)", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/creator/settings/users");
+    await page.getByRole("button", { name: "השלמת יצירה: יצירת חשבון · נציגת ערב" }).click();
+    const dialog = page.getByRole("dialog", { name: "השלמת יצירה · נציגת ערב" });
+    await expect(dialog.locator(".kv")).toContainText("תפקידשירות לקוחות");
+    await expect(dialog.locator(".kv")).toContainText("אושרה19.10 15:10");
+    await expect(dialog.getByRole("group", { name: "צבע ביומן" })).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toEqual([]);
+    await dialog.getByRole("button", { name: "השלמת היצירה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page)).toContainText("השלמת יצירה · נציגת ערב · לא נוצר משתמש");
+    const row = rowOf(usersTable(page), "נציגת ערב");
+    await expect(row).toContainText("לא נשמר · פעולה מדומה");
+    await expect(usersTable(page).locator("tbody tr")).toHaveCount(13);
+    const request = page.getByRole("list", { name: "בקשות לאישור" }).getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(request.getByRole("button")).toHaveCount(0);
+  });
+
+  test("Manager: areq-6 in \"הבקשות שלי\": the Creator completes it; \"ביטול הבקשה\" keeps the approval line", async ({ page }) => {
+    await openPage(page, "/dev/demo/office/mgr/settings/accounts");
+    const mine = page.getByRole("list", { name: "הבקשות שלי" });
+    const row = mine.getByRole("listitem").filter({ hasText: "יצירת חשבון · נציגת ערב" });
+    await expect(row).toContainText("החשבון עוד לא נוצר · היוצר משלים את היצירה");
+    await expect(row.getByRole("button", { name: /השלמת יצירה/ })).toHaveCount(0);
+    await row.getByRole("button", { name: "ביטול הבקשה: יצירת חשבון · נציגת ערב" }).click();
+    await expect(toast(page)).toContainText("ביטול הבקשה");
+    await expect(row).toContainText("אושרה על ידי משתמש יוצר · 19.10 15:10 · בוטלה");
+    await expect(page.getByText("הנתונים השתנו בינתיים")).toHaveCount(0);
+  });
+
+  test.describe("raw responses", () => {
+    onlyInProject("desktop");
+
+    test("the Manager never receives the Creator's intent", async ({ page }) => {
+      const body = await (await page.request.get("/dev/demo/office/mgr/settings/accounts")).text();
+      expect(body).not.toContain("aint-2");
+      expect(body).not.toContain("shift-mgr@");
+      expect(body).not.toContain("מנהלת משמרת");
+    });
+  });
+});
+

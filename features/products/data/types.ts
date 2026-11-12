@@ -5,8 +5,8 @@
 // per normalized SKU; a new SKU creates the product with its SKU and name, brand and supplier
 // empty; a later invitation never overwrites an existing name. Only a role offered `products`
 // edits name, brand and supplier (D33; display only here, enforced on the server and in RLS).
-import type { Bounded, IsoDate, Page, PageRequest, TestMarker } from "@/features/data-access/common";
-import type { CallSummary } from "@/features/calls/data/types";
+import type { Bounded, Page, PageRequest, TestMarker } from "@/features/data-access/common";
+import type { CallStartDates, CallSummary } from "@/features/calls/data/types";
 import type { Product } from "@/features/reference/data/types";
 import type { VisitSource } from "@/features/visits/data/types";
 
@@ -27,15 +27,16 @@ export type ProductOption = TestMarker & {
 };
 
 /**
- * The invitation that created the product (PR-04): its request number, visit number, the date of
- * that visit and its source (SIM-14). Null when the creating call is not visible to the viewer.
+ * The invitation that created the product (PR-04): its request number, visit number and source
+ * (SIM-14), and the creating call's "נפתחה" (`opened_at`) and "תחילת טיפול" (first arrival or null)
+ * (D57 (9); never a visit date under "נפתחה"). Null when the creating call is not visible to the
+ * viewer.
  */
-export type ProductFirstSeen = TestMarker & {
-  req: string;
-  n: number;
-  date: IsoDate;
-  source: VisitSource;
-};
+export type ProductFirstSeen = TestMarker &
+  CallStartDates & {
+    n: number;
+    source: VisitSource;
+  };
 
 /** One row of the products list. `brand` and `supplier` are "" when not entered (screens show "לא הוזן", PR-04, OF-07). */
 export type ProductListItem = Product & {

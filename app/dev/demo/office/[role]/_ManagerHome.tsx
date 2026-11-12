@@ -21,6 +21,9 @@ const TEST_NOTE_ID = "od-test-note";
 // Reads only through the data-access layer: dashboards.officeOverview(TODAY), calls.list (the
 // open-calls count, statusCounts) and reference.permissions(role) (the analytics link; display
 // only, G-04). No data actions on this screen: every interaction is a link.
+// Since D57 (2026-11-05) not reachable for Manager and Creator (they land on the dashboard); still
+// the home of Customer Service with `dashGen`. Kept per the owner's instruction (no deletion); open
+// #26 (a).
 export async function ManagerHome({ role }: { role: OfficeRole }) {
   const [overview, calls, permissions] = await Promise.all([
     demoDataAccess.dashboards.officeOverview(TODAY),

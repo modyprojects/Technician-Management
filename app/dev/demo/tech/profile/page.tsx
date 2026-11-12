@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProfileHeader } from "@/components/tech/ProfileHeader";
 import { ProfilePreferences } from "@/components/tech/ProfilePreferences";
-import { ProfileHelp, ProfileWeek } from "@/components/tech/ProfileSections";
+import { ProfileAccount, ProfileHelp, ProfileWeek } from "@/components/tech/ProfileSections";
 import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { DemoTechFrame } from "../../_components/DemoFrames";
+import { DemoSignOut } from "../../_components/DemoSignOut";
 import { demoDataAccess } from "../../_data/adapter";
 import { TODAY } from "../../_data/dates";
 import { DEMO_TECHNICIAN_ID } from "../../_data/roles";
@@ -21,8 +22,8 @@ export const metadata: Metadata = { title: "פרופיל · טכנאי · הדג
 // - "חיוג למשרד": a dial is navigation, not a data action; production uses a `tel:` link, the demo
 //   says what would open (data-sim, DemoToast).
 // - "דיווח על תקלה באפליקציה" (TE-30, d26) is a disabled placeholder; the demo says it waits for
-//   the owner's decision. There is no sign-out entry (not in the demo or the spec; asked of the
-//   owner for Step 2).
+//   the owner's decision.
+// - "חשבון" › "יציאה מהחשבון" (Step 2 PR 2.3, Q4 TEMPORARY; AU-02): simulated (DemoSignOut).
 export default async function TechProfilePage() {
   const [profile, preferences] = await Promise.all([
     demoDataAccess.profile.technician(DEMO_TECHNICIAN_ID, TODAY),
@@ -50,6 +51,7 @@ export default async function TechProfilePage() {
           )
         }
       />
+      <ProfileAccount signOut={<DemoSignOut variant="row" />} />
     </DemoTechFrame>
   );
 }

@@ -477,3 +477,57 @@ An independent final review (D53) examined the second fix pass and fix rounds 1�
 **Rollback round trip (manual, plain `psql -f` unless stated).** (1) With a committed bootstrapped Creator: refused ("accounts, requests or audit rows exist"), exit 0, nothing dropped (`private` present, 18 functions in `public`, the profile and the history row present); with `-v ON_ERROR_STOP=1 --single-transaction` refused too (exit 3). (2) After `supabase db reset`, with the history row deleted first: refused ("no migration history row …; nothing was dropped"), everything present. (3) With only an MCP-style history row (`20261110093012`, `access_and_permissions`): ran; no `private` schema, no relation or function in `public`, no history row, the `postgres` default privileges still grant nothing to `PUBLIC` or the API roles. (4) Re-applied with `psql --single-transaction -v ON_ERROR_STOP=1` and the CLI history row restored: 554/554. A final `supabase db reset` restored the CLI-managed state (0 Auth users, 0 profiles, 0 audit rows); the stack was stopped at the end.
 
 **Still required before merge (D53):** this fix round changes authorization code (every function's `search_path`, `request_account_change`, `decide_account_request`, `admin_create_technician`), the down script and the anchor files, so it needs an independent review by an agent that did not write it. Then the steps at the top of this report (D50, the Q9 check, the owner's separate migration approval). Open owner questions: section 13 (Q19 is new).
+
+## 16. Pre-apply independent security review (D58, 2026-11-11) and N2
+
+After the owner confirmed B1 (D50 Auth settings, 2026-11-11), the B2 read-only pre-apply check (D55 (3)) ran on the remote project `ooxozvvrljjkyfduuiks` only, four SELECTs, nothing changed:
+
+| Check (Q9) | Result |
+|---|---|
+| Apply role | `postgres` (not superuser; CREATEROLE, BYPASSRLS), as the step-0 guard requires. The role of MCP `apply_migration` itself is not observable read-only; the guard fails closed |
+| `public` empty | 0 relations, 0 functions, 0 types, 0 extensions |
+| Default privileges in `public` | `postgres` and `supabase_admin` grant `anon`, `authenticated`, `service_role` full rights on tables, sequences and functions (expected: the migration revokes `postgres`'s; `supabase_admin`'s stay, section 10) |
+| `postgres` DELETE on `supabase_migrations.schema_migrations` | The table does not exist yet (no migration applied); it is created by the first apply. To be checked read-only after the apply (needs approval); without it the down script fails closed |
+
+The remote runs PostgreSQL 17.11 (`get_project`, 2026-11-11), the version the local tests use.
+
+**Independent review** (one reviewer, D58; an agent that did not write the code; local probes only) of the migration at `daec926` (sha256 `8a0024096dcfb7787fdb69f7efffe9b4bd04c61109ef3a6c27aedf4afcda6ed6`), with extra attention to the unreviewed final-review fix round `9229949`. **Verdict: APPROVE.** No must or should finding: no path for an API role to act as another user, raise a role, act while inactive, skip the Creator's approval or approve matrix values; the SEC-1 `search_path` fix is complete (probed with `pg_temp` functions, an `=` operator, six domains and a `profiles` temp table created by `authenticated`: no shadow object ran); RLS per caller, grants (17 + 19 EXECUTE, all to `authenticated`), D34 account management, the two-phase creation binding and the rollback refusals verified. Six nits:
+
+| Nit | Disposition |
+|---|---|
+| N1: the down script has no explicit refusal when a later migration is recorded; it relies on its non-CASCADE drops failing (verified: fails closed with a dependency error, nothing dropped) | Recorded. PR 1.4 and PR 1.5 tables reference `profiles`, so the refusal holds; an explicit check is proposed for the next change of the down script |
+| N2: nothing in the migration checks the resulting privileges; on a hosted project a REVOKE that `postgres` cannot apply only warns | **Fixed:** section 15 of the migration, a read-only DO block that raises (and so rolls back the whole migration) on CREATE on `public`/`private` for PUBLIC or an API role; any table, view, sequence or column privilege for PUBLIC, `anon` or `service_role`, or anything but SELECT on tables for `authenticated`; EXECUTE for PUBLIC, `anon` or `service_role`; `postgres`'s default privileges in `public` or its global function defaults for PUBLIC or an API role (a missing global row is the built-in EXECUTE for PUBLIC). Verified locally: the clean apply passes; each of 10 injected leaks (table SELECT to `anon`, CREATE on `public` to `authenticated`, function EXECUTE to `anon`, `public` default to `anon`, INSERT and a column UPDATE to `authenticated`, sequence USAGE to `authenticated`, global function default to PUBLIC and to `anon`, table SELECT to `service_role`) makes it raise. The first draft missed the global PUBLIC case (PostgreSQL drops the default-ACL row when it equals the built-in default); fixed before commit |
+| N3: hosted major version unknown | Resolved: PostgreSQL 17.11 (`get_project`) |
+| N4: `admin_create_technician` audits only `technician.created`, not a separate Outlook-email action | Hand-off to Step 2: the Creator notice treats `technician.created` as an Outlook-email event too |
+| N5: `bootstrap_first_creator` lacks the Auth-user checks of `admin_create_profile` (not anonymous, not SSO, not deleted) | Recorded; owner-only, run once with the owner's approval (D49). Proposal: before that run, a read-only check of the Auth user's flags shown to the owner |
+| N6: the anchor check's `session` row needs `current_user = session_user` (MCP may differ) | Recorded: run the anchor files with psql, or confirm the MCP session first; each run needs its own approval |
+
+**After N2:** migration sha256 `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7` (1933 lines). Local: `supabase db reset --local --no-seed` then `supabase test db tests/db` 554/554; `node --test tests/ci/*.test.mjs` 122/122; migration guard passed; canary-rows check PASS; Gitleaks clean. Section 15 was written after the review; whether that change needs another review is D58 (9), open (owner decides). Not applied.
+
+## 17. Remote apply (2026-11-11)
+
+**Approval:** the owner's explicit execution approval of 2026-11-11 for Migration 1 only: project `ooxozvvrljjkyfduuiks`, name `access_and_permissions`, file at commit `3139628`, sha256 `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7`. The owner chose MCP `apply_migration` and accepted that its server-side transaction atomicity cannot be verified (closed-source Management API), because the database was empty.
+
+**Before the call:** the file hash at `3139628` was checked again (unchanged); the query string sent was first written to a scratch file and compared byte for byte with the approved file (`cmp`: identical, same sha256).
+
+**Apply:** MCP `apply_migration` (project `ooxozvvrljjkyfduuiks`, name `access_and_permissions`) returned `{"success":true}`. Applied once.
+
+**Read-only verification after the apply** (project `ooxozvvrljjkyfduuiks` only):
+
+| Check | Result |
+|---|---|
+| `list_migrations` | one row: version **`20261111125920`**, name `access_and_permissions` |
+| Stored statement | one statement of 99,964 bytes whose sha256 is `30e0c8b0…89f7`: exactly the approved file |
+| `list_tables` (`public`, `private`) | the six tables in `public`, RLS on each; rows: `permissions` 13, `role_permissions` 26 (all `temporary`), `profiles`, `technicians`, `account_requests`, `audit_logs` 0; no relation in `private` |
+| Catalog fingerprint (functions, policies, columns, constraints, indexes, triggers, relation ACLs and owners, schema ACLs, the reference rows) | all 12 values identical to the local database built from the same file |
+| Functions | 54; 20 SECURITY DEFINER; every one owned by `postgres` with `search_path = pg_catalog, pg_temp`; EXECUTE for `authenticated` on 36, for `anon` or `service_role` on 0 |
+| Table grants | each table: owner `postgres`, `authenticated=r` only |
+| Section 15 assertion, re-run as a SELECT | no leftover privilege |
+| `postgres` default privileges | `public` (tables, sequences, functions) and the global function default: owner only. The `storage` schema keeps Supabase's own permissive defaults for objects `postgres` creates there (not touched by Migration 1; relevant when Storage is added in Step 4) |
+| History table | owned by `postgres`; `postgres` has DELETE and INSERT on it (closes B2 check 4: the down script can remove the history row) |
+| `get_advisors` (security) | one WARN, `auth_leaked_password_protection` (Auth setting, not created by the migration) |
+
+**Version discrepancy (recorded, not repaired):** the file version is `20261104120000`; the Management API recorded the server-assigned version `20261111125920` (as section 10 and OPS-1 anticipated). The name `access_and_permissions` matches, so the down script still finds the row (it matches the version or the name). The local CLI history would list the file version; aligning the remote history (`supabase migration repair` or an UPDATE) is a remote write and needs the owner's explicit approval. No history repair was made.
+
+**Not run:** B4 (`010` assertions against the remote, a write operation), any rollback, any data write.
+

@@ -9,7 +9,7 @@ import { CUSTOMERS } from "./customers";
 import { CALLS } from "./queries";
 import { ME } from "./reference";
 import { REVIEW_ITEMS } from "./review";
-import { OFFICE_ROLES } from "./roles";
+import { OFFICE_ROLES, type Viewpoint } from "./roles";
 import { isClosedVisit, isOpenVisit } from "./status";
 import type { Call, OfficeRole, Visit } from "./types";
 
@@ -22,6 +22,12 @@ function techVisits(keep: (v: Visit) => boolean): VisitParams[] {
 
 /** /dev/demo/office/[role] */
 export const officeRoleParams = (): { role: OfficeRole }[] => OFFICE_ROLES.map((role) => ({ role }));
+
+/** /dev/demo/start/[role]: the temporary start screen of every viewpoint (Step 2 PR 2.3, Q18). */
+export const startParams = (): { role: Viewpoint }[] => (["creator", "mgr", "cs", "tech"] as const).map((role) => ({ role }));
+
+/** /dev/demo/start/[role]/profile: the technician's minimal profile only (Step 2 PR 2.3). */
+export const startProfileParams = (): { role: "tech" }[] => [{ role: "tech" }];
 
 /** /dev/demo/office/[role]/settings/[tab]: every Settings tab for every office role (a role
  *  without the tab gets the "אין הרשאה" state, not a 404). */

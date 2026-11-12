@@ -1,14 +1,19 @@
 import type { CSSProperties, ReactNode } from "react";
 import { TestBadge } from "@/components/ui/TestBadge";
-import type { Bounded } from "@/features/data-access/common";
+import type { AccountAdminScope } from "@/features/accounts/data/offers";
+import type { Bounded, TestMarker } from "@/features/data-access/common";
+import type { TechnicianId } from "@/features/reference/data/types";
 import {
   ACCOUNT_REQUEST_KIND_LABELS,
   ACCOUNT_REQUEST_STATUS_LABELS,
   ACCOUNT_ROLE_LABELS,
+  requestOutcomeLine,
   type AccountRef,
   type AccountRequest,
   type AccountRequestStatus,
   type AccountRole,
+  type CreationIntent,
+  type CreatorNotice,
   type UserAccount,
 } from "@/features/accounts/data/types";
 
@@ -19,8 +24,8 @@ import {
 // Display only (G-04): every account action is authorized on the server and in the database
 // under the caller's session (D34); a screen only decides what to offer.
 
-/** Who the screen administers (display only): the Creator every account, the Manager CS and technicians. */
-export type AccountAdminScope = "all" | "cs-tech";
+/** Who the screen administers (display only; features/accounts/data/offers.ts). */
+export type { AccountAdminScope } from "@/features/accounts/data/offers";
 
 /**
  * One account request with its times already formatted by the page (Asia/Jerusalem, G-01). `local`
@@ -34,6 +39,31 @@ export type AccountRequestEntry = {
   local?: boolean;
 };
 
+/** One of the viewer's own open creation intents ("יצירה שלא הושלמה"), with its time formatted by the page. */
+export type CreationIntentEntry = { intent: CreationIntent; startedLabel: string };
+
+/** One Creator notice ("התראות חשבונות"), with its time formatted by the page. */
+export type CreatorNoticeEntry = { notice: CreatorNotice; atLabel: string };
+
+/**
+ * A listed Technician account's field profile, as the viewer's edit form shows it ("עריכת פרטים";
+ * the loader maps it per scope from Settings › טכנאים). `outlookEmail` and `active` are the
+ * Creator's only (TEMPORARY, Step 2 plan Q14): the Manager's payload never carries them.
+ */
+export type AccountTechnicianDetails = TestMarker & {
+  id: TechnicianId;
+  name: string;
+  /** CSS of an allowlisted colour token (`var(--t-…)`). */
+  color: string;
+  device: string;
+  /** The stored version (`technicians.version`), sent back as `expectedVersion`. */
+  version: number;
+  /** The Outlook attendee address: the Creator's view only (Q14). */
+  outlookEmail?: string;
+  /** "פעיל · מקבל זימונים חדשים": the Creator's view only (Q14). */
+  active?: boolean;
+};
+
 /** What the account-administration screen reads (through the data-access layer). */
 export type AccountAdminData = {
   scope: AccountAdminScope;
@@ -41,6 +71,13 @@ export type AccountAdminData = {
   accounts: Bounded<UserAccount>;
   /** Creator: every request (pending first); Manager: the Manager's own requests. */
   requests: Bounded<AccountRequestEntry>;
+  /**
+   * The viewer's own open creation intents (ownIntents: `total` counts only his own), newest first.
+   * Production filters on the server (`requested_by` = the session's user).
+   */
+  intents: Bounded<CreationIntentEntry>;
+  /** Field profiles of the listed Technician accounts, by technician id, mapped per scope (Q14). */
+  technicians: Readonly<Record<TechnicianId, AccountTechnicianDetails>>;
   /** The signed-in account (production: from the session, G-03); it offers no action on itself. */
   self: AccountRef | null;
 };
@@ -102,13 +139,12 @@ export function requestRoleText(r: AccountRequest): string {
 /** "יצירת חשבון · נציגה 3". */
 export const requestTitle = (r: AccountRequest): string => `${ACCOUNT_REQUEST_KIND_LABELS[r.kind]} · ${r.target.name}`;
 
-/** "אושרה על ידי משתמש יוצר · 14.09 12:20" (or who cancelled). */
+/**
+ * "אושרה על ידי משתמש יוצר · 14.09 12:20" (or who cancelled a pending request); an approved creation
+ * cancelled later: "אושרה על ידי … · בוטלה" (requestOutcomeLine).
+ */
 export function requestOutcomeText(entry: AccountRequestEntry): string | null {
-  const r = entry.request;
-  if (r.status === "pending") return null;
-  const who = r.decidedBy?.name ? ` על ידי ${r.decidedBy.name}` : "";
-  const when = entry.decidedLabel ? ` · ${entry.decidedLabel}` : "";
-  return `${ACCOUNT_REQUEST_STATUS_LABELS[r.status]}${who}${when}`;
+  return requestOutcomeLine(entry.request, entry.decidedLabel);
 }
 
 /** Name with the 🧪 badge of a test user (SIM-18) and an optional line under it. */
@@ -132,6 +168,12 @@ export function AccountName({ name, isTest, note }: { name: string; isTest: bool
 }
 
 export type ActionMessageValue = { kind: "ok" | "error"; text: string } | null;
+
+/**
+ * The result line of an action: what a SIMULATED command would have done ("בהדגמה: … לא נשמר.", the
+ * UI demo, G-06), or what a stored one did (TE-23: never claim a save that did not happen).
+ */
+export const said = (simulated: boolean, demo: string, done: string): string => (simulated ? `בהדגמה: ${demo} לא נשמר.` : done);
 
 /**
  * Inline result line of an action. The live region is always rendered (empty when there is no

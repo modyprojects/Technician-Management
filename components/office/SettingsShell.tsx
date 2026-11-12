@@ -6,7 +6,8 @@ import { SettingsTabs, type SettingsTabLink } from "./SettingsTabs";
 // Settings page shell and shared display parts (docs/demo.html offSettings() L938-942 and the
 // settings bodies L942-973). No hooks: usable from Server and Client Components. Styles are the
 // demo's inline styles as classes (styles/ui.css "settings-ops").
-// - SettingsShell: "הגדרות · <tab>" with the sub-line, the tab column and the body.
+// - SettingsShell: "הגדרות · <tab>" with the sub-line, the tab column (only with two or more tabs)
+//   and the body.
 // - SettingsCardHead: a card's title row (the demo's `.sec` with h2 and the "+ הוספה" button).
 // - SettingsLine: the demo's mail-settings row (setMail() line()).
 // - SettingsPendingToggle: a disabled switch for a setting that waits for an open owner decision,
@@ -37,7 +38,8 @@ export function SettingsShell({
         </div>
       </div>
       <div className="set-layout">
-        <SettingsTabs tabs={tabs} />
+        {/* A single tab needs no tab bar (D57: the Manager's Settings is "משתמשים" only by default). */}
+        {tabs.length > 1 && <SettingsTabs tabs={tabs} />}
         <div className="set-body">{children}</div>
       </div>
     </>

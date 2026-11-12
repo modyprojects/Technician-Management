@@ -1857,3 +1857,77 @@ insert into public.role_permissions (role, permission_key, allowed, value_status
   ('customer_service', 'products', false, 'temporary'),
   ('customer_service', 'conflicts', false, 'temporary'),
   ('customer_service', 'recordings', false, 'temporary');
+
+-- ---------------------------------------------------------------------------------------------
+-- 15. Fail closed when the hardening did not take effect (independent review N2, 2026-11-11).
+--     On a hosted project a REVOKE that postgres cannot apply only raises a WARNING, so the
+--     resulting privileges are checked here, read-only, and any leftover raises: the whole
+--     migration then rolls back. Checked: CREATE on public or private for PUBLIC or an API role;
+--     any table, view, sequence or column privilege in public or private for PUBLIC, anon or
+--     service_role, and anything but SELECT on tables for authenticated; EXECUTE on a function
+--     in public or private for PUBLIC, anon or service_role; postgres's default privileges in
+--     public, and its global function defaults (a missing global row is the built-in EXECUTE for
+--     PUBLIC), for PUBLIC or an API role. The exact grant lists are asserted by tests/db/010.
+-- ---------------------------------------------------------------------------------------------
+do $$
+declare
+  v_api oid[];
+  v_authenticated oid;
+  v_leaks text;
+begin
+  select pg_catalog.array_agg(r.oid) into v_api
+  from pg_catalog.pg_roles r where r.rolname in ('anon', 'authenticated', 'service_role');
+  select r.oid into v_authenticated from pg_catalog.pg_roles r where r.rolname = 'authenticated';
+
+  select pg_catalog.string_agg(x.leak, '; ' order by x.leak) into v_leaks
+  from (
+    select 'schema ' || n.nspname || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text as leak
+    from pg_catalog.pg_namespace n
+    cross join lateral pg_catalog.aclexplode(coalesce(n.nspacl, pg_catalog.acldefault('n'::"char", n.nspowner))) a
+    where n.nspname in ('public', 'private') and a.privilege_type = 'CREATE'
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'relation ' || c.oid::regclass::text || ' ' || a.privilege_type || ' to ' || a.grantee::regrole::text
+    from pg_catalog.pg_class c
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(c.relacl, pg_catalog.acldefault((case when c.relkind = 'S' then 's' else 'r' end)::"char", c.relowner))) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated)
+           or (a.grantee = v_authenticated and (c.relkind = 'S' or a.privilege_type <> 'SELECT')))
+    union all
+    select 'column ' || c.oid::regclass::text || '.' || t.attname || ' ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_attribute t
+    join pg_catalog.pg_class c on c.oid = t.attrelid
+    cross join lateral pg_catalog.aclexplode(t.attacl) a
+    where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and t.attacl is not null
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    select 'function ' || p.oid::regprocedure::text || ' EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.pg_proc p
+    cross join lateral pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f'::"char", p.proowner))) a
+    where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+      and (a.grantee = 0 or (a.grantee = any (v_api) and a.grantee <> v_authenticated))
+    union all
+    select 'default privileges of postgres (' || d.defaclobjtype::text || ') ' || a.privilege_type || ' to '
+           || a.grantee::regrole::text
+    from pg_catalog.pg_default_acl d
+    cross join lateral pg_catalog.aclexplode(d.defaclacl) a
+    where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 'public'::regnamespace
+      and (a.grantee = 0 or a.grantee = any (v_api))
+    union all
+    -- No global entry means the built-in default (EXECUTE for PUBLIC), so a missing row is a leak.
+    select 'global default privileges of postgres (f) EXECUTE to ' || a.grantee::regrole::text
+    from pg_catalog.aclexplode(coalesce(
+      (select d.defaclacl from pg_catalog.pg_default_acl d
+       where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 0 and d.defaclobjtype = 'f'),
+      pg_catalog.acldefault('f'::"char", 'postgres'::regrole))) a
+    where a.grantee = 0 or a.grantee = any (v_api)
+  ) x;
+
+  if v_leaks is not null then
+    raise exception 'hardening check failed, nothing is applied: %', v_leaks;
+  end if;
+end
+$$;

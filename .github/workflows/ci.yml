@@ -63,9 +63,12 @@ jobs:
       - name: Browser bundle check (secrets; fixtures after go-live)
         run: npm run scan:bundle
 
+      # No --with-deps: ubuntu-latest already has Chromium's libraries, and the apt font packages
+      # that --with-deps adds hung on the runner's apt mirror (2026-11-11). No e2e test in CI
+      # compares pixels (screenshots run on demand only), so the extra fonts are not needed.
       - name: Install Chromium for Playwright
         timeout-minutes: 4
-        run: npx playwright install --with-deps --only-shell chromium
+        run: npx playwright install --only-shell chromium
 
       - name: End-to-end tests (390 / 820 / 1440)
         run: npm run test:e2e

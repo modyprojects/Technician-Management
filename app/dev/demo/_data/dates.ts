@@ -16,9 +16,18 @@ import {
   toMinutes,
   weekStartOf,
 } from "@/features/calendar/data/dates";
+import { atJerusalem } from "@/features/dashboards/data/time";
 
 /** The demo's "today" (Wednesday 21.10.2026). */
 export const TODAY = "2026-10-21";
+
+/**
+ * The demo's "now": 12:45 on TODAY, Asia/Jerusalem (IDT, +03:00). FICTIONAL. Only the manager
+ * dashboard reads it (the server page passes it as `now`; D57, spec-final §5.1): 12:45 is the first
+ * quarter hour not earlier than any fictional event recorded on TODAY (the latest is review item
+ * rv-7, received 12:43). Checked against TODAY when this module loads (end of file).
+ */
+export const DEMO_NOW = "2026-10-21T12:45:00+03:00";
 
 // The shared helpers under the names the fixtures and demo screens use (the demo's own names).
 export { addDays, dayName, ddmm, pad, shiftWorkDay };
@@ -27,6 +36,12 @@ export const isWork = isWorkDay;
 export const weekStart = weekStartOf;
 export const toMin = toMinutes;
 export const fromMin = fromMinutes;
+
+/**
+ * The instant of a local Asia/Jerusalem date and time, with that date's offset (via Intl, never a
+ * hard-coded "+03:00"): the fixtures' service_calls.opened_at / resolved_at and visit times.
+ */
+export { atJerusalem };
 
 /** "היום" for TODAY, otherwise "21.10" (calls list, call card). */
 export const dayLabel = (s: string): string => (s === TODAY ? "היום" : ddmm(s));
@@ -71,4 +86,10 @@ export function notificationTimeLabel(iso: string): string {
   if (!local) return "";
   const day = local.date === TODAY ? "היום" : local.date === addDays(TODAY, -1) ? "אתמול" : ddmm(local.date);
   return `${day} ${local.time}`;
+}
+
+// DEMO_NOW must stay on TODAY (R11): an inconsistent edit fails loudly instead of skewing the
+// dashboard's "today" figures.
+if (jerusalemDateTime(DEMO_NOW)?.date !== TODAY) {
+  throw new Error(`DEMO_NOW (${DEMO_NOW}) is not on TODAY (${TODAY}) in Asia/Jerusalem`);
 }

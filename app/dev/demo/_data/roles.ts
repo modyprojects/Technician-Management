@@ -8,19 +8,24 @@
 // The role rules themselves (what each office role's screens offer, the sidebar order) live in
 // features/auth/roles.ts, shared with the real app (Step 2 plan §3.5); this module re-exports
 // them for the demo pages and adds the demo's addresses and fictional users.
-import type { TechNavHrefs } from "@/components/tech/TechBottomNav";
+import type { TechNavHrefs, TechTab } from "@/components/tech/TechBottomNav";
 import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import {
   accountAdminScope,
+  callsAreaLinks as sharedCallsAreaLinks,
+  type CallsAreaLink,
   customersOffered,
   officeHomeLabel,
+  officeLanding as sharedOfficeLanding,
   officeNav as sharedOfficeNav,
   type OfficeNavHrefs,
   type OfficeNavKey,
   type OfficeNavLink,
+  officeNavParent,
   productsOffered,
   reviewItemsOffered,
   settingsTabsOffered,
+  SIDEBAR_WORK_SCREEN_ROLES,
   WORK_QUEUE_SCREENS_DECISION,
   workQueueScreensOffered,
 } from "@/features/auth/roles";
@@ -41,13 +46,15 @@ export {
   customersOffered,
   isOfficeRole,
   officeHomeLabel,
+  officeNavParent,
   productsOffered,
   reviewItemsOffered,
   settingsTabsOffered,
+  SIDEBAR_WORK_SCREEN_ROLES,
   WORK_QUEUE_SCREENS_DECISION,
   workQueueScreensOffered,
 };
-export type { OfficeNavKey };
+export type { CallsAreaLink, OfficeNavKey, OfficeNavLink };
 
 export type Viewpoint = "tech" | OfficeRole;
 
@@ -132,6 +139,68 @@ const demoOfficeNavHrefs = (role: OfficeRole): OfficeNavHrefs => ({
  */
 export const officeNav = (role: OfficeRole, permissions: RolePermissions): OfficeNavLink[] =>
   sharedOfficeNav(role, permissions, demoOfficeNavHrefs(role));
+
+/**
+ * The landing item of a demo viewpoint (D57 (1); features/auth/roles.ts officeLanding) with the
+ * demo's addresses: "דשבורד" for Manager and Creator with any dashboard tab, otherwise the office
+ * home. The office home route redirects to it, and every "חזרה ל…" link uses its label and address.
+ * Never null in the demo (every address is built).
+ */
+export function demoOfficeLanding(role: OfficeRole, permissions: RolePermissions): OfficeNavLink {
+  return (
+    sharedOfficeLanding(role, permissions, demoOfficeNavHrefs(role)) ?? {
+      key: "home",
+      label: officeHomeLabel(permissions),
+      href: demoHref.officeHome(role),
+    }
+  );
+}
+
+/**
+ * The "חזרה ל…" link of a no-access card (backHref/backLabel props): the role's landing item, so
+ * its label and address always agree and it never goes through the office home's redirect (D57).
+ */
+export function demoLandingBack(role: OfficeRole, permissions: RolePermissions): { backHref: string; backLabel: string } {
+  const landing = demoOfficeLanding(role, permissions);
+  return { backHref: landing.href, backLabel: landing.label };
+}
+
+/**
+ * The addresses a temporary start prototype offers (Step 2 PR 2.3, Q18 TEMPORARY): only what the
+ * real app will have built by then, the start screen itself ("בית") and Settings. Every other item
+ * has no address, so the shared rule leaves it out (only built items, Q18).
+ */
+const demoStartNavHrefs = (role: OfficeRole): OfficeNavHrefs => ({
+  home: demoHref.start(role),
+  settings: (tab) => demoHref.settings(role, tab),
+});
+
+/**
+ * The sidebar of a start prototype (/dev/demo/start/<role>): the shared rule (features/auth/roles.ts
+ * officeNav; never the two-argument wrapper above, critique N6) over the role's values with the
+ * start addresses only. With the default matrix: Creator and Manager "בית", "הגדרות"; Customer
+ * Service "בית". OPEN (Step 2 PR 2.3 §9 Q-A, AU-03 PENDING): D57 (1) makes "דשבורד" the Manager's
+ * and the Creator's landing; Q18 shows only built items. The prototype shows the Q18 option, with
+ * the pending label, and does not decide. Display only (G-04).
+ */
+export const demoStartNav = (role: OfficeRole, permissions: RolePermissions): OfficeNavLink[] =>
+  sharedOfficeNav(role, permissions, demoStartNavHrefs(role));
+
+/**
+ * The landing item of a start prototype (its h1 and the current sidebar item): the shared rule
+ * officeLanding with the start addresses (no dashboard address, so "בית"); "בית" at the start
+ * address when the rule has none.
+ */
+export function demoStartLanding(role: OfficeRole, permissions: RolePermissions): OfficeNavLink {
+  return sharedOfficeLanding(role, permissions, demoStartNavHrefs(role)) ?? { key: "home", label: "בית", href: demoHref.start(role) };
+}
+
+/** The technician's bottom navigation on the start prototypes: built screens only (Q18; no "יומן"). */
+export const DEMO_START_TECH_TABS: readonly TechTab[] = ["home", "prof"];
+
+/** The "מסכים נוספים" links of a demo viewpoint on "קריאות" (D57; features/auth/roles.ts callsAreaLinks). */
+export const callsAreaLinks = (role: OfficeRole, permissions: RolePermissions): CallsAreaLink[] =>
+  sharedCallsAreaLinks(role, permissions, demoOfficeNavHrefs(role));
 
 /** Technician bottom-navigation links: "היום", "יומן" and "פרופיל". */
 export const TECH_NAV_HREFS: TechNavHrefs = { home: demoHref.tech(), cal: demoHref.techCalendar(), prof: demoHref.techProfile() };
