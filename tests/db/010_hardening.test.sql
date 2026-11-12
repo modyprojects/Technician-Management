@@ -1,9 +1,12 @@
 -- PR 1.3: privilege hardening, checked from the system catalog (docs/ROADMAP.md "PR 1.3 mandatory
 -- security requirement", docs/security.md §5, docs/database-schema.md §9, docs/testing.md
 -- category 1). Catalog-wide, so these checks also guard every object that later migrations add.
+-- PR 1.4 (Migration 2): the exact lists now include the seven reference, customer and product
+-- tables, their ten policies and the eight Settings RPCs (wrappers and bodies); four checks were
+-- added for the new trigger functions and the root-table triggers.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(35);
 
 -- ---------------------------------------------------------------------------------------------
 -- Tables and columns
@@ -16,9 +19,11 @@ select results_eq(
      where n.nspname in ('public', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
        and a.grantee = 'authenticated'::regrole
      order by c.relname::text collate "C", a.privilege_type::text $$,
-  $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('permissions', 'SELECT'),
-            ('profiles', 'SELECT'), ('role_permissions', 'SELECT'), ('technicians', 'SELECT') $$,
-  'authenticated has exactly SELECT on the six PR 1.3 tables and nothing else'
+  $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('brands', 'SELECT'), ('call_types', 'SELECT'),
+            ('collection_locations', 'SELECT'), ('customers', 'SELECT'), ('followup_reasons', 'SELECT'),
+            ('permissions', 'SELECT'), ('products', 'SELECT'), ('profiles', 'SELECT'), ('role_permissions', 'SELECT'),
+            ('suppliers', 'SELECT'), ('technicians', 'SELECT') $$,
+  'authenticated has exactly SELECT on the six PR 1.3 tables and the seven PR 1.4 tables, and nothing else'
 );
 
 select is(
@@ -80,6 +85,9 @@ select results_eq(
      where n.nspname in ('public', 'private') and has_function_privilege('authenticated', p.oid, 'execute')
      order by p.oid::regprocedure::text collate "C" $$,
   $$ values
+     ('add_call_type(text)'),
+     ('add_collection_location(text,text,text,text,text)'),
+     ('add_followup_reason(text)'),
      ('admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('admin_create_technician(uuid,text,text,text,text,boolean)'),
      ('admin_set_role_permission(text,text,boolean,integer,text)'),
@@ -92,9 +100,14 @@ select results_eq(
      ('authorize_account_creation(text,text,text)'),
      ('cancel_account_request(uuid,integer)'),
      ('decide_account_request(uuid,text,integer,text)'),
+     ('delete_collection_location(uuid,integer)'),
+     ('delete_followup_reason(uuid,integer)'),
      ('has_permission(text)'),
      ('is_creator()'),
      ('my_technician_id()'),
+     ('private.add_call_type(text)'),
+     ('private.add_collection_location(text,text,text,text,text)'),
+     ('private.add_followup_reason(text)'),
      ('private.admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('private.admin_create_technician(uuid,text,text,text,text,boolean)'),
      ('private.admin_set_role_permission(text,text,boolean,integer,text)'),
@@ -107,6 +120,8 @@ select results_eq(
      ('private.authorize_account_creation(text,text,text)'),
      ('private.cancel_account_request(uuid,integer)'),
      ('private.decide_account_request(uuid,text,integer,text)'),
+     ('private.delete_collection_location(uuid,integer)'),
+     ('private.delete_followup_reason(uuid,integer)'),
      ('private.has_permission(text)'),
      ('private.has_role(text)'),
      ('private.is_active_user()'),
@@ -114,7 +129,13 @@ select results_eq(
      ('private.is_office_user()'),
      ('private.my_technician_id()'),
      ('private.request_account_change(text,uuid,text,text,text)'),
+     ('private.set_call_type_active(uuid,boolean,integer)'),
+     ('private.set_collection_location_active(uuid,boolean,integer)'),
+     ('private.set_followup_reason_active(uuid,boolean,integer)'),
      ('request_account_change(text,uuid,text,text,text)'),
+     ('set_call_type_active(uuid,boolean,integer)'),
+     ('set_collection_location_active(uuid,boolean,integer)'),
+     ('set_followup_reason_active(uuid,boolean,integer)'),
      ('test_data_census()') $$,
   'authenticated can execute exactly the public API and the private helpers and bodies it calls'
 );
@@ -143,6 +164,28 @@ select ok(
   and not has_function_privilege('authenticated', 'private.tg_audit_chain()', 'execute')
   and not has_function_privilege('authenticated', 'private.tg_audit_target()', 'execute'),
   'write_audit, require_caller, audit_chain_verify, bootstrap_first_creator and trigger functions are not executable by authenticated'
+);
+
+-- PR 1.4: the three new trigger functions have no grant either.
+select ok(
+  not has_function_privilege('authenticated', 'private.tg_immutable_except()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_one_way_product_refs()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_followup_reason_delete_guard()', 'execute'),
+  'PR 1.4: tg_immutable_except, tg_one_way_product_refs and tg_followup_reason_delete_guard are not executable by authenticated'
+);
+
+-- PR 1.4: the eight Settings bodies are SECURITY DEFINER in private; their public wrappers are
+-- SECURITY INVOKER (the catalog-wide checks below cover owner and search_path).
+select results_eq(
+  $$ select n.nspname::text collate "default", count(*) filter (where p.prosecdef), count(*) filter (where not p.prosecdef)
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname in ('public', 'private')
+       and p.proname in ('add_call_type', 'set_call_type_active', 'add_followup_reason', 'set_followup_reason_active',
+                         'delete_followup_reason', 'add_collection_location', 'set_collection_location_active',
+                         'delete_collection_location')
+     group by n.nspname order by n.nspname::text collate "C" $$,
+  $$ values ('private', 8::bigint, 0::bigint), ('public', 0::bigint, 8::bigint) $$,
+  'PR 1.4: eight SECURITY DEFINER Settings bodies in private and eight SECURITY INVOKER wrappers in public'
 );
 
 select ok(
@@ -262,9 +305,34 @@ select results_eq(
      left join pg_policy pol on pol.polrelid = c.oid
      where n.nspname = 'public' and c.relkind = 'r'
      group by c.relname order by c.relname::text collate "C" $$,
-  $$ values ('account_requests', 2::bigint), ('audit_logs', 2::bigint), ('permissions', 1::bigint),
-            ('profiles', 3::bigint), ('role_permissions', 2::bigint), ('technicians', 2::bigint) $$,
-  'every PR 1.3 table has its read policies'
+  $$ values ('account_requests', 2::bigint), ('audit_logs', 2::bigint), ('brands', 1::bigint), ('call_types', 2::bigint),
+            ('collection_locations', 2::bigint), ('customers', 1::bigint), ('followup_reasons', 2::bigint),
+            ('permissions', 1::bigint), ('products', 1::bigint), ('profiles', 3::bigint), ('role_permissions', 2::bigint),
+            ('suppliers', 1::bigint), ('technicians', 2::bigint) $$,
+  'every PR 1.3 and PR 1.4 table has its read policies (PR 1.4: ten)'
+);
+
+-- PR 1.4, generated columns (plan V1): on products and customers is_test is a stored generated
+-- column, which BEFORE triggers read as NULL. The one-way checks therefore run AFTER the row is
+-- formed, and no BEFORE trigger there reads the marker.
+select results_eq(
+  $$ select c.relname::text collate "default", t.tgname::text collate "default", t.tgfoid::regprocedure::text collate "default"
+     from pg_trigger t join pg_class c on c.oid = t.tgrelid
+     where c.relname in ('products', 'customers') and c.relnamespace = 'public'::regnamespace
+       and not t.tgisinternal and (t.tgtype & 2) = 0 and t.tgenabled = 'O'
+     order by 1, 2 $$,
+  $$ values ('customers', 'a30_one_way', 'private.tg_one_way_people()'),
+            ('products', 'a30_one_way', 'private.tg_one_way_people()'),
+            ('products', 'a31_one_way_refs', 'private.tg_one_way_product_refs()') $$,
+  'PR 1.4: the one-way triggers on products and customers are enabled AFTER row triggers'
+);
+select is(
+  (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+   where c.relname in ('products', 'customers') and c.relnamespace = 'public'::regnamespace
+     and not t.tgisinternal and (t.tgtype & 2) <> 0
+     and t.tgfoid in ('private.tg_one_way_people()'::regprocedure, 'private.tg_immutable_markers()'::regprocedure)),
+  0::bigint,
+  'PR 1.4: no BEFORE trigger on products or customers runs tg_one_way_people or tg_immutable_markers (they would read is_test as NULL)'
 );
 
 select is(

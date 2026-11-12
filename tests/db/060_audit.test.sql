@@ -3,9 +3,11 @@
 -- The immutability boundary covers the app, the secret key and service_role; owner-level access is
 -- outside it: a naive edit is detected by the chain, a rewrite that recomputes the chain or a
 -- deletion of the newest rows only with an anchor recorded outside the database (review S3).
+-- PR 1.4: the truncate triggers cover the seven new tables, and the Settings actions are audited
+-- (TEMPORARY, owner question OQ-9) with target_is_test derived from the three new target tables.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(43);
+select plan(51);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -96,17 +98,18 @@ select throws_ok($$ delete from public.audit_logs $$, '55000', 'audit_logs is ap
 select throws_ok($$ truncate public.audit_logs $$, '55000', 'audit_logs cannot be truncated',
   'postgres cannot truncate audit_logs (trigger)');
 
--- Truncate triggers on every PR 1.3 table ---------------------------------------------------------------
+-- Truncate triggers on every PR 1.3 and PR 1.4 table ---------------------------------------------------
 select is(
   (select count(distinct c.relname) from pg_trigger t join pg_class c on c.oid = t.tgrelid
    join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and t.tgfoid = 'private.tg_reject_truncate()'::regprocedure
      and t.tgenabled = 'O' and (t.tgtype & 32) <> 0 and (t.tgtype & 2) <> 0),
-  6::bigint, 'every PR 1.3 table has an enabled BEFORE TRUNCATE statement trigger');
+  13::bigint, 'every PR 1.3 and PR 1.4 table (13) has an enabled BEFORE TRUNCATE statement trigger');
 select throws_ok(
   $$ truncate public.audit_logs, public.account_requests, public.role_permissions, public.permissions,
-       public.technicians, public.profiles $$,
-  '55000', null, 'truncating all PR 1.3 tables together is rejected, even as postgres');
+       public.technicians, public.profiles, public.brands, public.suppliers, public.products, public.customers,
+       public.call_types, public.followup_reasons, public.collection_locations $$,
+  '55000', null, 'truncating all PR 1.3 and PR 1.4 tables together is rejected, even as postgres');
 
 -- Tamper evidence: owner-level access can change a row only with the trigger disabled (rolled back);
 -- the chain shows it.
@@ -149,6 +152,85 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select is((select count(*) from public.audit_logs), 0::bigint, 'a user without a profile reads no audit rows');
 reset role;
+
+-- PR 1.4: Settings actions (TEMPORARY, OQ-9) --------------------------------------------------------------
+-- The real Creator acts on test rows he creates and on the real D48 rows; a1 (test Manager) gets
+-- `settings` from the Creator and adds a call type.
+create temporary table pr14_ids (k text primary key, id uuid) on commit drop;
+grant all on pr14_ids to authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+insert into pr14_ids select 'call_type', id from public.add_call_type('בדיקת יומן');
+select public.set_call_type_active((select id from public.call_types where sort_order = 1), false, 1);
+select public.set_call_type_active((select id from public.call_types where sort_order = 1), true, 2);
+insert into pr14_ids select 'reason', id from public.add_followup_reason('סיבת בדיקה');
+select public.set_followup_reason_active((select id from public.followup_reasons where sort_order = 2), false, 1);
+select public.set_followup_reason_active((select id from public.followup_reasons where sort_order = 2), true, 2);
+select public.delete_followup_reason((select id from pr14_ids where k = 'reason'), 1);
+insert into pr14_ids select 'place', id from public.add_collection_location('מחסן בדיקה', 'logistics_center', 'רחוב הבדיקה 1', null, null);
+select public.set_collection_location_active((select id from pr14_ids where k = 'place'), false, 1);
+select public.set_collection_location_active((select id from pr14_ids where k = 'place'), true, 2);
+select public.delete_collection_location((select id from pr14_ids where k = 'place'), 3);
+select public.admin_set_role_permission('manager', 'settings', true, 1, null);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+insert into pr14_ids select 'manager_call_type', id from public.add_call_type('בדיקת מנהל');
+reset role;
+select set_config('request.jwt.claims', '', true);
+
+select results_eq(
+  $$ select a.action, a.target_table, a.target_is_test, a.details, a.actor_profile_id
+     from public.audit_logs a where a.target_table in ('call_types', 'followup_reasons', 'collection_locations')
+     order by a.id $$,
+  $$ values
+     ('call_type.created', 'call_types', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('call_type.deactivated', 'call_types', false, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('call_type.activated', 'call_types', false, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('followup_reason.created', 'followup_reasons', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('followup_reason.deactivated', 'followup_reasons', false, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('followup_reason.activated', 'followup_reasons', false, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('followup_reason.deleted', 'followup_reasons', true, '{"label": "סיבת בדיקה"}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('collection_location.created', 'collection_locations', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('collection_location.deactivated', 'collection_locations', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('collection_location.activated', 'collection_locations', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('collection_location.deleted', 'collection_locations', true, '{"label": "מחסן בדיקה"}'::jsonb, '00000000-0000-4000-8000-0000000000c1'::uuid),
+     ('call_type.created', 'call_types', true, '{}'::jsonb, '00000000-0000-4000-8000-0000000000a1'::uuid) $$,
+  'PR 1.4: the eleven Settings actions are audited; target_is_test follows the target (D48 rows real, app-created rows test)');
+select is(private.audit_chain_verify(), null::bigint, 'PR 1.4: the chain verifies after the Settings actions');
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+select throws_ok(
+  $$ select private.write_audit('call_type.renamed', 'call_types', (select id from pr14_ids where k = 'call_type'), '{}') $$,
+  '23514', 'new row for relation "audit_logs" violates check constraint "audit_logs_action_check"',
+  'PR 1.4: an action outside the list is rejected (no rename, OQ-5)');
+select throws_ok(
+  $$ select private.write_audit('call_type.created', 'call_types', '00000000-0000-4000-8000-00000000ffff', '{}') $$,
+  '23503', 'audit_logs: unknown audit target', 'PR 1.4: an unknown call type target is rejected');
+select throws_ok(
+  $$ select private.write_audit('call_type.created', 'customers', '00000000-0000-4000-8000-0000000000c1', '{}') $$,
+  '23503', 'audit_logs: unknown audit target', 'PR 1.4: customers are not an audit target (nothing writes them in PR 1.4)');
+select set_config('request.jwt.claims', '', true);
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.audit_logs where target_table in ('call_types', 'followup_reasons', 'collection_locations')),
+  12::bigint, 'PR 1.4: the Creator reads every Settings audit row');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq(
+  $$ select a.action, a.target_id from public.audit_logs a
+     where a.target_table in ('call_types', 'followup_reasons', 'collection_locations') order by a.id $$,
+  $$ select 'call_type.created'::text, (select id from pr14_ids where k = 'manager_call_type') $$,
+  'PR 1.4: a Manager reads only his own Settings actions (TEMPORARY, OQ-9; the policy is unchanged)');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.audit_logs where target_table in ('call_types', 'followup_reasons', 'collection_locations')),
+  0::bigint, 'PR 1.4: a Technician reads no Settings audit rows');
+reset role;
+select set_config('request.jwt.claims', '', true);
 
 -- Chain integrity against the owner's database role (review S7 item 6) --------------------------------
 select set_config('request.jwt.claims', '', true);
