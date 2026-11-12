@@ -1,5 +1,14 @@
 # Work Log (English only)
 
+## 2026-11-12 — Step 1 / PR 1.4: Migration 2 applied to the remote project (owner-approved)
+- **Apply:** the owner approved it and was present for Supabase's confirmation prompt. Migration 2 (sha256 `874742…b363`) was applied once to `ooxozvvrljjkyfduuiks`, name `reference_customers_products`: `{"success":true}`.
+  - **Wrapper:** the file was sent inside a self-verifying wrapper, sha256 `04810116…0a92`. The server checks the embedded file's hash before running it, because the tool layer turns a typed `\uXXXX` (570 in the file) into the literal character.
+  - **Earlier attempt:** a first attempt the same morning timed out on the unanswered confirmation prompt. Nothing was applied (verified read-only).
+- **Verification (read-only):** the stored statement equals the approved wrapper, and its embedded SQL equals the approved file. The catalog fingerprint equals the local build on 14/14 values. The audit anchor and function hashes equal the README section 9 values. D48 rows: 2 call types and 5 reasons; the other new tables are empty. Advisors: one WARN (`auth_leaked_password_protection`). Details: `docs/review/step1-pr14/README.md` section 15.5.
+- **Discrepancy (documented, not repaired):** the recorded version is **`20261112093516`**; the file version is `20261105120000`.
+- **CI fix:** PR #27 drops `--with-deps` from the Playwright Chromium install step (owner-approved change to a protected file). Its CI is green (Chromium install 5 s, e2e passed). It waits for the owner's merge approval.
+- **Not done:** merge of PR #14, the `010` remote run, history repair, Migration 3.
+
 ## 2026-11-11 — Step 1 / PR 1.4: Migration 2 pre-apply round (section 11, D58 review, read-only preflight; not applied)
 - **Owner approval (2026-11-11):** steps 1-3 for Migration 2. Not approved: the apply, the merge of PR #14 and any remote write. PR #26 stays a draft.
 - **Section 11** (`77fb618`): a read-only, fail-closed hardening check, last in the file. It keeps PR 1.3 section 15's privilege checks unchanged and adds checks for:

@@ -1,6 +1,6 @@
 # Step 1 / PR 1.4 — Migration 2: reference data, customers and products (test report)
 
-**Status (2026-11-11): ready for the owner's apply approval; not applied.** Migration 1 (PR 1.3, PR #12) is applied to the remote project (owner-approved, recorded version `20261111125920`) and merged into `main` (`fe370df`); this PR is based on `main`. On 2026-11-11 the owner asked for steps 1-3 before the apply: a fail-closed hardening check (migration section 11), one independent review (D58) and the read-only preflight on the remote project. All three are done (section 15). The apply, the merge of this PR and every remote write need the owner's separate approval (D52 rule 4, D59). History (2026-11-05): prepared and tested on isolated local copies only; stacked on PR 1.3 at the time.
+**Status (2026-11-12): applied to the remote project (owner-approved; version `20261112093516`, section 15.5); PR not merged.** Migration 1 (PR 1.3, PR #12) is applied to the remote project (owner-approved, recorded version `20261111125920`) and merged into `main` (`fe370df`); this PR is based on `main`. On 2026-11-11 the owner asked for steps 1-3 before the apply: a fail-closed hardening check (migration section 11), one independent review (D58) and the read-only preflight on the remote project. All three are done (section 15). The apply, the merge of this PR and every remote write need the owner's separate approval (D52 rule 4, D59). History (2026-11-05): prepared and tested on isolated local copies only; stacked on PR 1.3 at the time.
 
 - **Independent review (D53): round 1 done and fixed** (plan T16; section 12: security and conformance lenses, 2 findings and 9 nits, each fixed or recorded). **Pre-apply independent review (D58, 2026-11-11, section 15): APPROVE WITH FIXES** on `77fb618`: every round-1 fix holds, no security defect in the SQL, one documentation fix (F-1, done), no migration change.
 - **Owner acceptance of the three new `ALLOWED_WRITERS` entries (section 8): approved by the owner on 2026-11-05 (C1; recorded as D55 (1)); A3 (PR 1.3 Q1) approved in principle.** The merge of this PR still needs the owner's separate approval (D55 (10)).
@@ -622,3 +622,23 @@ Project `ooxozvvrljjkyfduuiks` only. Every `execute_sql` started with `set trans
   - a rollback;
   - the merge of PR #14 (it needs its own approval and the D31 checks).
 - **Failure handling, as for Migration 1:** stop and do not retry. Check read-only what exists, including whether `public.products` exists (F-3), and report.
+
+### 15.5 Remote apply record (owner-approved, 2026-11-12)
+
+The owner approved one apply of this exact file (sha256 `874742…b363`). Project `ooxozvvrljjkyfduuiks`, MCP `apply_migration`, name `reference_customers_products`.
+
+- **Transport issue found before the apply:** the tool layer turns a typed `\uXXXX` into the literal character. The file has 570 such escapes; Migration 1 had none. So the file was sent inside a self-verifying wrapper (scratchpad only, not in the repository). The wrapper is one DO block:
+  - The exact file bytes are a dollar-quoted literal.
+  - The server checks their sha256 against the approved hash. On a mismatch it raises "hash mismatch, nothing is applied"; otherwise it runs the text with `execute`.
+  - Tested locally: a corrupted copy was refused with nothing created. The real one gave a database identical to a normal apply on 14 fingerprint values.
+- **First attempt (2026-11-12, about 08:00 UTC): not applied.** Supabase asked a confirmation question (the file drops and re-adds two audit CHECKs), and nobody answered within 230 s. The call timed out. Read-only checks afterwards: history held Migration 1 only, no Migration 2 object existed, and the catalog was unchanged. The owner then renewed the approval.
+- **Second attempt (owner present for the confirmation): `{"success":true}`.**
+- **Read-only verification afterwards** (every query `set transaction read only;`, verified `on`):
+  - **History:** version **`20261112093516`** (server-assigned; the file version is `20261105120000`), name `reference_customers_products`, one statement.
+  - **Payload:** the stored statement's sha256 is `04810116d83104ec6f3200bd79ee7a19d28f1007427385be597e6018e4ba0a92` (the approved wrapper, 72,737 bytes). The SQL embedded in it is `874742…b363`, the approved file byte for byte.
+  - **Catalog fingerprint:** equal to the local build of both migrations on all 14 values (functions 73, policies 22, columns, constraints, indexes, triggers, relations, schemas, both permission tables, the D48 rows).
+  - **Section 9 step 2:** anchor `functions_md5` `d30c54fb…`; `md5(prosrc)` of `tg_audit_target` `d25cf9e1…` and of `test_data_census` `0dbefb7f…`. Equal to the values above.
+  - **Rows:** `call_types` 2 and `followup_reasons` 5 (D48). The five other new tables are empty. `profiles` and `audit_logs` 0; census test rows 0.
+  - **Security advisors:** one WARN, `auth_leaked_password_protection` (unchanged).
+- **Version discrepancy, documented and not repaired:** `20261112093516` against `20261105120000`. The down script finds the row by name too. A repair needs the owner's approval.
+- **Not done:** the `010` remote run (a write), any history repair, any rollback, the merge of PR #14, Migration 3.
