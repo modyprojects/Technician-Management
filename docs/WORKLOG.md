@@ -1,5 +1,14 @@
 # Work Log (English only)
 
+## 2026-11-12 — Step 1 / PR 1.5: Migration 3 prepared for the apply approval (not applied)
+- **Synced** with PR 1.4's head, which carries section 11, the Migration 2 apply record and the CI fix. The conflicts in `PROJECT-MAP.md` and `WORKLOG.md` are resolved.
+- **Section 12** is a fail-closed hardening check. It is Migration 2 section 11, except that it allows invoker-rights views such as `visit_time_current`, and any materialized view still fails.
+  - `tests/db/210` (30) and `tests/ci/hardening-assertion.test.mjs` cover it.
+  - `tests/db/140` now expects the applied Migration 2 check to flag exactly `visit_time_current`.
+- **Local:** pgTAP 1259/1259 (26 files), node 174/174, guard passed, canary PASS, lint and typecheck clean.
+- **New sha256:** `37b803db…eecb`. **Not applied.**
+- **Gates before the apply:** the owner's approval of the exact file; OQ-13; A1 (guard) before the merge.
+
 ## 2026-11-12 — Step 1 / PR 1.4: Migration 2 applied to the remote project (owner-approved)
 - **Apply:** the owner approved it and was present for Supabase's confirmation prompt. Migration 2 (sha256 `874742…b363`) was applied once to `ooxozvvrljjkyfduuiks`, name `reference_customers_products`: `{"success":true}`.
   - **Wrapper:** the file was sent inside a self-verifying wrapper, sha256 `04810116…0a92`. The server checks the embedded file's hash before running it, because the tool layer turns a typed `\uXXXX` (570 in the file) into the literal character.

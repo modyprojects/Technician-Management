@@ -1,10 +1,10 @@
 # Step 1 / PR 1.5: Migration 3 (service calls, visits and their history)
 
-**Status (2026-11-11):** prepared and tested locally only. **Not applied** to any remote database. Draft PR stacked on PR #14 (Migration 2), which is stacked on PR #12 (Migration 1). Applying it needs the owner's separate approval of the exact file (D52 rule 4, D55); merging needs the owner's acceptance of approval item A1 (section 8). Process per D58: one independent review, no mutation testing, tests prioritise RLS, permissions, role isolation, data integrity and migration safety.
+**Status (2026-11-12):** prepared and tested locally; **not applied**. The base is now `main` after PR 1.4 (Migration 2) was applied and merged; this branch was synced. Applying it needs the owner's separate approval of the exact file (D52 rule 4, D55). Merging needs the owner's acceptance of approval item A1 (section 8). Before the apply, open question OQ-13 must be answered (section 13). Section 15 covers the 2026-11-12 addition, a fail-closed hardening check (section 12 of the migration). History (2026-11-11): one independent review (D58), recorded in section 12.
 
 | File | sha256 |
 |---|---|
-| `supabase/migrations/20261106120000_service_calls_visits.sql` | `e8b8414b59a7799eef4e43c84e6006cc21dbf81589b2f34b9add7d55598acaef` |
+| `supabase/migrations/20261106120000_service_calls_visits.sql` | `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb` (since 2026-11-12: section 12; `e8b8414b…` superseded) |
 | `supabase/rollback/20261106120000_service_calls_visits.down.sql` | `2074a4ad3bc99fab8b82b5be62afcdd64354e625857cbc951ebeebc0ca7dcb41` |
 | `tests/db-canary/20261106120000.sql` | `91f8cab78d5e24c23e77aadd4a57e64db678657b1d32d3c0d169e0536733ef85` |
 
@@ -120,3 +120,33 @@ Carried: open decision 3 (d06): `c10` rule (b) requires a summary for a closed v
 - **Step 6 (now before Step 3, owner 2026-11-11):** the ingestion contract: create calls with status `open`, visits with their `created` event and the recalculation in one transaction; refuse to link a real invitation to a test call or product (D47); which call fields a later invitation updates.
 - **PR 1.6:** corrections (`source = 'correction'`), review items, accepted reports, `field_version`, outcome correction (OQ-14), a second technician's reports (OQ-11).
 - **Step 9:** filter Asia/Jerusalem days and months as half-open `timestamptz` ranges so the indexes are used.
+
+## 15. Fail-closed hardening check (2026-11-12) and the sync with Migration 2
+
+**Section 12 of the migration** (last in the file) is the read-only check of Migration 2 section 11, with one change, which is the view rule. Migration 3 creates `visit_time_current` (D45) `with (security_invoker = true)`. A view now passes only with `security_invoker` on, read through `pg_options_to_table`, so `on`, `true` and `1` all count. Any materialized view still fails.
+
+**Why the change:** Migration 2's check, already applied and unchangeable, rejects every view. On a database with Migration 3 it therefore flags exactly `visit_time_current`, and `tests/db/140` now expects exactly that.
+
+**Tests:**
+- **`tests/db/210_hardening_assertion_m3` (30):** a byte-identical copy of section 12 against these injected leaks:
+  - the 21 non-view leaks of `140`;
+  - a view without `security_invoker`;
+  - a view with it set to false;
+  - `visit_time_current` with the option reset;
+  - a materialized view.
+  - It also checks that an invoker view passes, with two clean runs.
+- **`tests/ci/hardening-assertion.test.mjs`** proves three things:
+  - the copy is identical;
+  - section 12 equals Migration 2 section 11 except the view branch;
+  - section 12 is the last statement.
+
+**Local results:**
+- pgTAP **1259/1259** (26 files); node **174/174**.
+- Migration guard passed; canary PASS (3 migrations).
+- Lint and typecheck clean.
+
+**New migration sha256:** `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb`. The down script and the canary fixture are unchanged, because section 12 creates nothing.
+
+**Review:** the block is the reviewed Migration 2 check (independent review, PR 1.4 README section 15.2) with the view rule changed and tested. Whether it needs another independent review is the owner's call under D58 (9), which is open.
+
+**Apply delivery:** this file has 819 `\u` escapes, so the apply uses the same self-verifying wrapper as Migration 2 (PR 1.4 README section 15.5). The file is about 104 KB. Before the apply, a read-only `execute_sql` dry run will send the full wrapper as a literal and compare its sha256 on the server. That confirms the size and the exact transport before any write.
