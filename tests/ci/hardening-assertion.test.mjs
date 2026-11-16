@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lexSql } from "../../scripts/check-migrations.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -145,4 +146,30 @@ test("Migration 5 section 14 is Migration 4 section 12, byte for byte", () => {
 test("the section 14 check is the last statement of Migration 5", () => {
   const { end } = doBody(m5, "-- 14. Fail closed", m5File);
   assert.equal(m5.slice(end), "");
+});
+
+// PR 1.8, independent review N-4: the read-only pre-apply check (section 0b) runs before Migration 5
+// changes anything, and tests/db/310 runs a byte-identical copy of it.
+const test5PrecheckFile = "tests/db/310_precheck_m5.test.sql";
+
+test("tests/db/310 runs a byte-identical copy of the Migration 5 section 0b pre-apply check", () => {
+  const { body } = doBody(m5, "-- 0b. Fail closed", m5File);
+  const text = read(test5PrecheckFile);
+  const open = "language plpgsql as $precheck$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test5PrecheckFile}: missing the copy`);
+  const stop = text.indexOf("\n$precheck$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test5PrecheckFile}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("the section 0b check is the second statement of Migration 5, right after the postgres check, and only reads", () => {
+  const { body } = doBody(m5, "-- 0b. Fail closed", m5File);
+  const { statements, errors } = lexSql(m5);
+  assert.deepEqual(errors, []);
+  assert.match(statements[0].code, /^do\b/i);
+  assert.match(statements[0].bodies[0], /current_user <> 'postgres'/);
+  assert.match(statements[1].code, /^do\b/i);
+  assert.equal(statements[1].bodies[0], `\n${body}\n`);
+  assert.doesNotMatch(body, /\b(insert|update|delete|merge|truncate|alter|create|drop|grant|revoke|perform)\b/i);
 });

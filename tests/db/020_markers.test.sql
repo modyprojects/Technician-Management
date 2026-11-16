@@ -7,7 +7,7 @@
 -- so that trigger is disabled for this file (inside the rolled-back transaction).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(48);
+select plan(50);
 
 -- Fixtures (local, rolled back). Auth users have no password; their metadata claims "creator" to
 -- prove that roles never come from Auth metadata. Every profile is test data (is_test defaults to
@@ -241,6 +241,19 @@ select throws_ok(
   $$ insert into public.account_requests (request_type, target_profile_id, target_version, requested_by, is_test)
      values ('reactivate', '00000000-0000-4000-8000-0000000000b2', 1, '00000000-0000-4000-8000-0000000000a2', true) $$,
   '23505', null, 'R-S5: a second pending request for the same account is refused by the unique index, even as postgres');
+
+-- PR 1.3 review T5, moved here from 050 by PR 1.8 (independent review S-1): the decision CHECKs
+-- still guard the history rows, even for the owner's database role.
+select throws_ok(
+  $$ update public.account_requests set status = 'approved'
+     where request_type = 'activate' and target_profile_id = '00000000-0000-4000-8000-0000000000b2' and status = 'pending' $$,
+  '23514', 'new row for relation "account_requests" violates check constraint "account_requests_decision_check"',
+  'T5: a decided request has a decider and a time (CHECK account_requests_decision_check), even as postgres');
+select throws_ok(
+  $$ update public.account_requests set status = 'rejected', decided_by = '00000000-0000-4000-8000-0000000000c1', decided_at = now()
+     where request_type = 'activate' and target_profile_id = '00000000-0000-4000-8000-0000000000b2' and status = 'pending' $$,
+  '23514', 'new row for relation "account_requests" violates check constraint "account_requests_rejection_check"',
+  'T5: a rejection has a reason (CHECK account_requests_rejection_check), even as postgres');
 
 -- No deletes (§1) and FK restrict --------------------------------------------------------------
 select throws_ok($$ delete from public.profiles where id = '00000000-0000-4000-8000-0000000000a2' $$,

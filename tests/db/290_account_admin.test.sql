@@ -8,6 +8,8 @@
 --   - the Creator manages every role, changes roles (a role change grants exactly the new role's
 --     capabilities), and deletes per Option A: the account becomes inactive and marked deleted,
 --     audited; never his own account and never a Creator account (TEMPORARY OQ-1);
+--   - a deleted Technician stops receiving new work: the deletion turns his field profile's
+--     "פעיל" (accepts_invitations) off, audited, and it stays off (independent review S-2);
 --   - a deleted account is never activated, edited, given a role or credentials again (the
 --     reactivation guard; OQ-2); its user reads nothing and runs nothing (the database side of "no
 --     sign-in"; the Auth side is Step 2's); its history and attribution stay (the rows that
@@ -18,7 +20,7 @@
 -- The retired request path: 050. The schema and the triggers as the owner's role: 280.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(45);
+select plan(46);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. a9, b2 and d2 are deactivated; a8 and b8
 -- real-marked; c2 a second, real Creator inserted as postgres only to show that a Creator account is
@@ -401,9 +403,17 @@ select results_eq(
 select results_eq($$ select * from pg_temp.tm_audit() $$,
   $$ values ('profile.deleted'::text, 'b3'::text, true, 'c1'::text,
              '{"role": "customer_service", "reason": "עזבה את החברה", "was_active": true}'::jsonb),
+            ('technician.updated', 'e3', true, 'c1', '{"cause": "profile.deleted", "fields": ["accepts_invitations"]}'::jsonb),
             ('profile.deleted', 'd3', true, 'c1', '{"role": "technician", "was_active": true}'::jsonb),
             ('profile.deleted', 'a2', true, 'c1', '{"role": "manager", "reason": "עזב", "was_active": true}'::jsonb) $$,
-  'F: each deletion is audited once (profile.deleted, the role, whether it was active, the reason); refusals wrote nothing');
+  'F: each deletion is audited once (profile.deleted, the role, whether it was active, the reason), the Technician''s "פעיל" change too (S-2); refusals wrote nothing');
+select results_eq(
+  $$ select right(t.id::text, 2), t.accepts_invitations, t.version, coalesce(right(t.updated_by::text, 2), '-')
+     from public.technicians t
+     where t.id in ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-0000000000e3')
+     order by t.id $$,
+  $$ values ('e1'::text, true, 2, 'a1'::text), ('e2', true, 1, '-'), ('e3', false, 2, 'c1') $$,
+  'S-2: the deletion turned the deleted Technician''s "פעיל" off (no new invitations), by the Creator; other field profiles are untouched');
 
 -- =================================================================================================
 -- G. After the deletion: never reactivated or changed; nothing for the deleted user; history kept.
@@ -417,12 +427,12 @@ select results_eq(
              pg_temp.tm_try($q$ select public.admin_set_user_role('00000000-0000-4000-8000-0000000000b3', 'manager', 2, null) $q$),
              pg_temp.tm_try($q$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000b3', 'password') $q$),
              pg_temp.tm_try($q$ select public.assert_can_change_credentials('00000000-0000-4000-8000-0000000000a2', 'email') $q$),
-             pg_temp.tm_try($q$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e3', 1, 'x', 't-y', 'tech-c@example.test', null, true) $q$)) $$,
+             pg_temp.tm_try($q$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e3', 2, 'טכנאי למחיקה', 't-s', 'tech-c@example.test', null, true) $q$)) $$,
   $$ values ('55000 the account is deleted', '55000 the account is deleted',
              '55000 profiles: a deleted account never changes (D60 (7))', '55000 profiles: a deleted account never changes (D60 (7))',
              '55000 the account is deleted', '55000 the account is deleted',
              '55000 technicians: the account is deleted (D60 (7))') $$,
-  'C-01: the Creator cannot reactivate, deactivate, edit, re-role, give credentials to or edit the field profile of a deleted account (OQ-2)');
+  'C-01: the Creator cannot reactivate, deactivate, edit, re-role or give credentials to a deleted account, nor turn its "פעיל" on again (OQ-2, S-2)');
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
@@ -430,10 +440,12 @@ select results_eq(
   $$ values (pg_temp.tm_try($q$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 2, null) $q$),
              pg_temp.tm_try($q$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000d3', true, 2, null) $q$),
              pg_temp.tm_try($q$ select public.admin_update_profile('00000000-0000-4000-8000-0000000000d3', 2, 'x', null, null) $q$),
-             pg_temp.tm_try($q$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000a2', true, 2, null) $q$)) $$,
+             pg_temp.tm_try($q$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000a2', true, 2, null) $q$),
+             pg_temp.tm_try($q$ select public.admin_update_technician('00000000-0000-4000-8000-0000000000e3', 2, 'טכנאי למחיקה', 't-s', 'tech-c@example.test', null, true) $q$)) $$,
   $$ values ('55000 the account is deleted', '55000 the account is deleted',
-             '55000 profiles: a deleted account never changes (D60 (7))', '42501 not authorized') $$,
-  'the Manager cannot reactivate or edit a deleted Customer Service or Technician account; a deleted Manager stays outside his scope');
+             '55000 profiles: a deleted account never changes (D60 (7))', '42501 not authorized',
+             '55000 technicians: the account is deleted (D60 (7))') $$,
+  'the Manager cannot reactivate or edit a deleted Customer Service or Technician account, nor turn the deleted Technician''s "פעיל" on again; a deleted Manager stays outside his scope');
 select results_eq(
   $$ select right(p.id::text, 2), p.deleted_at is not null from public.profiles p
      where p.id in ('00000000-0000-4000-8000-0000000000b3', '00000000-0000-4000-8000-0000000000d3',
@@ -487,7 +499,8 @@ reset role;
 select ok(
   (select technician_id = '00000000-0000-4000-8000-0000000000e3' and status = 'scheduled'
    from public.visits where id = '00000000-0000-4000-8000-0000000029b1')
-  and (select display_name = 'טכנאי למחיקה' and profile_id = '00000000-0000-4000-8000-0000000000d3' and version = 1
+  and (select display_name = 'טכנאי למחיקה' and profile_id = '00000000-0000-4000-8000-0000000000d3' and version = 2
+          and not accepts_invitations
        from public.technicians where id = '00000000-0000-4000-8000-0000000000e3')
   and (select count(*) = 2 from public.profiles where created_by = '00000000-0000-4000-8000-0000000000a2')
   and (select count(*) from public.audit_logs where target_id in ('00000000-0000-4000-8000-0000000000b3',

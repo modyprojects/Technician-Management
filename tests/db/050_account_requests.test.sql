@@ -13,6 +13,10 @@
 --   - a pending request never takes effect; cancel_account_request is unchanged (a requester
 --     cancels his own pending request, the Creator an approved, unfulfilled creation, nobody a
 --     decided one), audited;
+--   - cancel_account_request, still executable by every role, on creation intents (independent
+--     review S-1): another Manager, Customer Service and a Technician cannot cancel a Manager's
+--     intent, a Manager cannot cancel the Creator's, a stale version is a conflict, a fulfilled
+--     intent and a cancelled one cannot be cancelled;
 --   - an approved Customer Service 'create' request is no longer bound by admin_create_profile;
 --   - an open legacy creation request still holds its email until it is cancelled, and a
 --     Manager's direct Customer Service intent then works (D60 (7)).
@@ -21,7 +25,7 @@
 -- transaction). Every call runs as `authenticated` with the caller's JWT claims, as PostgREST does.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(34);
+select plan(43);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. a9 is a deactivated Manager; a8, b8 and
 -- d8 are real-marked; f1 is an Auth user without a profile; f2 the Auth user of a legacy creation.
@@ -276,6 +280,69 @@ select results_eq(
   $$ values ('account_request.cancelled', '5003', 'c1', '{"from_status": "approved", "request_type": "create"}'::jsonb),
             ('account_request.cancelled', '5001', 'a1', '{"from_status": "pending", "request_type": "reactivate"}'::jsonb) $$,
   'each cancellation is audited with its actor, the request type and the status it left');
+
+-- E2. Creation intents (direct_create): cancel_account_request is still executable by every role,
+--     so its refusals are the remaining guard on account_requests (independent review S-1). The
+--     ids are passed in settings: the other callers cannot read the rows (RLS).
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('tm_test.intent_a1', public.authorize_account_creation('technician', 'intent.a1@example.test', 'טכנאי בכוונה')::text, true);
+select set_config('tm_test.intent_bound', public.authorize_account_creation('customer_service', 'bound.agent@example.test', 'נציגה מקושרת')::text, true);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('tm_test.intent_c1', public.authorize_account_creation('manager', 'intent.c1@example.test', 'מנהל בכוונה')::text, true);
+reset role;
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000f3', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'bound.agent@example.test', jsonb_build_object('provider', 'email', 'account_request_id', current_setting('tm_test.intent_bound')),
+   now(), now());
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select public.admin_create_profile('00000000-0000-4000-8000-0000000000f3', 'customer_service', 'נציגה מקושרת', null, null,
+                                   current_setting('tm_test.intent_bound')::uuid);
+reset role;
+create temporary table intent_versions on commit drop as
+  select r.id, r.status, r.version from public.account_requests r where r.request_type = 'direct_create';
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: another Manager cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: Customer Service cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: a Technician cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_c1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: a Manager cannot cancel the Creator''s creation intent');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 7) $$,
+  'PT409', 'version conflict', 'S-1: a stale version is a conflict, also for the requester');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_bound')::uuid, 2) $$,
+  '55000', 'the request cannot be cancelled', 'S-1: a fulfilled intent (an account is bound to it) cannot be cancelled');
+reset role;
+select ok(
+  not exists (select 1 from pg_temp.intent_versions v join public.account_requests r on r.id = v.id
+              where r.status <> v.status or r.version <> v.version)
+  and not exists (select 1 from public.audit_logs a
+                  where a.action = 'account_request.cancelled'
+                    and a.target_id in (select v.id from pg_temp.intent_versions v)),
+  'S-1: the refused cancellations changed no intent and wrote no audit row');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1), 2,
+  'the requester cancels his own unfulfilled intent');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 2) $$,
+  '55000', 'the request cannot be cancelled', 'S-1: a cancelled intent cannot be cancelled again');
+reset role;
 
 -- F. An open legacy creation holds its email until it is cancelled; then the Manager's direct
 --    Customer Service intent works (D60 (7)) -----------------------------------------------------------
