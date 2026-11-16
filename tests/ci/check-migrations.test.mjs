@@ -183,7 +183,7 @@ test("an unterminated dollar quote is reported", () => {
 
 // Fix pass (independent review S1/D1, S14) ----------------------------------------------------------
 
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3 and PR 1.4 writer functions, pinned to signature and tables", () => {
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4 and PR 1.5 writer functions, pinned to signature and tables", () => {
   assert.deepEqual(
     [...ALLOWED_WRITERS].map(([signature, { tables }]) => `${signature} -> ${tables.join(",")}`).sort(),
     [
@@ -196,6 +196,7 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3 and PR 1.4 writer functi
       "private.bootstrap_first_creator(uuid,text) -> public.profiles",
       "private.request_account_change(text,uuid,text,text,text) -> public.account_requests",
       "private.write_audit(text,text,uuid,jsonb) -> public.audit_logs",
+      "private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text) -> public.entity_changes",
     ],
   );
   assert.deepEqual([...ALLOWED_EXTENSIONS], []);
@@ -248,6 +249,156 @@ test("PR 1.4: the migration passes after PR 1.3; calling a Settings writer or ma
   rejects(`insert into public.call_types (label_he, sort_order, is_test) values ('x', 3, false);`, /test-marker column|test marker/);
   rejects(`insert into public.followup_reasons (label_he, sort_order, created_by) values ('x', 6, (select id from public.profiles limit 1));`,
     /plain constants|constant/);
+});
+
+// PR 1.5 (Migration 3): one field-history writer (owner acceptance needed, PR 1.5 approval item A1).
+// recalc_call_status only UPDATEs, so it needs no entry, but it is a writer: no statement that runs
+// and no non-writer body may name it (plan section 6.5, V8, V21).
+const ENTITY_CHANGE_WRITER = "private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)";
+const pr14Writers = new Map([...ALLOWED_WRITERS].filter(([signature]) => signature !== ENTITY_CHANGE_WRITER));
+const migration15 = readFileSync(join(repositoryRoot, "supabase", "migrations", "20261106120000_service_calls_visits.sql"), "utf8");
+const migrations15 = (sql15 = migration15) => [
+  { name: "a.sql", sql: migration13 },
+  { name: "b.sql", sql: migration14 },
+  { name: "c.sql", sql: sql15 },
+];
+// Replaces exactly one occurrence of an anchor of the PR 1.5 migration (fails when it is missing or
+// not unique, so the hazard cases cannot pass by not applying).
+const mutate15 = (anchor, replacement) => {
+  assert.equal(migration15.split(anchor).length, 2, `anchor must occur exactly once: ${anchor}`);
+  return migration15.replace(anchor, replacement);
+};
+
+test("PR 1.5 (V8): the migration passes after PR 1.3 and PR 1.4; without the write_entity_change entry it fails exactly at that writer", () => {
+  assert.deepEqual(checkFiles(migrations15()), []);
+  assert.deepEqual(checkFiles(migrations15(), { allowedWriters: pr14Writers }), [
+    'c.sql: function private.write_entity_change: INSERT into "entity_changes" is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)',
+  ]);
+  // The entry is pinned to the exact signature and to entity_changes.
+  const header = "p_entity_table text, p_entity_id uuid, p_field text, p_old_value jsonb, p_new_value jsonb, p_source text, p_source_ref text";
+  const body = (table) => `returns bigint language plpgsql as $$ begin insert into public.${table} (field) values ('status'); return 1; end $$;`;
+  passes(`create function private.write_entity_change(${header}) ${body("entity_changes")}`);
+  for (const definition of [
+    // Another table than the one listed for it.
+    `create function private.write_entity_change(${header}) ${body("visit_events")}`,
+    `create function private.write_entity_change(${header}) ${body("audit_logs")}`,
+    // An actor parameter (dropped by the plan, M47) is another signature.
+    `create function private.write_entity_change(${header}, p_actor uuid) ${body("entity_changes")}`,
+    // Another schema or name.
+    `create function public.write_entity_change(${header}) ${body("entity_changes")}`,
+    `create function private.recalc_call_status(p_call_id uuid) ${body("entity_changes")}`,
+  ]) {
+    rejects(definition, /INSERT into "(entity_changes|visit_events|audit_logs)" is not allowed/);
+  }
+});
+
+test("PR 1.5 (V8): no statement that runs names a writer of the migration (recalc_call_status, write_entity_change)", () => {
+  for (const statement of [
+    `create trigger t50_recalc after update on public.visits for each row execute function private.recalc_call_status();`,
+    `create constraint trigger c50_history after insert or update of status, closed_at on public.visits deferrable initially deferred for each row execute function private.write_entity_change();`,
+    `create policy visits_recalc on public.visits for select to authenticated using (private.recalc_call_status(visits.service_call_id) = 'open');`,
+    `create view public.call_status_now with (security_invoker = true) as select private.recalc_call_status(c.id) as status from public.service_calls c;`,
+    `select private.recalc_call_status('c0000000-0000-4000-8000-00000000a001');`,
+    `select private.write_entity_change('visits', null, 'status', null, '"done"', 'system', null);`,
+  ]) {
+    const problems = checkFiles(migrations15(`${migration15}\n${statement}\n`));
+    assert.ok(problems.some((p) => /c\.sql: the migration calls (recalc_call_status|write_entity_change)\(\)/.test(p)),
+      `${statement}: ${JSON.stringify(problems)}`);
+  }
+  // GRANT, REVOKE, COMMENT ON and DROP FUNCTION may name them (the migration revokes and comments).
+  assert.deepEqual(checkFiles(migrations15(`${migration15}
+    revoke all on function private.recalc_call_status(uuid) from public;
+    comment on function private.write_entity_change(text, uuid, text, jsonb, jsonb, text, text) is 'x';
+  `)), []);
+});
+
+test("PR 1.5 (V8): a check-only function of the migration that names a writer becomes a writer, and its trigger then fails", () => {
+  // compute_call_status, the tg_* and ct_* functions are attached or called by statements that run
+  // (triggers), so naming recalc_call_status or write_entity_change in their bodies would make the
+  // migration attach a writer.
+  for (const [anchor, replacement, attached] of [
+    [
+      "  select v.* into v_visit from public.visits v where v.id = new.id;\n",
+      "  select v.* into v_visit from public.visits v where v.id = new.id;\n  perform private.recalc_call_status(v_call.id);\n",
+      "ct_visit_rules",
+    ],
+    [
+      "  select count(*), max(v.visit_number) into v_count, v_max from public.visits v where v.service_call_id = v_call.id;\n",
+      "  select count(*), max(v.visit_number) into v_count, v_max from public.visits v where v.service_call_id = v_call.id;\n" +
+        "  perform private.write_entity_change('service_calls', v_call.id, 'status', null, null, 'system', null);\n",
+      "ct_service_call_rules",
+    ],
+    [
+      "    new.opened_at := now();\n",
+      "    new.opened_at := now();\n    perform private.write_entity_change('service_calls', new.id, 'opened_at', null, null, 'system', null);\n",
+      "tg_service_call_guard",
+    ],
+  ]) {
+    const problems = checkFiles(migrations15(mutate15(anchor, replacement)));
+    assert.ok(problems.some((p) => new RegExp(`c\\.sql: the migration calls ${attached}\\(\\)`).test(p)), `${attached}: ${JSON.stringify(problems)}`);
+  }
+  // The migration's own text: no body other than the two writers names a writer, comments included
+  // (the guard reads tokens; this reads the text, so a later edit cannot add the name in a comment).
+  const bodies = [...migration15.matchAll(/create (?:or replace )?function (\w+\.\w+)\(([\s\S]*?)\nas \$\$([\s\S]*?)\$\$;/g)];
+  // 10 trigger functions, 4 constraint-trigger functions, compute, recalc, the writer, can_read_visit,
+  // 3 narrow bodies, 3 wrappers and the census.
+  assert.equal(bodies.length, 25, `function definitions found: ${bodies.length}`);
+  for (const [, name, , text] of bodies) {
+    if (name === "private.recalc_call_status" || name === "private.write_entity_change") continue;
+    assert.doesNotMatch(text, /recalc_call_status|write_entity_change/, name);
+  }
+});
+
+test("PR 1.5 (V21): the four constraint-trigger forms are read, and locking clauses in their functions are not writes", () => {
+  const forms = [
+    "after insert or update of status, closed_at on public.visits",
+    "after insert or update on public.service_calls",
+    "after insert on public.visit_signatures",
+    "after insert on public.visit_reports",
+  ];
+  const checker = (lock) => `create function private.ct_x() returns trigger language plpgsql security definer
+    set search_path = pg_catalog, pg_temp as $$
+    declare v_call public.service_calls;
+    begin
+      select c.* into v_call from public.service_calls c where c.id = new.id ${lock};
+      perform 1 from public.service_calls c where c.id = new.id ${lock};
+      return null;
+    end $$;`;
+  const writes = `create function private.ct_x() returns trigger language plpgsql security definer as $$
+    begin update public.service_calls c set version = c.version where c.id = new.id; return null; end $$;`;
+  for (const form of forms) {
+    const trigger = `create constraint trigger c_x ${form}\n  deferrable initially deferred\n  for each row execute function private.ct_x();`;
+    for (const lock of ["for no key update", "for update", "for share", "for key share", "for no key update nowait", "for update skip locked"]) {
+      passes(`${checker(lock)}\n${trigger}`);
+    }
+    rejects(`${writes}\n${trigger}`, /the migration calls ct_x\(\)/);
+  }
+  // The migration's own constraint triggers: dropping the lock or the deferral keeps the guard
+  // passing (the review and tests/db cover them), but turning a ct_* lock into an UPDATE fails.
+  const unlocked = mutate15(
+    "  select c.* into v_call from public.service_calls c where c.id = new.service_call_id for no key update;\n",
+    "  update public.service_calls c set version = c.version where c.id = new.service_call_id;\n" +
+      "  select c.* into v_call from public.service_calls c where c.id = new.service_call_id;\n",
+  );
+  const problems = checkFiles(migrations15(unlocked));
+  assert.ok(problems.some((p) => /c\.sql: the migration calls ct_visit_rules\(\)/.test(p)), JSON.stringify(problems));
+});
+
+test("PR 1.5 (V8, rules 2 and 9): no text of the migration reads as an INSERT into a business table outside the reviewed writer", () => {
+  // The writer's own INSERT is left out only while its entry exists (rule 9 reads every other body).
+  assert.deepEqual(checkFiles(migrations15()), []);
+  for (const [extra, pattern] of [
+    // A string (a COMMENT ON text, or a string in a body) that reads as an INSERT: rule 2.
+    [`comment on table public.entity_changes is 'insert into entity_changes only through the writer';`, /a string reads as an INSERT into "entity_changes"/],
+    [`create function private.f() returns text language sql stable set search_path = pg_catalog, pg_temp as $$ select 'insert into visits (id) values (1)' $$;`,
+      /function private\.f: a string reads as an INSERT into "visits"/],
+    // Text that only the guard on main read as code: rule 9.
+    [`comment on function private.recalc_call_status(uuid) is 'x; copy public.visits from stdin';`, MAIN_RULE],
+    [`/* a /* b */ insert into public.visit_events (id) values (1); */ select 1;`, MAIN_RULE],
+  ]) {
+    const problems = checkFiles(migrations15(`${migration15}\n${extra}\n`));
+    assert.ok(problems.some((p) => pattern.test(p)), `${extra}: ${JSON.stringify(problems)}`);
+  }
 });
 
 test("an INSERT into a business table inside any other function body fails, as before PR 1.3", () => {

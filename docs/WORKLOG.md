@@ -1,5 +1,15 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 3 applied to the remote project (PR 1.5)
+- **Approval:** the owner's explicit approval for one application (PR #25 `5b2d2be`, SQL `37b803db…eecb`, payload `8b9decd8…313d`).
+- **Pre-checks (read-only):** hashes matched, only Migrations 1 and 2 were present, no Migration 3 objects, fingerprint 14/14 unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116094444`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–3 build on 14/14.
+  - User rows 0; the audit anchor is unchanged; advisors are unchanged (one WARN).
+  - Details: `docs/review/step1-pr15/README.md` §17.
+
 ## 2026-11-16 — D62: QA corrections per real screen
 - **Owner clarification (2026-11-16), recorded as D62:** the 50 QA corrections are implemented with their real screens, not at the end. The per-screen cycle is:
   - review the QA requirements;
@@ -38,6 +48,27 @@
   - `docs/PROJECT-MAP.md` updated.
 - **Merge order:** PR #28 first, then this PR. Both need the owner's merge approval. No code, migration or protected file changed.
 
+## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
+- **Owner decisions:**
+  - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.
+  - A1 approved: the `write_entity_change` guard writer.
+  - Section 12 needs no further review.
+  - Approved SQL sha256 for the preparation: `37b803db…eecb`.
+- **Read-only preflight:** history holds Migrations 1 and 2 only. The catalog fingerprint equals the post-Migration 2 values on 14/14. No Migration 3 object exists. Section 12's checks find 0 leftovers. Advisors are unchanged.
+- **Wrapper:** sha256 `8b9decd8…313d`.
+  - Locally, a corrupted copy was refused and nothing was created; the real one equals a normal apply on 14/14.
+  - A read-only full-size dry run on the remote returned the same wrapper and embedded hashes.
+- **Not done:** the apply, the merge of PR #25. Details: `docs/review/step1-pr15/README.md` section 16.
+
+## 2026-11-12 — Step 1 / PR 1.5: Migration 3 prepared for the apply approval (not applied)
+- **Synced** with PR 1.4's head, which carries section 11, the Migration 2 apply record and the CI fix. The conflicts in `PROJECT-MAP.md` and `WORKLOG.md` are resolved.
+- **Section 12** is a fail-closed hardening check. It is Migration 2 section 11, except that it allows invoker-rights views such as `visit_time_current`, and any materialized view still fails.
+  - `tests/db/210` (30) and `tests/ci/hardening-assertion.test.mjs` cover it.
+  - `tests/db/140` now expects the applied Migration 2 check to flag exactly `visit_time_current`.
+- **Local:** pgTAP 1259/1259 (26 files), node 174/174, guard passed, canary PASS, lint and typecheck clean.
+- **New sha256:** `37b803db…eecb`. **Not applied.**
+- **Gates before the apply:** the owner's approval of the exact file; OQ-13; A1 (guard) before the merge.
+
 ## 2026-11-12 — Step 1 / PR 1.4: Migration 2 applied to the remote project (owner-approved)
 - **Apply:** the owner approved it and was present for Supabase's confirmation prompt. Migration 2 (sha256 `874742…b363`) was applied once to `ooxozvvrljjkyfduuiks`, name `reference_customers_products`: `{"success":true}`.
   - **Wrapper:** the file was sent inside a self-verifying wrapper, sha256 `04810116…0a92`. The server checks the embedded file's hash before running it, because the tool layer turns a typed `\uXXXX` (570 in the file) into the literal character.
@@ -46,6 +77,15 @@
 - **Discrepancy (documented, not repaired):** the recorded version is **`20261112093516`**; the file version is `20261105120000`.
 - **CI fix:** PR #27 drops `--with-deps` from the Playwright Chromium install step (owner-approved change to a protected file). Its CI is green (Chromium install 5 s, e2e passed). It waits for the owner's merge approval.
 - **Not done:** merge of PR #14, the `010` remote run, history repair, Migration 3.
+
+## 2026-11-11 — Step 1, PR 1.5: Migration 3 (service calls, visits and their history), local only
+- Branch `claude/step1-pr15-calls-visits`, stacked on PR 1.4 (`a33617d`). The build workflow of 2026-11-06 stopped at the weekly usage limit; the uncommitted work was checkpointed as-is (`03e4267`, owner-approved) and finished sequentially under D58.
+- **Migration** `20261106120000_service_calls_visits.sql`: seven tables (`service_calls`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports`, `visit_events`, `entity_changes`), the view `visit_time_current`, ten SELECT policies, the narrow read functions `previous_visits` (D36), `visit_rep_contact` (D40) and `my_visit_details`, the call-status writer (D38), the field-history writer, four deferred constraint triggers; rollback script and canary fixture. **Not applied** to any remote database.
+- **MIG-1 fixed** (`e9d1d9e`): the warranty CHECK accepted a warranty month while the status was NULL.
+- **Tests** (D58 (5) priorities): new `180_calls_visits_rls` (40), `190_visit_functions` (20), `200_time_reports` (16); `170` completed (88). Local: 24 files, 1196 assertions pass; canary-rows check PASS (3 migrations, no coverage exception); migration guard passed; `tests/ci` 166 pass. No mutation testing (D58).
+- **Docs:** `docs/review/step1-pr15/README.md` (objects, who can do what, tests, approval items A1-A4, TEMPORARY behaviours OQ-1 to OQ-15), `docs/PROJECT-MAP.md`, `docs/testing.md`.
+- **Independent review (D58, one review, head `eba7971`):** APPROVE WITH SHOULD-FIXES, no must. Fixed: S1 (warranty CHECK and infinite dates), S2 (180 named rows through a join with `visits`; now a postgres-owned lookup and direct counts), N1 (infinite schedule times), N2 (`cancelled_by` frozen), N3, N4 (Asia/Jerusalem day boundary, re-assignment cases), N5. Recorded: S3 as DEV-17 with a `c50` proposal for the first writer PR, N2 rest as DEV-18, N6 as a Step 4 hand-off. Reviewer's OQ-13 answer: yes, with conditions (README section 12). After the fixes: 24 files, 1202 assertions pass; canary PASS; guard and `tests/ci` pass.
+- **Gates:** A1 (the `write_entity_change` writer in the protected migration guard) before any merge; apply only after Migrations 1 and 2 are applied and merged and OQ-13 is answered, with a separate approval of the exact file.
 
 ## 2026-11-11 — Step 1 / PR 1.4: Migration 2 pre-apply round (section 11, D58 review, read-only preflight; not applied)
 - **Owner approval (2026-11-11):** steps 1-3 for Migration 2. Not approved: the apply, the merge of PR #14 and any remote write. PR #26 stays a draft.
