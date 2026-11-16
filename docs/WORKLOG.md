@@ -1,5 +1,13 @@
 # Work Log (English only)
 
+## 2026-11-16 — Step 1 / PR 1.8: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; two should and five nits, no must. Record and dispositions: `docs/review/step1-pr18/README.md` section 12.
+- **Fixed in Migration 5** (new sha256 `425ff1be…07f9`, 949 lines; `ALLOWED_WRITERS` unchanged):
+  - S-2: `admin_delete_user` also turns a deleted Technician's "פעיל" (`accepts_invitations`) off, audited, before the profile update; the frozen field profile then keeps it off. Step 6 acceptance rule: a visit goes only to a technician who accepts invitations and whose profile is active and not deleted.
+  - N-4: a read-only, fail-closed pre-apply check (section 0b) refuses the apply while a legacy request would be stranded (a pending request of a requester who left; an approved, unfulfilled creation request with no active Creator). Narrowed to those rows: the literal "any pending request" rule would fail the canary check on the merged Migration 1 fixture.
+- **Tests:** S-1: `050` regains the negative cases of `cancel_account_request` (on creation intents) and `020` the decision and rejection CHECKs; `290` covers S-2; new `310` covers N-4. pgTAP 1,508/1,508 (36 files); node 208/208; guard passed; canary PASS (no new exception); lint and typecheck clean.
+- **Docs:** README status (Migration 4 applied and merged; this branch not synced with `main` yet), counts, the pre-apply check, OQ-9, the Step 2 note on the `usage` lock (N-3), `docs/database-schema.md` (16 keys, N-2).
+
 ## 2026-11-16 — Step 1 / PR 1.8: Migration 5 (accounts and permissions), local only
 - Branch `claude/step1-pr18-accounts-permissions`, from PR 1.6's head `f53016a` (Migrations 1-4). Migrations 1-4 unchanged. **Not applied, not pushed.** Sources: D60 (7)-(9), D33, D34, D47, D49, D51; QA rows M-06, M-07, M-10, C-01, C-02, C-03 to C-06.
 - **Migration** `20261108120000_accounts_permissions.sql` (sha256 `028f3bec…f870`, 903 lines):
@@ -12,7 +20,7 @@
 - **Tests:** pgTAP 1,486/1,486 (35 files; new `270`-`300`; `010`, `015`, `020`, `030`, `040`, `050` (rewritten), `060`, `070`, `090`, `120`, `990` updated; every D60-changed expectation listed in the PR 1.8 README section 7); node 205/205; guard passed with no `ALLOWED_WRITERS` change; canary PASS (5 migrations, no new exception); lint and typecheck clean.
 - **Protected files:** a new canary fixture `tests/db-canary/20261108120000.sql` (approval item A1); `scripts/check-migrations.mjs` unchanged. `docs/security.md` still describes D34 (a); aligning it is a separate protected change.
 - **TEMPORARY behaviours** OQ-1 to OQ-10 and deviations DEV-1 to DEV-9: `docs/review/step1-pr18/README.md`. Among them: a Creator account is never deleted; a deleted account never changes again; `settings` stays an editable key (not locked like `usage`).
-- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file.
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file. (Status update, same day: Migration 4 is applied, version `20261116120813`, and merged, PR #30 → `main` `5f57ce9`; the review ran, see the entry above.)
 
 ## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
