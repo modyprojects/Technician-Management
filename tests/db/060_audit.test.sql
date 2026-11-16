@@ -9,9 +9,12 @@
 -- included). PostgreSQL refuses a TRUNCATE of a table that another table references (0A000) before
 -- any BEFORE TRUNCATE trigger runs, so each statement below lists the referencing tables too, and
 -- the table named first is the one whose trigger rejects it.
+-- PR 1.6: the truncate triggers cover review_items, visit_corrections and offline_operations, which
+-- reference service_calls, visits and each other, so the PR 1.5 statements list them too; the D14
+-- correction and the review decision are audited (their exact rows: 240_integrity_writers).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(58);
+select plan(61);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -102,27 +105,29 @@ select throws_ok($$ delete from public.audit_logs $$, '55000', 'audit_logs is ap
 select throws_ok($$ truncate public.audit_logs $$, '55000', 'audit_logs cannot be truncated',
   'postgres cannot truncate audit_logs (trigger)');
 
--- Truncate triggers on every PR 1.3, PR 1.4 and PR 1.5 table ------------------------------------------
+-- Truncate triggers on every PR 1.3 to PR 1.6 table -------------------------------------------------
 select is(
   (select count(distinct c.relname) from pg_trigger t join pg_class c on c.oid = t.tgrelid
    join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and t.tgfoid = 'private.tg_reject_truncate()'::regprocedure
      and t.tgenabled = 'O' and (t.tgtype & 32) <> 0 and (t.tgtype & 2) <> 0),
-  20::bigint, 'every PR 1.3, PR 1.4 and PR 1.5 table (20) has an enabled BEFORE TRUNCATE statement trigger');
+  23::bigint, 'every PR 1.3, PR 1.4, PR 1.5 and PR 1.6 table (23) has an enabled BEFORE TRUNCATE statement trigger');
 select throws_ok(
   $$ truncate public.audit_logs, public.account_requests, public.role_permissions, public.permissions,
        public.technicians, public.profiles, public.brands, public.suppliers, public.products, public.customers,
        public.call_types, public.followup_reasons, public.collection_locations, public.service_calls, public.visits,
        public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events,
-       public.entity_changes $$,
-  '55000', 'audit_logs cannot be truncated', 'truncating all PR 1.3, PR 1.4 and PR 1.5 tables together is rejected, even as postgres');
+       public.entity_changes, public.review_items, public.visit_corrections, public.offline_operations $$,
+  '55000', 'audit_logs cannot be truncated', 'truncating all PR 1.3 to PR 1.6 tables together is rejected, even as postgres');
 -- PR 1.5: each new table, as postgres (with the tables that reference it, see the header).
 select throws_ok(
   $$ truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures,
-       public.visit_time_reports, public.visit_events $$,
+       public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections,
+       public.offline_operations $$,
   '55000', 'service_calls cannot be truncated', 'PR 1.5: service_calls cannot be truncated, even as postgres');
 select throws_ok(
-  $$ truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events $$,
+  $$ truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events,
+       public.review_items, public.visit_corrections, public.offline_operations $$,
   '55000', 'visits cannot be truncated', 'PR 1.5: visits cannot be truncated, even as postgres');
 select throws_ok($$ truncate public.visit_reports $$, '55000', 'visit_reports cannot be truncated',
   'PR 1.5: visit_reports cannot be truncated, even as postgres');
@@ -134,6 +139,13 @@ select throws_ok($$ truncate public.visit_events $$, '55000', 'visit_events cann
   'PR 1.5: visit_events (append-only) cannot be truncated, even as postgres');
 select throws_ok($$ truncate public.entity_changes $$, '55000', 'entity_changes cannot be truncated',
   'PR 1.5: entity_changes (append-only) cannot be truncated, even as postgres');
+-- PR 1.6: each new table, as postgres (with the tables that reference it).
+select throws_ok($$ truncate public.review_items, public.visit_time_reports, public.offline_operations $$, '55000',
+  'review_items cannot be truncated', 'PR 1.6: review_items cannot be truncated, even as postgres');
+select throws_ok($$ truncate public.visit_corrections, public.visit_time_reports $$, '55000',
+  'visit_corrections cannot be truncated', 'PR 1.6: visit_corrections (append-only) cannot be truncated, even as postgres');
+select throws_ok($$ truncate public.offline_operations $$, '55000', 'offline_operations cannot be truncated',
+  'PR 1.6: offline_operations (immutable) cannot be truncated, even as postgres');
 
 -- Tamper evidence: owner-level access can change a row only with the trigger disabled (rolled back);
 -- the chain shows it.

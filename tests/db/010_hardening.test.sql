@@ -9,9 +9,13 @@
 -- three narrow read functions (wrappers and bodies); four checks were added for the new trigger and
 -- constraint-trigger functions, the call-status and history functions, the SECURITY DEFINER
 -- classification and the new identity sequences.
+-- PR 1.6 (Migration 4): the exact lists now include the three integrity and offline tables, their
+-- four policies and the two writers (wrappers and bodies); three checks were added for the six new
+-- trigger functions, the three internal helpers (no grant, no wrapper) and the SECURITY DEFINER
+-- classification of the two writers.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(42);
 
 -- ---------------------------------------------------------------------------------------------
 -- Tables and columns
@@ -26,11 +30,12 @@ select results_eq(
      order by c.relname::text collate "C", a.privilege_type::text $$,
   $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('brands', 'SELECT'), ('call_types', 'SELECT'),
             ('collection_locations', 'SELECT'), ('customers', 'SELECT'), ('entity_changes', 'SELECT'),
-            ('followup_reasons', 'SELECT'), ('permissions', 'SELECT'), ('products', 'SELECT'), ('profiles', 'SELECT'),
-            ('role_permissions', 'SELECT'), ('service_calls', 'SELECT'), ('suppliers', 'SELECT'), ('technicians', 'SELECT'),
+            ('followup_reasons', 'SELECT'), ('offline_operations', 'SELECT'), ('permissions', 'SELECT'), ('products', 'SELECT'),
+            ('profiles', 'SELECT'), ('review_items', 'SELECT'), ('role_permissions', 'SELECT'), ('service_calls', 'SELECT'),
+            ('suppliers', 'SELECT'), ('technicians', 'SELECT'), ('visit_corrections', 'SELECT'),
             ('visit_events', 'SELECT'), ('visit_reports', 'SELECT'), ('visit_signatures', 'SELECT'),
             ('visit_time_current', 'SELECT'), ('visit_time_reports', 'SELECT'), ('visits', 'SELECT') $$,
-  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables and the PR 1.5 view, and nothing else'
+  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables, the PR 1.5 view and the three PR 1.6 tables, and nothing else'
 );
 
 select is(
@@ -118,6 +123,7 @@ select results_eq(
      ('assert_can_manage(text)'),
      ('authorize_account_creation(text,text,text)'),
      ('cancel_account_request(uuid,integer)'),
+     ('correct_visit(uuid,text,text,text,integer)'),
      ('decide_account_request(uuid,text,integer,text)'),
      ('delete_collection_location(uuid,integer)'),
      ('delete_followup_reason(uuid,integer)'),
@@ -140,6 +146,7 @@ select results_eq(
      ('private.assert_can_manage(text)'),
      ('private.authorize_account_creation(text,text,text)'),
      ('private.cancel_account_request(uuid,integer)'),
+     ('private.correct_visit(uuid,text,text,text,integer)'),
      ('private.decide_account_request(uuid,text,integer,text)'),
      ('private.delete_collection_location(uuid,integer)'),
      ('private.delete_followup_reason(uuid,integer)'),
@@ -152,11 +159,13 @@ select results_eq(
      ('private.my_visit_details(uuid)'),
      ('private.previous_visits(uuid)'),
      ('private.request_account_change(text,uuid,text,text,text)'),
+     ('private.resolve_review_item(uuid,integer,text,jsonb,text)'),
      ('private.set_call_type_active(uuid,boolean,integer)'),
      ('private.set_collection_location_active(uuid,boolean,integer)'),
      ('private.set_followup_reason_active(uuid,boolean,integer)'),
      ('private.visit_rep_contact(uuid)'),
      ('request_account_change(text,uuid,text,text,text)'),
+     ('resolve_review_item(uuid,integer,text,jsonb,text)'),
      ('set_call_type_active(uuid,boolean,integer)'),
      ('set_collection_location_active(uuid,boolean,integer)'),
      ('set_followup_reason_active(uuid,boolean,integer)'),
@@ -274,6 +283,49 @@ select results_eq(
             ('public', 'my_visit_details', false, 's'), ('public', 'previous_visits', false, 's'),
             ('public', 'visit_rep_contact', false, 's') $$,
   'PR 1.5: eight SECURITY DEFINER bodies in private (four deferred checks, can_read_visit, three narrow reads); everything else SECURITY INVOKER; the reads are STABLE'
+);
+
+-- PR 1.6: the six new trigger functions and the three internal helpers have no grant, and the
+-- helpers have no public wrapper (their callers are the postgres-owned writers of Step 4 and
+-- Step 6; migration guard rule 4).
+select ok(
+  not has_function_privilege('authenticated', 'private.tg_call_child_marker()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_review_item_state()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_visit_correction_guard()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_offline_operation_derive()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_visit_field_version()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_visit_closed_fields()', 'execute'),
+  'PR 1.6: the six new trigger functions are not executable by authenticated'
+);
+select ok(
+  not has_function_privilege('authenticated', 'private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'private.offline_operation_replay(uuid,uuid,text,text)', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid)', 'execute')
+  and to_regprocedure('public.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)') is null
+  and to_regprocedure('public.offline_operation_replay(uuid,uuid,text,text)') is null
+  and to_regprocedure('public.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid)') is null,
+  'PR 1.6: create_review_item, offline_operation_replay and record_offline_operation are not executable by authenticated and have no public wrapper'
+);
+-- PR 1.6: the two writers are SECURITY DEFINER bodies in private behind SECURITY INVOKER wrappers;
+-- the helpers and the new trigger functions run as the caller (postgres-owned definer bodies).
+select results_eq(
+  $$ select n.nspname::text collate "default", p.proname::text collate "default", p.prosecdef, p.provolatile::text
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname in ('public', 'private')
+       and p.proname in ('correct_visit', 'resolve_review_item', 'create_review_item', 'offline_operation_replay',
+                         'record_offline_operation', 'tg_call_child_marker', 'tg_review_item_state',
+                         'tg_visit_correction_guard', 'tg_offline_operation_derive', 'tg_visit_field_version',
+                         'tg_visit_closed_fields')
+     order by n.nspname::text collate "C", p.proname::text collate "C" $$,
+  $$ values ('private', 'correct_visit', true, 'v'), ('private', 'create_review_item', false, 'v'),
+            ('private', 'offline_operation_replay', false, 'v'), ('private', 'record_offline_operation', false, 'v'),
+            ('private', 'resolve_review_item', true, 'v'), ('private', 'tg_call_child_marker', false, 'v'),
+            ('private', 'tg_offline_operation_derive', false, 'v'), ('private', 'tg_review_item_state', false, 'v'),
+            ('private', 'tg_visit_closed_fields', false, 'v'), ('private', 'tg_visit_correction_guard', false, 'v'),
+            ('private', 'tg_visit_field_version', false, 'v'),
+            ('public', 'correct_visit', false, 'v'), ('public', 'resolve_review_item', false, 'v') $$,
+  'PR 1.6: two SECURITY DEFINER writer bodies in private (correct_visit, resolve_review_item) and their SECURITY INVOKER wrappers; the helpers and trigger functions are SECURITY INVOKER; all VOLATILE'
 );
 
 select ok(
@@ -395,11 +447,12 @@ select results_eq(
      group by c.relname order by c.relname::text collate "C" $$,
   $$ values ('account_requests', 2::bigint), ('audit_logs', 2::bigint), ('brands', 1::bigint), ('call_types', 2::bigint),
             ('collection_locations', 2::bigint), ('customers', 1::bigint), ('entity_changes', 1::bigint),
-            ('followup_reasons', 2::bigint), ('permissions', 1::bigint), ('products', 1::bigint), ('profiles', 3::bigint),
+            ('followup_reasons', 2::bigint), ('offline_operations', 2::bigint), ('permissions', 1::bigint),
+            ('products', 1::bigint), ('profiles', 3::bigint), ('review_items', 1::bigint),
             ('role_permissions', 2::bigint), ('service_calls', 1::bigint), ('suppliers', 1::bigint), ('technicians', 2::bigint),
-            ('visit_events', 1::bigint), ('visit_reports', 2::bigint), ('visit_signatures', 2::bigint),
-            ('visit_time_reports', 1::bigint), ('visits', 2::bigint) $$,
-  'every PR 1.3, PR 1.4 and PR 1.5 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls)'
+            ('visit_corrections', 1::bigint), ('visit_events', 1::bigint), ('visit_reports', 2::bigint),
+            ('visit_signatures', 2::bigint), ('visit_time_reports', 1::bigint), ('visits', 2::bigint) $$,
+  'every PR 1.3 to PR 1.6 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls; PR 1.6: four, none for Technicians on review_items and visit_corrections)'
 );
 
 -- PR 1.4, generated columns (plan V1): on products and customers is_test is a stored generated

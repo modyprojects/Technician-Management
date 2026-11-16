@@ -13,6 +13,12 @@
 --   OQ-7  warranty yes / no / NULL, the month stored as its first day, raw text only with a value;
 --   OQ-11 one device report per visit and kind; the flag set;
 --   OQ-15 no signature version or signature media column.
+-- PR 1.6 (Migration 4) changed four Migration 3 objects, asserted here in their final form (the
+-- new tables themselves: 230_integrity_schema): visit_time_reports gained correction_id and
+-- accepted_review_id with their composite foreign keys, CHECKs and partial indexes (PR 1.5 DEV-2);
+-- visits gained UNIQUE (id, service_call_id) (the parent key of review_items) and the t13
+-- field_version trigger; after the independent review (S3, N1): the visits trigger t14_closed_fields,
+-- the visit_reports trigger t11_frozen, and unique partial indexes on the two correction keys.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(72);
@@ -247,8 +253,9 @@ select results_eq(
             ('device_sent_at', 'timestamp with time zone', false, null, '', ''),
             ('received_at', 'timestamp with time zone', true, 'now()', '', ''), ('clock_skew_ms', 'bigint', false, null, '', ''),
             ('source', 'text', true, null, '', ''), ('operation_id', 'uuid', false, null, '', ''),
-            ('row_flags', 'text[]', true, '''{}''::text[]', '', ''), ('is_test', 'boolean', true, null, '', '') $$,
-  'visit_time_reports: identity id, reporter and credited technician, device times with zone, offset, send time, receipt and skew (D45); no correction columns (DEV-2)');
+            ('row_flags', 'text[]', true, '''{}''::text[]', '', ''), ('is_test', 'boolean', true, null, '', ''),
+            ('correction_id', 'uuid', false, null, '', ''), ('accepted_review_id', 'uuid', false, null, '', '') $$,
+  'visit_time_reports: identity id, reporter and credited technician, device times with zone, offset, send time, receipt and skew (D45); PR 1.6: the correction columns correction_id and accepted_review_id (DEV-2), nullable without a default');
 select results_eq(
   $$ select * from pg_temp.tm_columns('public.visit_events') $$,
   $$ values ('id', 'bigint', true, null::text, '', 'a'), ('visit_id', 'uuid', true, null, '', ''),
@@ -330,6 +337,7 @@ select results_eq(
             ('visits_followup_check', 'c', 'status,followup_reason_id,next_visit_notes', '', ' '),
             ('visits_followup_reason_id_fkey', 'f', 'followup_reason_id', 'followup_reasons', 'r'),
             ('visits_id_is_test_key', 'u', 'id,is_test', '', ' '),
+            ('visits_id_service_call_id_key', 'u', 'id,service_call_id', '', ' '),
             ('visits_next_visit_notes_check', 'c', 'next_visit_notes', '', ' '),
             ('visits_open_not_cancelled_check', 'c', 'status,cancelled_at', '', ' '),
             ('visits_pickup_item_check', 'c', 'pickup_item', '', ' '),
@@ -343,7 +351,7 @@ select results_eq(
             ('visits_technician_id_fkey', 'f', 'technician_id', 'technicians', 'r'),
             ('visits_updated_by_fkey', 'f', 'updated_by', 'profiles', 'r'), ('visits_version_check', 'c', 'version', '', ' '),
             ('visits_visit_number_check', 'c', 'visit_number', '', ' ') $$,
-  'visits: exactly the planned keys and CHECKs; the call by (service_call_id, is_test); one number per call; no unique task number (D41); no UNIQUE (id, service_call_id) yet (DEV-2); every foreign key RESTRICT');
+  'visits: exactly the planned keys and CHECKs; the call by (service_call_id, is_test); one number per call; no unique task number (D41); PR 1.6: UNIQUE (id, service_call_id), the parent key of review_items (DEV-2); every foreign key RESTRICT');
 select results_eq(
   $$ select 'visit_reports'::text, c.* from pg_temp.tm_constraints('public.visit_reports') c
      union all select 'visit_signatures', c.* from pg_temp.tm_constraints('public.visit_signatures') c $$,
@@ -367,15 +375,22 @@ select results_eq(
   $$ select 'visit_time_reports'::text, c.* from pg_temp.tm_constraints('public.visit_time_reports') c
      union all select 'visit_events', c.* from pg_temp.tm_constraints('public.visit_events') c
      union all select 'entity_changes', c.* from pg_temp.tm_constraints('public.entity_changes') c $$,
-  $$ values ('visit_time_reports'::text, 'visit_time_reports_device_check'::text, 'c'::text,
-             'reported_at,device_tz,device_utc_offset_min,device_sent_at,clock_skew_ms,source,operation_id'::text, ''::text, ' '::text),
+  $$ values ('visit_time_reports'::text, 'visit_time_reports_accepted_check'::text, 'c'::text,
+             'reported_at,device_tz,device_utc_offset_min,device_sent_at,clock_skew_ms,operation_id,accepted_review_id'::text,
+             ''::text, ' '::text),
+            ('visit_time_reports', 'visit_time_reports_accepted_review_id_fkey', 'f', 'is_test,accepted_review_id', 'review_items', 'r'),
+            ('visit_time_reports', 'visit_time_reports_correction_check', 'c',
+             'kind,reported_at,device_tz,device_utc_offset_min,device_sent_at,operation_id,correction_id', '', ' '),
+            ('visit_time_reports', 'visit_time_reports_correction_id_fkey', 'f', 'is_test,correction_id', 'visit_corrections', 'r'),
+            ('visit_time_reports', 'visit_time_reports_device_check', 'c',
+             'reported_at,device_tz,device_utc_offset_min,device_sent_at,clock_skew_ms,source,operation_id', '', ' '),
             ('visit_time_reports', 'visit_time_reports_device_tz_check', 'c', 'device_tz', '', ' '),
             ('visit_time_reports', 'visit_time_reports_device_utc_offset_min_check', 'c', 'device_utc_offset_min', '', ' '),
             ('visit_time_reports', 'visit_time_reports_kind_check', 'c', 'kind', '', ' '),
             ('visit_time_reports', 'visit_time_reports_pkey', 'p', 'id', '', ' '),
             ('visit_time_reports', 'visit_time_reports_reported_by_profile_id_fkey', 'f', 'reported_by_profile_id', 'profiles', 'r'),
             ('visit_time_reports', 'visit_time_reports_row_flags_check', 'c', 'row_flags', '', ' '),
-            ('visit_time_reports', 'visit_time_reports_source_check', 'c', 'source', '', ' '),
+            ('visit_time_reports', 'visit_time_reports_source_check', 'c', 'source,correction_id,accepted_review_id', '', ' '),
             ('visit_time_reports', 'visit_time_reports_technician_id_fkey', 'f', 'technician_id', 'technicians', 'r'),
             ('visit_time_reports', 'visit_time_reports_visit_id_fkey', 'f', 'visit_id,is_test', 'visits', 'r'),
             ('visit_events', 'visit_events_actor_profile_id_fkey', 'f', 'actor_profile_id', 'profiles', 'r'),
@@ -396,7 +411,7 @@ select results_eq(
             ('entity_changes', 'entity_changes_source_check', 'c', 'source', '', ' '),
             ('entity_changes', 'entity_changes_source_ref_check', 'c', 'source_ref', '', ' '),
             ('entity_changes', 'entity_changes_value_check', 'c', 'old_value,new_value', '', ' ') $$,
-  'visit_time_reports, visit_events and entity_changes: the planned keys and CHECKs; children keyed by (visit_id, is_test); entity_changes has no foreign key to its target; every foreign key RESTRICT');
+  'visit_time_reports, visit_events and entity_changes: the planned keys and CHECKs; children keyed by (visit_id, is_test); PR 1.6: a correction keyed by (correction_id, is_test) or (accepted_review_id, is_test); entity_changes has no foreign key to its target; every foreign key RESTRICT');
 
 -- The composite foreign keys (D47; database-schema.md §2): a child row carries its own NOT NULL
 -- marker (MATCH SIMPLE would skip a NULL) and equals its parent's.
@@ -413,9 +428,11 @@ select results_eq(
             ('visit_events_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
             ('visit_reports_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
             ('visit_signatures_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
+            ('visit_time_reports_accepted_review_id_fkey', 'FOREIGN KEY (accepted_review_id, is_test) REFERENCES review_items(id, is_test) ON DELETE RESTRICT'),
+            ('visit_time_reports_correction_id_fkey', 'FOREIGN KEY (correction_id, is_test) REFERENCES visit_corrections(id, is_test) ON DELETE RESTRICT'),
             ('visit_time_reports_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
             ('visits_service_call_id_fkey', 'FOREIGN KEY (service_call_id, is_test) REFERENCES service_calls(id, is_test) ON DELETE RESTRICT') $$,
-  'D47: the seven composite foreign keys reference (id, is_test) of the parent, MATCH SIMPLE on NOT NULL markers, ON DELETE RESTRICT');
+  'D47: the seven composite foreign keys (PR 1.6: nine, with the two correction keys of visit_time_reports, MATCH SIMPLE on nullable ids) reference (id, is_test) of the parent, MATCH SIMPLE on NOT NULL markers, ON DELETE RESTRICT');
 
 -- Value sets and rules (codes are permanent once rows exist, DEV-3: later migrations only add).
 select results_eq(
@@ -464,7 +481,7 @@ select results_eq(
      ('visit_time_reports_device_utc_offset_min_check', 'CHECK (((device_utc_offset_min >= ''-840''::integer) AND (device_utc_offset_min <= 840)))'),
      ('visit_time_reports_kind_check', 'CHECK ((kind = ANY (ARRAY[''departed''::text, ''arrived''::text, ''ended''::text, ''signed''::text])))'),
      ('visit_time_reports_row_flags_check', 'CHECK ((row_flags <@ ARRAY[''future_time''::text, ''large_skew''::text, ''before_assignment''::text]))'),
-     ('visit_time_reports_source_check', 'CHECK ((source = ''device''::text))'),
+     ('visit_time_reports_source_check', 'CHECK ((((source = ''device''::text) AND (correction_id IS NULL) AND (accepted_review_id IS NULL)) OR ((source = ''correction''::text) AND (num_nonnulls(correction_id, accepted_review_id) = 1))))'),
      ('visits_cancelled_at_check', 'CHECK (((status <> ''cancelled''::text) OR (cancelled_at IS NOT NULL)))'),
      ('visits_cancelled_by_check', 'CHECK (((cancelled_by IS NULL) OR (cancelled_at IS NOT NULL)))'),
      ('visits_closed_at_check', 'CHECK (((status = ANY (ARRAY[''done''::text, ''followup''::text])) = (closed_at IS NOT NULL)))'),
@@ -474,7 +491,7 @@ select results_eq(
      ('visits_status_check', 'CHECK ((status = ANY (ARRAY[''scheduled''::text, ''en_route''::text, ''in_progress''::text, ''done''::text, ''followup''::text, ''cancelled''::text])))'),
      ('visits_task_number_check', 'CHECK ((((char_length(task_number) >= 1) AND (char_length(task_number) <= 40)) AND (task_number ~ ''^[!-~]+( [!-~]+)*$''::text)))'),
      ('visits_visit_number_check', 'CHECK (((visit_number >= 1) AND (visit_number <= 999)))') $$,
-  'value sets and rules: no cancelled call status (D38, open decision 5), no microsoft_graph source (fails closed), the six visit codes, the D45 device fields and flags, the D43 hash, the entity_changes targets and sources');
+  'value sets and rules: no cancelled call status (D38, open decision 5), no microsoft_graph source (fails closed), the six visit codes, the D45 device fields and flags (PR 1.6: the source correction with exactly one of correction_id and accepted_review_id), the D43 hash, the entity_changes targets and sources');
 
 -- The four deferred constraint triggers (database-schema.md §9; DEV-4, DEV-14).
 select results_eq(
@@ -509,6 +526,8 @@ select results_eq(
      ('service_calls_resolved_at_idx', 'CREATE INDEX service_calls_resolved_at_idx ON public.service_calls USING btree (resolved_at) WHERE (resolved_at IS NOT NULL)'),
      ('service_calls_status_idx', 'CREATE INDEX service_calls_status_idx ON public.service_calls USING btree (status)'),
      ('visit_events_visit_id_id_idx', 'CREATE INDEX visit_events_visit_id_id_idx ON public.visit_events USING btree (visit_id, id)'),
+     ('visit_time_reports_accepted_review_id_key', 'CREATE UNIQUE INDEX visit_time_reports_accepted_review_id_key ON public.visit_time_reports USING btree (accepted_review_id) WHERE (accepted_review_id IS NOT NULL)'),
+     ('visit_time_reports_correction_id_key', 'CREATE UNIQUE INDEX visit_time_reports_correction_id_key ON public.visit_time_reports USING btree (correction_id) WHERE (correction_id IS NOT NULL)'),
      ('visit_time_reports_device_once_key', 'CREATE UNIQUE INDEX visit_time_reports_device_once_key ON public.visit_time_reports USING btree (visit_id, kind) WHERE (source = ''device''::text)'),
      ('visit_time_reports_technician_id_idx', 'CREATE INDEX visit_time_reports_technician_id_idx ON public.visit_time_reports USING btree (technician_id)'),
      ('visit_time_reports_visit_id_kind_id_idx', 'CREATE INDEX visit_time_reports_visit_id_kind_id_idx ON public.visit_time_reports USING btree (visit_id, kind, id)'),
@@ -517,7 +536,7 @@ select results_eq(
      ('visits_scheduled_start_idx', 'CREATE INDEX visits_scheduled_start_idx ON public.visits USING btree (scheduled_start)'),
      ('visits_task_number_idx', 'CREATE INDEX visits_task_number_idx ON public.visits USING btree (task_number)'),
      ('visits_technician_id_scheduled_start_idx', 'CREATE INDEX visits_technician_id_scheduled_start_idx ON public.visits USING btree (technician_id, scheduled_start)') $$,
-  'besides the key indexes: the partial unique device-report index (one device report per visit and kind, OQ-11), the card-list and day-range indexes, and an index on every foreign key the Settings delete checks use');
+  'besides the key indexes: the partial unique device-report index (one device report per visit and kind, OQ-11), the card-list and day-range indexes, an index on every foreign key the Settings delete checks use, and (PR 1.6) unique partial indexes on the two correction keys (one time report per correction or accepted item)');
 
 -- ---------------------------------------------------------------------------------------------
 -- 4. Triggers: names fix the firing order (t10 ... t99), timing, events and column lists
@@ -548,6 +567,8 @@ select results_eq(
      ('CREATE CONSTRAINT TRIGGER c10_visit_rules AFTER INSERT OR UPDATE OF status, closed_at ON public.visits DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.ct_visit_rules()'::text),
      ('CREATE TRIGGER t10_immutable BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''technician_id'', ''task_number'', ''scheduled_start'', ''scheduled_end'', ''status'', ''city'', ''street'', ''building'', ''floor'', ''apartment'', ''arrival_notes'', ''tech_notes'', ''pickup_item'', ''pickup_location_id'', ''followup_reason_id'', ''next_visit_notes'', ''assigned_at'', ''closed_at'', ''cancelled_at'', ''cancelled_by'', ''field_version'', ''version'', ''updated_at'', ''updated_by'')'),
      ('CREATE TRIGGER t12_visit_state BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_state_guard()'),
+     ('CREATE TRIGGER t13_field_version BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_field_version()'),
+     ('CREATE TRIGGER t14_closed_fields BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_closed_fields()'),
      ('CREATE TRIGGER t15_marker_from_call BEFORE INSERT ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_marker()'),
      ('CREATE TRIGGER t20_immutable_markers BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_markers()'),
      ('CREATE TRIGGER t30_one_way BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_one_way_people(''created_by'', ''updated_by'', ''cancelled_by'')'),
@@ -556,19 +577,20 @@ select results_eq(
      ('CREATE TRIGGER t90_bump_version BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_bump_version()'),
      ('CREATE TRIGGER t95_reject_delete BEFORE DELETE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_reject_delete()'),
      ('CREATE TRIGGER t99_reject_truncate BEFORE TRUNCATE ON public.visits FOR EACH STATEMENT EXECUTE FUNCTION private.tg_reject_truncate()') $$,
-  'visits: the call, number, source, marker and creation fields frozen; t12 server times and state; t15 marker before the one-way checks t30/t31 and the number guard t35; c10 deferred on INSERT and on UPDATE OF status, closed_at (every column compute_call_status reads)');
+  'visits: the call, number, source, marker and creation fields frozen; t12 server times and state; PR 1.6: t13 field_version after t12, t14 the closed-visit freeze of reason and notes; t15 marker before the one-way checks t30/t31 and the number guard t35; c10 deferred on INSERT and on UPDATE OF status, closed_at (every column compute_call_status reads)');
 select results_eq(
   $$ select * from pg_temp.tm_triggers('public.visit_reports') $$,
   $$ values
      ('CREATE CONSTRAINT TRIGGER c40_report_rules AFTER INSERT ON public.visit_reports DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.ct_report_rules()'::text),
      ('CREATE TRIGGER t10_immutable BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''summary_text'', ''summary_source'', ''version'', ''updated_at'', ''updated_by'')'),
+     ('CREATE TRIGGER t11_frozen BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''version'', ''updated_at'', ''updated_by'')'),
      ('CREATE TRIGGER t15_marker_from_visit BEFORE INSERT ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_visit_child_marker()'),
      ('CREATE TRIGGER t20_immutable_markers BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_markers()'),
      ('CREATE TRIGGER t30_one_way BEFORE INSERT OR UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_one_way_people(''created_by'', ''updated_by'')'),
      ('CREATE TRIGGER t90_bump_version BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_bump_version()'),
      ('CREATE TRIGGER t95_reject_delete BEFORE DELETE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_reject_delete()'),
      ('CREATE TRIGGER t99_reject_truncate BEFORE TRUNCATE ON public.visit_reports FOR EACH STATEMENT EXECUTE FUNCTION private.tg_reject_truncate()') $$,
-  'visit_reports: only the summary changes (PR 1.6 corrections); marker from the visit; c40 deferred on INSERT');
+  'visit_reports: Migration 3''s t10 lets the summary change, PR 1.6''s t11 then allows only bookkeeping (OQ-7: corrections are append-only); marker from the visit; c40 deferred on INSERT');
 select results_eq(
   $$ select * from pg_temp.tm_triggers('public.visit_signatures') $$,
   $$ values
@@ -1097,7 +1119,9 @@ select results_eq(
   'task_number: required (TEMPORARY OQ-5), printable ASCII with single internal spaces, 1-40 (OQ-6), and not unique (D41)');
 
 insert into tm_case (grp, label, stmt, expected)
-select 'visit_columns', c.label, pg_temp.tm_visit_sql(c.cols, c.vals), c.expected
+select 'visit_columns', c.label,
+       case when c.n = 14 then 'alter table public.visits disable trigger t13_field_version; ' else '' end
+       || pg_temp.tm_visit_sql(c.cols, c.vals), c.expected
 from (values
   (1, 'each of the six visit codes: scheduled', 'visit_number, task_number, scheduled_start, scheduled_end, status',
    '2, ''T-2'', now(), now(), ''scheduled''', 'ok'),
@@ -1125,7 +1149,8 @@ from (values
    '23502 scheduled_start'),
   (13, 'version 0', 'visit_number, task_number, scheduled_start, scheduled_end, status, version',
    '2, ''T-2'', now(), now(), ''scheduled'', 0', '23514 visits_version_check'),
-  (14, 'field_version 0', 'visit_number, task_number, scheduled_start, scheduled_end, status, field_version',
+  (14, 'field_version 0 (PR 1.6: t13, which sets 1 on insert, disabled inside the probe)',
+   'visit_number, task_number, scheduled_start, scheduled_end, status, field_version',
    '2, ''T-2'', now(), now(), ''scheduled'', 0', '23514 visits_field_version_check')
 ) c (n, label, cols, vals, expected)
 order by c.n;

@@ -146,6 +146,15 @@ export const ALLOWED_WRITERS = new Map([
   // is auth.uid() of the session). Accepting it needs the owner's acceptance (PR 1.5 approval item
   // A1).
   ["private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)", { tables: ["public.entity_changes"] }],
+  // PR 1.6 writers (database-schema.md §4 "Migration 4"; D14, D44, D45, D46): the review-item and
+  // offline-operation helpers (the submitter and the actor are auth.uid() of the session), the D14
+  // correction writer and the review-resolution writer. Accepting them needs the owner's acceptance
+  // (PR 1.6 approval item A1).
+  ["private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)", { tables: ["public.review_items"] }],
+  ["private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid)",
+    { tables: ["public.offline_operations"] }],
+  ["private.correct_visit(uuid,text,text,text,integer)", { tables: ["public.visit_corrections", "public.visit_time_reports"] }],
+  ["private.resolve_review_item(uuid,integer,text,jsonb,text)", { tables: ["public.visit_time_reports"] }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.

@@ -9,7 +9,7 @@
 - **Time:** `timestamptz` in UTC, displayed in `Asia/Jerusalem`. Server times are authoritative for receipt, sync and audit; device times are reported values (D45, section 7).
 - **Value sets:** `text` columns with explicit `CHECK` constraints (roles, statuses, kinds, sources, request and review types). No Postgres enums. The codes are English; their Hebrew display labels belong to the UI.
 - **Concurrency:** `version` (`int`) on every editable row, raised by trigger. Edit RPCs take `expected_version` and per-field `{base, new}` changes (D44): same version → applied; different version but every `base` equals the current value → automatic merge, recorded as `merge`; otherwise → conflict, both versions are returned and the rejected submission is stored as a `review_items` row (`edit_conflict`). Nothing is lost.
-- **`visits.field_version`:** raised by trigger only by the changes that matter to a device: status, assignment, cancellation and the critical fields of D39 (customer, address, SKU). Non-critical changes do not raise it (tested). Offline operations carry the `expected_field_version` they were based on.
+- **`visits.field_version`:** raised by trigger only by the changes that matter to a device: status, assignment, cancellation and the critical fields of D39 (customer, address, SKU). Non-critical changes do not raise it (tested). Offline operations carry the `expected_field_version` they were based on. *Migration 4 (PR 1.6):* the trigger `t13_field_version` starts it at 1 and raises it by one for a change of status, technician, city, street, building, floor or apartment; the call-level customer and SKU changes raise it in their Step 6 writer (exactly one step; TEMPORARY, PR 1.6 OQ-14).
 - **Foreign keys:** every foreign key is `ON DELETE RESTRICT`, including `profiles.id` → `auth.users.id`. No cascades anywhere.
 - **No DELETE of business or history records** (customers, products, service calls, visits, reports, signatures, time reports, events, corrections, review items, offline operations, account requests, audit). No DELETE grant exists for them. Accounts are deactivated (`profiles.is_active`), never deleted.
 - **Reference data** (`brands`, `suppliers`, `call_types`, `followup_reasons`, `collection_locations`) is deactivated with `is_active`. The only deletes are those SE-06 and SE-07 in `docs/demo-deviations.md` allow: a pickup place that nothing references, and an unused follow-up reason (as in the demo, only a user-added one, `is_user_added`). `ON DELETE RESTRICT` makes any delete of a referenced row fail.
@@ -320,35 +320,44 @@ erDiagram
   }
   visit_corrections {
     uuid id PK
-    uuid visit_id FK
-    uuid corrected_by FK
+    uuid visit_id FK "(id, is_test)"
+    text field "one field per row"
+    jsonb old_value
+    jsonb new_value
     text reason
-    jsonb changes
     int version_before
-    int version_after
+    int version_after "UK with the visit"
+    uuid corrected_by FK
+    timestamptz recorded_at "server"
     bool is_test
   }
   review_items {
     uuid id PK
     text review_type
     text dedupe_key UK
-    uuid service_call_id FK
+    uuid service_call_id FK "(id, is_test)"
     uuid visit_id FK "(id, service_call_id)"
-    uuid submitted_by_profile_id FK
-    uuid operation_id
+    text source "invitation or device"
+    text source_ref "invitation"
+    uuid submitted_by_profile_id FK "device"
+    uuid operation_id "device"
     jsonb submitted_version "version A"
     jsonb current_version "version B"
+    jsonb base_version "D44 base"
     text status
-    timestamptz created_at
+    timestamptz created_at "server receipt"
     timestamptz resolved_at
     uuid resolved_by FK
     text resolution
+    jsonb resolution_choices
+    text resolution_note "D14"
     bool is_test
+    int version
   }
   offline_operations {
     uuid operation_id PK
     uuid actor_profile_id FK
-    uuid visit_id FK
+    uuid visit_id FK "(id, is_test)"
     text op_type
     text payload_sha256
     int expected_field_version
@@ -356,8 +365,9 @@ erDiagram
     text device_tz
     int device_utc_offset_min
     timestamptz received_at
-    text result
+    text result "applied or review"
     int resulting_field_version
+    uuid review_item_id FK
     bool is_test
   }
 ```
@@ -403,9 +413,11 @@ Every table has RLS enabled, explicit grants and the test marker of section 2 (o
 
 | Table | Responsibility | Key constraints and rules |
 |---|---|---|
-| `offline_operations` | Server-side idempotency record for device sync | Primary key = the device's operation UUID; `payload_sha256`; `expected_field_version` and `resulting_field_version`; device and server times (D45). A replay of the same id returns the stored result |
-| `review_items` | Everything that needs review; both versions preserved (D44) | `dedupe_key` unique. Composite FK `(visit_id, service_call_id)` so the visit belongs to the call. `review_type` includes `sku_change`, `customer_change` and `edit_conflict`, plus the other review cases of D39, D43, D44 and D45; the exact value set is fixed in this PR. Who resolves: section 8 |
-| `visit_corrections` | Audited Manager/Creator corrections of server-closed visits (D14) | Append-only. Reason, change set, `version_before` and `version_after`; original values are never overwritten |
+| `offline_operations` | Server-side idempotency record for device sync | Primary key = the device's operation UUID; `payload_sha256`; `expected_field_version` and `resulting_field_version`; device and server times (D45). A replay of the same id returns the stored result. *As built (PR 1.6):* one immutable row per operation with its final result (`applied` or `review`, with `review_item_id`); a refused operation is not stored, so the device may retry it (TEMPORARY OQ-10). The Step 4 writers call `private.offline_operation_replay` (the stored result, or NULL; the same id with another payload or user is refused) and `private.record_offline_operation` (the actor is `auth.uid()`) |
+| `review_items` | Everything that needs review; both versions preserved (D44) | `dedupe_key` unique. Composite FK `(visit_id, service_call_id)` so the visit belongs to the call. `review_type` includes `sku_change`, `customer_change` and `edit_conflict`, plus the other review cases of D39, D43, D44 and D45; the exact value set is fixed in this PR. Who resolves: section 8. *As built (PR 1.6):* `reassignment`, `cancellation`, `address_change`, `customer_change`, `sku_change` (invitations), `edit_conflict`, `closure_of_cancelled_visit`, `approval_text_mismatch`, `duplicate_time_report` (devices); created open through `private.create_review_item` (one item per dedupe key; only an exact replay returns the stored item), decided once through `resolve_review_item`; both versions and the base are frozen. PR 1.6 applies `keep_current` for every type and `apply_incoming` for `duplicate_time_report` only (TEMPORARY OQ-4) |
+| `visit_corrections` | Audited Manager/Creator corrections of server-closed visits (D14) | Append-only. Reason, change set, `version_before` and `version_after`; original values are never overwritten. *As built (PR 1.6):* one field per row (summary, continuation reason, next-visit notes, departed, arrived, ended; TEMPORARY OQ-5) with old and new value; `visit_reports` and `visits` keep the as-closed values and the newest correction is current (OQ-7; enforced by triggers: a summary never changes after insert, a closed visit keeps its continuation reason and next-visit notes); a corrected field time is also a `visit_time_reports` row (`source = 'correction'`, `correction_id`); written only by `correct_visit` (Manager and Creator) |
+
+Migration 4 also adds `correction_id` and `accepted_review_id` to `visit_time_reports` (a second device report accepted in review is a `correction` row that keeps its original receipt time), `UNIQUE (id, service_call_id)` and the `field_version` trigger to `visits`, two audit actions (`visit.corrected`, `review_item.resolved`) and two audit targets (`visits`, `review_items`). Details, deviations (DEV-1 to DEV-12) and TEMPORARY behaviours (OQ-1 to OQ-14): `docs/review/step1-pr16/README.md`.
 
 **Not in the Step 1 design:** the TE-03 "נאסף" state (persisted per technician per day, `docs/demo-deviations.md`). Where it is stored is settled with the Step 3 plan.
 
@@ -489,8 +501,8 @@ Base rules: every policy requires an active profile (`profiles.is_active`). `hp(
 | `visit_time_reports` | Only rows he reported himself; whether he sees his own times at all is open decision 2 (d05, Step 3) | Read with `hp(cal)` or `hp(calls)` |
 | `visit_events` | Not directly; through a function if needed | Read with `hp(calls)` |
 | `entity_changes` | — | Read with `hp(calls)`; changes to `card` content only with `hp(card)` |
-| `visit_corrections` | — | Read with `hp(card)` (technical recommendation). Write: Manager and Creator (D14) |
-| `review_items` | Only through a function: the status and what he submitted himself, never the current server version | Read with `hp(card)`. Resolution: D14 cases Manager and Creator only; others `hp(conflicts)` |
+| `visit_corrections` | — | Read with `hp(card)` (technical recommendation). Write: Manager and Creator (D14). *PR 1.6, TEMPORARY OQ-1, OQ-2:* read with `hp(card)` and (`hp(cal)` or `hp(calls)`); `correct_visit` also needs those keys |
+| `review_items` | Only through a function: the status and what he submitted himself, never the current server version | Read with `hp(card)`. Resolution: D14 cases Manager and Creator only; others `hp(conflicts)`. *PR 1.6, TEMPORARY OQ-1 to OQ-3, OQ-11:* read with `hp(card)` and (`hp(cal)` or `hp(calls)`); a D14 item also needs `hp(conflicts)` and a note; no Technician function yet |
 | `offline_operations` | His own | Read with `hp(conflicts)` |
 | `followup_reasons`, `collection_locations`, `call_types` | Active rows | Read. Write: `hp(settings)` (D35) |
 | `technicians` | His own | Read for Manager and Creator, or with `hp(cal)` or `hp(calls)`. Write: Manager and Creator |
@@ -569,7 +581,7 @@ No ONE-related table, column, status, flag, export or adapter.
 | 1.3 | Hardening, `private` schema, shared triggers (`version`, `is_test`, `data_source`, append-only, truncate), `profiles`, `technicians`, matrix and its RPC, `account_requests` and its RPCs, user RPCs, `audit_logs` with hash chain, helpers, census, `bootstrap_first_creator` (not run) |
 | 1.4 | `brands`, `suppliers`, `products` and RPC, `customers`, `call_types`, `followup_reasons` (initial values per D48), `collection_locations` |
 | 1.5 | `service_calls` and `recalc_call_status`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports` and its view, `visit_events`, `entity_changes`, constraint triggers, D36 and D40 functions |
-| 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` |
+| 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` (prepared and tested locally, not applied: `docs/review/step1-pr16/README.md`) |
 
 **Before PR 1.3 is applied:** the owner sets the invitation-only Supabase Auth settings himself (D50: "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, exposed schemas `public` and `graphql_public` only) and gives a separate explicit approval to apply.
 

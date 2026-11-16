@@ -15,6 +15,9 @@
 -- Real-marked rows are impossible before go-live. Section 8 relaxes the relevant CHECKs inside this
 -- rolled-back transaction (PR 1.3 owner question Q3) and is last, so every earlier test runs against
 -- the full set of constraints.
+-- PR 1.6: review_items, visit_corrections and offline_operations reference service_calls and
+-- visits, so the TRUNCATE probes of those two tables (and their temporary grants) list them too;
+-- their own markers and guards are asserted in 230_integrity_schema.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(34);
@@ -90,12 +93,14 @@ create temporary table tm_setup (k text primary key, sql text not null) on commi
 insert into tm_setup values
   ('service_role',
    'grant select, insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes to service_role;
+      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.review_items, public.visit_corrections, public.offline_operations to service_role;
     grant select on public.profiles, public.technicians, public.customers, public.products, public.call_types,
       public.followup_reasons, public.collection_locations to service_role'),
   ('authenticated_writes',
    'grant insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes to authenticated');
+      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.review_items, public.visit_corrections, public.offline_operations to authenticated');
 
 create temporary table tm_case (
   n integer generated always as identity, grp text not null, label text not null, stmt text not null, expected text not null
@@ -327,8 +332,11 @@ insert into tm_case (grp, label, stmt, expected) values
    $s$update public.service_calls set fault_description = 'לא מקרר, רעש' where id = '00000000-0000-4000-8000-00000000c001'$s$, 'ok'),
   ('guards', 'allowed: visits.tech_notes of an open visit',
    $s$update public.visits set tech_notes = 'להביא סולם' where id = '00000000-0000-4000-8000-00000000b021'$s$, 'ok'),
-  ('guards', 'allowed: visit_reports.summary_text (PR 1.6 corrections)',
-   $s$update public.visit_reports set summary_text = 'הוחלף מדחס ומאוורר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$, 'ok'),
+  ('guards', 'frozen: visit_reports.summary_text (PR 1.6 t11, OQ-7: corrections are visit_corrections rows)',
+   $s$update public.visit_reports set summary_text = 'הוחלף מדחס ומאוורר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$,
+   '55000 visit_reports: these fields are immutable'),
+  ('guards', 'allowed: visit_reports bookkeeping (updated_by)',
+   $s$update public.visit_reports set updated_by = '00000000-0000-4000-8000-0000000000c1' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$, 'ok'),
   ('guards', 'update a signature',
    $s$update public.visit_signatures set signer_name = 'אחר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$,
    '55000 visit_signatures is append-only'),
@@ -368,10 +376,10 @@ insert into tm_case (grp, label, stmt, expected) values
   ('guards', 'truncate visit_events', 'truncate public.visit_events', '55000 visit_events cannot be truncated'),
   ('guards', 'truncate entity_changes', 'truncate public.entity_changes', '55000 entity_changes cannot be truncated'),
   ('guards', 'truncate visits with its children',
-   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 visits cannot be truncated'),
   ('guards', 'truncate service_calls with every table that references it',
-   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 service_calls cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'guards' and c.label like 'marker:%' order by c.n $$,
@@ -396,10 +404,11 @@ select results_eq(
                             update public.visits set is_test = false where id = ''00000000-0000-4000-8000-00000000b021''')
      union all
      select pg_temp.tm_try('alter table public.visit_reports disable trigger t10_immutable;
+                            alter table public.visit_reports disable trigger t11_frozen;
                             update public.visit_reports set is_test = false where visit_id = ''00000000-0000-4000-8000-00000000b011''') $$,
   $$ values ('55000 visits: test-data markers are immutable (D47)'::text),
             ('55000 visit_reports: test-data markers are immutable (D47)') $$,
-  'with the t10 guard disabled, t20 (tg_immutable_markers) still freezes is_test on visits and visit_reports');
+  'with the t10 guard (and PR 1.6''s t11 on visit_reports) disabled, t20 (tg_immutable_markers) still freezes is_test on visits and visit_reports');
 
 -- service_role bypasses RLS, not grants or triggers: with temporary grants every guard holds.
 select results_eq(
@@ -801,10 +810,10 @@ insert into tm_case (grp, label, stmt, expected) values
    $s$insert into public.visit_reports (visit_id, summary_text, summary_source, created_by)
       values ('00000000-0000-4000-8000-00000000b0f1', 'סיכום', 'written', '00000000-0000-4000-8000-0000000000a1')$s$,
    '23514 visit_reports: a real record cannot reference a test profile (D47)'),
-  ('one_way', 'a summary on a real visit corrected by a test profile',
+  ('one_way', 'a summary on a real visit updated by a test profile (PR 1.6: only bookkeeping may change)',
    $s$insert into public.visit_reports (visit_id, summary_text, summary_source, created_by)
       values ('00000000-0000-4000-8000-00000000b0f1', 'סיכום', 'written', '00000000-0000-4000-8000-0000000000c1');
-      update public.visit_reports set summary_text = 'סיכום מתוקן', updated_by = '00000000-0000-4000-8000-0000000000a1'
+      update public.visit_reports set updated_by = '00000000-0000-4000-8000-0000000000a1'
       where visit_id = '00000000-0000-4000-8000-00000000b0f1'$s$,
    '23514 visit_reports: a real record cannot reference a test profile (D47)'),
   ('one_way', 'a signature on a real visit recorded by a test profile',

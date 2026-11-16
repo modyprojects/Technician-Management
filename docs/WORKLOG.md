@@ -1,5 +1,28 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 4 applied to the remote project (PR 1.6)
+- **Approval:** the owner's explicit approval for one application (PR #30 `f53016a`, SQL `ad0eb314…2ffd`, payload `0b092aa4…4fcd`). A1 and A2 were also approved.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–3 were present, with no Migration 4 objects and the fingerprint unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116120813`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–4 build on 14/14 (110 functions, 36 policies).
+  - The audit chain is intact; the anchor changed to `9c962b84…` as designed.
+  - User rows 0; advisors are unchanged.
+  - Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project".
+
+## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
+- **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):
+  - S1: accepting a second device report after an office correction of the same field time is refused (PT409).
+  - S2: a reused review dedupe key returns the stored item only for an exact replay; anything else is refused (23505).
+  - S3 (TEMPORARY, OQ-7): a treatment summary never changes after insert (`t11_frozen`), and a closed visit keeps its continuation reason and next-visit notes (`t14_closed_fields`); the D44 path for cancelled visits stays open.
+  - N1: unique indexes on the two correction keys. N2: the second-report contract checks its times and kind. N3: `conflicts` is checked before any lock.
+- **Documented:** N4 (READ COMMITTED for the Step 4 writers) and N5 (ownership checks and a server-side payload hash). N6 was already covered by `990`.
+- **Local results:** pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS; lint and typecheck clean. The record is in `docs/review/step1-pr16/README.md` section 12.
+
 ## 2026-11-16 — Migration 3 applied to the remote project (PR 1.5)
 - **Approval:** the owner's explicit approval for one application (PR #25 `5b2d2be`, SQL `37b803db…eecb`, payload `8b9decd8…313d`).
 - **Pre-checks (read-only):** hashes matched, only Migrations 1 and 2 were present, no Migration 3 objects, fingerprint 14/14 unchanged.
@@ -9,6 +32,19 @@
   - The fingerprint equals the local Migrations 1–3 build on 14/14.
   - User rows 0; the audit anchor is unchanged; advisors are unchanged (one WARN).
   - Details: `docs/review/step1-pr15/README.md` §17.
+
+## 2026-11-16 — Step 1 / PR 1.6: Migration 4 (integrity and offline), local only
+- Branch `claude/step1-pr16-integrity-offline`, stacked on PR 1.5's head `5b2d2be`. Migrations 1-3 unchanged. **Not applied, not pushed.**
+- **Migration** `20261107120000_integrity_offline.sql` (sha256 `2052f4de…2ffd`, 1,349 lines):
+  - three tables: `review_items` (D44; dedupe key, the visit belongs to the call, both versions frozen, decided once), `visit_corrections` (D14; append-only, one field per row, one per visit version) and `offline_operations` (D46; one immutable final result per device operation id);
+  - `visit_time_reports` gains the `correction` source with `correction_id` or `accepted_review_id` (PR 1.5 DEV-2, OQ-11); `visits` gains `UNIQUE (id, service_call_id)` and the `field_version` trigger;
+  - writers `correct_visit` (Manager and Creator, fixed D14 capability) and `resolve_review_item` (D14 items by Manager or Creator with a note, others with `conflicts`), SECURITY DEFINER behind SECURITY INVOKER wrappers, with audit and field history; three helpers for the Step 4 and Step 6 writers (`create_review_item`, `offline_operation_replay`, `record_offline_operation`);
+  - four SELECT policies, grants, census, and the fail-closed hardening check (Migration 3 section 12, byte for byte) as the last statement.
+- **Rollback** script (one DO block, refuses first); `990` runs it first and checks that the catalog then equals a database built from Migrations 1-3 (eight fingerprints).
+- **Protected files:** `scripts/check-migrations.mjs` gains four `ALLOWED_WRITERS` entries (approval item A1); a new canary fixture `tests/db-canary/20261107120000.sql` (A2). `coverage-exceptions.json` unchanged.
+- **Local results:** pgTAP 1,387/1,387 (31 files; new `220`-`260`; `010`, `015`, `060`, `070`, `100`, `140`, `150`, `990` updated); node 190/190; guard passed; canary PASS (4 migrations, no new exception); lint and typecheck clean.
+- **TEMPORARY behaviours** OQ-1 to OQ-14 and deviations DEV-1 to DEV-12: `docs/review/step1-pr16/README.md`. Among them: corrections are append-only (as-closed values kept), no outcome correction, only `keep_current` and the accepted second device report are applied by PR 1.6.
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1 and A2; the apply only after Migration 3 is applied and merged, with a separate approval of the exact file.
 
 ## 2026-11-16 — D62: QA corrections per real screen
 - **Owner clarification (2026-11-16), recorded as D62:** the 50 QA corrections are implemented with their real screens, not at the end. The per-screen cycle is:
@@ -189,6 +225,7 @@
   - **Tests:** a "PR 2.2 review fixes" unit block (9 tests) and 2 more unit tests in the "PR 2.2 port alignment" block; an e2e raw-response test of `selfRole` per account screen (CA-5 a). Mutations checked: removing either stale check, the caller check of "פעיל", the cancelled-after-approval branch, the notices' pending filter, the session's inactive check, `versionAfter`'s simulated rule, `selfRole` "creator" on every page and a hard-coded `expectedVersion: 1` for deactivation each fail a test.
   - **Not changed (reasons in the README):** no visible fixture of an approved, unfulfilled request (the visible changes of PR 2.2 stay the plan's two; its UI path is a PR 2.3 test obligation); no matrix cell version yet (CA-4); `createAccount` keeps "tech" at the port (CA-11).
   - **Checks after the fix pass (local):** `npm run lint` clean; `npm run typecheck` clean; `npm run test:ci` 52/52; `npm run check:migrations` passed; `npm run build` (Turbopack) passes (1,415 static pages); `npm run scan:bundle` passed (7,920 browser files); `npx playwright test` (all projects) 2,426 passed, 2,716 skipped, 0 failed (8.5 min; before the fix pass 2,414 / 2,692: +11 unit tests and +1 e2e on desktop); `tests/e2e/data-validate.spec.ts` 48/48 (desktop), of which the two PR 2.2 blocks hold 21. The step2-pr22 screenshots, taken again from the fix build, are pixel-identical (none replaced).
+
 ## 2026-11-05 — Manager dashboard, office navigation and the MODY logo (D57)
 - **Owner (2026-11-05, messages 1–6), recorded as D57** (`docs/decisions.md`, after D56): the five-item Manager and Creator navigation with "דשבורד" as the landing page; follow-up visits and review items off the dashboard; the three dashboard tabs of `docs/design/manager-dashboard-spec.md` and the visual reference `docs/design/manager-dashboard-demo.html`; the metric categories (computed / "הגדרה ממתינה" / "לא זמין"); the follow-up analytics and current call status of message 5; the white logo in the existing dark headers; and (message 6, D57 (9)) "נפתחה" = `opened_at` and "תחילת טיפול" = the first visit's arrival as two labelled fields. Open #15 and #20 amended; new open #26 (navigation leftovers, review count) and #27 (simulator placement). `docs/demo-deviations.md` v1.4 (OF-01, OF-02, OF-11, OF-12, OF-13, OF-16, SE-01, SE-03, SIM-01; new OF-18, OF-19, OF-20, G-08); `docs/spec.md`, `docs/design-system.md`, `docs/architecture-data-access.md`, `docs/testing.md`, `docs/PROJECT-MAP.md`, `docs/ROADMAP.md`, `docs/THINKING-AHEAD.md` updated.
 - Branch `claude/manager-dashboard` (from `main` `ba47e8b`), three local commits: the data layer (registry, formulas, periods, time helpers, demo `DEMO_NOW` 21.10.2026 12:45 and fictional call `openedAt` / `resolvedAt`), the navigation and logo, and the dashboard UI with docs and screenshots. UI demo only (`/dev/demo`); fictional, test-marked data; no migration, no remote Supabase operation, no permission value changed, no new package.
@@ -420,6 +457,7 @@
   - Simulated actions change only their own screen: an approved "create" request does not add an account row (the id comes from the server), and a technician added on "טכנאים" does not appear on "משתמשים".
   - Call types have no delete (`docs/database-schema.md` allows deletes only for unreferenced places and user-added unused reasons).
   - Production must take the signed-in user from the session and scope the Manager's requests on the server (the demo matches the viewpoint's name and filters in memory). The Manager's own requests carry the deciding Creator's account reference (id and name), as the outcome line needs.
+
 ## 2026-11-04 — UI demo, phase D
 - Branch `claude/ui-demo-2`, started on `claude/ui-demo-1`; PR #5 is now squash-merged to `main` (`013fd2f`), and `main` is merged into this branch. Fictional data only (`/dev/demo`); no Supabase, network or real email; every action is simulated ("פעולה מדומה · לא נשמר"). Every screen reads through `demoDataAccess` and renders through the demo frames (sentinel and "נתוני בדיקה" strip).
 - **Screens** (placeholders replaced):

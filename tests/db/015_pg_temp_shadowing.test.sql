@@ -13,6 +13,10 @@
 -- fires, and the deferred SECURITY DEFINER checks run at SET CONSTRAINTS ... IMMEDIATE while the
 -- domains exist), and the Technician calls the three narrow read functions (previous_visits,
 -- visit_rep_contact, my_visit_details) through their wrappers with the domains in place.
+-- PR 1.6: the fixtures also store a review item through create_review_item (a second departure
+-- report of the done visit, under the Technician's claims), and the Manager runs the two new
+-- SECURITY DEFINER writers (correct_visit, resolve_review_item) through their wrappers with the
+-- domains in place.
 --
 -- The file runs in its own session (pg_prove), and the fixtures are written after the domains
 -- exist, so every function and trigger below is compiled while the domains exist (PL/pgSQL keeps
@@ -22,7 +26,7 @@
 -- dropped. Everything is rolled back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(22);
 
 -- The attacker's objects, created by `authenticated` in its own temporary schema.
 set local role authenticated;
@@ -90,6 +94,13 @@ begin
       ('00000000-0000-4000-8000-0000000015b1', 1, 'created', 'done'),
       ('00000000-0000-4000-8000-0000000015b2', 1, 'created', 'scheduled');
     set constraints all immediate;
+    perform pg_catalog.set_config('request.jwt.claims',
+      '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+    perform private.create_review_item('duplicate_time_report', 'pr16-015-1', '00000000-0000-4000-8000-0000000015a1',
+      '00000000-0000-4000-8000-0000000015b1', 'device', null, '00000000-0000-4000-8000-0000000015f1',
+      '{"kind": "departed", "reported_at": "2026-11-01T07:40:00+00:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-01T07:45:00+00:00"}',
+      '{"kind": "departed"}', null);
+    perform pg_catalog.set_config('request.jwt.claims', '', true);
     perform pg_catalog.set_config('tm_test.r_fixtures', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_fixtures', sqlstate || ' ' || sqlerrm, true);
@@ -134,6 +145,21 @@ begin
       true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_reads', sqlstate || ' ' || sqlerrm, true);
+  end;
+  -- PR 1.6: the D14 correction and the review decision (SECURITY DEFINER bodies) with the domains.
+  begin
+    perform pg_catalog.set_config('tm_test.r_correct',
+      (select pg_catalog.concat_ws(':', c.version_after, c.correction_id is not null)
+       from public.correct_visit('00000000-0000-4000-8000-0000000015b1', 'summary', 'סיכום צל מתוקן', 'סיבת צל', 1) c), true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_correct', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform pg_catalog.set_config('tm_test.r_resolve',
+      public.resolve_review_item((select r.id from public.review_items r where r.dedupe_key = 'pr16-015-1'), 1,
+                                 'apply_incoming', null, 'הערת צל')::pg_catalog.text, true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_resolve', sqlstate || ' ' || sqlerrm, true);
   end;
 end
 $calls$;
@@ -269,6 +295,15 @@ select is(current_setting('tm_test.r_rep_contact', true), 'נציגת צל:03-00
   'PR 1.5: a Technician''s visit_rep_contact works with the domains in place');
 select is(current_setting('tm_test.r_visit_details', true), 'R-1501:תקלת צל:yes:2027-05-01:t:C-1501:לקוח צל:SH-1501',
   'PR 1.5: a Technician''s my_visit_details works with the domains in place');
+select is(current_setting('tm_test.r_correct', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', c.field, c.new_value #>> '{}', c.version_before) from public.visit_corrections c),
+  '2:t summary:סיכום צל מתוקן:1',
+  'PR 1.6: a Manager''s correct_visit works with the domains in place (the correction stored, the visit''s version raised)');
+select is(current_setting('tm_test.r_resolve', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', t.source, t.kind, t.accepted_review_id is not null) from public.visit_time_reports t
+   where t.visit_id = '00000000-0000-4000-8000-0000000015b1'),
+  '2 correction:departed:t',
+  'PR 1.6: a Manager''s resolve_review_item works with the domains in place (the accepted report stored)');
 select ok(
   (select not allowed and version = 1 and updated_by is null from public.role_permissions
    where role = 'manager' and permission_key = 'settings'),

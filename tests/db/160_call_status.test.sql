@@ -330,11 +330,16 @@ select is((select t.tgenabled::text from pg_trigger t where t.tgrelid = 'public.
 -- 6. Outcome corrections and a closure accepted after cancellation (TEMPORARY OQ-14; D44)
 -- ---------------------------------------------------------------------------------------------
 -- Call 9: done -> followup (reason and notes set; the signature stays) recalculates.
+-- PR 1.6 (TEMPORARY OQ-7, independent review S3): a closed visit keeps its continuation reason and
+-- next-visit notes (trigger t14_closed_fields), so no writer can make this outcome change until
+-- PR 1.5 OQ-14 is decided; the D38 recalculation such a writer needs is shown with t14 disabled
+-- inside this rolled-back transaction (230 shows the refusal with t14 on).
 select pg_temp.tm_open_call(9);
 select pg_temp.tm_move(9, 1, 'done');
 select is(private.recalc_call_status(pg_temp.tm_call(9)), 'resolved', 'call 9 is resolved by its done visit');
 select lives_ok('set constraints all immediate', 'the closure of call 9 passes the deferred checks');
 set constraints all deferred;
+alter table public.visits disable trigger t14_closed_fields;
 select pg_temp.tm_move(9, 1, 'followup');
 select is(private.recalc_call_status(pg_temp.tm_call(9)), 'awaiting_followup',
   'an outcome correction done -> follow-up recalculates the call to awaiting follow-up');
@@ -347,6 +352,7 @@ select results_eq(
   'resolved_at is cleared, the closure time and the signature stay, and both changes are recorded');
 select lives_ok('set constraints all immediate', 'the corrected outcome passes the deferred checks (a follow-up visit may keep its signature)');
 set constraints all deferred;
+alter table public.visits enable trigger t14_closed_fields;
 
 -- Call 10: followup -> done without a signature fails at COMMIT (c10 rule a).
 select pg_temp.tm_open_call(10);
