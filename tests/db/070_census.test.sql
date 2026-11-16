@@ -5,9 +5,11 @@
 -- PR 1.5: the census covers the seven service-call and visit tables (service_calls per source, the
 -- six child and history tables in one 'all sources' row each: 9 new rows), and the view
 -- visit_time_current returns no rows on a fresh database.
+-- PR 1.6: the census covers review_items, visit_corrections and offline_operations (one 'all
+-- sources' row each: 3 new rows), 0 on a fresh database, and counts a test row in each.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(28);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -46,6 +48,13 @@ select results_eq(
             ('visit_signatures', 'all sources', 0::bigint), ('visit_time_reports', 'all sources', 0::bigint),
             ('visits', 'all sources', 0::bigint) $$,
   'PR 1.5: the nine new census rows exist (service_calls per source in fixed rows, one row for each child and history table) and are 0 on a fresh database');
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census()
+     where table_name in ('review_items', 'visit_corrections', 'offline_operations')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('offline_operations'::text, 'all sources'::text, 0::bigint), ('review_items', 'all sources', 0::bigint),
+            ('visit_corrections', 'all sources', 0::bigint) $$,
+  'PR 1.6: the three new census rows exist (one row each) and are 0 on a fresh database');
 -- Views too (verification round 2, F1): a view can carry constant fictitious rows without any table
 -- row (create view ... as select * from (values (...))). Every view (and materialized view) in
 -- public and private returns no rows on the fresh database, except approved reference views: none
@@ -133,6 +142,13 @@ select results_eq(
             ('service_calls', 'simulator'), ('visit_events', 'all sources'), ('visit_reports', 'all sources'),
             ('visit_signatures', 'all sources'), ('visit_time_reports', 'all sources'), ('visits', 'all sources') $$,
   'PR 1.5: service_calls is counted per source in fixed rows; visits and every visit_* and history table in one row each');
+select results_eq(
+  $$ select table_name, marker, bucket from public.test_data_census()
+     where table_name in ('review_items', 'visit_corrections', 'offline_operations')
+     order by table_name collate "C" $$,
+  $$ values ('offline_operations'::text, 'is_test'::text, 'all sources'::text), ('review_items', 'is_test', 'all sources'),
+            ('visit_corrections', 'is_test', 'all sources') $$,
+  'PR 1.6: review_items, visit_corrections and offline_operations are counted by is_test in one row each');
 
 -- Positive control: a test fixture is counted ---------------------------------------------------------
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
@@ -234,6 +250,28 @@ select results_eq(
             ('visit_signatures', 'all sources', 1::bigint), ('visit_time_reports', 'all sources', 1::bigint),
             ('visits', 'all sources', 1::bigint) $$,
   'PR 1.5 positive control: a test row in each new table is counted, service calls by source (a later source in other sources)');
+
+-- PR 1.6 positive control: a test row in each new table (as postgres; every CHECK and trigger
+-- applies): an invitation review item on the call R-0701, a summary correction of its done visit,
+-- an applied offline operation of the Technician on that visit.
+insert into public.review_items (review_type, dedupe_key, service_call_id, source, source_ref, submitted_version,
+                                 current_version)
+  values ('sku_change', 'pr16-070-1', '00000000-0000-4000-8000-0000000007a1', 'invitation', 'pr16-070-evt-1',
+          '{"sku": "TB-2"}', '{"sku": "TB-1001"}');
+insert into public.visit_corrections (visit_id, field, old_value, new_value, reason, version_before, version_after, corrected_by)
+  values ('00000000-0000-4000-8000-0000000007b1', 'summary', '"סיכום בדיקה"', '"סיכום בדיקה מתוקן"', 'תיקון בדיקה',
+          1, 2, '00000000-0000-4000-8000-0000000000a1');
+insert into public.offline_operations (operation_id, actor_profile_id, visit_id, op_type, payload_sha256, expected_field_version,
+                                       device_sent_at, device_tz, device_utc_offset_min, result, resulting_field_version)
+  values (gen_random_uuid(), '00000000-0000-4000-8000-0000000000d1', '00000000-0000-4000-8000-0000000007b1', 'close',
+          repeat('b', 64), 1, now(), 'Asia/Jerusalem', 120, 'applied', 1);
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census()
+     where table_name in ('review_items', 'visit_corrections', 'offline_operations')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('offline_operations'::text, 'all sources'::text, 1::bigint), ('review_items', 'all sources', 1::bigint),
+            ('visit_corrections', 'all sources', 1::bigint) $$,
+  'PR 1.6 positive control: a test row in each of the three new tables is counted');
 
 -- Who may run it --------------------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);

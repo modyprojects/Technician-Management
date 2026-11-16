@@ -1108,24 +1108,24 @@ select lives_ok(
 -- lists the PR 1.5 tables that reference it (directly or through each other); the table named first
 -- is the one whose trigger rejects it.
 insert into tm_case (grp, label, stmt, expected) values
-  ('truncate', 'products', 'truncate public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'products', 'truncate public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 products cannot be truncated'),
-  ('truncate', 'customers', 'truncate public.customers, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'customers', 'truncate public.customers, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 customers cannot be truncated'),
-  ('truncate', 'brands (with products)', 'truncate public.brands, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'brands (with products)', 'truncate public.brands, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 brands cannot be truncated'),
-  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 suppliers cannot be truncated'),
-  ('truncate', 'call_types', 'truncate public.call_types, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'call_types', 'truncate public.call_types, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 call_types cannot be truncated'),
-  ('truncate', 'followup_reasons', 'truncate public.followup_reasons, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'followup_reasons', 'truncate public.followup_reasons, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 followup_reasons cannot be truncated'),
-  ('truncate', 'collection_locations', 'truncate public.collection_locations, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+  ('truncate', 'collection_locations', 'truncate public.collection_locations, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 collection_locations cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'truncate' order by c.n $$,
   $$ select c.label, c.expected from tm_case c where c.grp = 'truncate' order by c.n $$,
-  'TRUNCATE is rejected on all seven tables, even as postgres');
+  'TRUNCATE is rejected on all seven tables, even as postgres (PR 1.5 and PR 1.6: with the tables that reference them)');
 
 select * from finish();
 rollback;

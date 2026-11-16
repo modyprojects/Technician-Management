@@ -183,7 +183,7 @@ test("an unterminated dollar quote is reported", () => {
 
 // Fix pass (independent review S1/D1, S14) ----------------------------------------------------------
 
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4 and PR 1.5 writer functions, pinned to signature and tables", () => {
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1.6 writer functions, pinned to signature and tables", () => {
   assert.deepEqual(
     [...ALLOWED_WRITERS].map(([signature, { tables }]) => `${signature} -> ${tables.join(",")}`).sort(),
     [
@@ -194,7 +194,11 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4 and PR 1.5 write
       "private.admin_create_technician(uuid,text,text,text,text,boolean) -> public.technicians",
       "private.authorize_account_creation(text,text,text) -> public.account_requests",
       "private.bootstrap_first_creator(uuid,text) -> public.profiles",
+      "private.correct_visit(uuid,text,text,text,integer) -> public.visit_corrections,public.visit_time_reports",
+      "private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb) -> public.review_items",
+      "private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid) -> public.offline_operations",
       "private.request_account_change(text,uuid,text,text,text) -> public.account_requests",
+      "private.resolve_review_item(uuid,integer,text,jsonb,text) -> public.visit_time_reports",
       "private.write_audit(text,text,uuid,jsonb) -> public.audit_logs",
       "private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text) -> public.entity_changes",
     ],
@@ -1499,4 +1503,94 @@ test("V2-9 (fix round 3): a reference INSERT is allowed only as a top-level stat
     $$;`, TOP);
   rejects(`do $$ begin perform 1; insert into public.role_permissions (role, permission_key, allowed, value_status) values ('manager', 'usage', false, 'temporary'); end $$;`, TOP);
   passes(`insert into public.role_permissions (role, permission_key, allowed, value_status) values ('manager', 'usage', false, 'temporary');`);
+});
+
+// PR 1.6 (Migration 4): four writers (owner acceptance needed, PR 1.6 approval item A1): the two
+// helpers of the Step 4 and Step 6 writers and the two SECURITY DEFINER writers. offline_operation_replay
+// only reads and locks, so it is no writer and needs no entry.
+const PR16_WRITERS = [
+  "private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)",
+  "private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid)",
+  "private.correct_visit(uuid,text,text,text,integer)",
+  "private.resolve_review_item(uuid,integer,text,jsonb,text)",
+];
+const pr15Writers = new Map([...ALLOWED_WRITERS].filter(([signature]) => !PR16_WRITERS.includes(signature)));
+const migration16 = readFileSync(join(repositoryRoot, "supabase", "migrations", "20261107120000_integrity_offline.sql"), "utf8");
+const migrations16 = (sql16 = migration16) => [...migrations15(), { name: "d.sql", sql: sql16 }];
+
+test("PR 1.6: the migration passes after PR 1.3 to PR 1.5; without the four PR 1.6 entries it fails exactly at those writers", () => {
+  assert.deepEqual(checkFiles(migrations16()), []);
+  const NOT_ALLOWED = "is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)";
+  assert.deepEqual(checkFiles(migrations16(), { allowedWriters: pr15Writers }).sort(), [
+    `d.sql: function private.correct_visit: INSERT into "visit_corrections" ${NOT_ALLOWED}`,
+    `d.sql: function private.correct_visit: INSERT into "visit_time_reports" ${NOT_ALLOWED}`,
+    `d.sql: function private.create_review_item: INSERT into "review_items" ${NOT_ALLOWED}`,
+    `d.sql: function private.record_offline_operation: INSERT into "offline_operations" ${NOT_ALLOWED}`,
+    `d.sql: function private.resolve_review_item: INSERT into "visit_time_reports" ${NOT_ALLOWED}`,
+  ]);
+});
+
+test("PR 1.6: each new entry inserts only with its exact signature and only into its own tables", () => {
+  const body = (table) => `language plpgsql security definer as $$ begin insert into public.${table} (id) values (null); end $$;`;
+  const correct = "p_visit_id uuid, p_field text, p_new_value text, p_reason text, p_expected_version integer";
+  const resolve = "p_review_item_id uuid, p_expected_version integer, p_decision text, p_field_choices jsonb, p_note text";
+  const create = "p_review_type text, p_dedupe_key text, p_service_call_id uuid, p_visit_id uuid, p_source text, p_source_ref text, " +
+    "p_operation_id uuid, p_submitted_version jsonb, p_current_version jsonb, p_base_version jsonb";
+  const record = "p_operation_id uuid, p_visit_id uuid, p_op_type text, p_payload_sha256 text, p_expected_field_version integer, " +
+    "p_device_sent_at timestamptz, p_device_tz text, p_device_utc_offset_min integer, p_result text, p_resulting_field_version integer, " +
+    "p_review_item_id uuid";
+  passes(`create function private.correct_visit(${correct}) returns void ${body("visit_corrections")}`);
+  passes(`create function private.correct_visit(${correct}) returns void ${body("visit_time_reports")}`);
+  passes(`create function private.resolve_review_item(${resolve}) returns integer ${body("visit_time_reports")}`);
+  passes(`create function private.create_review_item(${create}) returns uuid ${body("review_items")}`);
+  passes(`create function private.record_offline_operation(${record}) returns void ${body("offline_operations")}`);
+  for (const definition of [
+    // Another table than the ones listed for it.
+    `create function private.correct_visit(${correct}) returns void ${body("visit_reports")}`,
+    `create function private.correct_visit(${correct}) returns void ${body("entity_changes")}`,
+    `create function private.resolve_review_item(${resolve}) returns integer ${body("visit_corrections")}`,
+    `create function private.resolve_review_item(${resolve}) returns integer ${body("visit_signatures")}`,
+    `create function private.create_review_item(${create}) returns uuid ${body("offline_operations")}`,
+    `create function private.record_offline_operation(${record}) returns void ${body("review_items")}`,
+    // Another signature, schema or name.
+    `create function private.correct_visit(${correct}, p_actor uuid) returns void ${body("visit_corrections")}`,
+    `create function private.create_review_item(${create}, p_submitted_by uuid) returns uuid ${body("review_items")}`,
+    `create function private.record_offline_operation(${record}, p_actor uuid) returns void ${body("offline_operations")}`,
+    `create function public.resolve_review_item(${resolve}) returns integer ${body("visit_time_reports")}`,
+    `create function private.offline_operation_replay(p_operation_id uuid, p_visit_id uuid, p_op_type text, p_payload_sha256 text) returns void ${body("offline_operations")}`,
+  ]) {
+    rejects(definition, /INSERT into "(visit_corrections|visit_time_reports|visit_reports|entity_changes|visit_signatures|offline_operations|review_items)" is not allowed/);
+  }
+});
+
+test("PR 1.6: no statement that runs names a PR 1.6 writer, and no trigger function of the migration names one", () => {
+  for (const statement of [
+    `select private.create_review_item('sku_change', 'k', null, null, 'invitation', 'e', null, '{}', '{}', null);`,
+    `select private.record_offline_operation(null, null, 'close', null, 1, now(), 'UTC', 0, 'applied', 1, null);`,
+    `create trigger t50_review after insert on public.visit_time_reports for each row execute function private.create_review_item();`,
+    `create policy review_items_x on public.review_items for select to authenticated using (private.resolve_review_item(review_items.id, 1, 'keep_current', null, null) > 0);`,
+    `do $$ begin perform public.correct_visit(null, 'summary', 'x', 'y', 1); end $$;`,
+  ]) {
+    const problems = checkFiles(migrations16(`${migration16}\n${statement}\n`));
+    assert.ok(problems.some((p) => /d\.sql: the migration calls (create_review_item|record_offline_operation|resolve_review_item|correct_visit)\(\)/.test(p)),
+      `${statement}: ${JSON.stringify(problems)}`);
+  }
+  // GRANT, REVOKE and COMMENT may name them.
+  assert.deepEqual(checkFiles(migrations16(`${migration16}
+    revoke all on function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb) from public;
+    comment on function private.correct_visit(uuid, text, text, text, integer) is 'x';
+  `)), []);
+  // The migration's own text: the trigger functions and the read-and-lock helper name no writer
+  // (comments included), so attaching them never attaches a writer.
+  const bodies = [...migration16.matchAll(/create (?:or replace )?function (\w+\.\w+)\(([\s\S]*?)\nas \$\$([\s\S]*?)\$\$;/g)];
+  const names = bodies.map(([, name]) => name).sort();
+  for (const expected of ["private.tg_call_child_marker", "private.tg_review_item_state", "private.tg_visit_correction_guard",
+    "private.tg_offline_operation_derive", "private.tg_visit_field_version", "private.tg_time_report_derive",
+    "private.tg_audit_target", "private.offline_operation_replay"]) {
+    assert.ok(names.includes(expected), `${expected} is defined in the migration`);
+  }
+  for (const [, name, , text] of bodies) {
+    if (!/^private\.(tg_|offline_operation_replay)/.test(name)) continue;
+    assert.doesNotMatch(text, /create_review_item|record_offline_operation|correct_visit|resolve_review_item|write_audit|write_entity_change|recalc_call_status/, name);
+  }
 });

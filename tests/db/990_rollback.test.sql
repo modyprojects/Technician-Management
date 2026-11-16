@@ -1,17 +1,1878 @@
--- PR 1.3, PR 1.4 and PR 1.5: the rollback (down) scripts, tested inside this transaction and
--- rolled back (docs/database-schema.md "Migration order and approval checklist" item 6). The blocks
--- between the markers are byte-identical copies of the down scripts; tests/ci/rollback.test.mjs
--- fails if they differ. The newest migration's script runs first: the PR 1.5 script, then the
--- PR 1.4 script (which cannot run while PR 1.5 objects depend on its tables), then the PR 1.3
--- script (which cannot run while PR 1.4 objects depend on its tables and helpers). Manual runs on
--- the local stack (down, catalog checks, re-apply) are in docs/review/step1-pr13/README.md,
--- docs/review/step1-pr14/README.md and docs/review/step1-pr15/README.md.
+-- PR 1.3 to PR 1.6: the rollback (down) scripts, tested inside this transaction and rolled back
+-- (docs/database-schema.md "Migration order and approval checklist" item 6). The blocks between
+-- the markers are byte-identical copies of the down scripts; tests/ci/rollback.test.mjs fails if
+-- they differ. The newest migration's script runs first: the PR 1.6 script, then the PR 1.5 script
+-- (which refuses while the PR 1.6 history row is recorded), then the PR 1.4 script (which cannot
+-- run while PR 1.5 objects depend on its tables), then the PR 1.3 script (which cannot run while
+-- PR 1.4 objects depend on its tables and helpers). Manual runs on the local stack (down, catalog
+-- checks, re-apply) are in docs/review/step1-pr13/README.md, docs/review/step1-pr14/README.md,
+-- docs/review/step1-pr15/README.md and docs/review/step1-pr16/README.md.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(64);
+select plan(83);
 
 select ok(to_regnamespace('private') is not null and to_regclass('public.profiles') is not null,
   'positive control: the migration is applied before the rollback runs');
+
+-- ---------------------------------------------------------------------------------------------
+-- PR 1.6 (Migration 4) down script, first: the newest migration's script runs before the others.
+-- ---------------------------------------------------------------------------------------------
+select ok(
+  to_regclass('public.review_items') is not null and to_regclass('public.visit_corrections') is not null
+  and to_regclass('public.offline_operations') is not null
+  and to_regprocedure('public.correct_visit(uuid,text,text,text,integer)') is not null
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261107120000'),
+  'PR 1.6 positive control: Migration 4 is applied before its rollback runs');
+
+-- Fail closed: an invitation review item (a re-assignment of a scheduled visit, stored through
+-- create_review_item as the Step 6 ingestion will store it), with its call and visit, all inserted
+-- inside the tested statement, so they are rolled back with it, deferred checks included.
+select throws_ok($rollback$
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values ('00000000-0000-4000-8000-0000000016e1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'tech-1690@example.test', now(), now());
+insert into public.profiles (id, role, full_name) values ('00000000-0000-4000-8000-0000000016e1', 'technician', 'טכנאי בדיקת שחזור');
+insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email)
+  values ('00000000-0000-4000-8000-0000000016f1', '00000000-0000-4000-8000-0000000016e1', true, 'טכנאי בדיקת שחזור', 't-y',
+          'tech-1690-o@example.test');
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000016c1', 'C-16901', 'לקוח בדיקת שחזור', '050-000-1691', 'automated_test', 'pr16-990-1');
+insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000016d1', 'RB-16901', 'RB-16901', 'מוצר בדיקת שחזור', 'automated_test', 'pr16-990-1');
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref)
+  select '00000000-0000-4000-8000-0000000016a1', 'R-16901', '00000000-0000-4000-8000-0000000016c1',
+         '00000000-0000-4000-8000-0000000016d1', t.id, 'תקלת בדיקת שחזור', 'נציגת בדיקה', 'open', 2,
+         'automated_test', 'pr16-990-1'
+  from public.call_types t where t.sort_order = 1;
+insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
+                           status, city, street, source_ref)
+  values ('00000000-0000-4000-8000-0000000016b1', '00000000-0000-4000-8000-0000000016a1', '00000000-0000-4000-8000-0000000016f1',
+          1, 'T-16901', now() + interval '1 day', now() + interval '1 day 2 hours', 'scheduled', 'עיר בדיקה', 'רחוב בדיקה',
+          'pr16-990-1');
+insert into public.visit_events (visit_id, version_after, event_type, to_status)
+  values ('00000000-0000-4000-8000-0000000016b1', 1, 'created', 'scheduled');
+select private.create_review_item('reassignment', 'pr16-990-ri-1', '00000000-0000-4000-8000-0000000016a1',
+  '00000000-0000-4000-8000-0000000016b1', 'invitation', 'pr16-990-evt-1', null, '{"technician": "ב"}', '{"technician": "א"}', null);
+-- >>> BEGIN supabase/rollback/20261107120000_integrity_offline.down.sql
+-- Rollback (down) script for supabase/migrations/20261107120000_integrity_offline.sql
+-- (Step 1 / PR 1.6). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.6 data exists. It refuses to run when any row exists in the three
+-- PR 1.6 tables (review_items, visit_corrections, offline_operations), when a visit_time_reports
+-- row is a correction, when an audit row records a PR 1.6 action or targets a PR 1.6 target table
+-- (visits, review_items), when a later migration is recorded in the history (roll that one back
+-- first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restores
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the three functions that the migration replaced (public.test_data_census and
+-- private.tg_time_report_derive to their PR 1.5 text, private.tg_audit_target to its PR 1.4 text:
+-- byte-identical bodies; CREATE OR REPLACE keeps their grants and triggers), the two audit_logs
+-- CHECKs (PR 1.4), the visit_time_reports source CHECK and table comment (PR 1.5), then drops the
+-- PR 1.6 objects in reverse order, with no CASCADE: an unexpected dependent object makes it fail
+-- instead of silently dropping more. The two visit_time_reports columns are dropped (their rows are
+-- all NULL then); visits keeps its field_version values (a PR 1.5 column). The PR 1.3 to PR 1.5
+-- objects, their grants and the hardening stay. Run it before the PR 1.5 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 9) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261107120000' or h.name = 'integrity_offline') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261107120000' or h.name = 'integrity_offline')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.6 row (a review item, a correction, an offline operation, a corrected or accepted
+  -- field time, or an audit row of a PR 1.6 action or target): nothing is dropped. These rows are
+  -- append-only or never deleted, so the script is valid only before any PR 1.6 data.
+  if exists (select 1 from public.review_items) or exists (select 1 from public.visit_corrections)
+     or exists (select 1 from public.offline_operations)
+     or exists (select 1 from public.visit_time_reports t where t.source <> 'device')
+     or exists (select 1 from public.audit_logs a
+                where a.action in ('visit.corrected', 'review_item.resolved')
+                   or a.target_table in ('visits', 'review_items')) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data';
+  end if;
+
+  -- 1. The functions the migration replaced, restored to their earlier text (same ACL, same
+  --    triggers). Their bodies are copied byte for byte from the PR 1.5 and PR 1.4 migrations, so
+  --    they are not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'service_calls', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.service_calls x
+    union all
+    select 'visits', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visits x
+    union all
+    select 'visit_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_reports x
+    union all
+    select 'visit_signatures', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_signatures x
+    union all
+    select 'visit_time_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_time_reports x
+    union all
+    select 'visit_events', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_events x
+    union all
+    select 'entity_changes', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.entity_changes x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+  create or replace function private.tg_time_report_derive()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+declare
+  v_tech_profile_id uuid;
+  v_tech_is_test boolean;
+  v_visit_technician_id uuid;
+  v_assigned_at timestamptz;
+  v_flags text[] := '{}';
+begin
+  new.received_at := now();
+  new.clock_skew_ms := null;
+  select t.profile_id, t.is_test into v_tech_profile_id, v_tech_is_test
+  from public.technicians t where t.id = new.technician_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown technician';
+  end if;
+  if new.is_test is not true and v_tech_is_test then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a real record cannot reference test data (D47)';
+  end if;
+  if new.source = 'device' and v_tech_profile_id is distinct from new.reported_by_profile_id then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a device report is credited to the technician who reported it';
+  end if;
+  select v.technician_id, v.assigned_at into v_visit_technician_id, v_assigned_at
+  from public.visits v where v.id = new.visit_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown visit';
+  end if;
+  if new.device_sent_at is not null and isfinite(new.device_sent_at) then
+    new.clock_skew_ms := round(extract(epoch from (new.device_sent_at - new.received_at)) * 1000)::bigint;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and extract(epoch from (new.reported_at - new.received_at)) * 1000 - new.clock_skew_ms > 120000 then
+      v_flags := v_flags || 'future_time'::text;
+    end if;
+    if abs(new.clock_skew_ms) > 300000 then
+      v_flags := v_flags || 'large_skew'::text;
+    end if;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and new.technician_id = v_visit_technician_id
+       and extract(epoch from (new.reported_at - v_assigned_at)) * 1000 - new.clock_skew_ms < 0 then
+      v_flags := v_flags || 'before_assignment'::text;
+    end if;
+  end if;
+  new.row_flags := v_flags;
+  return new;
+end
+$$;
+  create or replace function private.tg_audit_target()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  new.occurred_at := now();
+  new.target_is_test := case new.target_table
+    when 'profiles' then (select p.is_test from public.profiles p where p.id = new.target_id)
+    when 'technicians' then (select t.is_test from public.technicians t where t.id = new.target_id)
+    when 'account_requests' then (select r.is_test from public.account_requests r where r.id = new.target_id)
+    when 'role_permissions' then false
+    when 'call_types' then (select x.is_test from public.call_types x where x.id = new.target_id)
+    when 'followup_reasons' then (select x.is_test from public.followup_reasons x where x.id = new.target_id)
+    when 'collection_locations' then (select x.is_test from public.collection_locations x where x.id = new.target_id)
+  end;
+  if new.target_is_test is null then
+    raise exception using errcode = '23503', message = 'audit_logs: unknown audit target';
+  end if;
+  return new;
+end
+$$;
+
+  -- 2. The public API wrappers, then the writers and the internal helpers.
+  drop function public.correct_visit(uuid, text, text, text, integer);
+  drop function public.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.correct_visit(uuid, text, text, text, integer);
+  drop function private.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb);
+  drop function private.offline_operation_replay(uuid, uuid, text, text);
+  drop function private.record_offline_operation(uuid, uuid, text, text, integer, timestamptz, text, integer, text, integer, uuid);
+
+  -- 3. visit_time_reports back to PR 1.5: the correction keys, CHECKs and indexes, the two columns,
+  --    the source CHECK and the table comment.
+  alter table public.visit_time_reports
+    drop constraint visit_time_reports_accepted_review_id_fkey,
+    drop constraint visit_time_reports_correction_id_fkey,
+    drop constraint visit_time_reports_accepted_check,
+    drop constraint visit_time_reports_correction_check,
+    drop constraint visit_time_reports_source_check;
+  drop index public.visit_time_reports_correction_id_idx;
+  drop index public.visit_time_reports_accepted_review_id_idx;
+  alter table public.visit_time_reports
+    drop column correction_id,
+    drop column accepted_review_id;
+  alter table public.visit_time_reports
+    add constraint visit_time_reports_source_check check (source = 'device');
+  comment on table public.visit_time_reports is
+    'Device-reported field times (D45). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current. No write path in PR 1.5 (Step 4, PR 1.6).';
+
+  -- 4. Tables, in reverse dependency order. Their triggers, policies, indexes and constraints go
+  --    with them (DROP is neither DELETE nor TRUNCATE, so the row triggers do not fire).
+  drop table public.offline_operations;
+  drop table public.visit_corrections;
+  drop table public.review_items;
+
+  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  drop trigger t13_field_version on public.visits;
+  alter table public.visits drop constraint visits_id_service_call_id_key;
+
+  -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
+  alter table public.audit_logs
+    drop constraint audit_logs_action_check,
+    add constraint audit_logs_action_check check (action in (
+      'matrix.value_set', 'matrix.value_approved',
+      'account_request.created', 'account_request.approved', 'account_request.rejected', 'account_request.cancelled',
+      'account_creation.authorized',
+      'profile.created', 'profile.role_changed', 'profile.activated', 'profile.deactivated', 'profile.updated',
+      'technician.created', 'technician.updated', 'technician.outlook_email_changed',
+      'credentials.change_authorized', 'creator.bootstrapped',
+      'call_type.created', 'call_type.activated', 'call_type.deactivated',
+      'followup_reason.created', 'followup_reason.activated', 'followup_reason.deactivated', 'followup_reason.deleted',
+      'collection_location.created', 'collection_location.activated', 'collection_location.deactivated',
+      'collection_location.deleted'));
+  alter table public.audit_logs
+    drop constraint audit_logs_target_table_check,
+    add constraint audit_logs_target_table_check check (target_table in (
+      'profiles', 'technicians', 'account_requests', 'role_permissions',
+      'call_types', 'followup_reasons', 'collection_locations'));
+
+  -- 7. The five trigger functions.
+  drop function private.tg_call_child_marker();
+  drop function private.tg_review_item_state();
+  drop function private.tg_visit_correction_guard();
+  drop function private.tg_offline_operation_derive();
+  drop function private.tg_visit_field_version();
+
+  -- 8. (none: no role, no sequence, no view was created.)
+
+  -- 9. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'integrity_offline'. Every row with either is removed (step 0 refused when none exists;
+  --    the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261107120000' or name = 'integrity_offline';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261107120000_integrity_offline.down.sql
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses to run once a review item exists (fail closed)');
+select ok(
+  to_regclass('public.review_items') is not null and to_regprocedure('private.resolve_review_item(uuid,integer,text,jsonb,text)') is not null
+  and (select count(*) from public.review_items) + (select count(*) from public.service_calls) + (select count(*) from public.visits) = 0
+  and not exists (select 1 from public.technicians)
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261107120000'),
+  'PR 1.6: after the refused run nothing was dropped and the fixture is gone');
+
+-- A later migration is recorded: refused with a clear message (not a dependency error at DROP time).
+select throws_ok($rollback$
+insert into supabase_migrations.schema_migrations (version, name) values ('20261201000000', 'later_migration_probe');
+-- >>> BEGIN supabase/rollback/20261107120000_integrity_offline.down.sql
+-- Rollback (down) script for supabase/migrations/20261107120000_integrity_offline.sql
+-- (Step 1 / PR 1.6). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.6 data exists. It refuses to run when any row exists in the three
+-- PR 1.6 tables (review_items, visit_corrections, offline_operations), when a visit_time_reports
+-- row is a correction, when an audit row records a PR 1.6 action or targets a PR 1.6 target table
+-- (visits, review_items), when a later migration is recorded in the history (roll that one back
+-- first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restores
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the three functions that the migration replaced (public.test_data_census and
+-- private.tg_time_report_derive to their PR 1.5 text, private.tg_audit_target to its PR 1.4 text:
+-- byte-identical bodies; CREATE OR REPLACE keeps their grants and triggers), the two audit_logs
+-- CHECKs (PR 1.4), the visit_time_reports source CHECK and table comment (PR 1.5), then drops the
+-- PR 1.6 objects in reverse order, with no CASCADE: an unexpected dependent object makes it fail
+-- instead of silently dropping more. The two visit_time_reports columns are dropped (their rows are
+-- all NULL then); visits keeps its field_version values (a PR 1.5 column). The PR 1.3 to PR 1.5
+-- objects, their grants and the hardening stay. Run it before the PR 1.5 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 9) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261107120000' or h.name = 'integrity_offline') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261107120000' or h.name = 'integrity_offline')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.6 row (a review item, a correction, an offline operation, a corrected or accepted
+  -- field time, or an audit row of a PR 1.6 action or target): nothing is dropped. These rows are
+  -- append-only or never deleted, so the script is valid only before any PR 1.6 data.
+  if exists (select 1 from public.review_items) or exists (select 1 from public.visit_corrections)
+     or exists (select 1 from public.offline_operations)
+     or exists (select 1 from public.visit_time_reports t where t.source <> 'device')
+     or exists (select 1 from public.audit_logs a
+                where a.action in ('visit.corrected', 'review_item.resolved')
+                   or a.target_table in ('visits', 'review_items')) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data';
+  end if;
+
+  -- 1. The functions the migration replaced, restored to their earlier text (same ACL, same
+  --    triggers). Their bodies are copied byte for byte from the PR 1.5 and PR 1.4 migrations, so
+  --    they are not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'service_calls', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.service_calls x
+    union all
+    select 'visits', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visits x
+    union all
+    select 'visit_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_reports x
+    union all
+    select 'visit_signatures', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_signatures x
+    union all
+    select 'visit_time_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_time_reports x
+    union all
+    select 'visit_events', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_events x
+    union all
+    select 'entity_changes', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.entity_changes x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+  create or replace function private.tg_time_report_derive()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+declare
+  v_tech_profile_id uuid;
+  v_tech_is_test boolean;
+  v_visit_technician_id uuid;
+  v_assigned_at timestamptz;
+  v_flags text[] := '{}';
+begin
+  new.received_at := now();
+  new.clock_skew_ms := null;
+  select t.profile_id, t.is_test into v_tech_profile_id, v_tech_is_test
+  from public.technicians t where t.id = new.technician_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown technician';
+  end if;
+  if new.is_test is not true and v_tech_is_test then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a real record cannot reference test data (D47)';
+  end if;
+  if new.source = 'device' and v_tech_profile_id is distinct from new.reported_by_profile_id then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a device report is credited to the technician who reported it';
+  end if;
+  select v.technician_id, v.assigned_at into v_visit_technician_id, v_assigned_at
+  from public.visits v where v.id = new.visit_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown visit';
+  end if;
+  if new.device_sent_at is not null and isfinite(new.device_sent_at) then
+    new.clock_skew_ms := round(extract(epoch from (new.device_sent_at - new.received_at)) * 1000)::bigint;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and extract(epoch from (new.reported_at - new.received_at)) * 1000 - new.clock_skew_ms > 120000 then
+      v_flags := v_flags || 'future_time'::text;
+    end if;
+    if abs(new.clock_skew_ms) > 300000 then
+      v_flags := v_flags || 'large_skew'::text;
+    end if;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and new.technician_id = v_visit_technician_id
+       and extract(epoch from (new.reported_at - v_assigned_at)) * 1000 - new.clock_skew_ms < 0 then
+      v_flags := v_flags || 'before_assignment'::text;
+    end if;
+  end if;
+  new.row_flags := v_flags;
+  return new;
+end
+$$;
+  create or replace function private.tg_audit_target()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  new.occurred_at := now();
+  new.target_is_test := case new.target_table
+    when 'profiles' then (select p.is_test from public.profiles p where p.id = new.target_id)
+    when 'technicians' then (select t.is_test from public.technicians t where t.id = new.target_id)
+    when 'account_requests' then (select r.is_test from public.account_requests r where r.id = new.target_id)
+    when 'role_permissions' then false
+    when 'call_types' then (select x.is_test from public.call_types x where x.id = new.target_id)
+    when 'followup_reasons' then (select x.is_test from public.followup_reasons x where x.id = new.target_id)
+    when 'collection_locations' then (select x.is_test from public.collection_locations x where x.id = new.target_id)
+  end;
+  if new.target_is_test is null then
+    raise exception using errcode = '23503', message = 'audit_logs: unknown audit target';
+  end if;
+  return new;
+end
+$$;
+
+  -- 2. The public API wrappers, then the writers and the internal helpers.
+  drop function public.correct_visit(uuid, text, text, text, integer);
+  drop function public.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.correct_visit(uuid, text, text, text, integer);
+  drop function private.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb);
+  drop function private.offline_operation_replay(uuid, uuid, text, text);
+  drop function private.record_offline_operation(uuid, uuid, text, text, integer, timestamptz, text, integer, text, integer, uuid);
+
+  -- 3. visit_time_reports back to PR 1.5: the correction keys, CHECKs and indexes, the two columns,
+  --    the source CHECK and the table comment.
+  alter table public.visit_time_reports
+    drop constraint visit_time_reports_accepted_review_id_fkey,
+    drop constraint visit_time_reports_correction_id_fkey,
+    drop constraint visit_time_reports_accepted_check,
+    drop constraint visit_time_reports_correction_check,
+    drop constraint visit_time_reports_source_check;
+  drop index public.visit_time_reports_correction_id_idx;
+  drop index public.visit_time_reports_accepted_review_id_idx;
+  alter table public.visit_time_reports
+    drop column correction_id,
+    drop column accepted_review_id;
+  alter table public.visit_time_reports
+    add constraint visit_time_reports_source_check check (source = 'device');
+  comment on table public.visit_time_reports is
+    'Device-reported field times (D45). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current. No write path in PR 1.5 (Step 4, PR 1.6).';
+
+  -- 4. Tables, in reverse dependency order. Their triggers, policies, indexes and constraints go
+  --    with them (DROP is neither DELETE nor TRUNCATE, so the row triggers do not fire).
+  drop table public.offline_operations;
+  drop table public.visit_corrections;
+  drop table public.review_items;
+
+  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  drop trigger t13_field_version on public.visits;
+  alter table public.visits drop constraint visits_id_service_call_id_key;
+
+  -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
+  alter table public.audit_logs
+    drop constraint audit_logs_action_check,
+    add constraint audit_logs_action_check check (action in (
+      'matrix.value_set', 'matrix.value_approved',
+      'account_request.created', 'account_request.approved', 'account_request.rejected', 'account_request.cancelled',
+      'account_creation.authorized',
+      'profile.created', 'profile.role_changed', 'profile.activated', 'profile.deactivated', 'profile.updated',
+      'technician.created', 'technician.updated', 'technician.outlook_email_changed',
+      'credentials.change_authorized', 'creator.bootstrapped',
+      'call_type.created', 'call_type.activated', 'call_type.deactivated',
+      'followup_reason.created', 'followup_reason.activated', 'followup_reason.deactivated', 'followup_reason.deleted',
+      'collection_location.created', 'collection_location.activated', 'collection_location.deactivated',
+      'collection_location.deleted'));
+  alter table public.audit_logs
+    drop constraint audit_logs_target_table_check,
+    add constraint audit_logs_target_table_check check (target_table in (
+      'profiles', 'technicians', 'account_requests', 'role_permissions',
+      'call_types', 'followup_reasons', 'collection_locations'));
+
+  -- 7. The five trigger functions.
+  drop function private.tg_call_child_marker();
+  drop function private.tg_review_item_state();
+  drop function private.tg_visit_correction_guard();
+  drop function private.tg_offline_operation_derive();
+  drop function private.tg_visit_field_version();
+
+  -- 8. (none: no role, no sequence, no view was created.)
+
+  -- 9. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'integrity_offline'. Every row with either is removed (step 0 refused when none exists;
+  --    the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261107120000' or name = 'integrity_offline';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261107120000_integrity_offline.down.sql
+$rollback$,
+  '55000', 'rollback refused: a later migration is recorded; roll it back first',
+  'PR 1.6: the down script refuses while a later migration is recorded');
+select ok(
+  to_regclass('public.visit_corrections') is not null
+  and not exists (select 1 from supabase_migrations.schema_migrations where version = '20261201000000'),
+  'PR 1.6: after that refusal nothing was dropped and the probe row is gone');
+
+-- OPS-1 (as in PR 1.3 to PR 1.5): without a history row (the CLI's version or the MCP name) the
+-- rollback is refused before anything is dropped. The history row is deleted inside the tested
+-- statement.
+select throws_ok($rollback$
+delete from supabase_migrations.schema_migrations where version = '20261107120000' or name = 'integrity_offline';
+-- >>> BEGIN supabase/rollback/20261107120000_integrity_offline.down.sql
+-- Rollback (down) script for supabase/migrations/20261107120000_integrity_offline.sql
+-- (Step 1 / PR 1.6). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.6 data exists. It refuses to run when any row exists in the three
+-- PR 1.6 tables (review_items, visit_corrections, offline_operations), when a visit_time_reports
+-- row is a correction, when an audit row records a PR 1.6 action or targets a PR 1.6 target table
+-- (visits, review_items), when a later migration is recorded in the history (roll that one back
+-- first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restores
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the three functions that the migration replaced (public.test_data_census and
+-- private.tg_time_report_derive to their PR 1.5 text, private.tg_audit_target to its PR 1.4 text:
+-- byte-identical bodies; CREATE OR REPLACE keeps their grants and triggers), the two audit_logs
+-- CHECKs (PR 1.4), the visit_time_reports source CHECK and table comment (PR 1.5), then drops the
+-- PR 1.6 objects in reverse order, with no CASCADE: an unexpected dependent object makes it fail
+-- instead of silently dropping more. The two visit_time_reports columns are dropped (their rows are
+-- all NULL then); visits keeps its field_version values (a PR 1.5 column). The PR 1.3 to PR 1.5
+-- objects, their grants and the hardening stay. Run it before the PR 1.5 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 9) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261107120000' or h.name = 'integrity_offline') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261107120000' or h.name = 'integrity_offline')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.6 row (a review item, a correction, an offline operation, a corrected or accepted
+  -- field time, or an audit row of a PR 1.6 action or target): nothing is dropped. These rows are
+  -- append-only or never deleted, so the script is valid only before any PR 1.6 data.
+  if exists (select 1 from public.review_items) or exists (select 1 from public.visit_corrections)
+     or exists (select 1 from public.offline_operations)
+     or exists (select 1 from public.visit_time_reports t where t.source <> 'device')
+     or exists (select 1 from public.audit_logs a
+                where a.action in ('visit.corrected', 'review_item.resolved')
+                   or a.target_table in ('visits', 'review_items')) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data';
+  end if;
+
+  -- 1. The functions the migration replaced, restored to their earlier text (same ACL, same
+  --    triggers). Their bodies are copied byte for byte from the PR 1.5 and PR 1.4 migrations, so
+  --    they are not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'service_calls', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.service_calls x
+    union all
+    select 'visits', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visits x
+    union all
+    select 'visit_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_reports x
+    union all
+    select 'visit_signatures', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_signatures x
+    union all
+    select 'visit_time_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_time_reports x
+    union all
+    select 'visit_events', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_events x
+    union all
+    select 'entity_changes', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.entity_changes x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+  create or replace function private.tg_time_report_derive()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+declare
+  v_tech_profile_id uuid;
+  v_tech_is_test boolean;
+  v_visit_technician_id uuid;
+  v_assigned_at timestamptz;
+  v_flags text[] := '{}';
+begin
+  new.received_at := now();
+  new.clock_skew_ms := null;
+  select t.profile_id, t.is_test into v_tech_profile_id, v_tech_is_test
+  from public.technicians t where t.id = new.technician_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown technician';
+  end if;
+  if new.is_test is not true and v_tech_is_test then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a real record cannot reference test data (D47)';
+  end if;
+  if new.source = 'device' and v_tech_profile_id is distinct from new.reported_by_profile_id then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a device report is credited to the technician who reported it';
+  end if;
+  select v.technician_id, v.assigned_at into v_visit_technician_id, v_assigned_at
+  from public.visits v where v.id = new.visit_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown visit';
+  end if;
+  if new.device_sent_at is not null and isfinite(new.device_sent_at) then
+    new.clock_skew_ms := round(extract(epoch from (new.device_sent_at - new.received_at)) * 1000)::bigint;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and extract(epoch from (new.reported_at - new.received_at)) * 1000 - new.clock_skew_ms > 120000 then
+      v_flags := v_flags || 'future_time'::text;
+    end if;
+    if abs(new.clock_skew_ms) > 300000 then
+      v_flags := v_flags || 'large_skew'::text;
+    end if;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and new.technician_id = v_visit_technician_id
+       and extract(epoch from (new.reported_at - v_assigned_at)) * 1000 - new.clock_skew_ms < 0 then
+      v_flags := v_flags || 'before_assignment'::text;
+    end if;
+  end if;
+  new.row_flags := v_flags;
+  return new;
+end
+$$;
+  create or replace function private.tg_audit_target()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  new.occurred_at := now();
+  new.target_is_test := case new.target_table
+    when 'profiles' then (select p.is_test from public.profiles p where p.id = new.target_id)
+    when 'technicians' then (select t.is_test from public.technicians t where t.id = new.target_id)
+    when 'account_requests' then (select r.is_test from public.account_requests r where r.id = new.target_id)
+    when 'role_permissions' then false
+    when 'call_types' then (select x.is_test from public.call_types x where x.id = new.target_id)
+    when 'followup_reasons' then (select x.is_test from public.followup_reasons x where x.id = new.target_id)
+    when 'collection_locations' then (select x.is_test from public.collection_locations x where x.id = new.target_id)
+  end;
+  if new.target_is_test is null then
+    raise exception using errcode = '23503', message = 'audit_logs: unknown audit target';
+  end if;
+  return new;
+end
+$$;
+
+  -- 2. The public API wrappers, then the writers and the internal helpers.
+  drop function public.correct_visit(uuid, text, text, text, integer);
+  drop function public.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.correct_visit(uuid, text, text, text, integer);
+  drop function private.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb);
+  drop function private.offline_operation_replay(uuid, uuid, text, text);
+  drop function private.record_offline_operation(uuid, uuid, text, text, integer, timestamptz, text, integer, text, integer, uuid);
+
+  -- 3. visit_time_reports back to PR 1.5: the correction keys, CHECKs and indexes, the two columns,
+  --    the source CHECK and the table comment.
+  alter table public.visit_time_reports
+    drop constraint visit_time_reports_accepted_review_id_fkey,
+    drop constraint visit_time_reports_correction_id_fkey,
+    drop constraint visit_time_reports_accepted_check,
+    drop constraint visit_time_reports_correction_check,
+    drop constraint visit_time_reports_source_check;
+  drop index public.visit_time_reports_correction_id_idx;
+  drop index public.visit_time_reports_accepted_review_id_idx;
+  alter table public.visit_time_reports
+    drop column correction_id,
+    drop column accepted_review_id;
+  alter table public.visit_time_reports
+    add constraint visit_time_reports_source_check check (source = 'device');
+  comment on table public.visit_time_reports is
+    'Device-reported field times (D45). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current. No write path in PR 1.5 (Step 4, PR 1.6).';
+
+  -- 4. Tables, in reverse dependency order. Their triggers, policies, indexes and constraints go
+  --    with them (DROP is neither DELETE nor TRUNCATE, so the row triggers do not fire).
+  drop table public.offline_operations;
+  drop table public.visit_corrections;
+  drop table public.review_items;
+
+  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  drop trigger t13_field_version on public.visits;
+  alter table public.visits drop constraint visits_id_service_call_id_key;
+
+  -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
+  alter table public.audit_logs
+    drop constraint audit_logs_action_check,
+    add constraint audit_logs_action_check check (action in (
+      'matrix.value_set', 'matrix.value_approved',
+      'account_request.created', 'account_request.approved', 'account_request.rejected', 'account_request.cancelled',
+      'account_creation.authorized',
+      'profile.created', 'profile.role_changed', 'profile.activated', 'profile.deactivated', 'profile.updated',
+      'technician.created', 'technician.updated', 'technician.outlook_email_changed',
+      'credentials.change_authorized', 'creator.bootstrapped',
+      'call_type.created', 'call_type.activated', 'call_type.deactivated',
+      'followup_reason.created', 'followup_reason.activated', 'followup_reason.deactivated', 'followup_reason.deleted',
+      'collection_location.created', 'collection_location.activated', 'collection_location.deactivated',
+      'collection_location.deleted'));
+  alter table public.audit_logs
+    drop constraint audit_logs_target_table_check,
+    add constraint audit_logs_target_table_check check (target_table in (
+      'profiles', 'technicians', 'account_requests', 'role_permissions',
+      'call_types', 'followup_reasons', 'collection_locations'));
+
+  -- 7. The five trigger functions.
+  drop function private.tg_call_child_marker();
+  drop function private.tg_review_item_state();
+  drop function private.tg_visit_correction_guard();
+  drop function private.tg_offline_operation_derive();
+  drop function private.tg_visit_field_version();
+
+  -- 8. (none: no role, no sequence, no view was created.)
+
+  -- 9. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'integrity_offline'. Every row with either is removed (step 0 refused when none exists;
+  --    the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261107120000' or name = 'integrity_offline';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261107120000_integrity_offline.down.sql
+$rollback$,
+  '55000', 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped',
+  'PR 1.6: the down script refuses when the history table holds no row for the migration');
+select ok(
+  to_regclass('public.offline_operations') is not null and to_regprocedure('public.resolve_review_item(uuid,integer,text,jsonb,text)') is not null
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261107120000'),
+  'PR 1.6: after that refusal nothing was dropped and the history row is still there');
+
+-- Review TEST-2 (as in PR 1.4 and PR 1.5): each refusal condition alone. One more byte-identical
+-- copy, inside a function, runs the same DO block after a single fixture made inside each tested
+-- statement (so every fixture, every ALTER and every queued deferred check rolls back with it). A
+-- table holds a row on its own only after its parent foreign keys are dropped and its triggers
+-- disabled inside the tested statement.
+create function pg_temp.tm_pr16_down()
+returns void
+language plpgsql
+as $fn$
+begin
+-- >>> BEGIN supabase/rollback/20261107120000_integrity_offline.down.sql
+-- Rollback (down) script for supabase/migrations/20261107120000_integrity_offline.sql
+-- (Step 1 / PR 1.6). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.6 data exists. It refuses to run when any row exists in the three
+-- PR 1.6 tables (review_items, visit_corrections, offline_operations), when a visit_time_reports
+-- row is a correction, when an audit row records a PR 1.6 action or targets a PR 1.6 target table
+-- (visits, review_items), when a later migration is recorded in the history (roll that one back
+-- first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restores
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the three functions that the migration replaced (public.test_data_census and
+-- private.tg_time_report_derive to their PR 1.5 text, private.tg_audit_target to its PR 1.4 text:
+-- byte-identical bodies; CREATE OR REPLACE keeps their grants and triggers), the two audit_logs
+-- CHECKs (PR 1.4), the visit_time_reports source CHECK and table comment (PR 1.5), then drops the
+-- PR 1.6 objects in reverse order, with no CASCADE: an unexpected dependent object makes it fail
+-- instead of silently dropping more. The two visit_time_reports columns are dropped (their rows are
+-- all NULL then); visits keeps its field_version values (a PR 1.5 column). The PR 1.3 to PR 1.5
+-- objects, their grants and the hardening stay. Run it before the PR 1.5 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 9) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261107120000' or h.name = 'integrity_offline') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261107120000' or h.name = 'integrity_offline')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.6 row (a review item, a correction, an offline operation, a corrected or accepted
+  -- field time, or an audit row of a PR 1.6 action or target): nothing is dropped. These rows are
+  -- append-only or never deleted, so the script is valid only before any PR 1.6 data.
+  if exists (select 1 from public.review_items) or exists (select 1 from public.visit_corrections)
+     or exists (select 1 from public.offline_operations)
+     or exists (select 1 from public.visit_time_reports t where t.source <> 'device')
+     or exists (select 1 from public.audit_logs a
+                where a.action in ('visit.corrected', 'review_item.resolved')
+                   or a.target_table in ('visits', 'review_items')) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data';
+  end if;
+
+  -- 1. The functions the migration replaced, restored to their earlier text (same ACL, same
+  --    triggers). Their bodies are copied byte for byte from the PR 1.5 and PR 1.4 migrations, so
+  --    they are not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'service_calls', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.service_calls x
+    union all
+    select 'visits', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visits x
+    union all
+    select 'visit_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_reports x
+    union all
+    select 'visit_signatures', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_signatures x
+    union all
+    select 'visit_time_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_time_reports x
+    union all
+    select 'visit_events', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_events x
+    union all
+    select 'entity_changes', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.entity_changes x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+  create or replace function private.tg_time_report_derive()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+declare
+  v_tech_profile_id uuid;
+  v_tech_is_test boolean;
+  v_visit_technician_id uuid;
+  v_assigned_at timestamptz;
+  v_flags text[] := '{}';
+begin
+  new.received_at := now();
+  new.clock_skew_ms := null;
+  select t.profile_id, t.is_test into v_tech_profile_id, v_tech_is_test
+  from public.technicians t where t.id = new.technician_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown technician';
+  end if;
+  if new.is_test is not true and v_tech_is_test then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a real record cannot reference test data (D47)';
+  end if;
+  if new.source = 'device' and v_tech_profile_id is distinct from new.reported_by_profile_id then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a device report is credited to the technician who reported it';
+  end if;
+  select v.technician_id, v.assigned_at into v_visit_technician_id, v_assigned_at
+  from public.visits v where v.id = new.visit_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown visit';
+  end if;
+  if new.device_sent_at is not null and isfinite(new.device_sent_at) then
+    new.clock_skew_ms := round(extract(epoch from (new.device_sent_at - new.received_at)) * 1000)::bigint;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and extract(epoch from (new.reported_at - new.received_at)) * 1000 - new.clock_skew_ms > 120000 then
+      v_flags := v_flags || 'future_time'::text;
+    end if;
+    if abs(new.clock_skew_ms) > 300000 then
+      v_flags := v_flags || 'large_skew'::text;
+    end if;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and new.technician_id = v_visit_technician_id
+       and extract(epoch from (new.reported_at - v_assigned_at)) * 1000 - new.clock_skew_ms < 0 then
+      v_flags := v_flags || 'before_assignment'::text;
+    end if;
+  end if;
+  new.row_flags := v_flags;
+  return new;
+end
+$$;
+  create or replace function private.tg_audit_target()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  new.occurred_at := now();
+  new.target_is_test := case new.target_table
+    when 'profiles' then (select p.is_test from public.profiles p where p.id = new.target_id)
+    when 'technicians' then (select t.is_test from public.technicians t where t.id = new.target_id)
+    when 'account_requests' then (select r.is_test from public.account_requests r where r.id = new.target_id)
+    when 'role_permissions' then false
+    when 'call_types' then (select x.is_test from public.call_types x where x.id = new.target_id)
+    when 'followup_reasons' then (select x.is_test from public.followup_reasons x where x.id = new.target_id)
+    when 'collection_locations' then (select x.is_test from public.collection_locations x where x.id = new.target_id)
+  end;
+  if new.target_is_test is null then
+    raise exception using errcode = '23503', message = 'audit_logs: unknown audit target';
+  end if;
+  return new;
+end
+$$;
+
+  -- 2. The public API wrappers, then the writers and the internal helpers.
+  drop function public.correct_visit(uuid, text, text, text, integer);
+  drop function public.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.correct_visit(uuid, text, text, text, integer);
+  drop function private.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb);
+  drop function private.offline_operation_replay(uuid, uuid, text, text);
+  drop function private.record_offline_operation(uuid, uuid, text, text, integer, timestamptz, text, integer, text, integer, uuid);
+
+  -- 3. visit_time_reports back to PR 1.5: the correction keys, CHECKs and indexes, the two columns,
+  --    the source CHECK and the table comment.
+  alter table public.visit_time_reports
+    drop constraint visit_time_reports_accepted_review_id_fkey,
+    drop constraint visit_time_reports_correction_id_fkey,
+    drop constraint visit_time_reports_accepted_check,
+    drop constraint visit_time_reports_correction_check,
+    drop constraint visit_time_reports_source_check;
+  drop index public.visit_time_reports_correction_id_idx;
+  drop index public.visit_time_reports_accepted_review_id_idx;
+  alter table public.visit_time_reports
+    drop column correction_id,
+    drop column accepted_review_id;
+  alter table public.visit_time_reports
+    add constraint visit_time_reports_source_check check (source = 'device');
+  comment on table public.visit_time_reports is
+    'Device-reported field times (D45). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current. No write path in PR 1.5 (Step 4, PR 1.6).';
+
+  -- 4. Tables, in reverse dependency order. Their triggers, policies, indexes and constraints go
+  --    with them (DROP is neither DELETE nor TRUNCATE, so the row triggers do not fire).
+  drop table public.offline_operations;
+  drop table public.visit_corrections;
+  drop table public.review_items;
+
+  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  drop trigger t13_field_version on public.visits;
+  alter table public.visits drop constraint visits_id_service_call_id_key;
+
+  -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
+  alter table public.audit_logs
+    drop constraint audit_logs_action_check,
+    add constraint audit_logs_action_check check (action in (
+      'matrix.value_set', 'matrix.value_approved',
+      'account_request.created', 'account_request.approved', 'account_request.rejected', 'account_request.cancelled',
+      'account_creation.authorized',
+      'profile.created', 'profile.role_changed', 'profile.activated', 'profile.deactivated', 'profile.updated',
+      'technician.created', 'technician.updated', 'technician.outlook_email_changed',
+      'credentials.change_authorized', 'creator.bootstrapped',
+      'call_type.created', 'call_type.activated', 'call_type.deactivated',
+      'followup_reason.created', 'followup_reason.activated', 'followup_reason.deactivated', 'followup_reason.deleted',
+      'collection_location.created', 'collection_location.activated', 'collection_location.deactivated',
+      'collection_location.deleted'));
+  alter table public.audit_logs
+    drop constraint audit_logs_target_table_check,
+    add constraint audit_logs_target_table_check check (target_table in (
+      'profiles', 'technicians', 'account_requests', 'role_permissions',
+      'call_types', 'followup_reasons', 'collection_locations'));
+
+  -- 7. The five trigger functions.
+  drop function private.tg_call_child_marker();
+  drop function private.tg_review_item_state();
+  drop function private.tg_visit_correction_guard();
+  drop function private.tg_offline_operation_derive();
+  drop function private.tg_visit_field_version();
+
+  -- 8. (none: no role, no sequence, no view was created.)
+
+  -- 9. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'integrity_offline'. Every row with either is removed (step 0 refused when none exists;
+  --    the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261107120000' or name = 'integrity_offline';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261107120000_integrity_offline.down.sql
+end
+$fn$;
+
+select throws_ok($rollback$
+alter table public.review_items disable trigger user;
+alter table public.review_items drop constraint review_items_service_call_id_fkey;
+insert into public.review_items (review_type, dedupe_key, service_call_id, source, source_ref, submitted_version,
+                                 current_version, is_test)
+  values ('sku_change', 'pr16-990-ri-2', gen_random_uuid(), 'invitation', 'pr16-990-evt-2', '{"sku": "B"}', '{"sku": "A"}', true);
+select pg_temp.tm_pr16_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses when only a review item exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_corrections disable trigger user;
+alter table public.visit_corrections drop constraint visit_corrections_visit_id_fkey,
+  drop constraint visit_corrections_corrected_by_fkey;
+insert into public.visit_corrections (visit_id, field, old_value, new_value, reason, version_before, version_after,
+                                      corrected_by, is_test)
+  values (gen_random_uuid(), 'summary', '"א"', '"ב"', 'בדיקת שחזור', 1, 2, gen_random_uuid(), true);
+select pg_temp.tm_pr16_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses when only a visit correction exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.offline_operations disable trigger user;
+alter table public.offline_operations drop constraint offline_operations_visit_id_fkey,
+  drop constraint offline_operations_actor_profile_id_fkey;
+insert into public.offline_operations (operation_id, actor_profile_id, visit_id, op_type, payload_sha256,
+                                       expected_field_version, device_sent_at, device_tz, device_utc_offset_min, result,
+                                       resulting_field_version, is_test)
+  values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'time_report', repeat('a', 64), 1, now(),
+          'Asia/Jerusalem', 120, 'applied', 1, true);
+select pg_temp.tm_pr16_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses when only an offline operation exists (review TEST-2)');
+select throws_ok($rollback$
+alter table public.visit_time_reports disable trigger user;
+alter table public.visit_time_reports drop constraint visit_time_reports_visit_id_fkey,
+  drop constraint visit_time_reports_technician_id_fkey, drop constraint visit_time_reports_reported_by_profile_id_fkey,
+  drop constraint visit_time_reports_correction_id_fkey;
+insert into public.visit_time_reports (visit_id, reported_by_profile_id, technician_id, kind, reported_at, source,
+                                       correction_id, is_test)
+  values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'arrived', now(), 'correction', gen_random_uuid(), true);
+select pg_temp.tm_pr16_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses when only a corrected field time exists (review TEST-2)');
+select throws_ok($rollback$
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values ('00000000-0000-4000-8000-0000000016e1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'tech-1690@example.test', now(), now());
+insert into public.profiles (id, role, full_name) values ('00000000-0000-4000-8000-0000000016e1', 'technician', 'טכנאי בדיקת שחזור');
+insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email)
+  values ('00000000-0000-4000-8000-0000000016f1', '00000000-0000-4000-8000-0000000016e1', true, 'טכנאי בדיקת שחזור', 't-y',
+          'tech-1690-o@example.test');
+insert into public.customers (id, customer_number, name, phone, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000016c1', 'C-16901', 'לקוח בדיקת שחזור', '050-000-1691', 'automated_test', 'pr16-990-1');
+insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref)
+  values ('00000000-0000-4000-8000-0000000016d1', 'RB-16901', 'RB-16901', 'מוצר בדיקת שחזור', 'automated_test', 'pr16-990-1');
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref)
+  select '00000000-0000-4000-8000-0000000016a1', 'R-16901', '00000000-0000-4000-8000-0000000016c1',
+         '00000000-0000-4000-8000-0000000016d1', t.id, 'תקלת בדיקת שחזור', 'נציגת בדיקה', 'open', 2,
+         'automated_test', 'pr16-990-1'
+  from public.call_types t where t.sort_order = 1;
+insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
+                           status, city, street, source_ref)
+  values ('00000000-0000-4000-8000-0000000016b1', '00000000-0000-4000-8000-0000000016a1', '00000000-0000-4000-8000-0000000016f1',
+          1, 'T-16901', now() + interval '1 day', now() + interval '1 day 2 hours', 'scheduled', 'עיר בדיקה', 'רחוב בדיקה',
+          'pr16-990-1');
+insert into public.visit_events (visit_id, version_after, event_type, to_status)
+  values ('00000000-0000-4000-8000-0000000016b1', 1, 'created', 'scheduled');
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values ('00000000-0000-4000-8000-0000000016c9', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'creator-1690@example.test', now(), now());
+select private.bootstrap_first_creator('00000000-0000-4000-8000-0000000016c9', 'יוצר בדיקת שחזור');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000016c9","role":"authenticated"}', true);
+select private.write_audit('visit.corrected', 'visits', '00000000-0000-4000-8000-0000000016b1', '{}');
+select set_config('request.jwt.claims', '', true);
+select pg_temp.tm_pr16_down();
+$rollback$,
+  '55000', 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data',
+  'PR 1.6: the down script refuses when only a PR 1.6 audit row exists (review TEST-2)');
+select ok(
+  to_regclass('public.review_items') is not null and to_regprocedure('private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)') is not null
+  and (select count(*) from public.review_items) + (select count(*) from public.visit_corrections)
+      + (select count(*) from public.offline_operations) + (select count(*) from public.visit_time_reports)
+      + (select count(*) from public.audit_logs) + (select count(*) from public.visits) = 0
+  and (select count(*) from pg_constraint k
+       where k.conname in ('review_items_service_call_id_fkey', 'visit_corrections_visit_id_fkey',
+                           'visit_corrections_corrected_by_fkey', 'offline_operations_visit_id_fkey',
+                           'offline_operations_actor_profile_id_fkey', 'visit_time_reports_visit_id_fkey',
+                           'visit_time_reports_technician_id_fkey', 'visit_time_reports_reported_by_profile_id_fkey',
+                           'visit_time_reports_correction_id_fkey')) = 9
+  and not exists (select 1 from pg_trigger t
+                  where t.tgrelid in ('public.review_items'::regclass, 'public.visit_corrections'::regclass,
+                                      'public.offline_operations'::regclass, 'public.visit_time_reports'::regclass)
+                    and not t.tgisinternal and t.tgenabled <> 'O'),
+  'PR 1.6: after those refusals nothing was dropped, every fixture is gone, and the foreign keys and triggers are back');
+
+-- The run on the empty tables, with an MCP-style history row next to the CLI's (both removed).
+insert into supabase_migrations.schema_migrations (version, name) values ('20261112093013', 'integrity_offline');
+
+-- >>> BEGIN supabase/rollback/20261107120000_integrity_offline.down.sql
+-- Rollback (down) script for supabase/migrations/20261107120000_integrity_offline.sql
+-- (Step 1 / PR 1.6). Not a migration: the Supabase CLI never applies files in this folder.
+--
+-- When: only before any PR 1.6 data exists. It refuses to run when any row exists in the three
+-- PR 1.6 tables (review_items, visit_corrections, offline_operations), when a visit_time_reports
+-- row is a correction, when an audit row records a PR 1.6 action or targets a PR 1.6 target table
+-- (visits, review_items), when a later migration is recorded in the history (roll that one back
+-- first), or when the history table exists without a row for this migration.
+-- How: as postgres, with the owner's separate approval for any remote run (D52 rule 4, D53;
+-- PR 1.3 B6). Locally:
+--   psql -U postgres -v ON_ERROR_STOP=1 --single-transaction -f <this file>
+-- The whole script is one DO block (PR 1.3 re-review R-S3): the refusals, every DROP, the restores
+-- and the history delete are one statement, so a refusal or any error cancels all of it whatever
+-- the client flags. Static DDL only (no dynamic SQL).
+-- It restores the three functions that the migration replaced (public.test_data_census and
+-- private.tg_time_report_derive to their PR 1.5 text, private.tg_audit_target to its PR 1.4 text:
+-- byte-identical bodies; CREATE OR REPLACE keeps their grants and triggers), the two audit_logs
+-- CHECKs (PR 1.4), the visit_time_reports source CHECK and table comment (PR 1.5), then drops the
+-- PR 1.6 objects in reverse order, with no CASCADE: an unexpected dependent object makes it fail
+-- instead of silently dropping more. The two visit_time_reports columns are dropped (their rows are
+-- all NULL then); visits keeps its field_version values (a PR 1.5 column). The PR 1.3 to PR 1.5
+-- objects, their grants and the hardening stay. Run it before the PR 1.5 down script.
+-- It also removes the migration history row (the CLI version, or an MCP apply's name, step 9) and
+-- refuses to run when the history table exists without one.
+-- tests/db/990_rollback.test.sql carries byte-identical copies (checked by tests/ci): one runs it
+-- on the empty tables; the others prove that each refusal condition stops it.
+
+do $down$
+declare
+  v_history_rows bigint;
+begin
+  -- 0. Fail closed, before anything is dropped. A later migration may depend on these objects:
+  --    refuse, with a clear message instead of a dependency error at DROP time. The history table
+  --    must hold this migration's row (the CLI version or the MCP name).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    if not exists (
+      select 1 from supabase_migrations.schema_migrations h
+      where h.version = '20261107120000' or h.name = 'integrity_offline') then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+    if exists (
+      select 1 from supabase_migrations.schema_migrations m
+      where m.version > (select max(h.version) from supabase_migrations.schema_migrations h
+                         where h.version = '20261107120000' or h.name = 'integrity_offline')) then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: a later migration is recorded; roll it back first';
+    end if;
+  end if;
+  -- Any PR 1.6 row (a review item, a correction, an offline operation, a corrected or accepted
+  -- field time, or an audit row of a PR 1.6 action or target): nothing is dropped. These rows are
+  -- append-only or never deleted, so the script is valid only before any PR 1.6 data.
+  if exists (select 1 from public.review_items) or exists (select 1 from public.visit_corrections)
+     or exists (select 1 from public.offline_operations)
+     or exists (select 1 from public.visit_time_reports t where t.source <> 'device')
+     or exists (select 1 from public.audit_logs a
+                where a.action in ('visit.corrected', 'review_item.resolved')
+                   or a.target_table in ('visits', 'review_items')) then
+    raise exception using errcode = '55000',
+      message = 'rollback refused: PR 1.6 data exists (review items, corrections, offline operations or their audit rows); this down script is valid only before any PR 1.6 data';
+  end if;
+
+  -- 1. The functions the migration replaced, restored to their earlier text (same ACL, same
+  --    triggers). Their bodies are copied byte for byte from the PR 1.5 and PR 1.4 migrations, so
+  --    they are not indented.
+  create or replace function public.test_data_census()
+  returns table (table_name text, marker text, bucket text, test_rows bigint)
+  language plpgsql
+  stable
+  security invoker
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  if not (private.is_creator()
+          or (nullif(current_setting('request.jwt.claims', true), '') is null
+              and nullif(current_setting('request.jwt.claim.sub', true), '') is null
+              and current_user not in ('authenticated', 'anon', 'service_role'))) then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  return query
+    select 'profiles'::text, 'is_test'::text, 'all sources'::text, count(*) filter (where p.is_test)
+    from public.profiles p
+    union all
+    select 'technicians', 'is_test', 'all sources', count(*) filter (where t.is_test)
+    from public.technicians t
+    union all
+    select 'account_requests', 'is_test', 'all sources', count(*) filter (where r.is_test)
+    from public.account_requests r
+    union all
+    select 'audit_logs', 'target_is_test', 'all sources', count(*) filter (where a.target_is_test)
+    from public.audit_logs a
+    union all
+    select 'brands', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.brands x
+    union all
+    select 'suppliers', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.suppliers x
+    union all
+    select 'products', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.products x
+    union all
+    select 'products', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.products x
+    union all
+    select 'customers', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.customers x
+    union all
+    select 'customers', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.customers x
+    union all
+    select 'call_types', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.call_types x
+    union all
+    select 'followup_reasons', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.followup_reasons x
+    union all
+    select 'collection_locations', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.collection_locations x
+    union all
+    select 'service_calls', 'is_test', 'simulator', count(*) filter (where x.is_test and x.data_source = 'simulator')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'automated_test', count(*) filter (where x.is_test and x.data_source = 'automated_test')
+    from public.service_calls x
+    union all
+    select 'service_calls', 'is_test', 'other sources',
+           count(*) filter (where x.is_test and x.data_source not in ('simulator', 'automated_test'))
+    from public.service_calls x
+    union all
+    select 'visits', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visits x
+    union all
+    select 'visit_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_reports x
+    union all
+    select 'visit_signatures', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_signatures x
+    union all
+    select 'visit_time_reports', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_time_reports x
+    union all
+    select 'visit_events', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.visit_events x
+    union all
+    select 'entity_changes', 'is_test', 'all sources', count(*) filter (where x.is_test)
+    from public.entity_changes x
+    union all
+    select 'permissions', 'exempt', 'configuration catalogue (D33); no test variants', 0::bigint
+    union all
+    select 'role_permissions', 'exempt', 'configuration values (D33, D51); no test variants', 0::bigint
+    union all
+    select 'storage', 'none', 'no buckets in Step 1', 0::bigint;
+end
+$$;
+  create or replace function private.tg_time_report_derive()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+declare
+  v_tech_profile_id uuid;
+  v_tech_is_test boolean;
+  v_visit_technician_id uuid;
+  v_assigned_at timestamptz;
+  v_flags text[] := '{}';
+begin
+  new.received_at := now();
+  new.clock_skew_ms := null;
+  select t.profile_id, t.is_test into v_tech_profile_id, v_tech_is_test
+  from public.technicians t where t.id = new.technician_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown technician';
+  end if;
+  if new.is_test is not true and v_tech_is_test then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a real record cannot reference test data (D47)';
+  end if;
+  if new.source = 'device' and v_tech_profile_id is distinct from new.reported_by_profile_id then
+    raise exception using errcode = '23514', message = 'visit_time_reports: a device report is credited to the technician who reported it';
+  end if;
+  select v.technician_id, v.assigned_at into v_visit_technician_id, v_assigned_at
+  from public.visits v where v.id = new.visit_id;
+  if not found then
+    raise exception using errcode = '23503', message = 'visit_time_reports: unknown visit';
+  end if;
+  if new.device_sent_at is not null and isfinite(new.device_sent_at) then
+    new.clock_skew_ms := round(extract(epoch from (new.device_sent_at - new.received_at)) * 1000)::bigint;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and extract(epoch from (new.reported_at - new.received_at)) * 1000 - new.clock_skew_ms > 120000 then
+      v_flags := v_flags || 'future_time'::text;
+    end if;
+    if abs(new.clock_skew_ms) > 300000 then
+      v_flags := v_flags || 'large_skew'::text;
+    end if;
+    if new.reported_at is not null and isfinite(new.reported_at)
+       and new.technician_id = v_visit_technician_id
+       and extract(epoch from (new.reported_at - v_assigned_at)) * 1000 - new.clock_skew_ms < 0 then
+      v_flags := v_flags || 'before_assignment'::text;
+    end if;
+  end if;
+  new.row_flags := v_flags;
+  return new;
+end
+$$;
+  create or replace function private.tg_audit_target()
+  returns trigger
+  language plpgsql
+  set search_path = pg_catalog, pg_temp
+  as $$
+begin
+  new.occurred_at := now();
+  new.target_is_test := case new.target_table
+    when 'profiles' then (select p.is_test from public.profiles p where p.id = new.target_id)
+    when 'technicians' then (select t.is_test from public.technicians t where t.id = new.target_id)
+    when 'account_requests' then (select r.is_test from public.account_requests r where r.id = new.target_id)
+    when 'role_permissions' then false
+    when 'call_types' then (select x.is_test from public.call_types x where x.id = new.target_id)
+    when 'followup_reasons' then (select x.is_test from public.followup_reasons x where x.id = new.target_id)
+    when 'collection_locations' then (select x.is_test from public.collection_locations x where x.id = new.target_id)
+  end;
+  if new.target_is_test is null then
+    raise exception using errcode = '23503', message = 'audit_logs: unknown audit target';
+  end if;
+  return new;
+end
+$$;
+
+  -- 2. The public API wrappers, then the writers and the internal helpers.
+  drop function public.correct_visit(uuid, text, text, text, integer);
+  drop function public.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.correct_visit(uuid, text, text, text, integer);
+  drop function private.resolve_review_item(uuid, integer, text, jsonb, text);
+  drop function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb);
+  drop function private.offline_operation_replay(uuid, uuid, text, text);
+  drop function private.record_offline_operation(uuid, uuid, text, text, integer, timestamptz, text, integer, text, integer, uuid);
+
+  -- 3. visit_time_reports back to PR 1.5: the correction keys, CHECKs and indexes, the two columns,
+  --    the source CHECK and the table comment.
+  alter table public.visit_time_reports
+    drop constraint visit_time_reports_accepted_review_id_fkey,
+    drop constraint visit_time_reports_correction_id_fkey,
+    drop constraint visit_time_reports_accepted_check,
+    drop constraint visit_time_reports_correction_check,
+    drop constraint visit_time_reports_source_check;
+  drop index public.visit_time_reports_correction_id_idx;
+  drop index public.visit_time_reports_accepted_review_id_idx;
+  alter table public.visit_time_reports
+    drop column correction_id,
+    drop column accepted_review_id;
+  alter table public.visit_time_reports
+    add constraint visit_time_reports_source_check check (source = 'device');
+  comment on table public.visit_time_reports is
+    'Device-reported field times (D45). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current. No write path in PR 1.5 (Step 4, PR 1.6).';
+
+  -- 4. Tables, in reverse dependency order. Their triggers, policies, indexes and constraints go
+  --    with them (DROP is neither DELETE nor TRUNCATE, so the row triggers do not fire).
+  drop table public.offline_operations;
+  drop table public.visit_corrections;
+  drop table public.review_items;
+
+  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  drop trigger t13_field_version on public.visits;
+  alter table public.visits drop constraint visits_id_service_call_id_key;
+
+  -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
+  alter table public.audit_logs
+    drop constraint audit_logs_action_check,
+    add constraint audit_logs_action_check check (action in (
+      'matrix.value_set', 'matrix.value_approved',
+      'account_request.created', 'account_request.approved', 'account_request.rejected', 'account_request.cancelled',
+      'account_creation.authorized',
+      'profile.created', 'profile.role_changed', 'profile.activated', 'profile.deactivated', 'profile.updated',
+      'technician.created', 'technician.updated', 'technician.outlook_email_changed',
+      'credentials.change_authorized', 'creator.bootstrapped',
+      'call_type.created', 'call_type.activated', 'call_type.deactivated',
+      'followup_reason.created', 'followup_reason.activated', 'followup_reason.deactivated', 'followup_reason.deleted',
+      'collection_location.created', 'collection_location.activated', 'collection_location.deactivated',
+      'collection_location.deleted'));
+  alter table public.audit_logs
+    drop constraint audit_logs_target_table_check,
+    add constraint audit_logs_target_table_check check (target_table in (
+      'profiles', 'technicians', 'account_requests', 'role_permissions',
+      'call_types', 'followup_reasons', 'collection_locations'));
+
+  -- 7. The five trigger functions.
+  drop function private.tg_call_child_marker();
+  drop function private.tg_review_item_state();
+  drop function private.tg_visit_correction_guard();
+  drop function private.tg_offline_operation_derive();
+  drop function private.tg_visit_field_version();
+
+  -- 8. (none: no role, no sequence, no view was created.)
+
+  -- 9. The migration history (PR 1.3 review OPS-1): the CLI records the file's version; MCP
+  --    apply_migration records a version the server assigns, with the name passed to it, which must
+  --    be 'integrity_offline'. Every row with either is removed (step 0 refused when none exists;
+  --    the count is checked again here).
+  if to_regclass('supabase_migrations.schema_migrations') is not null then
+    delete from supabase_migrations.schema_migrations
+    where version = '20261107120000' or name = 'integrity_offline';
+    get diagnostics v_history_rows = row_count;
+    if v_history_rows = 0 then
+      raise exception using errcode = '55000',
+        message = 'rollback refused: no migration history row with version 20261107120000 or name integrity_offline; nothing was dropped';
+    end if;
+  end if;
+end
+$down$;
+-- <<< END supabase/rollback/20261107120000_integrity_offline.down.sql
+
+select ok(
+  to_regclass('public.review_items') is null and to_regclass('public.visit_corrections') is null
+  and to_regclass('public.offline_operations') is null
+  and not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname in ('public', 'private')
+                    and p.proname in ('tg_call_child_marker', 'tg_review_item_state', 'tg_visit_correction_guard',
+                                      'tg_offline_operation_derive', 'tg_visit_field_version', 'create_review_item',
+                                      'offline_operation_replay', 'record_offline_operation', 'correct_visit',
+                                      'resolve_review_item'))
+  and not exists (select 1 from pg_trigger where tgname = 't13_field_version')
+  and not exists (select 1 from pg_constraint where conname = 'visits_id_service_call_id_key')
+  and not exists (select 1 from pg_attribute a where a.attrelid = 'public.visit_time_reports'::regclass and not a.attisdropped
+                    and a.attname in ('correction_id', 'accepted_review_id')),
+  'PR 1.6: the three tables, the 12 functions, the visits trigger and key and the two visit_time_reports columns are gone');
+-- The three replaced functions are back to their earlier text: md5(prosrc) and
+-- md5(pg_get_functiondef) as computed on a database built from Migrations 1 to 3 (PostgreSQL 17;
+-- docs/review/step1-pr16/README.md section 9).
+select results_eq(
+  $$ select p.proname::text collate "default", md5(p.prosrc) collate "default", md5(pg_get_functiondef(p.oid)) collate "default"
+     from pg_proc p where p.oid in ('private.tg_audit_target()'::regprocedure, 'public.test_data_census()'::regprocedure,
+                                    'private.tg_time_report_derive()'::regprocedure)
+     order by p.proname::text collate "C" $$,
+  $$ values ('test_data_census', '4a651f5edf43d06916c45ebc7654ae05', '83fe88a2b81c1fc9582a2f09f655a72f'),
+            ('tg_audit_target', 'd25cf9e179600a75b7812b9a04c23d29', 'bef804c030ce770fd7c2ba2a11dc3700'),
+            ('tg_time_report_derive', '5a07fe647a2d760096b6b8f1091f6b01', '5de862f735265d0b5713c1479a667c7d') $$,
+  'PR 1.6: test_data_census and tg_time_report_derive are restored byte for byte to PR 1.5, tg_audit_target to PR 1.4');
+select is(
+  (select pg_catalog.md5(pg_catalog.string_agg(pg_catalog.pg_get_functiondef(p.oid), '|' order by p.proname, p.oid))
+   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'private'
+     and p.proname = any (array['audit_row_hash', 'audit_chain_verify', 'write_audit', 'tg_audit_target', 'tg_audit_chain',
+                                'tg_reject_update_delete', 'tg_reject_truncate', 'tg_one_way_people']::name[])),
+  'd30c54fba69e0689cd53735e46f99404',
+  'PR 1.6: the audit anchor''s functions fingerprint is the PR 1.5 value again');
+-- The whole catalog of public and private equals a database built from Migrations 1 to 3, by
+-- fingerprints of every function definition and ACL, constraint, trigger, column (type, NOT NULL,
+-- default), relation (kind, ACL, RLS, comment), index and policy (PostgreSQL 17; README section 9).
+select results_eq(
+  $$ select x.k, x.v collate "default" from (
+     select 'functions'::text, md5(string_agg(n.nspname || '.' || p.proname || ':' || pg_get_functiondef(p.oid), '|' order by n.nspname, p.proname, p.oid))
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
+     union all
+     select 'function ACLs', md5(string_agg(p.oid::regprocedure::text || coalesce(p.proacl::text, ''), '|' order by p.oid::regprocedure::text))
+     from pg_proc p where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+     union all
+     select 'constraints', md5(string_agg(c.relname || '.' || k.conname || '=' || pg_get_constraintdef(k.oid), '|' order by c.relname, k.conname))
+     from pg_constraint k join pg_class c on c.oid = k.conrelid where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+     union all
+     select 'triggers', md5(string_agg(pg_get_triggerdef(t.oid), '|' order by c.relname, t.tgname))
+     from pg_trigger t join pg_class c on c.oid = t.tgrelid
+     where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and not t.tgisinternal
+     union all
+     select 'columns', md5(string_agg(c.relname || '.' || a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull
+                                      || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), ''), '|' order by c.relname, a.attname))
+     from pg_attribute a join pg_class c on c.oid = a.attrelid left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+     where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace) and a.attnum > 0 and not a.attisdropped
+     union all
+     select 'relations', md5(string_agg(c.relname || ':' || c.relkind::text || ':' || coalesce(c.relacl::text, '') || ':' || c.relrowsecurity
+                                        || ':' || coalesce(obj_description(c.oid, 'pg_class'), ''), '|' order by c.relname))
+     from pg_class c where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+     union all
+     select 'indexes', md5(string_agg(pg_get_indexdef(i.indexrelid), '|' order by pg_get_indexdef(i.indexrelid)))
+     from pg_index i join pg_class c on c.oid = i.indrelid where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
+     union all
+     select 'policies', md5(string_agg(pol.polname || ':' || pg_get_expr(pol.polqual, pol.polrelid), '|' order by pol.polname))
+     from pg_policy pol) x (k, v) $$,
+  $$ values ('functions'::text, '73f2bc5270af30ce3874471cc7a5f4ea'::text), ('function ACLs', '0773fd0da3d280d21d98377c5b8603c1'),
+            ('constraints', '2e28e31d63c9b3aa3acadba0485b13e8'), ('triggers', '2de1c7211cb917d235cc609907a0cb66'),
+            ('columns', '9b350c944d8467453d554392cd1f70a9'), ('relations', '6db31c3907b0a906016c2afb1add0a28'),
+            ('indexes', 'f6add8a9b5e9eee5868a7681ea3f0f29'), ('policies', 'ced0c5455e921edab80f9cde3a9bde4d') $$,
+  'PR 1.6: every function, ACL, constraint, trigger, column, relation, index and policy equals the catalog built from Migrations 1 to 3');
+select ok(
+  not exists (select 1 from supabase_migrations.schema_migrations where version = '20261107120000' or name = 'integrity_offline')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261106120000')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261105120000')
+  and exists (select 1 from supabase_migrations.schema_migrations where version = '20261104120000'),
+  'PR 1.6: its history rows are removed (CLI version and MCP name); the PR 1.3 to PR 1.5 rows stay');
+select results_eq(
+  $$ select t from (select distinct c.table_name as t from public.test_data_census() c) x order by t collate "C" $$,
+  $$ values ('account_requests'), ('audit_logs'), ('brands'), ('call_types'), ('collection_locations'), ('customers'),
+            ('entity_changes'), ('followup_reasons'), ('permissions'), ('products'), ('profiles'), ('role_permissions'),
+            ('service_calls'), ('storage'), ('suppliers'), ('technicians'), ('visit_events'), ('visit_reports'),
+            ('visit_signatures'), ('visit_time_reports'), ('visits') $$,
+  'PR 1.6: the census covers the PR 1.3 to PR 1.5 tables again');
 
 -- ---------------------------------------------------------------------------------------------
 -- PR 1.5 (Migration 3) down script

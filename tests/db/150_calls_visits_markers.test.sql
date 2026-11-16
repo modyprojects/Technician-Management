@@ -15,6 +15,9 @@
 -- Real-marked rows are impossible before go-live. Section 8 relaxes the relevant CHECKs inside this
 -- rolled-back transaction (PR 1.3 owner question Q3) and is last, so every earlier test runs against
 -- the full set of constraints.
+-- PR 1.6: review_items, visit_corrections and offline_operations reference service_calls and
+-- visits, so the TRUNCATE probes of those two tables (and their temporary grants) list them too;
+-- their own markers and guards are asserted in 230_integrity_schema.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(34);
@@ -90,12 +93,14 @@ create temporary table tm_setup (k text primary key, sql text not null) on commi
 insert into tm_setup values
   ('service_role',
    'grant select, insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes to service_role;
+      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.review_items, public.visit_corrections, public.offline_operations to service_role;
     grant select on public.profiles, public.technicians, public.customers, public.products, public.call_types,
       public.followup_reasons, public.collection_locations to service_role'),
   ('authenticated_writes',
    'grant insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes to authenticated');
+      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.review_items, public.visit_corrections, public.offline_operations to authenticated');
 
 create temporary table tm_case (
   n integer generated always as identity, grp text not null, label text not null, stmt text not null, expected text not null
@@ -368,10 +373,10 @@ insert into tm_case (grp, label, stmt, expected) values
   ('guards', 'truncate visit_events', 'truncate public.visit_events', '55000 visit_events cannot be truncated'),
   ('guards', 'truncate entity_changes', 'truncate public.entity_changes', '55000 entity_changes cannot be truncated'),
   ('guards', 'truncate visits with its children',
-   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 visits cannot be truncated'),
   ('guards', 'truncate service_calls with every table that references it',
-   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
    '55000 service_calls cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'guards' and c.label like 'marker:%' order by c.n $$,
