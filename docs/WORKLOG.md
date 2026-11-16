@@ -1,5 +1,17 @@
 # Work Log (English only)
 
+## 2026-11-16 — D62: QA corrections per real screen
+- **Owner clarification (2026-11-16), recorded as D62:** the 50 QA corrections are implemented with their real screens, not at the end. The per-screen cycle is:
+  - review the QA requirements;
+  - build the screen with them;
+  - test its acceptance criteria;
+  - give the owner an owner-only Preview;
+  - apply the owner's requested changes before the next screen.
+- Outdated demo behaviour is never rebuilt first. The MODY design is kept except where the QA document requires a change.
+- **Reporting:** each screen is reported in Hebrew with the QA IDs implemented and still pending.
+- **Order:** the approved order continues: Migration 3 (apply on approval), PR 1.6 (Migration 4), PR 1.7, PR 1.8 (Migration 5), then Step 2.
+- `docs/ROADMAP.md` "Current priority" updated. Documentation only.
+
 ## 2026-11-12 — D61: the real application and the demo
 - **Owner requirement (2026-11-12), recorded as D61:**
   - `/dev/demo` stays a development and demonstration environment with fictional data. It is isolated from the real application, restricted to authorized development access, and not deleted yet.

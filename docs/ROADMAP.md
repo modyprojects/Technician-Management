@@ -66,6 +66,8 @@ Real use starts only after Microsoft 365 is connected (D23). Steps 0–10 run wi
 8. Move to Step 1 only after approving the ERD, schema and RLS.
 
 ## Current priority
+**Owner, 2026-11-16 (D62):** the approved order continues without a further planning phase. Each real screen is built with its QA corrections included from the start, tested against its acceptance criteria and shown on an owner-only Preview. The owner's requested changes are applied before the next screen starts. Each completed screen is reported with the QA IDs implemented and still pending.
+
 **Owner, 2026-11-12 (D60):** apply Migration 3 (separate approval), then PR 1.6 (Migration 4), PR 1.7 and PR 1.8 (Migration 5, accounts and permissions per D60). Then real authentication and unified user management (Step 2), the simulator (Step 6) and the technician screens (Step 3), each with its QA corrections (section "QA corrections 01").
 
 **Owner, 2026-11-11 (after the status audit):** complete the Step 1 database chain locally: PR 1.5 (Migration 3), then PR 1.6 (Migration 4). No migration is applied to Supabase without the owner's separate approval (D52 rule 4, D55); PR #12 and PR #14 are merged only with the owner's separate approval (D55 (10)). Then the order above: real authentication (Step 2), the simulator (Step 6), technician screens on real data (Step 3). Work runs sequentially under D58.
