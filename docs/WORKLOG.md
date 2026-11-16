@@ -1,5 +1,15 @@
 # Work Log (English only)
 
+## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
+- **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):
+  - S1: accepting a second device report after an office correction of the same field time is refused (PT409).
+  - S2: a reused review dedupe key returns the stored item only for an exact replay; anything else is refused (23505).
+  - S3 (TEMPORARY, OQ-7): a treatment summary never changes after insert (`t11_frozen`), and a closed visit keeps its continuation reason and next-visit notes (`t14_closed_fields`); the D44 path for cancelled visits stays open.
+  - N1: unique indexes on the two correction keys. N2: the second-report contract checks its times and kind. N3: `conflicts` is checked before any lock.
+- **Documented:** N4 (READ COMMITTED for the Step 4 writers) and N5 (ownership checks and a server-side payload hash). N6 was already covered by `990`.
+- **Local results:** pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS; lint and typecheck clean. The record is in `docs/review/step1-pr16/README.md` section 12.
+
 ## 2026-11-16 — Step 1 / PR 1.6: Migration 4 (integrity and offline), local only
 - Branch `claude/step1-pr16-integrity-offline`, stacked on PR 1.5's head `5b2d2be`. Migrations 1-3 unchanged. **Not applied, not pushed.**
 - **Migration** `20261107120000_integrity_offline.sql` (sha256 `2052f4de…2ffd`, 1,349 lines):
