@@ -10,6 +10,16 @@
 - **Documented:** N4 (READ COMMITTED for the Step 4 writers) and N5 (ownership checks and a server-side payload hash). N6 was already covered by `990`.
 - **Local results:** pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS; lint and typecheck clean. The record is in `docs/review/step1-pr16/README.md` section 12.
 
+## 2026-11-16 — Migration 3 applied to the remote project (PR 1.5)
+- **Approval:** the owner's explicit approval for one application (PR #25 `5b2d2be`, SQL `37b803db…eecb`, payload `8b9decd8…313d`).
+- **Pre-checks (read-only):** hashes matched, only Migrations 1 and 2 were present, no Migration 3 objects, fingerprint 14/14 unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116094444`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–3 build on 14/14.
+  - User rows 0; the audit anchor is unchanged; advisors are unchanged (one WARN).
+  - Details: `docs/review/step1-pr15/README.md` §17.
+
 ## 2026-11-16 — Step 1 / PR 1.6: Migration 4 (integrity and offline), local only
 - Branch `claude/step1-pr16-integrity-offline`, stacked on PR 1.5's head `5b2d2be`. Migrations 1-3 unchanged. **Not applied, not pushed.**
 - **Migration** `20261107120000_integrity_offline.sql` (sha256 `2052f4de…2ffd`, 1,349 lines):
@@ -164,6 +174,7 @@
   - **Tests:** a "PR 2.2 review fixes" unit block (9 tests) and 2 more unit tests in the "PR 2.2 port alignment" block; an e2e raw-response test of `selfRole` per account screen (CA-5 a). Mutations checked: removing either stale check, the caller check of "פעיל", the cancelled-after-approval branch, the notices' pending filter, the session's inactive check, `versionAfter`'s simulated rule, `selfRole` "creator" on every page and a hard-coded `expectedVersion: 1` for deactivation each fail a test.
   - **Not changed (reasons in the README):** no visible fixture of an approved, unfulfilled request (the visible changes of PR 2.2 stay the plan's two; its UI path is a PR 2.3 test obligation); no matrix cell version yet (CA-4); `createAccount` keeps "tech" at the port (CA-11).
   - **Checks after the fix pass (local):** `npm run lint` clean; `npm run typecheck` clean; `npm run test:ci` 52/52; `npm run check:migrations` passed; `npm run build` (Turbopack) passes (1,415 static pages); `npm run scan:bundle` passed (7,920 browser files); `npx playwright test` (all projects) 2,426 passed, 2,716 skipped, 0 failed (8.5 min; before the fix pass 2,414 / 2,692: +11 unit tests and +1 e2e on desktop); `tests/e2e/data-validate.spec.ts` 48/48 (desktop), of which the two PR 2.2 blocks hold 21. The step2-pr22 screenshots, taken again from the fix build, are pixel-identical (none replaced).
+
 ## 2026-11-05 — Manager dashboard, office navigation and the MODY logo (D57)
 - **Owner (2026-11-05, messages 1–6), recorded as D57** (`docs/decisions.md`, after D56): the five-item Manager and Creator navigation with "דשבורד" as the landing page; follow-up visits and review items off the dashboard; the three dashboard tabs of `docs/design/manager-dashboard-spec.md` and the visual reference `docs/design/manager-dashboard-demo.html`; the metric categories (computed / "הגדרה ממתינה" / "לא זמין"); the follow-up analytics and current call status of message 5; the white logo in the existing dark headers; and (message 6, D57 (9)) "נפתחה" = `opened_at` and "תחילת טיפול" = the first visit's arrival as two labelled fields. Open #15 and #20 amended; new open #26 (navigation leftovers, review count) and #27 (simulator placement). `docs/demo-deviations.md` v1.4 (OF-01, OF-02, OF-11, OF-12, OF-13, OF-16, SE-01, SE-03, SIM-01; new OF-18, OF-19, OF-20, G-08); `docs/spec.md`, `docs/design-system.md`, `docs/architecture-data-access.md`, `docs/testing.md`, `docs/PROJECT-MAP.md`, `docs/ROADMAP.md`, `docs/THINKING-AHEAD.md` updated.
 - Branch `claude/manager-dashboard` (from `main` `ba47e8b`), three local commits: the data layer (registry, formulas, periods, time helpers, demo `DEMO_NOW` 21.10.2026 12:45 and fictional call `openedAt` / `resolvedAt`), the navigation and logo, and the dashboard UI with docs and screenshots. UI demo only (`/dev/demo`); fictional, test-marked data; no migration, no remote Supabase operation, no permission value changed, no new package.
@@ -395,6 +406,7 @@
   - Simulated actions change only their own screen: an approved "create" request does not add an account row (the id comes from the server), and a technician added on "טכנאים" does not appear on "משתמשים".
   - Call types have no delete (`docs/database-schema.md` allows deletes only for unreferenced places and user-added unused reasons).
   - Production must take the signed-in user from the session and scope the Manager's requests on the server (the demo matches the viewpoint's name and filters in memory). The Manager's own requests carry the deciding Creator's account reference (id and name), as the outcome line needs.
+
 ## 2026-11-04 — UI demo, phase D
 - Branch `claude/ui-demo-2`, started on `claude/ui-demo-1`; PR #5 is now squash-merged to `main` (`013fd2f`), and `main` is merged into this branch. Fictional data only (`/dev/demo`); no Supabase, network or real email; every action is simulated ("פעולה מדומה · לא נשמר"). Every screen reads through `demoDataAccess` and renders through the demo frames (sentinel and "נתוני בדיקה" strip).
 - **Screens** (placeholders replaced):
