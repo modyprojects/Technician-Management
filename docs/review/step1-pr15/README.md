@@ -186,3 +186,25 @@ Carried: open decision 3 (d06): `c10` rule (b) requires a summary for a closed v
   - The real wrapper gave a catalog identical to a normal apply of all three migrations on 14/14 values.
 - **Full-size transport dry run (read-only, on the remote):** one `execute_sql` sent the complete wrapper (1,736 lines, about 110 KB as sent) as a literal inside a read-only transaction. It returned `ro` on, wrapper sha256 `8b9decd8…313d`, 105,865 bytes, and embedded SQL sha256 `37b803db…eecb`. All three equal the local values, so the full payload reaches the server byte for byte.
 - Migration 3 has no DROP statement, so Supabase may not ask for confirmation. The owner should still be available when it is applied.
+
+## 17. Applied to the remote project (2026-11-16)
+
+- **Approval:** the owner's explicit approval of 2026-11-16 for ONE application. The approved references:
+  - PR #25 at commit `5b2d2be`;
+  - SQL sha256 `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb`;
+  - payload sha256 `8b9decd8eed10c05575497168d0ef5122e32429566e3781f37ff0ffa0fb5313d`.
+- **Immediately before the apply (read-only):**
+  - All hashes matched.
+  - `list_migrations` held Migrations 1 and 2 only.
+  - No Migration 3 relation or function existed, and there were 0 user rows.
+  - The catalog fingerprint was equal to the post-Migration 2 values on 14/14.
+  - The audit anchor was `d30c54fb…`.
+- **Apply:** one `apply_migration` call (name `service_calls_visits`) with the self-verifying wrapper, made from the main session. It succeeded on the first and only attempt. The server assigned version **`20261116094444`**; migration history is not repaired, as with Migrations 1 and 2.
+- **Post-apply verification (read-only):**
+  - `list_migrations` holds 3 rows.
+  - The stored statement's sha256 is `8b9decd8…313d` (105,865 bytes). The SQL embedded in it has sha256 `37b803db…eecb`.
+  - The catalog fingerprint equals a local database built from Migrations 1–3 on 14/14: functions 97, policies 32, and the columns, constraints, indexes, triggers, relations, schemas and reference-row hashes.
+  - All 8 Migration 3 relations and the 24 Migration 3 functions are present.
+  - User rows: 0. The audit anchor `d30c54fb…` is unchanged.
+  - Security advisors: one WARN (`auth_leaked_password_protection`), as before.
+  - Section 12 ran inside the applied transaction, so its success means 0 leftovers.

@@ -1,5 +1,15 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 3 applied to the remote project (PR 1.5)
+- **Approval:** the owner's explicit approval for one application (PR #25 `5b2d2be`, SQL `37b803db…eecb`, payload `8b9decd8…313d`).
+- **Pre-checks (read-only):** hashes matched, only Migrations 1 and 2 were present, no Migration 3 objects, fingerprint 14/14 unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116094444`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–3 build on 14/14.
+  - User rows 0; the audit anchor is unchanged; advisors are unchanged (one WARN).
+  - Details: `docs/review/step1-pr15/README.md` §17.
+
 ## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
 - **Owner decisions:**
   - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.
