@@ -1,6 +1,7 @@
 // The fail-closed hardening checks of Migration 2 (section 11; owner, 2026-11-11), Migration 3
-// (section 12; owner, 2026-11-12) and Migration 4 (section 12, a byte-identical copy of Migration 3
-// section 12; PR 1.6).
+// (section 12; owner, 2026-11-12), Migration 4 (section 12, a byte-identical copy of Migration 3
+// section 12; PR 1.6) and Migration 5 (section 14, a byte-identical copy of Migration 4 section 12;
+// PR 1.8).
 // tests/db/140_hardening_assertion.test.sql runs a copy of the section 11 DO body against injected
 // leaks; this test keeps that copy byte-identical, shows that section 11 keeps the PR 1.3
 // section 15 privilege checks unchanged (it only adds checks), and that the check is the last
@@ -118,4 +119,30 @@ test("Migration 4 section 12 is Migration 3 section 12, byte for byte", () => {
 test("the section 12 check is the last statement of Migration 4", () => {
   const { end } = doBody(m4, "-- 12. Fail closed", m4File);
   assert.equal(m4.slice(end), "");
+});
+
+const m5File = "supabase/migrations/20261108120000_accounts_permissions.sql";
+const test5File = "tests/db/270_hardening_assertion_m5.test.sql";
+const m5 = read(m5File);
+
+test("tests/db/270 runs a byte-identical copy of the Migration 5 section 14 check", () => {
+  const { body } = doBody(m5, "-- 14. Fail closed", m5File);
+  const text = read(test5File);
+  const open = "language plpgsql as $assert$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test5File}: missing the copy`);
+  const stop = text.indexOf("\n$assert$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test5File}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("Migration 5 section 14 is Migration 4 section 12, byte for byte", () => {
+  const { body: m4Body } = doBody(m4, "-- 12. Fail closed", m4File);
+  const { body: m5Body } = doBody(m5, "-- 14. Fail closed", m5File);
+  assert.equal(m5Body, m4Body);
+});
+
+test("the section 14 check is the last statement of Migration 5", () => {
+  const { end } = doBody(m5, "-- 14. Fail closed", m5File);
+  assert.equal(m5.slice(end), "");
 });

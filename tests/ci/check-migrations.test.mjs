@@ -183,7 +183,10 @@ test("an unterminated dollar quote is reported", () => {
 
 // Fix pass (independent review S1/D1, S14) ----------------------------------------------------------
 
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1.6 writer functions, pinned to signature and tables", () => {
+// PR 1.8 (Migration 5) adds no entry: it replaces three listed writers with the same signatures
+// (authorize_account_creation, admin_create_profile, add_call_type, add_followup_reason) and its new
+// writer admin_delete_user only updates (see the PR 1.8 tests at the end of this file).
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1.6 writer functions, pinned to signature and tables (unchanged by PR 1.8)", () => {
   assert.deepEqual(
     [...ALLOWED_WRITERS].map(([signature, { tables }]) => `${signature} -> ${tables.join(",")}`).sort(),
     [
@@ -1592,5 +1595,75 @@ test("PR 1.6: no statement that runs names a PR 1.6 writer, and no trigger funct
   for (const [, name, , text] of bodies) {
     if (!/^private\.(tg_|offline_operation_replay)/.test(name)) continue;
     assert.doesNotMatch(text, /create_review_item|record_offline_operation|correct_visit|resolve_review_item|write_audit|write_entity_change|recalc_call_status/, name);
+  }
+});
+
+// PR 1.8 (Migration 5): no ALLOWED_WRITERS change. The migration replaces four listed writers with
+// the same signatures (authorize_account_creation and admin_create_profile, D60 (7); add_call_type
+// and add_followup_reason, D60 (8)); its new writer admin_delete_user and the replaced
+// admin_set_user_active, assert_can_change_credentials and set/delete bodies only update or call
+// write_audit, which needs no entry.
+const migration18 = readFileSync(join(repositoryRoot, "supabase", "migrations", "20261108120000_accounts_permissions.sql"), "utf8");
+const migrations18 = (sql18 = migration18) => [...migrations16(), { name: "e.sql", sql: sql18 }];
+const PR18_REPLACED_WRITERS = [
+  "private.authorize_account_creation(text,text,text)",
+  "private.admin_create_profile(uuid,text,text,text,text,uuid)",
+  "private.add_call_type(text)",
+  "private.add_followup_reason(text)",
+];
+
+test("PR 1.8: the migration passes after PR 1.3 to PR 1.6 with ALLOWED_WRITERS unchanged; without an entry each replaced writer fails", () => {
+  assert.deepEqual(checkFiles(migrations18()), []);
+  const NOT_ALLOWED = "is not allowed (only the reviewed writer functions in ALLOWED_WRITERS, pinned to their signature and tables, may insert)";
+  for (const signature of PR18_REPLACED_WRITERS) {
+    const without = new Map([...ALLOWED_WRITERS].filter(([entry]) => entry !== signature));
+    const problems = checkFiles([{ name: "e.sql", sql: migration18 }], { allowedWriters: without });
+    const name = signature.slice(0, signature.indexOf("("));
+    assert.ok(problems.some((p) => p.startsWith(`e.sql: function ${name}: INSERT into `) && p.endsWith(NOT_ALLOWED)),
+      `${signature}: ${JSON.stringify(problems)}`);
+  }
+  // The migration inserts reference rows only into permissions and role_permissions, at top level.
+  const inserts = [...migration18.matchAll(/^insert into (public\.\w+)/gm)].map(([, table]) => table);
+  assert.deepEqual(inserts, ["public.permissions", "public.role_permissions"]);
+});
+
+test("PR 1.8: no statement that runs names a PR 1.8 writer, and the new trigger functions name none", () => {
+  for (const statement of [
+    `select private.admin_delete_user('00000000-0000-4000-8000-000000000001', 1, null);`,
+    `do $$ begin perform public.admin_delete_user(null, 1, null); end $$;`,
+    `create trigger t50_delete after update on public.profiles for each row execute function private.admin_delete_user();`,
+    `select private.authorize_account_creation('technician', 'x@example.test', 'x');`,
+  ]) {
+    const problems = checkFiles(migrations18(`${migration18}\n${statement}\n`));
+    assert.ok(problems.some((p) => /e\.sql: the migration calls (admin_delete_user|authorize_account_creation)\(\)/.test(p)),
+      `${statement}: ${JSON.stringify(problems)}`);
+  }
+  assert.deepEqual(checkFiles(migrations18(`${migration18}
+    revoke all on function private.admin_delete_user(uuid, integer, text) from public;
+    comment on function public.admin_delete_user(uuid, integer, text) is 'x';
+  `)), []);
+  const bodies = [...migration18.matchAll(/create (?:or replace )?function (\w+\.\w+)\(([\s\S]*?)\nas \$\$([\s\S]*?)\$\$;/g)];
+  const names = bodies.map(([, name]) => name).sort();
+  for (const expected of ["private.tg_profile_deleted_guard", "private.tg_technician_deleted_guard", "private.tg_account_requests_retired",
+    "private.has_permission"]) {
+    assert.ok(names.includes(expected), `${expected} is defined in the migration`);
+  }
+  for (const [, name, , text] of bodies) {
+    if (!/^private\.(tg_|has_permission$)/.test(name)) continue;
+    assert.doesNotMatch(text, /admin_delete_user|write_audit|authorize_account_creation|admin_create_profile|request_account_change|decide_account_request|\binsert\b|\bupdate\s+public\b|\bdelete\b/, name);
+  }
+});
+
+test("PR 1.8: the five Settings bodies differ from Migration 2 only in the key they check", () => {
+  const migration14Text = migration14;
+  for (const [name, key] of [["add_call_type", "callTypes"], ["set_call_type_active", "callTypes"], ["add_followup_reason", "reasons"],
+    ["set_followup_reason_active", "reasons"], ["delete_followup_reason", "reasons"]]) {
+    const original = migration14Text.match(new RegExp(`\\ncreate function private\\.${name}\\([\\s\\S]*?\\n\\$\\$;\\n`))[0];
+    const replaced = migration18.match(new RegExp(`\\ncreate or replace function private\\.${name}\\([\\s\\S]*?\\n\\$\\$;\\n`))[0];
+    assert.equal(
+      replaced,
+      original.replace("\ncreate function ", "\ncreate or replace function ")
+        .replace("private.has_permission('settings')", `private.has_permission('${key}')`),
+      name);
   }
 });
