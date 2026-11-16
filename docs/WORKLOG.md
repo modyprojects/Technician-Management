@@ -1,5 +1,19 @@
 # Work Log (English only)
 
+## 2026-11-16 — Step 1 / PR 1.8: Migration 5 (accounts and permissions), local only
+- Branch `claude/step1-pr18-accounts-permissions`, from PR 1.6's head `f53016a` (Migrations 1-4). Migrations 1-4 unchanged. **Not applied, not pushed.** Sources: D60 (7)-(9), D33, D34, D47, D49, D51; QA rows M-06, M-07, M-10, C-01, C-02, C-03 to C-06.
+- **Migration** `20261108120000_accounts_permissions.sql` (sha256 `028f3bec…f870`, 903 lines):
+  - Creator-only deletion, Option A: `profiles.deleted_at`, `deleted_by` (three CHECKs, a foreign key), `admin_delete_user` (audited `profile.deleted`), a reactivation guard, and a deleted account and its field profile frozen for every writer (triggers). No physical deletion; history and attribution kept.
+  - Direct Manager administration of Technician and Customer Service accounts (no Creator approval): new bodies of `authorize_account_creation`, `admin_create_profile`, `admin_set_user_active`; `assert_can_change_credentials` refuses a deleted account. The Manager never deletes, never changes a role, never sets passwords or emails.
+  - The account-request path retired: EXECUTE revoked from every role and a trigger refuses new request rows; history kept under the PR 1.3 policies.
+  - Narrow matrix keys `reasons`, `callTypes`, `ackText` (TEMPORARY: Manager on, Customer Service off); the five call-type and reason RPCs switched to them; pickup places keep `settings`.
+  - `usage` a Creator-only fixed capability in `has_permission`. The fail-closed hardening check (Migration 4's, byte for byte).
+- **Rollback** script (one DO block, refuses first); a rolled-back run leaves a catalog equal to a database built from Migrations 1-4 (11 fingerprints); `990` runs it first.
+- **Tests:** pgTAP 1,486/1,486 (35 files; new `270`-`300`; `010`, `015`, `020`, `030`, `040`, `050` (rewritten), `060`, `070`, `090`, `120`, `990` updated; every D60-changed expectation listed in the PR 1.8 README section 7); node 205/205; guard passed with no `ALLOWED_WRITERS` change; canary PASS (5 migrations, no new exception); lint and typecheck clean.
+- **Protected files:** a new canary fixture `tests/db-canary/20261108120000.sql` (approval item A1); `scripts/check-migrations.mjs` unchanged. `docs/security.md` still describes D34 (a); aligning it is a separate protected change.
+- **TEMPORARY behaviours** OQ-1 to OQ-10 and deviations DEV-1 to DEV-9: `docs/review/step1-pr18/README.md`. Among them: a Creator account is never deleted; a deleted account never changes again; `settings` stays an editable key (not locked like `usage`).
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file.
+
 ## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
 - **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):
