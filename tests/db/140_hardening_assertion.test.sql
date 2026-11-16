@@ -3,7 +3,9 @@
 -- hardening-assertion.test.mjs keeps them in sync). Each case injects one leftover inside the
 -- checked statement, so the error rolls the injection back with it; the check must name it.
 -- Covers the PR 1.3 section 15 privilege checks (also unchanged in section 11) and the section 11
--- additions: RLS, owners, policy roles, the pinned search_path and views. No data rows; the owner
+-- additions: RLS, owners, policy roles, the pinned search_path and views. From PR 1.5 on, the
+-- database has the invoker view visit_time_current, which this (applied, unchangeable) check
+-- flags; Migration 3's own check (section 12, tests/db/210) allows invoker views. No data rows; the owner
 -- cases create a role (tm_test_owner, not an API role) that the failed check rolls back.
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -103,7 +105,8 @@ begin
 end
 $assert$;
 
-select lives_ok('select pg_temp.m2_hardening_check()', 'the migrated database passes the hardening check');
+select throws_ok('select pg_temp.m2_hardening_check()', 'P0001', 'hardening check failed, nothing is applied: view visit_time_current',
+  'on the database with Migration 3, the PR 1.4 check flags exactly the invoker view visit_time_current (Migration 3 section 12 allows it)');
 
 select throws_like(
   $q$do $t$ begin grant select on table public.customers to anon; perform pg_temp.m2_hardening_check(); end $t$$q$,
@@ -230,7 +233,8 @@ select throws_like(
   '%view %mv_leak%',
   'fails closed on a materialized view');
 
-select lives_ok('select pg_temp.m2_hardening_check()', 'every injection was rolled back with its failed check');
+select throws_ok('select pg_temp.m2_hardening_check()', 'P0001', 'hardening check failed, nothing is applied: view visit_time_current',
+  'every injection was rolled back with its failed check (only visit_time_current remains)');
 
 select * from finish();
 rollback;

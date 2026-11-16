@@ -1103,14 +1103,25 @@ select lives_ok(
   $$ delete from public.collection_locations where id = '00000000-0000-4000-8000-000000000107' $$,
   'SE-06: a pickup place can be deleted (from PR 1.5 the visits foreign key protects referenced places)');
 
+-- PR 1.5: service_calls and visits reference these tables, and PostgreSQL refuses a TRUNCATE of a
+-- referenced table (0A000) before any BEFORE TRUNCATE trigger runs. Each statement therefore also
+-- lists the PR 1.5 tables that reference it (directly or through each other); the table named first
+-- is the one whose trigger rejects it.
 insert into tm_case (grp, label, stmt, expected) values
-  ('truncate', 'products', 'truncate public.products', '55000 products cannot be truncated'),
-  ('truncate', 'customers', 'truncate public.customers', '55000 customers cannot be truncated'),
-  ('truncate', 'brands (with products)', 'truncate public.brands, public.products', '55000 brands cannot be truncated'),
-  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products', '55000 suppliers cannot be truncated'),
-  ('truncate', 'call_types', 'truncate public.call_types', '55000 call_types cannot be truncated'),
-  ('truncate', 'followup_reasons', 'truncate public.followup_reasons', '55000 followup_reasons cannot be truncated'),
-  ('truncate', 'collection_locations', 'truncate public.collection_locations', '55000 collection_locations cannot be truncated');
+  ('truncate', 'products', 'truncate public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 products cannot be truncated'),
+  ('truncate', 'customers', 'truncate public.customers, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 customers cannot be truncated'),
+  ('truncate', 'brands (with products)', 'truncate public.brands, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 brands cannot be truncated'),
+  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 suppliers cannot be truncated'),
+  ('truncate', 'call_types', 'truncate public.call_types, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 call_types cannot be truncated'),
+  ('truncate', 'followup_reasons', 'truncate public.followup_reasons, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 followup_reasons cannot be truncated'),
+  ('truncate', 'collection_locations', 'truncate public.collection_locations, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events',
+   '55000 collection_locations cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'truncate' order by c.n $$,
   $$ select c.label, c.expected from tm_case c where c.grp = 'truncate' order by c.n $$,

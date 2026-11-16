@@ -1,4 +1,5 @@
-// The fail-closed hardening check of Migration 2 (section 11; owner, 2026-11-11).
+// The fail-closed hardening checks of Migration 2 (section 11; owner, 2026-11-11) and Migration 3
+// (section 12; owner, 2026-11-12).
 // tests/db/140_hardening_assertion.test.sql runs a copy of the section 11 DO body against injected
 // leaks; this test keeps that copy byte-identical, shows that section 11 keeps the PR 1.3
 // section 15 privilege checks unchanged (it only adds checks), and that the check is the last
@@ -26,6 +27,8 @@ function doBody(text, header, file) {
 const m1File = "supabase/migrations/20261104120000_access_and_permissions.sql";
 const m2File = "supabase/migrations/20261105120000_reference_customers_products.sql";
 const testFile = "tests/db/140_hardening_assertion.test.sql";
+const m3File = "supabase/migrations/20261106120000_service_calls_visits.sql";
+const test3File = "tests/db/210_hardening_assertion_m3.test.sql";
 const m1 = read(m1File);
 const m2 = read(m2File);
 
@@ -55,4 +58,37 @@ test("section 11 keeps the PR 1.3 section 15 privilege checks unchanged and only
 test("the section 11 check is the last statement of Migration 2", () => {
   const { end } = doBody(m2, "-- 11. Fail closed", m2File);
   assert.equal(m2.slice(end), "");
+});
+
+const m3 = read(m3File);
+
+test("tests/db/210 runs a byte-identical copy of the Migration 3 section 12 check", () => {
+  const { body } = doBody(m3, "-- 12. Fail closed", m3File);
+  const text = read(test3File);
+  const open = "language plpgsql as $assert$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test3File}: missing the copy`);
+  const stop = text.indexOf("\n$assert$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test3File}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("Migration 3 section 12 is Migration 2 section 11 with only the view rule changed", () => {
+  const { body: m2Body } = doBody(m2, "-- 11. Fail closed", m2File);
+  const { body: m3Body } = doBody(m3, "-- 12. Fail closed", m3File);
+  const viewBranch = "    union all\n    select 'view ' || c.oid::regclass::text\n";
+  const m2At = m2Body.indexOf(viewBranch);
+  assert.notEqual(m2At, -1, "Migration 2: the view branch");
+  const m2Tail = m2Body.slice(m2Body.indexOf("  ) x;\n", m2At));
+  assert.ok(m3Body.startsWith(m2Body.slice(0, m2At)), "everything before the view branch is unchanged");
+  assert.ok(m3Body.endsWith(m2Tail), "the raise is unchanged");
+  const changed = m3Body.slice(m2At, m3Body.length - m2Tail.length);
+  assert.match(changed, /relkind = 'v'/);
+  assert.match(changed, /security_invoker/);
+  assert.match(changed, /relkind = 'm'/);
+});
+
+test("the section 12 check is the last statement of Migration 3", () => {
+  const { end } = doBody(m3, "-- 12. Fail closed", m3File);
+  assert.equal(m3.slice(end), "");
 });

@@ -2,9 +2,12 @@
 -- The first checks run before any fixture, on the database built from migrations alone.
 -- PR 1.4: the census covers the seven new tables (customers and products per source, in fixed
 -- bucket rows), and the D48 initial values are the only new rows on a fresh database.
+-- PR 1.5: the census covers the seven service-call and visit tables (service_calls per source, the
+-- six child and history tables in one 'all sources' row each: 9 new rows), and the view
+-- visit_time_current returns no rows on a fresh database.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(25);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -31,10 +34,23 @@ select ok(
   and (select test_rows from public.test_data_census() where table_name = 'call_types') = 0
   and (select test_rows from public.test_data_census() where table_name = 'followup_reasons') = 0,
   'PR 1.4: the D48 rows are real (is_test false, no creator) and the census does not count them');
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census()
+     where table_name in ('service_calls', 'visits', 'visit_reports', 'visit_signatures', 'visit_time_reports',
+                          'visit_events', 'entity_changes')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('entity_changes', 'all sources', 0::bigint),
+            ('service_calls', 'automated_test', 0::bigint), ('service_calls', 'other sources', 0::bigint),
+            ('service_calls', 'simulator', 0::bigint),
+            ('visit_events', 'all sources', 0::bigint), ('visit_reports', 'all sources', 0::bigint),
+            ('visit_signatures', 'all sources', 0::bigint), ('visit_time_reports', 'all sources', 0::bigint),
+            ('visits', 'all sources', 0::bigint) $$,
+  'PR 1.5: the nine new census rows exist (service_calls per source in fixed rows, one row for each child and history table) and are 0 on a fresh database');
 -- Views too (verification round 2, F1): a view can carry constant fictitious rows without any table
 -- row (create view ... as select * from (values (...))). Every view (and materialized view) in
 -- public and private returns no rows on the fresh database, except approved reference views: none
--- in PR 1.3 (010_hardening also requires no views today; this check stays when views are approved).
+-- in PR 1.3 (010_hardening allows only the PR 1.5 view visit_time_current, a SECURITY INVOKER view
+-- over visit_time_reports, which this check also reads; it stays when reference views are approved).
 -- A function that returns constant rows cannot be counted generically: the review checks it.
 select results_eq(
   $$ select c.relname::text collate "default", x.row_count
@@ -48,6 +64,12 @@ select results_eq(
      order by c.relname::text collate "C" $$,
   $$ select v.relname, v.row_count from (values ('', 0::bigint)) as v (relname, row_count) where false $$,
   'migrations create no view in public or private that returns rows (approved reference views: none in PR 1.3)');
+select ok(
+  to_regclass('public.visit_time_current') is not null
+  and (select count(*) from public.visit_time_current) = 0
+  and (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname in ('public', 'private') and c.relkind in ('v', 'm')) = 1,
+  'PR 1.5: the only view, visit_time_current, exists, is read by the view check above and returns no rows on a fresh database');
 -- Positive control for the view check: a view with constant rows is counted (rolled back).
 create view public.census_view_probe with (security_invoker = true) as
   select * from (values ('10001', 'probe row')) as v (customer_number, name);
@@ -102,6 +124,15 @@ select results_eq(
   $$ values ('customers', 'automated_test'), ('customers', 'other sources'), ('customers', 'simulator'),
             ('products', 'automated_test'), ('products', 'other sources'), ('products', 'simulator') $$,
   'PR 1.4: customers and products are counted per source in fixed rows, also when empty (database-schema.md §2)');
+select results_eq(
+  $$ select table_name, bucket from public.test_data_census()
+     where table_name in ('service_calls', 'visits', 'visit_reports', 'visit_signatures', 'visit_time_reports',
+                          'visit_events', 'entity_changes')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('entity_changes', 'all sources'), ('service_calls', 'automated_test'), ('service_calls', 'other sources'),
+            ('service_calls', 'simulator'), ('visit_events', 'all sources'), ('visit_reports', 'all sources'),
+            ('visit_signatures', 'all sources'), ('visit_time_reports', 'all sources'), ('visits', 'all sources') $$,
+  'PR 1.5: service_calls is counted per source in fixed rows; visits and every visit_* and history table in one row each');
 
 -- Positive control: a test fixture is counted ---------------------------------------------------------
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
@@ -151,11 +182,64 @@ select is(
   (select sum(test_rows) from public.test_data_census() where table_name in ('products', 'customers') and bucket = 'other sources'),
   2::numeric, 'PR 1.4 positive control: a later source is counted in the other sources bucket');
 
+-- PR 1.5 positive control: a test row in each new table (inserted as postgres; every CHECK and
+-- trigger applies, the deferred checks never run because the transaction is rolled back), service
+-- calls per source, a later call source with the CHECK relaxed inside this transaction.
+insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+values ('00000000-0000-4000-8000-0000000000d1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+        'user-d1@example.test', now(), now());
+insert into public.profiles (id, role, full_name, is_active)
+  values ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', true);
+insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email)
+  values ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y',
+          'tech-a@example.test');
+alter table public.service_calls drop constraint service_calls_data_source_check;
+insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                  handling_rep_name, status, next_visit_number, data_source, source_ref, created_by)
+select v.id::uuid, v.request_number, c.id, p.id, t.id, 'תקלת בדיקה', 'נציגת בדיקה', 'open', 2, v.data_source, 'pr15-070-1',
+       v.created_by::uuid
+from (values ('00000000-0000-4000-8000-0000000007a1', 'R-0701', 'T-0001', 'TB-1001', 'simulator', '00000000-0000-4000-8000-0000000000a1'),
+             ('00000000-0000-4000-8000-0000000007a2', 'R-0702', 'T-0002', 'TB-1002', 'automated_test', null),
+             ('00000000-0000-4000-8000-0000000007a3', 'R-0703', 'T-0003', 'TB-1003', 'later_source', null))
+     as v (id, request_number, customer_number, sku, data_source, created_by)
+join public.customers c on c.customer_number = v.customer_number
+join public.products p on p.sku_normalized = v.sku
+join public.call_types t on t.sort_order = 1;
+insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start, scheduled_end,
+                           status, city, street, source_ref)
+  values ('00000000-0000-4000-8000-0000000007b1', '00000000-0000-4000-8000-0000000007a1', '00000000-0000-4000-8000-0000000000e1',
+          1, 'T-0701', now(), now() + interval '1 hour', 'done', 'עיר בדיקה', 'רחוב בדיקה', 'pr15-070-1');
+insert into public.visit_reports (visit_id, summary_text, summary_source)
+  values ('00000000-0000-4000-8000-0000000007b1', 'סיכום בדיקה', 'written');
+insert into public.visit_signatures (visit_id, signer_name, signed_ack_text, ack_text_sha256, operation_id)
+  values ('00000000-0000-4000-8000-0000000007b1', 'חותם בדיקה', 'נוסח בדיקה',
+          encode(sha256(convert_to('נוסח בדיקה', 'UTF8')), 'hex'), gen_random_uuid());
+insert into public.visit_time_reports (visit_id, reported_by_profile_id, technician_id, kind, reported_at, device_tz,
+                                       device_utc_offset_min, device_sent_at, source, operation_id)
+  values ('00000000-0000-4000-8000-0000000007b1', '00000000-0000-4000-8000-0000000000d1', '00000000-0000-4000-8000-0000000000e1',
+          'arrived', now(), 'Asia/Jerusalem', 120, now(), 'device', gen_random_uuid());
+insert into public.visit_events (visit_id, version_after, event_type, to_status)
+  values ('00000000-0000-4000-8000-0000000007b1', 1, 'created', 'done');
+insert into public.entity_changes (entity_table, entity_id, field, old_value, new_value, source)
+  values ('service_calls', '00000000-0000-4000-8000-0000000007a1', 'status', '"open"', '"resolved"', 'system');
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census()
+     where table_name in ('service_calls', 'visits', 'visit_reports', 'visit_signatures', 'visit_time_reports',
+                          'visit_events', 'entity_changes')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('entity_changes', 'all sources', 1::bigint),
+            ('service_calls', 'automated_test', 1::bigint), ('service_calls', 'other sources', 1::bigint),
+            ('service_calls', 'simulator', 1::bigint),
+            ('visit_events', 'all sources', 1::bigint), ('visit_reports', 'all sources', 1::bigint),
+            ('visit_signatures', 'all sources', 1::bigint), ('visit_time_reports', 'all sources', 1::bigint),
+            ('visits', 'all sources', 1::bigint) $$,
+  'PR 1.5 positive control: a test row in each new table is counted, service calls by source (a later source in other sources)');
+
 -- Who may run it --------------------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
-select is((select test_rows from public.test_data_census() where table_name = 'profiles'), 2::bigint,
-  'the Creator runs the census through the API and sees every row');
+select is((select test_rows from public.test_data_census() where table_name = 'profiles'), 3::bigint,
+  'the Creator runs the census through the API and sees every row (PR 1.5: the Technician profile of its positive control included)');
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;

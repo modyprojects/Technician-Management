@@ -142,6 +142,10 @@ export const ALLOWED_WRITERS = new Map([
   ["private.add_call_type(text)", { tables: ["public.call_types"] }],
   ["private.add_followup_reason(text)", { tables: ["public.followup_reasons"] }],
   ["private.add_collection_location(text,text,text,text,text)", { tables: ["public.collection_locations"] }],
+  // PR 1.5 field-history writer (database-schema.md §6: history stays in entity_changes; the actor
+  // is auth.uid() of the session). Accepting it needs the owner's acceptance (PR 1.5 approval item
+  // A1).
+  ["private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)", { tables: ["public.entity_changes"] }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.
