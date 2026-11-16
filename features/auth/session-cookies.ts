@@ -27,3 +27,16 @@ export function isHttpsRequest(forwardedProto: string | null | undefined): boole
   const first = (forwardedProto ?? "").split(",")[0]?.trim().toLowerCase();
   return first !== "http";
 }
+
+/**
+ * Whether `name` is one of Supabase's session cookies, as @supabase/ssr names them for the default
+ * storage key: `sb-<project ref>-auth-token`, its chunks `.0`, `.1` … when the value is long, and
+ * the PKCE verifier `sb-<ref>-auth-token-code-verifier`. Used by the sign-out and sign-in-denial
+ * fallback (lib/actions/auth.ts), which deletes them directly when the Auth call failed. Unit-tested
+ * against real names, so a library change of the naming fails a test instead of leaving a session.
+ */
+const SESSION_COOKIE_NAME = /^sb-[A-Za-z0-9-]+-auth-token(-code-verifier)?(\.\d{1,2})?$/;
+
+export function isSessionCookieName(name: unknown): boolean {
+  return typeof name === "string" && name.length <= 128 && SESSION_COOKIE_NAME.test(name);
+}

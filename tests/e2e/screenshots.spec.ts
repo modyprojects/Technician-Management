@@ -760,3 +760,20 @@ test.describe("step2-ui review screenshots", () => {
     });
   }
 });
+
+// Step 2 PR 2.5, the real `/login` without the Supabase variables (the unavailable state). The
+// signed-in screens are taken against the local stack (tests/auth/screenshots.spec.ts).
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-pr25"
+const OUT_STEP2_PR25 = path.resolve("docs/review/step2-pr25");
+
+test.describe("step2-pr25 review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-pr25 unavailable sign-in at ${size.width}px`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await openPage(page, "/login");
+      await page.screenshot({ path: path.join(OUT_STEP2_PR25, `${size.width}-login-unavailable.png`) });
+    });
+  }
+});

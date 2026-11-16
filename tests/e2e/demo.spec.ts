@@ -3591,10 +3591,11 @@ test.describe("Step 2 login (prototype)", () => {
     await expect(page.getByRole("link", { name: signUp })).toHaveCount(0);
     await expect(page.getByRole("button", { name: signUp })).toHaveCount(0);
     await expect(page.getByText("אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת.")).toBeVisible();
-    // No real route in PR 2.3 (PR 2.5 adds /login).
-    for (const path of ["/dev/demo/signup", "/signup", "/login"]) {
+    // No sign-up route anywhere. The real /login exists since PR 2.5 (tests/e2e/auth-real-routes.spec.ts).
+    for (const path of ["/dev/demo/signup", "/signup"]) {
       expect((await page.request.get(path)).status(), path).toBe(404);
     }
+    expect((await page.request.get("/login")).status()).toBe(200);
     expect(await horizontalOverflow(page)).toEqual([]);
   });
 

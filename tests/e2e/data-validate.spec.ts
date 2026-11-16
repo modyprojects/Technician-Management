@@ -1039,9 +1039,10 @@ test.describe("PR 2.3 screens (display rules, completion commands, version wirin
     }
   });
 
-  test("U6: loginStateOf reads only the four states; anything else is the form", () => {
+  test("U6: loginStateOf reads only the known states; anything else is the form", () => {
     for (const state of LOGIN_STATES) expect(loginStateOf(state)).toBe(state);
-    expect([...LOGIN_STATES]).toEqual(["form", "failed", "unavailable", "no-access"]);
+    // "retry" (a service failure after a submission, the form kept) since Step 2 PR 2.5.
+    expect([...LOGIN_STATES]).toEqual(["form", "failed", "unavailable", "no-access", "retry"]);
     for (const bad of ["FAILED", "constructor", "__proto__", "toString", ["failed"], ["failed", "unavailable"], undefined, null, "", " failed", 1, {}]) {
       expect(loginStateOf(bad), JSON.stringify(bad) ?? String(bad)).toBe("form");
     }

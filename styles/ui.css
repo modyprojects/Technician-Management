@@ -120,6 +120,8 @@ a.stat { text-decoration: none; }
 .side .me .me-who { min-width: 0; overflow-wrap: anywhere; }
 .side .me .signout { margin-inline-start: auto; flex: none; background: none; border: 1px solid var(--ink3); color: var(--on-dark2); border-radius: 8px; padding: 6px 10px; min-height: 30px; font-size: 12px; font-weight: 700; }
 .side .me .signout:hover, .side .me .signout:focus-visible { color: var(--on-dark); }
+/* Step 2 PR 2.5: the real "יציאה" is a <form> around the same button; it adds no box of its own. */
+.signout-form { display: contents; }
 /* Wide layout: the sidebar is as tall as the page, so its user block (and "יציאה") stays at the
    bottom of the window instead of the end of a long page (review UI-1; AU-02 PROPOSED: the demo's
    block scrolls with the page). The narrow top bar below keeps it in the flow. */

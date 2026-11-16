@@ -12,8 +12,9 @@ import { BrandLogo } from "./BrandLogo";
 // Each state renders a fresh form (keyed by the state): a password typed in one state never carries
 // into another, also when the state changes without a full page load (the demo's state links).
 // - "unavailable": one message for every service failure, before any submission (plan §3.4: not
-//   configured); no form. A service failure AFTER a submission (the form kept, the message above
-//   it) is the real sign-in's (PR 2.5).
+//   configured); no form.
+// - "retry": a service failure AFTER a submission (Step 2 PR 2.5): the same message above the form,
+//   which is kept so the user can try again.
 // - "no-access": a signed-in account without access to the screen (SIGN_IN_MESSAGES.noAccess) and
 //   "יציאה", so another account can sign in.
 // No sign-up link or route and no "שכחתי סיסמה" (TEMPORARY, Step 2 plan Q2; D50: accounts are
@@ -32,7 +33,7 @@ export function LoginScreen({
   extra,
 }: {
   state: LoginState;
-  /** The sign-in form ("form" and "failed"). */
+  /** The sign-in form ("form", "failed" and "retry"). */
   form?: ReactNode;
   /** The sign-out control of the no-access state. */
   signOut?: ReactNode;
@@ -40,8 +41,9 @@ export function LoginScreen({
   extra?: ReactNode;
 }) {
   const noAccess = state === "no-access";
-  const alert = state === "failed" ? SIGN_IN_MESSAGES.credentials : state === "unavailable" ? SIGN_IN_MESSAGES.service : null;
-  const withForm = state === "form" || state === "failed";
+  const alert =
+    state === "failed" ? SIGN_IN_MESSAGES.credentials : state === "unavailable" || state === "retry" ? SIGN_IN_MESSAGES.service : null;
+  const withForm = state === "form" || state === "failed" || state === "retry";
   return (
     <main className="login">
       <div className="login-col">

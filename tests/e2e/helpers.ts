@@ -122,7 +122,10 @@ export const DEV_PAGES = [
   ...DEMO_PAGES,
 ] as const;
 
-export const ALL_PAGES = ["/", "/no-such-page", ...DEV_PAGES] as const;
+/** The real routes (Step 2 PR 2.5). Without the Supabase variables each one shows /login's unavailable state. */
+export const REAL_PAGES = ["/", "/login", "/office", "/tech", "/tech/profile"] as const;
+
+export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
 
 export async function openPage(page: Page, path: string) {
   await page.goto(path);

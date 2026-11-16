@@ -40,6 +40,29 @@ const DEMO_DATA_ONLY_THROUGH_LAYER = {
     "Allowed from _data: adapter, routes, roles, dates, params.",
 };
 
+/**
+ * D61 (3), with the first real route (Step 2 PR 2.5): no file outside app/dev imports any app/dev
+ * module (demo data, demo components, demo routes), so a real page can never render a demo record
+ * or the demo frame. The only exception is the /dev gate, which proxy.ts runs (its own block below).
+ * Relative forms are caught as well (`../dev/…`, `./dev/…`).
+ */
+const NO_DEV_IMPORTS = {
+  regex: "^(@/app/dev(/|$)|(\\.{1,2}/)+(app/)?dev(/|$))",
+  message: "Real routes never import app/dev (D61 (3)): the UI demo stays isolated from the real application.",
+};
+
+/** The same rule for `import()` and `require()`, which no-restricted-imports does not see. */
+const NO_DEV_DYNAMIC_IMPORTS = [
+  {
+    selector: "ImportExpression[source.value=/^(@\\/app\\/dev|(\\.{1,2}\\/)+(app\\/)?dev)(\\/|$)/]",
+    message: NO_DEV_IMPORTS.message,
+  },
+  {
+    selector: "CallExpression[callee.name='require'] > Literal[value=/^(@\\/app\\/dev|(\\.{1,2}\\/)+(app\\/)?dev)(\\/|$)/]",
+    message: NO_DEV_IMPORTS.message,
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -48,6 +71,25 @@ const eslintConfig = defineConfig([
     ignores: ["app/dev/**"],
     rules: {
       "no-restricted-imports": ["error", { patterns: FIXTURE_PATTERNS }],
+    },
+  },
+  {
+    // D61 (3): the real application (every route outside app/dev, and the root files).
+    files: ["app/**/*.{ts,tsx,mts}", "*.{ts,tsx,mts}"],
+    ignores: ["app/dev/**", "proxy.ts"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [...FIXTURE_PATTERNS, NO_DEV_IMPORTS] }],
+      "no-restricted-syntax": ["error", ...NO_DEV_DYNAMIC_IMPORTS],
+    },
+  },
+  {
+    // proxy.ts runs the /dev gate and imports nothing else from app/dev (D61 (3)).
+    files: ["proxy.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [...FIXTURE_PATTERNS, { regex: "^(@/|\\./)app/dev(/(?!_gate$)|$)", message: NO_DEV_IMPORTS.message }] },
+      ],
     },
   },
   {
