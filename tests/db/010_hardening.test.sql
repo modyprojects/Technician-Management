@@ -13,9 +13,13 @@
 -- four policies and the two writers (wrappers and bodies); three checks were added for the six new
 -- trigger functions, the three internal helpers (no grant, no wrapper) and the SECURITY DEFINER
 -- classification of the two writers.
+-- PR 1.8 (Migration 5): the EXECUTE list gains the deletion writer (wrapper and body) and loses
+-- the four retired request functions (D60 (7), C-02: no grant for any role); three checks were
+-- added for the three new trigger functions, the retired request path and the SECURITY DEFINER
+-- classification of the deletion writer.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(42);
+select plan(45);
 
 -- ---------------------------------------------------------------------------------------------
 -- Tables and columns
@@ -114,6 +118,7 @@ select results_eq(
      ('add_followup_reason(text)'),
      ('admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('admin_create_technician(uuid,text,text,text,text,boolean)'),
+     ('admin_delete_user(uuid,integer,text)'),
      ('admin_set_role_permission(text,text,boolean,integer,text)'),
      ('admin_set_user_active(uuid,boolean,integer,text)'),
      ('admin_set_user_role(uuid,text,integer,text)'),
@@ -124,7 +129,6 @@ select results_eq(
      ('authorize_account_creation(text,text,text)'),
      ('cancel_account_request(uuid,integer)'),
      ('correct_visit(uuid,text,text,text,integer)'),
-     ('decide_account_request(uuid,text,integer,text)'),
      ('delete_collection_location(uuid,integer)'),
      ('delete_followup_reason(uuid,integer)'),
      ('has_permission(text)'),
@@ -137,6 +141,7 @@ select results_eq(
      ('private.add_followup_reason(text)'),
      ('private.admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('private.admin_create_technician(uuid,text,text,text,text,boolean)'),
+     ('private.admin_delete_user(uuid,integer,text)'),
      ('private.admin_set_role_permission(text,text,boolean,integer,text)'),
      ('private.admin_set_user_active(uuid,boolean,integer,text)'),
      ('private.admin_set_user_role(uuid,text,integer,text)'),
@@ -147,7 +152,6 @@ select results_eq(
      ('private.authorize_account_creation(text,text,text)'),
      ('private.cancel_account_request(uuid,integer)'),
      ('private.correct_visit(uuid,text,text,text,integer)'),
-     ('private.decide_account_request(uuid,text,integer,text)'),
      ('private.delete_collection_location(uuid,integer)'),
      ('private.delete_followup_reason(uuid,integer)'),
      ('private.has_permission(text)'),
@@ -158,13 +162,11 @@ select results_eq(
      ('private.my_technician_id()'),
      ('private.my_visit_details(uuid)'),
      ('private.previous_visits(uuid)'),
-     ('private.request_account_change(text,uuid,text,text,text)'),
      ('private.resolve_review_item(uuid,integer,text,jsonb,text)'),
      ('private.set_call_type_active(uuid,boolean,integer)'),
      ('private.set_collection_location_active(uuid,boolean,integer)'),
      ('private.set_followup_reason_active(uuid,boolean,integer)'),
      ('private.visit_rep_contact(uuid)'),
-     ('request_account_change(text,uuid,text,text,text)'),
      ('resolve_review_item(uuid,integer,text,jsonb,text)'),
      ('set_call_type_active(uuid,boolean,integer)'),
      ('set_collection_location_active(uuid,boolean,integer)'),
@@ -326,6 +328,40 @@ select results_eq(
             ('private', 'tg_visit_field_version', false, 'v'),
             ('public', 'correct_visit', false, 'v'), ('public', 'resolve_review_item', false, 'v') $$,
   'PR 1.6: two SECURITY DEFINER writer bodies in private (correct_visit, resolve_review_item) and their SECURITY INVOKER wrappers; the helpers and trigger functions are SECURITY INVOKER; all VOLATILE'
+);
+
+-- PR 1.8: the three new trigger functions have no grant; the retired request path (D60 (7), C-02)
+-- is executable by no API role, Creator included (the bodies stay for the rollback); the deletion
+-- writer is a SECURITY DEFINER body in private behind a SECURITY INVOKER wrapper.
+select ok(
+  not has_function_privilege('authenticated', 'private.tg_profile_deleted_guard()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_technician_deleted_guard()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_account_requests_retired()', 'execute'),
+  'PR 1.8: the three new trigger functions are not executable by authenticated'
+);
+select is(
+  (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     cross join unnest(array['anon', 'authenticated', 'service_role']) r (rolname)
+   where n.nspname in ('public', 'private') and p.proname in ('request_account_change', 'decide_account_request')
+     and has_function_privilege(r.rolname, p.oid, 'execute'))
+  + (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+     where n.nspname in ('public', 'private') and p.proname in ('request_account_change', 'decide_account_request')
+       and a.grantee <> p.proowner),
+  0::bigint,
+  'PR 1.8 (C-02): the four request and decision functions are executable by no role but their owner'
+);
+select results_eq(
+  $$ select n.nspname::text collate "default", p.proname::text collate "default", p.prosecdef, p.provolatile::text
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname in ('public', 'private')
+       and p.proname in ('admin_delete_user', 'tg_profile_deleted_guard', 'tg_technician_deleted_guard',
+                         'tg_account_requests_retired')
+     order by n.nspname::text collate "C", p.proname::text collate "C" $$,
+  $$ values ('private', 'admin_delete_user', true, 'v'), ('private', 'tg_account_requests_retired', false, 'v'),
+            ('private', 'tg_profile_deleted_guard', false, 'v'), ('private', 'tg_technician_deleted_guard', false, 'v'),
+            ('public', 'admin_delete_user', false, 'v') $$,
+  'PR 1.8: the deletion writer is a SECURITY DEFINER body in private behind a SECURITY INVOKER wrapper; the trigger functions are SECURITY INVOKER; all VOLATILE'
 );
 
 select ok(

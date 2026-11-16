@@ -18,6 +18,14 @@
 -- (OQ-8); Settings actions audited, the Manager audit policy unchanged (OQ-9). Matrix values are
 -- the TEMPORARY D51 defaults: `settings` off for Manager and Customer Service.
 --
+-- PR 1.8 (Migration 5, D60 (8)): call types are gated by the narrow key `callTypes`, continuation
+-- reasons by `reasons`, pickup places still by `settings`. In this file "settings" in a description
+-- stands for the three Settings keys together: wherever PR 1.4 turned `settings` on or off for a
+-- role, the Creator now turns `settings`, `reasons` and `callTypes` on or off together, and the
+-- Manager's narrow keys (on by default, D60 (8)) are turned off before section B, so every outcome
+-- asserted here is the PR 1.4 one. Each key's own gate, `settings` alone and the narrow keys alone:
+-- 300_narrow_keys.
+--
 -- Outcomes are read through pg_temp.tm_try, which runs one statement and returns 'ok' plus its
 -- first value, or the SQLSTATE and message plus any DETAIL and HINT. Comparing the whole string
 -- therefore also proves that no error carries a DETAIL or HINT (no row data reaches the client).
@@ -233,8 +241,14 @@ select results_eq(
 -- =================================================================================================
 -- B. Callers who may not use Settings (D51 defaults: `settings` off for Manager and Customer
 --    Service): the same generic refusal from all eight RPCs, and nothing changes.
+--    PR 1.8: the Manager's narrow keys (on by default, D60 (8)) are turned off first.
 -- =================================================================================================
 select pg_temp.tm_mark();
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select public.admin_set_role_permission('manager', 'reasons', false, 1, 'PR 1.8: 120 starts without a Settings key');
+select public.admin_set_role_permission('manager', 'callTypes', false, 1, 'PR 1.8: 120 starts without a Settings key');
+reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
 set local role authenticated;
@@ -332,6 +346,8 @@ select pg_temp.tm_mark();
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
 select is(public.admin_set_role_permission('manager', 'settings', true, 1, null), 2, 'the Creator turns settings on for Managers');
+select public.admin_set_role_permission('manager', 'reasons', true, 2, null);
+select public.admin_set_role_permission('manager', 'callTypes', true, 2, null);
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
@@ -431,6 +447,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select is(public.admin_set_role_permission('customer_service', 'settings', true, 1, null), 2,
   'the Creator turns settings on for Customer Service');
+select public.admin_set_role_permission('customer_service', 'reasons', true, 1, null);
+select public.admin_set_role_permission('customer_service', 'callTypes', true, 1, null);
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
@@ -489,6 +507,10 @@ select results_eq(
   $$ values (public.admin_set_role_permission('manager', 'settings', false, 2, null),
              public.admin_set_role_permission('customer_service', 'settings', false, 2, null)) $$,
   $$ values (3, 3) $$, 'the Creator turns settings off again for Managers and Customer Service');
+select public.admin_set_role_permission('manager', 'reasons', false, 3, null);
+select public.admin_set_role_permission('manager', 'callTypes', false, 3, null);
+select public.admin_set_role_permission('customer_service', 'reasons', false, 2, null);
+select public.admin_set_role_permission('customer_service', 'callTypes', false, 2, null);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
@@ -1001,6 +1023,8 @@ select pg_temp.tm_mark();
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
 select is(public.admin_set_role_permission('manager', 'settings', true, 3, null), 4, 'the Creator turns settings on for Managers again');
+select public.admin_set_role_permission('manager', 'reasons', true, 4, null);
+select public.admin_set_role_permission('manager', 'callTypes', true, 4, null);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;

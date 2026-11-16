@@ -1,9 +1,14 @@
 -- PR 1.3: account administration (D34, D49; docs/database-schema.md §8.4, §8.5; docs/security.md
 -- §5, §10; docs/testing.md categories 2 and 4). Every call runs as `authenticated` with the
 -- caller's JWT claims, as PostgREST does.
+-- PR 1.8 (Migration 5): D60 (7) supersedes D34 (a) and (c) for these actions. Three expectations
+-- changed with it (docs/review/step1-pr18/README.md section 7): a Manager now authorizes a Customer
+-- Service creation and activates a Customer Service account directly (both were refused, D34 a),
+-- and the Creator's direct Customer Service activation follows the Manager's (one more assertion).
+-- Deletion, the frozen deleted account and every caller of the new rules: 290_account_admin.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(142);
+select plan(143);
 
 -- Fixtures (local, rolled back): see 020_markers.test.sql. b3 is an inactive Customer Service
 -- account; f1, f2 and f3 are Auth users without a profile; b9, d8 and d9 (with field profile e9)
@@ -81,8 +86,8 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select lives_ok($$ select public.authorize_account_creation('technician', ' User-F1@Example.test ', 'טכנאי חדש') $$,
   'a Manager authorizes a Technician creation (phase 1, before any Auth user exists)');
-select throws_ok($$ select public.authorize_account_creation('customer_service', 'cs-new@example.test', 'x') $$,
-  '42501', 'not authorized', 'a Manager cannot authorize a Customer Service creation (D34 a: a request to the Creator)');
+select lives_ok($$ select public.authorize_account_creation('customer_service', 'cs-new@example.test', 'x') $$,
+  'PR 1.8 (D60 (7), superseding D34 a): a Manager authorizes a Customer Service creation directly, with no Creator approval');
 select throws_ok($$ select public.authorize_account_creation('manager', 'm-new@example.test', 'x') $$,
   '42501', 'not authorized', 'a Manager cannot authorize a Manager creation');
 select throws_ok($$ select public.authorize_account_creation('creator', 'c-new@example.test', 'x') $$,
@@ -349,7 +354,7 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select throws_ok($$ select public.admin_set_user_role('00000000-0000-4000-8000-0000000000b1', 'technician', 1, null) $$,
-  '42501', 'not authorized', 'a Manager cannot change a role directly (Customer Service changes are requests)');
+  '42501', 'not authorized', 'a Manager never changes a role (D60 (7): only the Creator does; the request path is retired)');
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
@@ -371,7 +376,7 @@ select is(
      and details = '{"from": "customer_service", "to": "technician", "reason": "שינוי תפקיד"}'::jsonb),
   1::bigint, 'the role change is audited with from, to and reason');
 
--- admin_set_user_active (D34 b, c) ---------------------------------------------------------------
+-- admin_set_user_active (D34 b, c; PR 1.8: D60 (7)) ------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
 select is(public.admin_set_user_active('00000000-0000-4000-8000-0000000000b1', false, 1, 'עזבה'), 2,
@@ -380,8 +385,8 @@ select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-
   'a Manager deactivates a Technician immediately');
 select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000d2', true, 2, null) $$,
   'a Manager reactivates a Technician immediately (D34 c)');
-select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 1, null) $$,
-  '55000', 'requires the Creator''s approval', 'a Manager cannot activate a Customer Service account (request needed)');
+select is(public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 1, null), 2,
+  'PR 1.8 (D60 (7), superseding D34 a): a Manager activates a Customer Service account immediately, with no request');
 select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000a2', false, 1, null) $$,
   '42501', 'not authorized', 'a Manager cannot deactivate a Manager');
 select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000c1', false, 1, null) $$,
@@ -410,7 +415,9 @@ select throws_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000
   '42501', 'not authorized', 'the Creator cannot deactivate himself (and the last Creator is locked)');
 select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000a2', false, 1, null) $$,
   'the Creator deactivates a Manager');
-select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 1, null) $$,
+select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', false, 2, null) $$,
+  'PR 1.8: the Creator deactivates the Customer Service account the Manager activated');
+select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 3, null) $$,
   'the Creator activates a Customer Service account directly');
 select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000d1', false, 1, null) $$,
   'the Creator deactivates a Technician');

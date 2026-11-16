@@ -1,6 +1,10 @@
 -- PR 1.3: test-data markers and integrity triggers (D47; docs/database-schema.md §1, §2, §8.4;
 -- docs/testing.md categories 6, 7 and 12). Runs as postgres, so it also proves that the
 -- triggers hold for the owner role where the design says "every role".
+-- PR 1.8 (Migration 5; D60 (7), C-02): new account_requests rows other than creation intents are
+-- refused (t05_requests_retired, asserted in 050_account_requests). The request rows below stand for
+-- history written before Migration 5, which Migration 1's CHECKs, indexes and guard still protect,
+-- so that trigger is disabled for this file (inside the rolled-back transaction).
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(48);
@@ -30,6 +34,7 @@ insert into public.profiles (id, role, full_name, is_active, is_test) values
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
   ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y', 'tech-a@example.test'),
   ('00000000-0000-4000-8000-0000000000e2', '00000000-0000-4000-8000-0000000000d2', true, 'טכנאי ב', 't-e', 'tech-b@example.test');
+alter table public.account_requests disable trigger t05_requests_retired;
 insert into public.account_requests (id, request_type, target_profile_id, target_version, requested_by, is_test) values
   ('00000000-0000-4000-8000-0000000000aa', 'reactivate', '00000000-0000-4000-8000-0000000000b2', 1,
    '00000000-0000-4000-8000-0000000000a1', true);

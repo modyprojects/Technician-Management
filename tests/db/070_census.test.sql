@@ -7,6 +7,8 @@
 -- visit_time_current returns no rows on a fresh database.
 -- PR 1.6: the census covers review_items, visit_corrections and offline_operations (one 'all
 -- sources' row each: 3 new rows), 0 on a fresh database, and counts a test row in each.
+-- PR 1.8: no new table (the deletion columns are on profiles, which the census already counts);
+-- the reference data grows by the 3 D60 (8) keys and their 6 TEMPORARY values (16 keys, 32 values).
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(28);
@@ -27,8 +29,8 @@ select results_eq(
               as row_count) x
      where s.nspname in ('public', 'private') and c.relkind in ('r', 'p') and x.row_count <> 0
      order by c.relname::text collate "C" $$,
-  $$ values ('call_types', 2::bigint), ('followup_reasons', 5::bigint), ('permissions', 13::bigint), ('role_permissions', 26::bigint) $$,
-  'migrations create no rows in any table except the approved reference data: 2 call types and 5 reasons (D48), 13 keys and 26 TEMPORARY values (D47, D49, D51)');
+  $$ values ('call_types', 2::bigint), ('followup_reasons', 5::bigint), ('permissions', 16::bigint), ('role_permissions', 32::bigint) $$,
+  'migrations create no rows in any table except the approved reference data: 2 call types and 5 reasons (D48), 16 keys and 32 TEMPORARY values (D33, D60 (8); D47, D49, D51)');
 select ok(
   (select count(*) from public.call_types where not is_test and created_by is null and is_active and version = 1) = 2
   and (select count(*) from public.followup_reasons where not is_test and created_by is null and is_active and not is_user_added
