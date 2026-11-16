@@ -594,3 +594,21 @@ No ONE-related table, column, status, flag, export or adapter.
 6. CI: local Supabase, the "no test rows in migrations" check, census = 0 on a fresh database built from migrations, and the rollback (down) script tested.
 7. Rollout risks and rollback plan.
 8. Applied through MCP only (`apply_migration`, with the file name without its version prefix as `name`; the server assigns the version, which the apply report records, and the down script matches the name: PR 1.3 review OPS-1) with the owner's separate approval before it is applied, for that migration or for an explicitly approved and precisely scoped migration batch (a batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval; D52 rule 4), immediately before the merge. Every other remote Supabase operation, read-only included, needs the owner's approval of that operation (D53). The PR merge follows D53: every mandatory check has passed on the exact approved merge candidate. PR #12, PR #14 and their migrations also need the owner's separate approval before merging (D55 (10)), and no migration PR is merged without the required separate approvals (D55 (11)).
+
+## Planned changes from D60 (QA corrections 01; not implemented)
+
+Migrations 1–3 are not modified. The details are in `docs/qa-corrections-01-integration.md` §5, and each migration needs its own approval (D52 rule 4).
+
+- **Migration 5 (PR 1.8), accounts and permissions:**
+  - New bodies for `assert_can_manage`, `authorize_account_creation`, `admin_set_user_active` and the related functions: the Manager manages Technician and Customer Service accounts directly and never changes roles.
+  - The account-request path retired; `account_requests` kept read-only as history.
+  - Creator-only deletion, Option A: `profiles.deleted_at`, `profiles.deleted_by`, a reactivation guard and a new audit action. No physical deletion of historical records.
+  - The audit action CHECK extended.
+  - The narrow matrix keys `reasons`, `callTypes`, `ackText` (TEMPORARY, D51), with the Migration 2 call-type and reason RPCs switched to them.
+  - `usage` made a Creator-only fixed capability.
+  - A fail-closed hardening check.
+- **Telemetry migration (with Step 3):**
+  - `usage_events`: a closed event catalogue with no customer content, recordings or signatures.
+  - A rate-limited insert function.
+  - Creator-only aggregate functions and a manual purge function. No scheduled jobs (D25).
+- **Visit visibility:** `visits.status = 'cancelled'` stays internal (D38). Read functions and screens omit cancelled visits from every user-facing list and counter (D60 (1)).

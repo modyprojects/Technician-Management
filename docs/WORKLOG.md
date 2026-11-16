@@ -33,6 +33,44 @@
 - **TEMPORARY behaviours** OQ-1 to OQ-14 and deviations DEV-1 to DEV-12: `docs/review/step1-pr16/README.md`. Among them: corrections are append-only (as-closed values kept), no outcome correction, only `keep_current` and the accepted second device report are applied by PR 1.6.
 - **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1 and A2; the apply only after Migration 3 is applied and merged, with a separate approval of the exact file.
 
+## 2026-11-16 — D62: QA corrections per real screen
+- **Owner clarification (2026-11-16), recorded as D62:** the 50 QA corrections are implemented with their real screens, not at the end. The per-screen cycle is:
+  - review the QA requirements;
+  - build the screen with them;
+  - test its acceptance criteria;
+  - give the owner an owner-only Preview;
+  - apply the owner's requested changes before the next screen.
+- Outdated demo behaviour is never rebuilt first. The MODY design is kept except where the QA document requires a change.
+- **Reporting:** each screen is reported in Hebrew with the QA IDs implemented and still pending.
+- **Order:** the approved order continues: Migration 3 (apply on approval), PR 1.6 (Migration 4), PR 1.7, PR 1.8 (Migration 5), then Step 2.
+- `docs/ROADMAP.md` "Current priority" updated. Documentation only.
+
+## 2026-11-12 — D61: the real application and the demo
+- **Owner requirement (2026-11-12), recorded as D61:**
+  - `/dev/demo` stays a development and demonstration environment with fictional data. It is isolated from the real application, restricted to authorized development access, and not deleted yet.
+  - The real application uses only Supabase-backed data and Supabase Auth, and never shows demo records as operational data.
+  - The MODY design is the baseline; only the approved QA corrections (D60) change it, and they are applied while each real screen is built.
+- **Current controls (verified on `main` `4509c6e`):**
+  - The lint rules keep demo `_data` and `_components` out of every file outside `app/dev`, and keep `app/` imports out of `components/`, `features/` and `lib/`.
+  - Every demo screen carries the strip "🧪 נתוני בדיקה · פעולות מדומות".
+  - `/dev` opens in Production only during the testing period, behind Vercel Authentication (D31).
+  - The only real route today is the temporary home page.
+- **Gap and plan:** a file outside `app/dev` could still import other `app/dev/demo` modules. The first real-route PR (Step 2) widens the lint rule (no `app/dev` import outside `app/dev` except the gate) and adds tests that real routes never render the demo strip.
+
+## 2026-11-12 — D60: QA corrections 01 integrated into the roadmap (documentation only)
+- **Source:** the owner's QA document "קובץ תיקונים 01" (`docs/design/qa-corrections-01.md`, PR #28, not merged yet). The owner approved the Hebrew integration plan on 2026-11-12 with three decisions:
+  - Creator-only deletion, Option A;
+  - the simulator button inside "זימונים שלא נקלטו", only when enabled in a test environment;
+  - Managers cannot change roles.
+- **D60** recorded in `docs/decisions.md`. Open decisions 10 and 27 resolved; 7, 15 and 20 annotated.
+- **Mapping:** `docs/qa-corrections-01-integration.md` maps all 50 requirements (T-01 to T-10, S-01 to S-12, M-01 to M-10, C-01 to C-09, X-01 to X-09). Each has its current status, work, step, acceptance criteria and tests. **Nothing is implemented yet.**
+- **ROADMAP:** every step row names its QA IDs. Added PR 1.8 (Migration 5, accounts and permissions) and Step 12 (the full usage-analytics dashboard after the pilot), plus a "QA corrections 01" section and the current priority.
+- **Other documents:**
+  - `docs/demo-deviations.md` v1.6: QA-01 to QA-17 override the demo where they differ.
+  - `docs/database-schema.md`: the planned D60 changes (Migration 5, telemetry). Migrations 1–3 unchanged.
+  - `docs/PROJECT-MAP.md` updated.
+- **Merge order:** PR #28 first, then this PR. Both need the owner's merge approval. No code, migration or protected file changed.
+
 ## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
 - **Owner decisions:**
   - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.

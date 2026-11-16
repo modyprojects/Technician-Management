@@ -1,6 +1,6 @@
 # Project Map — current state
 
-Last updated: 2026-11-16 (Step 1 / PR 1.6, branch `claude/step1-pr16-integrity-offline`: Migration 4 prepared and tested locally, **not applied**; Step 1 / PR 1.5, branch `claude/step1-pr15-calls-visits`: Migration 3 prepared and tested locally, **not applied**; Step 1 / PR 1.4, branch `claude/step1-pr14-reference-data`: Migration 2 tested locally, independently reviewed and checked read-only against the remote project; ready for the owner's apply approval, **not applied**. Migration 1 (PR 1.3, PR #12) is merged into `main` (`fe370df`) and applied to the remote project (owner-approved, 2026-11-11). `main` also has the Step 2 PR 2.1 foundations (`features/auth/`, server-only `lib/supabase/`), the owner's decisions D55-D58, the Manager dashboard and office navigation (D57), the MODY brand assets and the runtime canary-rows check, PR #13, D54).
+Last updated: 2026-11-16 (Step 1 / PR 1.6, branch `claude/step1-pr16-integrity-offline`: Migration 4 prepared and tested locally, **not applied** (draft PR #30); D60–D62: QA corrections 01 integrated into the roadmap, `docs/qa-corrections-01-integration.md`, documentation only; Step 1 / PR 1.5: Migration 3 applied to the remote project (version `20261116094444`) and merged (PR #25); Step 1 / PR 1.4, branch `claude/step1-pr14-reference-data`: Migration 2 tested locally, independently reviewed and checked read-only against the remote project; ready for the owner's apply approval, **not applied**. Migration 1 (PR 1.3, PR #12) is merged into `main` (`fe370df`) and applied to the remote project (owner-approved, 2026-11-11). `main` also has the Step 2 PR 2.1 foundations (`features/auth/`, server-only `lib/supabase/`), the owner's decisions D55-D58, the Manager dashboard and office navigation (D57), the MODY brand assets and the runtime canary-rows check, PR #13, D54).
 
 ## 1. Purpose and how to read it
 
@@ -63,6 +63,7 @@ Status words used below: **Implemented** (built and tested), **Mock or demo** (f
 | `docs/mfa-design.md` | MFA design (Step 2, PR 2.8): options, costs, recommended defaults and the owner's decision table for open decision 19 (enrolment, `aal2` enforcement, recovery, self-enrolment), the owner's runbook and the test plan. Design only, nothing decided or built |
 | `docs/research/` | Research notes, not decisions (`d31-anonymous-access-check.md`: automated anonymous-access check, not implemented) |
 | `docs/demo.html` | Original Hebrew interactive prototype: design reference only, **not production code** |
+| `docs/qa-corrections-01-integration.md` | QA corrections 01 (D60): 50 requirements (T, S, M, C, X) mapped to steps, acceptance criteria and tests, plus the future database changes. The source document is `docs/design/qa-corrections-01.md` (PR #28) |
 | `docs/review/` | Review screenshots per step (`docs/review/step-0/`, `docs/review/ui-demo-1/`, `docs/review/ui-demo-2/` and `docs/review/ui-demo-3/`, each with the matching `demo-` shots from `docs/demo.html`; `docs/review/ui-demo-4/` has none, because the demo has no such screens, OF-16; `docs/review/ui-demo-5/` has the demo's mail view only); `docs/review/step1-pr13/` is the PR 1.3 database test report (`README.md`) and the audit anchor files (`audit-anchor-record.sql`, `audit-anchor-check.sql`); `docs/review/step1-pr14/README.md` is the PR 1.4 database test report (objects, ER diagram, who can do what, mutants, pinned hashes, owner questions OQ-1 to OQ-13); fictitious data only; `docs/review/db-canary/` holds the canary-rows check's design notes and measurements (no screenshots); `docs/review/step2-pr21/` the Step 2 package choices and runtime verifications (no screenshots: no UI change) |
 | `docs/user-guides/` | Hebrew user guides (D15): placeholders until features are tested |
 | `docs/history/` | Superseded context; not authoritative |
@@ -84,8 +85,8 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Database test infrastructure | Implemented | Step 1, PR 1.2 |
 | Access and permissions: hardening, profiles, technicians, permission matrix (D33; values temporary until Step 10, D51), account approval (D34), audit with hash chain, test-data marking and census (D47) | Prepared and tested locally; **not applied** (needs the owner's D50 settings and migration approval) | Step 1, PR 1.3 |
 | Reference data, customers and products: brands, suppliers, products, customers, call types and continuation reasons (D48), pickup places, Settings RPCs (key `settings`), RLS and grants; no product, brand or supplier write path yet (TEMPORARY, OQ-1, OQ-3) | Prepared and tested locally, stacked on PR 1.3; **not applied** (independent review round 1 done and fixed; needs an independent check of the fix round, the owner's acceptance of three guard entries and migration approval) | Step 1, PR 1.4 |
-| Service calls, visits and their history (Migration 3): schema, RLS, grants, narrow read functions | Prepared and tested locally, not applied (draft PR) | Step 1, PR 1.5 |
-| Integrity and offline (Migration 4): offline operations, review items, corrections, field versions | Prepared and tested locally, not applied (not pushed) | Step 1, PR 1.6 |
+| Service calls, visits and their history (Migration 3): schema, RLS, grants, narrow read functions | Applied to the remote project (version `20261116094444`, 2026-11-16) and merged (PR #25) | Step 1, PR 1.5 |
+| Integrity and offline (Migration 4): offline operations, review items, corrections, field versions | Prepared and tested locally, not applied (draft PR #30) | Step 1, PR 1.6 |
 | Canary-rows migration check (runtime; complements the migration guard) | Implemented | Step 1, dedicated PR #13 (`claude/db-canary-check`); its files are protected (D54) |
 | Step 1 report (Hebrew), ER diagram | Planned | Step 1, PR 1.7 |
 | Authentication foundations: Supabase packages, configuration schema (fails closed), server-only user-session client with HttpOnly cookies, error messages, redirect allowlist, role codes, shared navigation helpers | Implemented (not used by any route yet) | Step 2, PR 2.1 |
@@ -99,6 +100,7 @@ Not created yet (see section 4): `app/(auth)/`, `app/(tech)/tech/`, `app/(office
 | Dashboards | Planned | Step 9 |
 | Settings and hardening | Planned | Step 10 |
 | Microsoft 365 and pilot | Planned | Step 11 |
+| Usage analytics ("מדדי שימוש", Creator only; D60 (9)) | Planned (telemetry from Step 3, basic dashboard in Step 10, full dashboard in Step 12) | Steps 3, 10, 12 |
 | Hebrew user guides with real screenshots (D15) | Planned (written as features are tested) | From Step 3 |
 
 ## 4. Where things belong
