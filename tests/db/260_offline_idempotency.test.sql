@@ -8,15 +8,15 @@
 --   type is refused (23505), under another user too (42501, generic); the id is serialized for the
 --   transaction (advisory lock); a stored operation never changes; an operation stored for review
 --   names the review item of the same visit and operation.
---   create_review_item: one item per dedupe key (a retried submission returns the stored item, its
---   first versions kept); the same key for another item is refused; the submitter is the device
---   session's user, never a parameter; the contract of a second device report (PR 1.5 OQ-11).
+--   create_review_item: one item per dedupe key (an exact replay returns the stored item; anything
+--   else under the key is refused, independent review S2); the submitter is the device session's
+--   user, never a parameter; the contract of a second device report (PR 1.5 OQ-11, review N2).
 -- Mechanics: a postgres-owned SECURITY DEFINER scratch writer in pg_temp (the shape of the Step 4
 -- time-report writer: replay check, apply or store for review, record) is called by Technician B
 -- with his JWT claims; the helpers are also called directly as postgres with claims set.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(16);
+select plan(17);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -314,21 +314,50 @@ select results_eq(
   'a stored operation never changes and is never deleted, even as postgres (the stored result is final)');
 
 -- ---------------------------------------------------------------------------------------------
--- 4. Review dedupe (D44: a submission is stored once, never lost)
+-- 4. Review dedupe (D44: a submission is stored once, never lost; independent review S2: only an
+--    exact replay returns the stored item)
 -- ---------------------------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
 select is(
   (select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null,
      '00000000-0000-4000-8000-000000260f10', '{"summary": "א"}', '{"summary": "ב"}', '{"summary": "ג"}')
    = private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null,
-     '00000000-0000-4000-8000-000000260f10', '{"summary": "שונה"}', '{"summary": "ב"}', null)),
-  true, 'the same dedupe key for the same item returns the stored item''s id');
+     '00000000-0000-4000-8000-000000260f10', '{"summary": "א"}', '{"summary": "ב"}', '{"summary": "ג"}')),
+  true, 'an exact replay (same key, submitter, operation and versions) returns the stored item''s id');
 select is(
   (select concat_ws(' | ', count(*), min(r.submitted_version ->> 'summary'), min(r.base_version ->> 'summary'),
                     bool_and(r.submitted_by_profile_id = '00000000-0000-4000-8000-0000000000d1'))
    from public.review_items r where r.dedupe_key = 'pr16-260-dup'),
   '1 | א | ג | t',
-  'one row: the first submission''s versions are kept (both versions as stored, D44), the submitter is the device session''s user');
+  'one row, the submission''s versions as stored (D44), the submitter is the device session''s user');
+select results_eq(
+  $$ select x.label, pg_temp.tm_run_as(null, x.sub::uuid, 'postgres', x.stmt)
+     from (values
+       (1, 'the same key from another submitter (Technician B)', '00000000-0000-4000-8000-0000000000d2',
+        $q$select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null, '00000000-0000-4000-8000-000000260f10', '{"summary": "א"}', '{"summary": "ב"}', '{"summary": "ג"}')$q$),
+       (2, 'the same key with another submitted version', '00000000-0000-4000-8000-0000000000d1',
+        $q$select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null, '00000000-0000-4000-8000-000000260f10', '{"summary": "שונה"}', '{"summary": "ב"}', '{"summary": "ג"}')$q$),
+       (3, 'the same key with another server version', '00000000-0000-4000-8000-0000000000d1',
+        $q$select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null, '00000000-0000-4000-8000-000000260f10', '{"summary": "א"}', '{"summary": "אחר"}', '{"summary": "ג"}')$q$),
+       (4, 'the same key without the base', '00000000-0000-4000-8000-0000000000d1',
+        $q$select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null, '00000000-0000-4000-8000-000000260f10', '{"summary": "א"}', '{"summary": "ב"}', null)$q$),
+       (5, 'the same key with another operation id', '00000000-0000-4000-8000-0000000000d1',
+        $q$select private.create_review_item('edit_conflict', 'pr16-260-dup', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b01', 'device', null, '00000000-0000-4000-8000-000000260f11', '{"summary": "א"}', '{"summary": "ב"}', '{"summary": "ג"}')$q$),
+       (6, 'an invitation key with another invitation reference', null,
+        $q$select private.create_review_item('reassignment', 'pr16-260-inv', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b03', 'invitation', 'pr16-evt-1', null, '{}', '{}', null);
+           select private.create_review_item('reassignment', 'pr16-260-inv', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b03', 'invitation', 'pr16-evt-2', null, '{}', '{}', null)$q$),
+       (7, 'an invitation key replayed exactly (positive control)', null,
+        $q$select private.create_review_item('reassignment', 'pr16-260-inv', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b03', 'invitation', 'pr16-evt-1', null, '{}', '{}', null);
+           select private.create_review_item('reassignment', 'pr16-260-inv', '00000000-0000-4000-8000-000000260a01', '00000000-0000-4000-8000-000000260b03', 'invitation', 'pr16-evt-1', null, '{}', '{}', null)$q$)
+     ) as x (n, label, sub, stmt) order by x.n $$,
+  $$ values ('the same key from another submitter (Technician B)', '23505 review_items: the dedupe key belongs to another item'),
+            ('the same key with another submitted version', '23505 review_items: the dedupe key belongs to another item'),
+            ('the same key with another server version', '23505 review_items: the dedupe key belongs to another item'),
+            ('the same key without the base', '23505 review_items: the dedupe key belongs to another item'),
+            ('the same key with another operation id', '23505 review_items: the dedupe key belongs to another item'),
+            ('an invitation key with another invitation reference', '23505 review_items: the dedupe key belongs to another item'),
+            ('an invitation key replayed exactly (positive control)', 'ok') $$,
+  'review S2: under a used dedupe key anything but an exact replay is refused (another submitter, operation, reference or version), so no submission gets someone else''s item');
 select results_eq(
   $$ select x.label, pg_temp.tm_run_as(null, x.sub::uuid, 'postgres', x.stmt, x.probe)
      from (values

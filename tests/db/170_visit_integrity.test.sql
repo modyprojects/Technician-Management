@@ -441,7 +441,8 @@ select is(pg_temp.tm_run(
   $$ update public.visits v set status = 'followup', followup_reason_id = pg_temp.tm_id('reason'), next_visit_notes = 'לבדוק שוב'
      where v.id = pg_temp.tm_id('Q2') $$,
   $$ select v.status || ' ' || (v.closed_at = now() - interval '1 day') from public.visits v where v.id = pg_temp.tm_id('Q2') $$),
-  'followup true', 'done -> followup is accepted and keeps the closure time (OQ-14)');
+  '55000 visits: a closed visit keeps its continuation reason and next-visit notes',
+  'PR 1.6 (TEMPORARY OQ-7, review S3): done -> followup is refused, because a closed visit keeps its continuation reason and next-visit notes (PR 1.5 OQ-14 stays open; 160 shows the D38 recalculation with the freeze disabled)');
 select is(pg_temp.tm_run(
   $$ update public.visits v set status = 'done' where v.id = pg_temp.tm_id('Q1') $$,
   $$ select v.status || ' ' || (v.closed_at = now() - interval '1 day') from public.visits v where v.id = pg_temp.tm_id('Q1') $$),

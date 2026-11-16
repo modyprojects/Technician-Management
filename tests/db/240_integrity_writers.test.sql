@@ -18,12 +18,14 @@
 --   invitation never changes a closed visit (D39), the effects (an accepted second device report
 --   becomes a correction time report that keeps its original receipt time, OQ-13; keep_current
 --   changes nothing; both versions stay stored), an audit row, the call status unchanged.
---   D47: a test caller never corrects or decides a real record (simulated go-live, section 6).
+--   Independent review S1: a second device report accepted after an office correction of the same
+--   field time is refused like a stale version (PT409).
+--   D47: a test caller never corrects or decides a real record (simulated go-live, section 7).
 -- Mechanics: each scenario runs in a subtransaction that is always undone (tm_run_as), as the role
 -- under test with its JWT claims; its effects are read back as postgres in the same scenario.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(23);
+select plan(24);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -524,6 +526,27 @@ select is(pg_temp.tm_as('00000000-0000-4000-8000-0000000000a1',
      from public.service_calls c where c.id = '00000000-0000-4000-8000-000000240a01' $$),
   'open | 1 | cancelled | 0 | t',
   'no decision of PR 1.6 changes a visit''s status (the cancellation stands, D44), so the call status stays, every deferred check passes and the audit chain verifies');
+
+-- Independent review S1: a second device report never silently supersedes an office correction of
+-- the same field time recorded after the report was received (both happen in this transaction,
+-- after the fixture created r2, so the correction counts as later).
+select results_eq(
+  $$ select x.label, pg_temp.tm_as('00000000-0000-4000-8000-0000000000a1', x.stmt)
+     from (values
+       (1, 'a correction of the departure, then the second departure report accepted',
+        $q$select * from public.correct_visit('00000000-0000-4000-8000-000000240b01', 'departed', to_char(now() - interval '176 minutes', 'YYYY-MM-DD"T"HH24:MI:SSOF'), 'לפי יומן', 1);
+           select public.resolve_review_item((select r.id from public.review_items r where r.dedupe_key = 'pr16-240-r2'), 1, 'apply_incoming', null, 'אושר')$q$),
+       (2, 'the same, then kept as it was (keep_current stays possible)',
+        $q$select * from public.correct_visit('00000000-0000-4000-8000-000000240b01', 'departed', to_char(now() - interval '176 minutes', 'YYYY-MM-DD"T"HH24:MI:SSOF'), 'לפי יומן', 1);
+           select public.resolve_review_item((select r.id from public.review_items r where r.dedupe_key = 'pr16-240-r2'), 1, 'keep_current', null, 'התיקון נשאר')$q$),
+       (3, 'a correction of another field (the arrival) does not block it',
+        $q$select * from public.correct_visit('00000000-0000-4000-8000-000000240b01', 'arrived', to_char(now() - interval '141 minutes', 'YYYY-MM-DD"T"HH24:MI:SSOF'), 'לפי יומן', 1);
+           select public.resolve_review_item((select r.id from public.review_items r where r.dedupe_key = 'pr16-240-r2'), 1, 'apply_incoming', null, 'אושר')$q$)
+     ) as x (n, label, stmt) order by x.n $$,
+  $$ values ('a correction of the departure, then the second departure report accepted', 'PT409 version conflict'),
+            ('the same, then kept as it was (keep_current stays possible)', 'ok'),
+            ('a correction of another field (the arrival) does not block it', 'ok') $$,
+  'review S1: accepting a second device report after an office correction of the same field time is refused like a stale version (PT409); keep_current and other fields are unaffected');
 
 -- ---------------------------------------------------------------------------------------------
 -- 7. Simulated go-live (rolled back): a real call and visit (the pre-go-live CHECKs are relaxed

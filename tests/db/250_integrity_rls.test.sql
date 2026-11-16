@@ -155,7 +155,7 @@ insert into public.review_items (review_type, dedupe_key, service_call_id, visit
                                  operation_id, submitted_version, current_version)
 values ('reassignment', 'pr16-250-r1', '00000000-0000-4000-8000-000000250a01', '00000000-0000-4000-8000-000000250b03', 'invitation', 'evt-1', null, null, '{"technician": "א"}', '{"technician": "ב"}'),
        ('duplicate_time_report', 'pr16-250-r2', '00000000-0000-4000-8000-000000250a01', '00000000-0000-4000-8000-000000250b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', '00000000-0000-4000-8000-000000250f02',
-        '{"kind": "departed", "reported_at": "x", "device_tz": "x", "device_utc_offset_min": 0, "device_sent_at": "x"}', '{}'),
+        '{"kind": "departed", "reported_at": "2026-11-16T06:00:00+00:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-16T06:01:00+00:00"}', '{}'),
        ('sku_change', 'pr16-250-r4', '00000000-0000-4000-8000-000000250a01', null, 'invitation', 'evt-4', null, null, '{"sku": "B"}', '{"sku": "A"}');
 insert into public.visit_corrections (visit_id, field, old_value, new_value, reason, version_before, version_after, corrected_by)
 values ('00000000-0000-4000-8000-000000250b01', 'summary', '"הוחלף חלק"', '"סיכום מתוקן"', 'סיבה', 1, 2, '00000000-0000-4000-8000-0000000000a1'),

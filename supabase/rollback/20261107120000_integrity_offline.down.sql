@@ -249,8 +249,8 @@ $$;
     drop constraint visit_time_reports_accepted_check,
     drop constraint visit_time_reports_correction_check,
     drop constraint visit_time_reports_source_check;
-  drop index public.visit_time_reports_correction_id_idx;
-  drop index public.visit_time_reports_accepted_review_id_idx;
+  drop index public.visit_time_reports_correction_id_key;
+  drop index public.visit_time_reports_accepted_review_id_key;
   alter table public.visit_time_reports
     drop column correction_id,
     drop column accepted_review_id;
@@ -265,9 +265,12 @@ $$;
   drop table public.visit_corrections;
   drop table public.review_items;
 
-  -- 5. visits back to PR 1.5: the field_version trigger and the parent key of review_items.
+  -- 5. visits back to PR 1.5: the field_version trigger, the closed-visit freeze and the parent key
+  --    of review_items; visit_reports without the PR 1.6 freeze (its PR 1.5 t10 was never changed).
   drop trigger t13_field_version on public.visits;
+  drop trigger t14_closed_fields on public.visits;
   alter table public.visits drop constraint visits_id_service_call_id_key;
+  drop trigger t11_frozen on public.visit_reports;
 
   -- 6. The two audit_logs CHECKs back to PR 1.4 (no row uses a PR 1.6 action or target, step 0).
   alter table public.audit_logs
@@ -289,12 +292,13 @@ $$;
       'profiles', 'technicians', 'account_requests', 'role_permissions',
       'call_types', 'followup_reasons', 'collection_locations'));
 
-  -- 7. The five trigger functions.
+  -- 7. The six trigger functions.
   drop function private.tg_call_child_marker();
   drop function private.tg_review_item_state();
   drop function private.tg_visit_correction_guard();
   drop function private.tg_offline_operation_derive();
   drop function private.tg_visit_field_version();
+  drop function private.tg_visit_closed_fields();
 
   -- 8. (none: no role, no sequence, no view was created.)
 

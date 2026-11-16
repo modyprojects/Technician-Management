@@ -10,9 +10,10 @@
 --
 -- Content: three tables (review_items, visit_corrections, offline_operations); two columns, two
 -- composite foreign keys and three CHECKs on visit_time_reports (corrections and accepted device
--- reports, D45); a unique key and a field_version trigger on visits (database-schema.md §1); the
--- audit extension (two actions, two target tables); five new trigger functions and the
--- replacement of tg_time_report_derive; three internal helpers (create_review_item,
+-- reports, D45); a unique key, a field_version trigger and a closed-visit freeze of the
+-- continuation reason and next-visit notes on visits (database-schema.md §1; OQ-7); visit_reports
+-- frozen after insert (OQ-7); the audit extension (two actions, two target tables); six new trigger
+-- functions and the replacement of tg_time_report_derive; three internal helpers (create_review_item,
 -- offline_operation_replay, record_offline_operation: no grants, called by the Step 4 and Step 6
 -- writers); two SECURITY DEFINER writers (correct_visit D14, resolve_review_item D44) with their
 -- SECURITY INVOKER wrappers; four SELECT policies; per-object grants; the census extension; and
@@ -35,7 +36,10 @@
 --         (no parts until Step 4 creates visit_parts; never the signature, D43).
 --   OQ-6  no outcome correction (PR 1.5 OQ-14 stays open): done <-> followup is not offered.
 --   OQ-7  corrections are append-only: visit_reports and the visit row keep the values as the
---         Technician closed the visit; the current value is the newest correction.
+--         Technician closed the visit; the current value is the newest correction. Enforced for
+--         every writer: visit_reports rows never change after insert (only bookkeeping), and a
+--         done or followup visit keeps its continuation reason and next-visit notes (a cancelled
+--         visit may still receive them with a D44 accepted closure, PR 1.5 DEV-18).
 --   OQ-8  a stale version is refused (PT409): the visits.correct port sends no per-field base, so
 --         the D44 merge and edit_conflict path apply to device submissions (Step 4), not here.
 --   OQ-9  review types, sources and the device-operation types (codes are permanent once rows
@@ -190,9 +194,14 @@ create table public.review_items (
         and (resolution = 'per_field') = (resolution_choices is not null))),
   -- The contract of a second device report (PR 1.5 OQ-11): the device values that an acceptance
   -- turns into a time report (private.resolve_review_item).
+  -- (independent review N2): the kind is a field-time kind and both device times carry their UTC
+  -- offset, in the format of visit_corrections_new_value_check.
   constraint review_items_time_report_check check (
     review_type <> 'duplicate_time_report'
-    or submitted_version ?& array['kind', 'reported_at', 'device_tz', 'device_utc_offset_min', 'device_sent_at'])
+    or (submitted_version ?& array['kind', 'reported_at', 'device_tz', 'device_utc_offset_min', 'device_sent_at']
+        and (submitted_version ->> 'kind') in ('departed', 'arrived', 'ended', 'signed')
+        and (submitted_version ->> 'reported_at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?[+-][0-9]{2}(:[0-9]{2}){0,2}$'
+        and (submitted_version ->> 'device_sent_at') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?[+-][0-9]{2}(:[0-9]{2}){0,2}$'))
 );
 create index review_items_service_call_id_idx on public.review_items (service_call_id);
 create index review_items_visit_id_idx on public.review_items (visit_id) where visit_id is not null;
@@ -357,8 +366,10 @@ alter table public.visit_time_reports
     references public.visit_corrections (id, is_test) on delete restrict,
   add constraint visit_time_reports_accepted_review_id_fkey foreign key (accepted_review_id, is_test)
     references public.review_items (id, is_test) on delete restrict;
-create index visit_time_reports_correction_id_idx on public.visit_time_reports (correction_id) where correction_id is not null;
-create index visit_time_reports_accepted_review_id_idx on public.visit_time_reports (accepted_review_id)
+-- One time report per correction and per accepted review item (independent review N1).
+create unique index visit_time_reports_correction_id_key on public.visit_time_reports (correction_id)
+  where correction_id is not null;
+create unique index visit_time_reports_accepted_review_id_key on public.visit_time_reports (accepted_review_id)
   where accepted_review_id is not null;
 comment on table public.visit_time_reports is
   'Device-reported field times (D45) and their corrections (source correction: a D14 correction or an accepted second report). Append-only; flagged, never rejected for clock values; current value in public.visit_time_current.';
@@ -495,6 +506,25 @@ begin
   if (new.status, new.technician_id, new.city, new.street, new.building, new.floor, new.apartment)
      is distinct from (old.status, old.technician_id, old.city, old.street, old.building, old.floor, old.apartment) then
     new.field_version := old.field_version + 1;
+  end if;
+  return new;
+end
+$$;
+
+-- t14 on visits (BEFORE UPDATE): a server-closed visit (done or followup) keeps its continuation
+-- reason and next-visit notes (D14; TEMPORARY, OQ-7: corrections are append-only, so no writer
+-- changes them; independent review S3). A cancelled visit is not frozen here: a D44 accepted
+-- closure sets them with the outcome (PR 1.5 DEV-18). Together with Migration 3's t12 this also
+-- refuses a done -> followup change (PR 1.5 OQ-14 stays open: no outcome correction).
+create function private.tg_visit_closed_fields()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
+begin
+  if old.status in ('done', 'followup')
+     and (new.followup_reason_id, new.next_visit_notes) is distinct from (old.followup_reason_id, old.next_visit_notes) then
+    raise exception using errcode = '55000', message = 'visits: a closed visit keeps its continuation reason and next-visit notes';
   end if;
   return new;
 end
@@ -638,9 +668,20 @@ create trigger t35_offline_operation before insert on public.offline_operations
 create trigger t99_reject_truncate before truncate on public.offline_operations
   for each statement execute function private.tg_reject_truncate();
 
--- visits: field_version (after t12, which sets the server times).
+-- visits: field_version (after t12, which sets the server times), then the closed-visit freeze of
+-- the continuation reason and next-visit notes (OQ-7).
 create trigger t13_field_version before insert or update on public.visits
   for each row execute function private.tg_visit_field_version();
+create trigger t14_closed_fields before update on public.visits
+  for each row execute function private.tg_visit_closed_fields();
+
+-- visit_reports: frozen after insert except bookkeeping (OQ-7; independent review S3). Migration 3's
+-- t10 lets the summary and its source change (it was planned for in-place corrections); t11 runs
+-- right after it and allows only version, updated_at and updated_by, so a summary correction is a
+-- visit_corrections row. A separate trigger leaves Migration 3's t10 as it is, and the rollback
+-- only drops t11.
+create trigger t11_frozen before update on public.visit_reports
+  for each row execute function private.tg_immutable_except('version', 'updated_at', 'updated_by');
 
 -- ---------------------------------------------------------------------------------------------
 -- 5. Audit extension: the D14 correction and the review decision. Both CHECKs keep the 28
@@ -704,8 +745,10 @@ $$;
 -- ---------------------------------------------------------------------------------------------
 
 -- Stores a review item once per dedupe key (D44: both versions as received). A second call with
--- the same key returns the stored item's id when it is the same item (type, call, visit, source),
--- so a retried submission is never stored twice; the same key for another item is refused (23505).
+-- the same key returns the stored item's id only when it is an exact replay (type, call, visit,
+-- source, reference, submitter, operation and all three versions), so a retried submission is never
+-- stored twice; anything else under the same key is refused (23505), so no submission is ever
+-- answered with someone else's item (independent review S2).
 create function private.create_review_item(
   p_review_type text, p_dedupe_key text, p_service_call_id uuid, p_visit_id uuid, p_source text, p_source_ref text,
   p_operation_id uuid, p_submitted_version jsonb, p_current_version jsonb, p_base_version jsonb)
@@ -729,8 +772,12 @@ begin
   end if;
   select r.* into v_existing from public.review_items r where r.dedupe_key = p_dedupe_key;
   if not found
-     or (v_existing.review_type, v_existing.service_call_id, v_existing.visit_id, v_existing.source)
-        is distinct from (p_review_type, p_service_call_id, p_visit_id, p_source) then
+     or (v_existing.review_type, v_existing.service_call_id, v_existing.visit_id, v_existing.source, v_existing.source_ref,
+         v_existing.submitted_by_profile_id, v_existing.operation_id, v_existing.submitted_version, v_existing.current_version,
+         v_existing.base_version)
+        is distinct from (p_review_type, p_service_call_id, p_visit_id, p_source, p_source_ref,
+                          case when p_source = 'device' then auth.uid() end, p_operation_id, p_submitted_version,
+                          p_current_version, p_base_version) then
     raise exception using errcode = '23505', message = 'review_items: the dedupe key belongs to another item';
   end if;
   return v_existing.id;
@@ -949,8 +996,9 @@ $$;
 -- decision needs `card` and (`cal` or `calls`) (OQ-1). Decisions (OQ-4): keep_current for every
 -- type (nothing changes; both versions stay stored); apply_incoming for duplicate_time_report (the
 -- submitted device report becomes a visit_time_reports row, source 'correction',
--- accepted_review_id, which visit_time_current prefers; the visit's version rises); per_field for
--- none yet. An invitation never changes a closed visit (D39): only keep_current there. No decision
+-- accepted_review_id, which visit_time_current prefers; the visit's version rises; refused with
+-- PT409 when an office correction of the same field was recorded after the report was received);
+-- per_field for none yet. An invitation never changes a closed visit (D39): only keep_current there. No decision
 -- of PR 1.6 changes a visit's status or outcome, so the call status needs no recalculation. Locks
 -- the call, the visit and the item in that order (as recalc_call_status and the deferred checks).
 -- Returns the item's version after the decision.
@@ -971,7 +1019,10 @@ declare
   v_tech uuid;
 begin
   v_caller := private.require_caller(array['creator', 'manager', 'customer_service']);
-  if not (private.has_permission('card') and (private.has_permission('cal') or private.has_permission('calls'))) then
+  -- The keys before any lock (independent review N3): `conflicts` for every item (OQ-3), and the
+  -- screen's keys (OQ-1). The closed-visit role rule needs the visit's status under its lock (below).
+  if not (private.has_permission('conflicts') and private.has_permission('card')
+          and (private.has_permission('cal') or private.has_permission('calls'))) then
     raise exception using errcode = '42501', message = 'not authorized';
   end if;
   if p_review_item_id is null or p_expected_version is null or p_decision is null
@@ -989,7 +1040,7 @@ begin
     v_closed := v_visit.status in ('done', 'followup', 'cancelled');
   end if;
   select r.* into v_item from public.review_items r where r.id = p_review_item_id for update;
-  if not private.has_permission('conflicts') or (v_closed and v_caller.role not in ('creator', 'manager')) then
+  if v_closed and v_caller.role not in ('creator', 'manager') then
     raise exception using errcode = '42501', message = 'not authorized';
   end if;
   if v_item.status <> 'open' then
@@ -1005,6 +1056,16 @@ begin
   end if;
   if v_closed and v_note is null then
     raise exception using errcode = '22023', message = 'invalid input';
+  end if;
+  -- A second device report never silently supersedes an office correction of the same field time
+  -- recorded after the report was received (independent review S1): the decision started from a
+  -- state that has changed since, so it is refused like a stale version (PT409); keep_current stays
+  -- possible.
+  if p_decision = 'apply_incoming'
+     and exists (select 1 from public.visit_corrections c
+                 where c.visit_id = v_item.visit_id and c.field = v_item.submitted_version ->> 'kind'
+                   and c.recorded_at >= v_item.created_at) then
+    raise exception using errcode = 'PT409', message = 'version conflict';
   end if;
 
   begin
@@ -1215,6 +1276,7 @@ revoke all on function private.tg_review_item_state() from public, anon, authent
 revoke all on function private.tg_visit_correction_guard() from public, anon, authenticated, service_role;
 revoke all on function private.tg_offline_operation_derive() from public, anon, authenticated, service_role;
 revoke all on function private.tg_visit_field_version() from public, anon, authenticated, service_role;
+revoke all on function private.tg_visit_closed_fields() from public, anon, authenticated, service_role;
 revoke all on function private.create_review_item(text, text, uuid, uuid, text, text, uuid, jsonb, jsonb, jsonb)
   from public, anon, authenticated, service_role;
 revoke all on function private.offline_operation_replay(uuid, uuid, text, text) from public, anon, authenticated, service_role;
@@ -1235,8 +1297,13 @@ to authenticated;
 -- ---------------------------------------------------------------------------------------------
 -- 11. Hand-offs (no statement): the Step 4 device writers call offline_operation_replay, apply
 --     or store for review (create_review_item), then record_offline_operation, all in one
---     transaction; the Step 4 and Step 6 writers extend resolve_review_item with their apply paths
---     and call private.recalc_call_status when a decision changes a visit's status (D38).
+--     transaction, under READ COMMITTED (under REPEATABLE READ or SERIALIZABLE a concurrent replay
+--     would see the snapshot taken before the advisory lock and fail with 23505 instead of
+--     returning the stored result). The helpers do not check who may act on the visit: the writer
+--     checks the caller and the visit's ownership first. payload_sha256 is computed by the writer
+--     from the canonical payload it validated, never taken from the client. The Step 4 and Step 6
+--     writers extend resolve_review_item with their apply paths and call private.recalc_call_status
+--     when a decision changes a visit's status (D38).
 -- ---------------------------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------------------------

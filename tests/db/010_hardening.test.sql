@@ -10,7 +10,7 @@
 -- constraint-trigger functions, the call-status and history functions, the SECURITY DEFINER
 -- classification and the new identity sequences.
 -- PR 1.6 (Migration 4): the exact lists now include the three integrity and offline tables, their
--- four policies and the two writers (wrappers and bodies); three checks were added for the five new
+-- four policies and the two writers (wrappers and bodies); three checks were added for the six new
 -- trigger functions, the three internal helpers (no grant, no wrapper) and the SECURITY DEFINER
 -- classification of the two writers.
 begin;
@@ -285,7 +285,7 @@ select results_eq(
   'PR 1.5: eight SECURITY DEFINER bodies in private (four deferred checks, can_read_visit, three narrow reads); everything else SECURITY INVOKER; the reads are STABLE'
 );
 
--- PR 1.6: the five new trigger functions and the three internal helpers have no grant, and the
+-- PR 1.6: the six new trigger functions and the three internal helpers have no grant, and the
 -- helpers have no public wrapper (their callers are the postgres-owned writers of Step 4 and
 -- Step 6; migration guard rule 4).
 select ok(
@@ -293,8 +293,9 @@ select ok(
   and not has_function_privilege('authenticated', 'private.tg_review_item_state()', 'execute')
   and not has_function_privilege('authenticated', 'private.tg_visit_correction_guard()', 'execute')
   and not has_function_privilege('authenticated', 'private.tg_offline_operation_derive()', 'execute')
-  and not has_function_privilege('authenticated', 'private.tg_visit_field_version()', 'execute'),
-  'PR 1.6: the five new trigger functions are not executable by authenticated'
+  and not has_function_privilege('authenticated', 'private.tg_visit_field_version()', 'execute')
+  and not has_function_privilege('authenticated', 'private.tg_visit_closed_fields()', 'execute'),
+  'PR 1.6: the six new trigger functions are not executable by authenticated'
 );
 select ok(
   not has_function_privilege('authenticated', 'private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)', 'execute')
@@ -314,13 +315,15 @@ select results_eq(
      where n.nspname in ('public', 'private')
        and p.proname in ('correct_visit', 'resolve_review_item', 'create_review_item', 'offline_operation_replay',
                          'record_offline_operation', 'tg_call_child_marker', 'tg_review_item_state',
-                         'tg_visit_correction_guard', 'tg_offline_operation_derive', 'tg_visit_field_version')
+                         'tg_visit_correction_guard', 'tg_offline_operation_derive', 'tg_visit_field_version',
+                         'tg_visit_closed_fields')
      order by n.nspname::text collate "C", p.proname::text collate "C" $$,
   $$ values ('private', 'correct_visit', true, 'v'), ('private', 'create_review_item', false, 'v'),
             ('private', 'offline_operation_replay', false, 'v'), ('private', 'record_offline_operation', false, 'v'),
             ('private', 'resolve_review_item', true, 'v'), ('private', 'tg_call_child_marker', false, 'v'),
             ('private', 'tg_offline_operation_derive', false, 'v'), ('private', 'tg_review_item_state', false, 'v'),
-            ('private', 'tg_visit_correction_guard', false, 'v'), ('private', 'tg_visit_field_version', false, 'v'),
+            ('private', 'tg_visit_closed_fields', false, 'v'), ('private', 'tg_visit_correction_guard', false, 'v'),
+            ('private', 'tg_visit_field_version', false, 'v'),
             ('public', 'correct_visit', false, 'v'), ('public', 'resolve_review_item', false, 'v') $$,
   'PR 1.6: two SECURITY DEFINER writer bodies in private (correct_visit, resolve_review_item) and their SECURITY INVOKER wrappers; the helpers and trigger functions are SECURITY INVOKER; all VOLATILE'
 );

@@ -17,7 +17,8 @@
 -- new tables themselves: 230_integrity_schema): visit_time_reports gained correction_id and
 -- accepted_review_id with their composite foreign keys, CHECKs and partial indexes (PR 1.5 DEV-2);
 -- visits gained UNIQUE (id, service_call_id) (the parent key of review_items) and the t13
--- field_version trigger.
+-- field_version trigger; after the independent review (S3, N1): the visits trigger t14_closed_fields,
+-- the visit_reports trigger t11_frozen, and unique partial indexes on the two correction keys.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(72);
@@ -525,8 +526,8 @@ select results_eq(
      ('service_calls_resolved_at_idx', 'CREATE INDEX service_calls_resolved_at_idx ON public.service_calls USING btree (resolved_at) WHERE (resolved_at IS NOT NULL)'),
      ('service_calls_status_idx', 'CREATE INDEX service_calls_status_idx ON public.service_calls USING btree (status)'),
      ('visit_events_visit_id_id_idx', 'CREATE INDEX visit_events_visit_id_id_idx ON public.visit_events USING btree (visit_id, id)'),
-     ('visit_time_reports_accepted_review_id_idx', 'CREATE INDEX visit_time_reports_accepted_review_id_idx ON public.visit_time_reports USING btree (accepted_review_id) WHERE (accepted_review_id IS NOT NULL)'),
-     ('visit_time_reports_correction_id_idx', 'CREATE INDEX visit_time_reports_correction_id_idx ON public.visit_time_reports USING btree (correction_id) WHERE (correction_id IS NOT NULL)'),
+     ('visit_time_reports_accepted_review_id_key', 'CREATE UNIQUE INDEX visit_time_reports_accepted_review_id_key ON public.visit_time_reports USING btree (accepted_review_id) WHERE (accepted_review_id IS NOT NULL)'),
+     ('visit_time_reports_correction_id_key', 'CREATE UNIQUE INDEX visit_time_reports_correction_id_key ON public.visit_time_reports USING btree (correction_id) WHERE (correction_id IS NOT NULL)'),
      ('visit_time_reports_device_once_key', 'CREATE UNIQUE INDEX visit_time_reports_device_once_key ON public.visit_time_reports USING btree (visit_id, kind) WHERE (source = ''device''::text)'),
      ('visit_time_reports_technician_id_idx', 'CREATE INDEX visit_time_reports_technician_id_idx ON public.visit_time_reports USING btree (technician_id)'),
      ('visit_time_reports_visit_id_kind_id_idx', 'CREATE INDEX visit_time_reports_visit_id_kind_id_idx ON public.visit_time_reports USING btree (visit_id, kind, id)'),
@@ -535,7 +536,7 @@ select results_eq(
      ('visits_scheduled_start_idx', 'CREATE INDEX visits_scheduled_start_idx ON public.visits USING btree (scheduled_start)'),
      ('visits_task_number_idx', 'CREATE INDEX visits_task_number_idx ON public.visits USING btree (task_number)'),
      ('visits_technician_id_scheduled_start_idx', 'CREATE INDEX visits_technician_id_scheduled_start_idx ON public.visits USING btree (technician_id, scheduled_start)') $$,
-  'besides the key indexes: the partial unique device-report index (one device report per visit and kind, OQ-11), the card-list and day-range indexes, an index on every foreign key the Settings delete checks use, and (PR 1.6) partial indexes on the two correction keys');
+  'besides the key indexes: the partial unique device-report index (one device report per visit and kind, OQ-11), the card-list and day-range indexes, an index on every foreign key the Settings delete checks use, and (PR 1.6) unique partial indexes on the two correction keys (one time report per correction or accepted item)');
 
 -- ---------------------------------------------------------------------------------------------
 -- 4. Triggers: names fix the firing order (t10 ... t99), timing, events and column lists
@@ -567,6 +568,7 @@ select results_eq(
      ('CREATE TRIGGER t10_immutable BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''technician_id'', ''task_number'', ''scheduled_start'', ''scheduled_end'', ''status'', ''city'', ''street'', ''building'', ''floor'', ''apartment'', ''arrival_notes'', ''tech_notes'', ''pickup_item'', ''pickup_location_id'', ''followup_reason_id'', ''next_visit_notes'', ''assigned_at'', ''closed_at'', ''cancelled_at'', ''cancelled_by'', ''field_version'', ''version'', ''updated_at'', ''updated_by'')'),
      ('CREATE TRIGGER t12_visit_state BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_state_guard()'),
      ('CREATE TRIGGER t13_field_version BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_field_version()'),
+     ('CREATE TRIGGER t14_closed_fields BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_closed_fields()'),
      ('CREATE TRIGGER t15_marker_from_call BEFORE INSERT ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_visit_marker()'),
      ('CREATE TRIGGER t20_immutable_markers BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_markers()'),
      ('CREATE TRIGGER t30_one_way BEFORE INSERT OR UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_one_way_people(''created_by'', ''updated_by'', ''cancelled_by'')'),
@@ -575,19 +577,20 @@ select results_eq(
      ('CREATE TRIGGER t90_bump_version BEFORE UPDATE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_bump_version()'),
      ('CREATE TRIGGER t95_reject_delete BEFORE DELETE ON public.visits FOR EACH ROW EXECUTE FUNCTION private.tg_reject_delete()'),
      ('CREATE TRIGGER t99_reject_truncate BEFORE TRUNCATE ON public.visits FOR EACH STATEMENT EXECUTE FUNCTION private.tg_reject_truncate()') $$,
-  'visits: the call, number, source, marker and creation fields frozen; t12 server times and state; PR 1.6: t13 field_version after t12; t15 marker before the one-way checks t30/t31 and the number guard t35; c10 deferred on INSERT and on UPDATE OF status, closed_at (every column compute_call_status reads)');
+  'visits: the call, number, source, marker and creation fields frozen; t12 server times and state; PR 1.6: t13 field_version after t12, t14 the closed-visit freeze of reason and notes; t15 marker before the one-way checks t30/t31 and the number guard t35; c10 deferred on INSERT and on UPDATE OF status, closed_at (every column compute_call_status reads)');
 select results_eq(
   $$ select * from pg_temp.tm_triggers('public.visit_reports') $$,
   $$ values
      ('CREATE CONSTRAINT TRIGGER c40_report_rules AFTER INSERT ON public.visit_reports DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.ct_report_rules()'::text),
      ('CREATE TRIGGER t10_immutable BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''summary_text'', ''summary_source'', ''version'', ''updated_at'', ''updated_by'')'),
+     ('CREATE TRIGGER t11_frozen BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_except(''version'', ''updated_at'', ''updated_by'')'),
      ('CREATE TRIGGER t15_marker_from_visit BEFORE INSERT ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_visit_child_marker()'),
      ('CREATE TRIGGER t20_immutable_markers BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_immutable_markers()'),
      ('CREATE TRIGGER t30_one_way BEFORE INSERT OR UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_one_way_people(''created_by'', ''updated_by'')'),
      ('CREATE TRIGGER t90_bump_version BEFORE UPDATE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_bump_version()'),
      ('CREATE TRIGGER t95_reject_delete BEFORE DELETE ON public.visit_reports FOR EACH ROW EXECUTE FUNCTION private.tg_reject_delete()'),
      ('CREATE TRIGGER t99_reject_truncate BEFORE TRUNCATE ON public.visit_reports FOR EACH STATEMENT EXECUTE FUNCTION private.tg_reject_truncate()') $$,
-  'visit_reports: only the summary changes (PR 1.6 corrections); marker from the visit; c40 deferred on INSERT');
+  'visit_reports: Migration 3''s t10 lets the summary change, PR 1.6''s t11 then allows only bookkeeping (OQ-7: corrections are append-only); marker from the visit; c40 deferred on INSERT');
 select results_eq(
   $$ select * from pg_temp.tm_triggers('public.visit_signatures') $$,
   $$ values

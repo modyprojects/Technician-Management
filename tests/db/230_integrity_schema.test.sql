@@ -15,7 +15,7 @@
 -- review dedupe: 260_offline_idempotency.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(26);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -255,7 +255,7 @@ select results_eq(
             ('review_items_source_ref_check', 'CHECK ((source_ref ~ ''^[A-Za-z0-9._:-]{1,200}$''::text))'),
             ('review_items_status_check', 'CHECK ((status = ANY (ARRAY[''open''::text, ''resolved''::text])))'),
             ('review_items_submitted_version_check', 'CHECK (((jsonb_typeof(submitted_version) = ''object''::text) AND (pg_column_size(submitted_version) <= 16384)))'),
-            ('review_items_time_report_check', 'CHECK (((review_type <> ''duplicate_time_report''::text) OR (submitted_version ?& ARRAY[''kind''::text, ''reported_at''::text, ''device_tz''::text, ''device_utc_offset_min''::text, ''device_sent_at''::text])))'),
+            ('review_items_time_report_check', 'CHECK (((review_type <> ''duplicate_time_report''::text) OR ((submitted_version ?& ARRAY[''kind''::text, ''reported_at''::text, ''device_tz''::text, ''device_utc_offset_min''::text, ''device_sent_at''::text]) AND ((submitted_version ->> ''kind''::text) = ANY (ARRAY[''departed''::text, ''arrived''::text, ''ended''::text, ''signed''::text])) AND ((submitted_version ->> ''reported_at''::text) ~ ''^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?[+-][0-9]{2}(:[0-9]{2}){0,2}$''::text) AND ((submitted_version ->> ''device_sent_at''::text) ~ ''^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?[+-][0-9]{2}(:[0-9]{2}){0,2}$''::text))))'),
             ('review_items_type_source_check', 'CHECK ((((review_type = ANY (ARRAY[''reassignment''::text, ''cancellation''::text, ''address_change''::text, ''customer_change''::text, ''sku_change''::text])) AND (source = ''invitation''::text)) OR ((review_type = ANY (ARRAY[''edit_conflict''::text, ''closure_of_cancelled_visit''::text, ''approval_text_mismatch''::text, ''duplicate_time_report''::text])) AND (source = ''device''::text))))'),
             ('review_items_version_check', 'CHECK ((version >= 1))'),
             ('review_items_visit_check', 'CHECK (((visit_id IS NULL) = (review_type = ANY (ARRAY[''customer_change''::text, ''sku_change''::text]))))'),
@@ -527,11 +527,19 @@ insert into tm_case (grp, label, stmt, probe, expected) values
    $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('edit_conflict', 'pr16-i24', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{}', '{}'); update public.review_items set status = 'resolved', resolution = 'keep_current', resolved_by = '00000000-0000-4000-8000-0000000000a1',
         resolution_note = 'שורה' || chr(10) || 'שנייה' where dedupe_key = 'pr16-i24'$s$, null, 'ok'),
   ('items', 'never deleted', $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('edit_conflict', 'pr16-i25', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{}', '{}'); delete from public.review_items where dedupe_key = 'pr16-i25'$s$, null,
-   '55000 review_items: rows are never deleted');
+   '55000 review_items: rows are never deleted'),
+  ('items', 'a second device report with every value (positive control, review N2)',
+   $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('duplicate_time_report', 'pr16-i26', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{"kind": "arrived", "reported_at": "2026-11-16T08:00:00+02:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-16T08:01:00.123456+02:00"}', '{}')$s$, null, 'ok'),
+  ('items', 'a second device report whose time has no UTC offset (review N2)',
+   $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('duplicate_time_report', 'pr16-i27', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{"kind": "arrived", "reported_at": "2026-11-16T08:00:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-16T08:01:00.123456+02:00"}', '{}')$s$, null, '23514 review_items_time_report_check'),
+  ('items', 'a second device report whose send time is not a time (review N2)',
+   $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('duplicate_time_report', 'pr16-i28', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{"kind": "arrived", "reported_at": "2026-11-16T08:00:00+02:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "אתמול"}', '{}')$s$, null, '23514 review_items_time_report_check'),
+  ('items', 'a second device report of an unknown kind',
+   $s$insert into public.review_items (review_type, dedupe_key, service_call_id, visit_id, source, source_ref, submitted_by_profile_id, operation_id, submitted_version, current_version) values ('duplicate_time_report', 'pr16-i29', '00000000-0000-4000-8000-000000230a01', '00000000-0000-4000-8000-000000230b01', 'device', null, '00000000-0000-4000-8000-0000000000d1', gen_random_uuid(), '{"kind": "lunch", "reported_at": "2026-11-16T08:00:00+02:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-16T08:01:00.123456+02:00"}', '{}')$s$, null, '23514 review_items_time_report_check');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt, c.probe) from tm_case c where c.grp = 'items' order by c.n $$,
   $$ select c.label, c.expected from tm_case c where c.grp = 'items' order by c.n $$,
-  'review_items: created open at the server time; decided once (server time, version raised), never changed or reopened after; both versions, the base and the type frozen; the decision, type, source and note rules; never deleted');
+  'review_items: created open at the server time; decided once (server time, version raised), never changed or reopened after; both versions, the base and the type frozen; the decision, type, source and note rules; a second device report carries a field-time kind and offset-qualified times (review N2); never deleted');
 
 -- ---------------------------------------------------------------------------------------------
 -- 4. visit_corrections: only of a server-closed visit (D14); append-only; value rules
@@ -603,7 +611,7 @@ returns text language sql as $f$
             operation_id, submitted_version, current_version, status, created_at, resolved_at, resolved_by, resolution)
           values (''duplicate_time_report'', ''pr16-t1'', ''00000000-0000-4000-8000-000000230a01'', ''00000000-0000-4000-8000-000000230b01'', ''device'',
             ''00000000-0000-4000-8000-0000000000d1'', ''00000000-0000-4000-8000-000000230f01'',
-            ''{"kind": "departed", "reported_at": "x", "device_tz": "x", "device_utc_offset_min": 0, "device_sent_at": "x"}'',
+            ''{"kind": "departed", "reported_at": "2026-11-16T06:00:00+00:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-16T06:01:00+00:00"}'',
             ''{}'', ''resolved'', ' || p_created || ', now(), ''00000000-0000-4000-8000-0000000000a1'', ' || quote_literal(p_resolution) || ');
           alter table public.review_items enable trigger t12_review_state;
           alter table public.review_items enable trigger t10_immutable; ' || p_sql
@@ -671,6 +679,16 @@ from (values
    pg_temp.tm_item(pg_temp.tm_tr('reported_at, operation_id, accepted_review_id',
      '''00000000-0000-4000-8000-0000000000d1'', ''00000000-0000-4000-8000-0000000000e1'', ''departed'', ''correction'', now(), ''00000000-0000-4000-8000-000000230f01'', (select id from public.review_items where dedupe_key = ''pr16-t1'')')),
    null, '23514 visit_time_reports_accepted_check'),
+  (17, 'a second time report for the same correction (unique, review N1)',
+   pg_temp.tm_corr(pg_temp.tm_tr('reported_at, correction_id', '''00000000-0000-4000-8000-0000000000a1'', ''00000000-0000-4000-8000-0000000000e1'', ''arrived'', ''correction'', ''2026-11-16T06:00:00Z'', (select id from public.visit_corrections)')
+     || '; ' || pg_temp.tm_tr('reported_at, correction_id', '''00000000-0000-4000-8000-0000000000a1'', ''00000000-0000-4000-8000-0000000000e1'', ''arrived'', ''correction'', ''2026-11-16T06:00:00Z'', (select id from public.visit_corrections)')),
+   null, '23505 visit_time_reports_correction_id_key'),
+  (18, 'a second accepted report for the same review item (unique, review N1)',
+   pg_temp.tm_item(pg_temp.tm_tr('reported_at, device_tz, device_utc_offset_min, device_sent_at, operation_id, accepted_review_id',
+     '''00000000-0000-4000-8000-0000000000d1'', ''00000000-0000-4000-8000-0000000000e1'', ''departed'', ''correction'', now(), ''Asia/Jerusalem'', 120, now(), ''00000000-0000-4000-8000-000000230f01'', (select id from public.review_items where dedupe_key = ''pr16-t1'')')
+     || '; ' || pg_temp.tm_tr('reported_at, device_tz, device_utc_offset_min, device_sent_at, operation_id, accepted_review_id',
+     '''00000000-0000-4000-8000-0000000000d1'', ''00000000-0000-4000-8000-0000000000e1'', ''departed'', ''correction'', now(), ''Asia/Jerusalem'', 120, now(), ''00000000-0000-4000-8000-000000230f01'', (select id from public.review_items where dedupe_key = ''pr16-t1'')')),
+   null, '23505 visit_time_reports_accepted_review_id_key'),
   (16, 'an unknown review item',
    pg_temp.tm_tr('reported_at, device_tz, device_utc_offset_min, device_sent_at, operation_id, accepted_review_id',
      '''00000000-0000-4000-8000-0000000000d1'', ''00000000-0000-4000-8000-0000000000e1'', ''departed'', ''correction'', now(), ''Asia/Jerusalem'', 120, now(), gen_random_uuid(), gen_random_uuid()'),
@@ -681,6 +699,42 @@ select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt, c.probe) from tm_case c where c.grp = 'times' order by c.n $$,
   $$ select c.label, c.expected from tm_case c where c.grp = 'times' order by c.n $$,
   'visit_time_reports (D45): an office correction carries only the corrected time and matches its correction row; an accepted report matches a resolved, accepted duplicate_time_report item (reporter, credited technician, operation), keeps every device value and its original receipt time, and its skew and flags are computed on that time');
+
+-- ---------------------------------------------------------------------------------------------
+-- 5b. Originals are never overwritten, for every writer (TEMPORARY OQ-7; independent review S3):
+--     visit_reports rows keep their summary (t11_frozen), and a done or followup visit keeps its
+--     continuation reason and next-visit notes (t14_closed_fields); a cancelled visit may still
+--     receive them (a D44 accepted closure, PR 1.5 DEV-18), an open visit too.
+-- ---------------------------------------------------------------------------------------------
+insert into tm_case (grp, label, stmt, probe, expected) values
+  ('frozen', 'a summary never changes after insert', $s$update public.visit_reports set summary_text = 'אחר' where visit_id = '00000000-0000-4000-8000-000000230b01'$s$,
+   null, '55000 visit_reports: these fields are immutable'),
+  ('frozen', 'nor its source', $s$update public.visit_reports set summary_source = 'approved_transcription' where visit_id = '00000000-0000-4000-8000-000000230b01'$s$,
+   null, '55000 visit_reports: these fields are immutable'),
+  ('frozen', 'bookkeeping may change (positive control)', $s$update public.visit_reports set updated_by = '00000000-0000-4000-8000-0000000000a1' where visit_id = '00000000-0000-4000-8000-000000230b01'$s$,
+   $s$select version::text from public.visit_reports where visit_id = '00000000-0000-4000-8000-000000230b01'$s$, '2'),
+  ('frozen', 'a done visit gets a continuation reason',
+   $s$update public.visits set followup_reason_id = (select r.id from public.followup_reasons r where r.sort_order = 2) where id = '00000000-0000-4000-8000-000000230b01'$s$,
+   null, '55000 visits: a closed visit keeps its continuation reason and next-visit notes'),
+  ('frozen', 'a done visit becomes followup (no outcome correction, PR 1.5 OQ-14)',
+   $s$update public.visits set status = 'followup', followup_reason_id = (select r.id from public.followup_reasons r where r.sort_order = 2),
+        next_visit_notes = 'הערה' where id = '00000000-0000-4000-8000-000000230b01'$s$,
+   null, '55000 visits: a closed visit keeps its continuation reason and next-visit notes'),
+  ('frozen', 'a followup visit changes its reason',
+   $s$update public.visits set followup_reason_id = (select r.id from public.followup_reasons r where r.sort_order = 2) where id = '00000000-0000-4000-8000-000000230b02'$s$,
+   null, '55000 visits: a closed visit keeps its continuation reason and next-visit notes'),
+  ('frozen', 'a followup visit changes its next-visit notes', $s$update public.visits set next_visit_notes = 'אחרת' where id = '00000000-0000-4000-8000-000000230b02'$s$,
+   null, '55000 visits: a closed visit keeps its continuation reason and next-visit notes'),
+  ('frozen', 'a followup visit keeps them and updates its bookkeeping (positive control)',
+   $s$update public.visits set updated_by = '00000000-0000-4000-8000-0000000000a1' where id = '00000000-0000-4000-8000-000000230b02'$s$, null, 'ok'),
+  ('frozen', 'a cancelled visit may receive them (D44 accepted closure, PR 1.5 DEV-18)',
+   $s$update public.visits set followup_reason_id = (select r.id from public.followup_reasons r where r.sort_order = 2),
+        next_visit_notes = 'לבדוק' where id = '00000000-0000-4000-8000-000000230b04'$s$, null, 'ok'),
+  ('frozen', 'an open visit may receive them', $s$update public.visits set next_visit_notes = 'להביא סולם' where id = '00000000-0000-4000-8000-000000230b03'$s$, null, 'ok');
+select results_eq(
+  $$ select c.label, pg_temp.tm_try(c.stmt, c.probe) from tm_case c where c.grp = 'frozen' order by c.n $$,
+  $$ select c.label, c.expected from tm_case c where c.grp = 'frozen' order by c.n $$,
+  'originals are never overwritten (OQ-7): a treatment summary never changes after insert, a closed visit keeps its continuation reason and next-visit notes (so no done -> followup change), whatever the writer; a cancelled or open visit may still receive them');
 
 -- ---------------------------------------------------------------------------------------------
 -- 6. visits.field_version (database-schema.md §1; OQ-14)

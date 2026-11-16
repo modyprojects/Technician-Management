@@ -332,8 +332,11 @@ insert into tm_case (grp, label, stmt, expected) values
    $s$update public.service_calls set fault_description = 'לא מקרר, רעש' where id = '00000000-0000-4000-8000-00000000c001'$s$, 'ok'),
   ('guards', 'allowed: visits.tech_notes of an open visit',
    $s$update public.visits set tech_notes = 'להביא סולם' where id = '00000000-0000-4000-8000-00000000b021'$s$, 'ok'),
-  ('guards', 'allowed: visit_reports.summary_text (PR 1.6 corrections)',
-   $s$update public.visit_reports set summary_text = 'הוחלף מדחס ומאוורר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$, 'ok'),
+  ('guards', 'frozen: visit_reports.summary_text (PR 1.6 t11, OQ-7: corrections are visit_corrections rows)',
+   $s$update public.visit_reports set summary_text = 'הוחלף מדחס ומאוורר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$,
+   '55000 visit_reports: these fields are immutable'),
+  ('guards', 'allowed: visit_reports bookkeeping (updated_by)',
+   $s$update public.visit_reports set updated_by = '00000000-0000-4000-8000-0000000000c1' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$, 'ok'),
   ('guards', 'update a signature',
    $s$update public.visit_signatures set signer_name = 'אחר' where visit_id = '00000000-0000-4000-8000-00000000b011'$s$,
    '55000 visit_signatures is append-only'),
@@ -401,10 +404,11 @@ select results_eq(
                             update public.visits set is_test = false where id = ''00000000-0000-4000-8000-00000000b021''')
      union all
      select pg_temp.tm_try('alter table public.visit_reports disable trigger t10_immutable;
+                            alter table public.visit_reports disable trigger t11_frozen;
                             update public.visit_reports set is_test = false where visit_id = ''00000000-0000-4000-8000-00000000b011''') $$,
   $$ values ('55000 visits: test-data markers are immutable (D47)'::text),
             ('55000 visit_reports: test-data markers are immutable (D47)') $$,
-  'with the t10 guard disabled, t20 (tg_immutable_markers) still freezes is_test on visits and visit_reports');
+  'with the t10 guard (and PR 1.6''s t11 on visit_reports) disabled, t20 (tg_immutable_markers) still freezes is_test on visits and visit_reports');
 
 -- service_role bypasses RLS, not grants or triggers: with temporary grants every guard holds.
 select results_eq(
@@ -806,10 +810,10 @@ insert into tm_case (grp, label, stmt, expected) values
    $s$insert into public.visit_reports (visit_id, summary_text, summary_source, created_by)
       values ('00000000-0000-4000-8000-00000000b0f1', 'סיכום', 'written', '00000000-0000-4000-8000-0000000000a1')$s$,
    '23514 visit_reports: a real record cannot reference a test profile (D47)'),
-  ('one_way', 'a summary on a real visit corrected by a test profile',
+  ('one_way', 'a summary on a real visit updated by a test profile (PR 1.6: only bookkeeping may change)',
    $s$insert into public.visit_reports (visit_id, summary_text, summary_source, created_by)
       values ('00000000-0000-4000-8000-00000000b0f1', 'סיכום', 'written', '00000000-0000-4000-8000-0000000000c1');
-      update public.visit_reports set summary_text = 'סיכום מתוקן', updated_by = '00000000-0000-4000-8000-0000000000a1'
+      update public.visit_reports set updated_by = '00000000-0000-4000-8000-0000000000a1'
       where visit_id = '00000000-0000-4000-8000-00000000b0f1'$s$,
    '23514 visit_reports: a real record cannot reference a test profile (D47)'),
   ('one_way', 'a signature on a real visit recorded by a test profile',
