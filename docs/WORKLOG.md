@@ -14,7 +14,7 @@
   - Audit-function fingerprint `9c962b84…` equals PR 1.6 §9.
   - Lint and `git diff --check` clean.
 - **Also updated:** `docs/PROJECT-MAP.md` (the `docs/review/` row, the PR 1.7 status line, and the stale "not applied" status of Migrations 1–3, which the apply records in the per-PR reports contradict), `docs/ROADMAP.md` (PR 1.7 row status only).
-- **For the owner:** the review of the ERD and the Hebrew reports (ROADMAP Step 1 owner check). ROADMAP still calls PR 1.7 "end of Step 1", while D60 added PR 1.8 (Migration 5) to the Step 1 sequence after it.
+- **For the owner:** the review of the ERD and the Hebrew reports (ROADMAP Step 1 owner check). The ROADMAP row now says that PR 1.7 closes the Migration 1–4 chain and that Step 1 ends with PR 1.8 (D60).
 
 ## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.

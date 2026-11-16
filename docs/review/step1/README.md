@@ -50,3 +50,5 @@ Sources: the four migration files, `tests/db/*.test.sql`, and the per-PR reports
 | Duplicate SKU impossible | `products_sku_normalized_key` (unique), `100` | Pass |
 
 **What still remains in the Step 1 sequence:** the apply and merge of Migration 4 (PR 1.6), the owner's review of these reports, and PR 1.8 (Migration 5, accounts and permissions per D60 (7)–(9)), which D60 added to the Step 1 PR sequence after this PR and before the Step 2 user-administration PRs. `docs/ROADMAP.md` still labels PR 1.7 "end of Step 1"; with PR 1.8 added, the owner decides whether Step 1 closes with PR 1.7 or PR 1.8.
+
+**Status source:** the status table above is authoritative. The header lines of the per-PR READMEs (`step1-pr13` to `step1-pr16`) describe each PR at the time it was written; their later sections, for example PR 1.5 §17, record the applies.
