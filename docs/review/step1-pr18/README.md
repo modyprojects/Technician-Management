@@ -1,6 +1,6 @@
 # Step 1 / PR 1.8: Migration 5 (accounts and permissions)
 
-**Status (2026-11-16):** prepared and tested locally; **not applied**, not pushed. Branch `claude/step1-pr18-accounts-permissions`, created from PR 1.6's head `f53016a` (Migrations 1-4). Migration 4 is now **applied** to the remote project (version `20261116120813`) and **merged** (PR #30 → `main` `5f57ce9`); this branch is not synced with `main` yet. Applying Migration 5 needs the owner's separate approval of the exact file (D52 rule 4, D55), after the read-only pre-apply check of section 10. Merging needs the owner's approval (D59). The one independent review (D58) gave **APPROVE WITH FIXES** (no must); its confirmation round CONFIRMED those fixes and found one nit (NIT-6, a lock-order inversion from the S-2 fix); every finding is fixed (section 12), on a later head than the reviewed one (D58 (9) is open on whether that needs another review).
+**Status (2026-11-16):** **applied** to the remote project with the owner's approval (version `20261116142838`; section "Applied to the remote project" below). Branch `claude/step1-pr18-accounts-permissions`, created from PR 1.6's head `f53016a` (Migrations 1-4) and synced with `main` `e166793` (PR #32). Merging needs the owner's approval (D59), given on 2026-11-16 after the apply and its verification, with the D31 checks. The one independent review (D58) gave **APPROVE WITH FIXES** (no must); its confirmation round CONFIRMED those fixes and found one nit (NIT-6, a lock-order inversion from the S-2 fix); every finding is fixed (section 12), on a later head than the reviewed one (D58 (9) is open on whether that needs another review).
 
 Sources: D60 (7) user administration, D60 (8) Manager settings, D60 (9) usage analytics; D33, D34 (as superseded by D60 (7)), D43, D47, D49, D51; `docs/qa-corrections-01-integration.md` §4 and §5 "Migration 5" (rows M-06, M-07, M-10, C-01, C-02, C-03 to C-06).
 
@@ -158,3 +158,28 @@ Each has a TEMPORARY behaviour that the tests assert; none is decided. The owner
 - **Step 6, acceptance item (review S-2):** the ingestion assigns a visit only to an **eligible** technician: `technicians.accepts_invitations` AND the profile is active (`profiles.is_active`) AND the profile is not deleted (`profiles.deleted_at is null`). A test proves each of the three conditions refuses the assignment on its own.
 - **Step 10:** the matrix screen shows the 16 keys (the Creator's `usage` fixed and granted) and the owner approves the final values (pre-pilot gate, D51).
 - **Owner:** the `docs/security.md` alignment (section 8); OQ-1 to OQ-10.
+
+## Applied to the remote project (2026-11-16)
+
+- **Approval:** the owner's explicit approval of 2026-11-16 for ONE application. The approved references:
+  - PR #32 at commit `fa3f7ec`;
+  - SQL sha256 `6bce3911b1641cae52112b2106e24a04892f77595d4fb4c3d98de242ec687992`;
+  - payload sha256 `d90879103684fb1f879150b73f2719e9fd14ad2f4584937e8336d1c7a954d41b`.
+  - The protected-file change A1 (the canary fixture `tests/db-canary/20261108120000.sql`) was approved the same day, limited to the scope of section 8.
+- **Local check of the wrapper:** in isolated containers from the same image (`supabase/postgres:17.11.0.006`), each built from Migrations 1–4.
+  - A copy with one changed character was refused ("payload hash mismatch") and changed nothing (fingerprint 14/14 equal before and after).
+  - The wrapper gave a catalog identical to a plain apply on 14/14 values; the audit chain was intact.
+  - The Migration 1–4 baseline matched the remote on 14/14.
+- **Immediately before the apply (read-only):**
+  - Both hashes matched the file at `fa3f7ec`, which was still the PR head.
+  - `list_migrations` held Migrations 1–4 only; no Migration 5 history row, column or function existed.
+  - The fingerprint was equal to the post-Migration 4 values (functions 110, policies 36).
+  - Section 10 checks: `account_requests` 0 rows; the section 0b query 0. User rows: 0. Audit chain intact; anchor `9c962b84…eb44`.
+- **Apply:** one `apply_migration` call (name `accounts_permissions`) with the self-verifying wrapper (54,682 bytes; no `\u` escape, so no encoding was needed), made from the main session. It succeeded on the first and only attempt. The server assigned version **`20261116142838`**; migration history is not repaired, as with Migrations 1–4.
+- **Post-apply verification (read-only):**
+  - The stored statement's sha256 is `d9087910…d41b` (one statement). The SQL embedded in it has sha256 `6bce3911…7992`.
+  - The catalog fingerprint equals a local database built from Migrations 1–5 on 14/14: functions 115 (`6b61c692…`), policies 36 (`52a2169d…`, unchanged), and the columns, constraints, indexes, triggers, relations, schemas and reference rows.
+  - All Migration 5 objects are present: the four triggers, the three narrow keys (sort order 14–16) and their six TEMPORARY values (Manager on, Customer Service off), and no EXECUTE grant left on `request_account_change` or `decide_account_request`. `md5(prosrc)` of the 15 new and replaced functions equals section 9.
+  - Audit: `private.audit_chain_verify()` returns NULL (intact), with 0 audit rows. The anchor `functions_md5` is unchanged, `9c962b84a36e6218412e234d9042eb44`, as designed (section 9).
+  - User rows: 0.
+  - Security advisors: one WARN (`auth_leaked_password_protection`), as before.

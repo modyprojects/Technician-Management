@@ -25,6 +25,7 @@ Sources: the four migration files, `tests/db/*.test.sql`, and the per-PR reports
 
 - The sha256 values are the ones pinned in the per-PR reports (PR 1.3 §17, PR 1.4 §15.5, PR 1.5 §17, PR 1.6 header). The files in this branch hash to the same values (checked with `sha256sum` on 2026-11-16).
 - **Version discrepancy (documented, not repaired):** MCP `apply_migration` records a server-assigned version, so the remote history differs from the file names. Each down script also finds its row by name. Aligning the history is a remote write and needs the owner's approval.
+- **Migration 5 is live too** (update of 2026-11-16): applied once with the owner's approval as version `20261116142838` (accounts and permissions, D60 (7)–(9)), verified read-only (fingerprint 14/14 equal to the local Migrations 1–5 build, audit chain intact, audit-function fingerprint unchanged). Details: `docs/review/step1-pr18/README.md`, "Applied to the remote project". The reports below describe Migrations 1–4.
 - **Migration 4 is live** (update of 2026-11-16, after these reports were written). It was applied once with the owner's approval through the self-verifying wrapper, verified read-only (fingerprint 14/14 equal to the local Migrations 1–4 build, audit chain intact), and PR #30 was merged. The reviewer confirmed the post-review fixes before the apply. Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project". The local results below were produced before the apply, on the same files.
 
 ## Fresh local run (2026-11-16)

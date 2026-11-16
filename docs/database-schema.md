@@ -606,7 +606,7 @@ No ONE-related table, column, status, flag, export or adapter.
 
 Migrations 1–4 are not modified (Migration 5 replaces function bodies forward-only). The details are in `docs/qa-corrections-01-integration.md` §5, and each migration needs its own approval (D52 rule 4).
 
-- **Migration 5 (PR 1.8), accounts and permissions: built and tested locally, not applied** (`supabase/migrations/20261108120000_accounts_permissions.sql`; details, deviations DEV-1 to DEV-9 and TEMPORARY behaviours OQ-1 to OQ-10 in `docs/review/step1-pr18/README.md`). As built:
+- **Migration 5 (PR 1.8), accounts and permissions: applied to the remote project (version `20261116142838`, owner-approved, 2026-11-16)** (`supabase/migrations/20261108120000_accounts_permissions.sql`; details, deviations DEV-1 to DEV-9 and TEMPORARY behaviours OQ-1 to OQ-10 in `docs/review/step1-pr18/README.md`). As built:
   - Direct Manager administration of Technician and Customer Service accounts: new bodies for `authorize_account_creation`, `admin_create_profile` and `admin_set_user_active`; `assert_can_manage` and `admin_set_user_role` already followed D60 (7) and are unchanged (DEV-1). The Manager never changes a role and never deletes.
   - The account-request path retired: EXECUTE on `request_account_change` and `decide_account_request` revoked from every role, and a trigger refuses new request rows; `account_requests` stays readable as history under the PR 1.3 policies and still stores the creation intents (DEV-2).
   - A read-only pre-apply check (section 0b) refuses the apply while a legacy request would be stranded by the retirement (independent review N-4).

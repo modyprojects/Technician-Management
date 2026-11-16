@@ -1,5 +1,14 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
+- **Approval:** the owner's explicit approval for one application (PR #32 `fa3f7ec`, SQL `6bce3911…7992`, payload `d9087910…d41b`). A1 (the canary fixture) was also approved; merging PR #32 is approved after the verification, with the D31 checks.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused and changed nothing, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–4 were present, with no Migration 5 objects, the fingerprint equal to the post-Migration 4 values, `account_requests` empty and the section 0b query 0.
+- **Apply:** one `apply_migration` call (`accounts_permissions`), first and only attempt; version `20261116142838`.
+- **After the apply (read-only):** stored statement `d9087910…d41b`, embedded SQL `6bce3911…7992`; fingerprint 14/14 equal to the local Migrations 1–5 build (functions 115, policies 36); audit chain intact, anchor unchanged (`9c962b84…eb44`); user rows 0; advisors unchanged (one WARN). Record: `docs/review/step1-pr18/README.md`, "Applied to the remote project".
+- **Next:** merge PR #32 with the D31 checks; then Step 2, the real login screen (D62).
+
 ## 2026-11-16 — Step 1 / PR 1.8: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; two should and five nits, no must. Record and dispositions: `docs/review/step1-pr18/README.md` section 12.
 - **Fixed in Migration 5** (new sha256 `425ff1be…07f9`, 949 lines; `ALLOWED_WRITERS` unchanged):
