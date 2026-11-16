@@ -1,5 +1,18 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 4 applied to the remote project (PR 1.6)
+- **Approval:** the owner's explicit approval for one application (PR #30 `f53016a`, SQL `ad0eb314…2ffd`, payload `0b092aa4…4fcd`). A1 and A2 were also approved.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–3 were present, with no Migration 4 objects and the fingerprint unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116120813`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–4 build on 14/14 (110 functions, 36 policies).
+  - The audit chain is intact; the anchor changed to `9c962b84…` as designed.
+  - User rows 0; advisors are unchanged.
+  - Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project".
+
 ## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
 - **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):

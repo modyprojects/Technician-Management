@@ -161,3 +161,28 @@ Each has a TEMPORARY behaviour that the tests assert; none is decided. The owner
 - **Step 5:** the call card's current values: the newest correction per field over the as-closed value (`visit_time_current` for times).
 - **PR 1.8 (Migration 5):** a further `tg_audit_target` replacement changes the anchor again.
 - **Owner:** PR 1.5 OQ-14 (outcome correction) and DEV-18 (reason and notes on a cancelled visit) stay open. A writer for an outcome correction, or for a summary changed after closure (for example an approved transcription, open decision 3), must relax `t14_closed_fields` or `t11_frozen` in its own migration.
+
+## Applied to the remote project (2026-11-16)
+
+- **Approval:** the owner's explicit approval of 2026-11-16 for ONE application. The approved references:
+  - PR #30 at commit `f53016a`;
+  - SQL sha256 `ad0eb31499715b40de63137b6a0730f9b73d51f3e3a69a650d3037d553e88715`;
+  - payload sha256 `0b092aa4110a3402925fc6576f594e0f52b174e91104bc9c1daf8bf3c7944fcd`.
+  - The protected-file changes A1 (the four `ALLOWED_WRITERS` entries) and A2 (the canary fixture) were approved the same day.
+- **Local check of the wrapper:** in isolated containers from the same image.
+  - A copy with one changed character was refused and created nothing.
+  - The wrapper gave a catalog identical to a plain apply on 14/14 values.
+  - The Migration 1–3 baseline matched the remote on 14/14.
+- **Immediately before the apply (read-only):**
+  - Both hashes matched.
+  - `list_migrations` held Migrations 1–3 only, and no Migration 4 object existed.
+  - The fingerprint was equal to the post-Migration 3 values (functions 97, policies 32).
+  - User rows: 0.
+- **Apply:** one `apply_migration` call (name `integrity_offline`) with the self-verifying wrapper, made from the main session. It succeeded on the first and only attempt. The server assigned version **`20261116120813`**; migration history is not repaired, as with Migrations 1–3.
+- **Post-apply verification (read-only):**
+  - The stored statement's sha256 is `0b092aa4…4fcd` (86,924 bytes). The SQL embedded in it has sha256 `ad0eb314…2ffd`.
+  - The catalog fingerprint equals a local database built from Migrations 1–4 on 14/14: functions 110, policies 36, and the columns, constraints, indexes, triggers, relations, schemas and reference rows.
+  - All Migration 4 objects are present.
+  - Audit: `private.audit_chain_verify()` returns NULL (intact), with 0 audit rows. The anchor `functions_md5` changed from `d30c54fb…` to `9c962b84a36e6218412e234d9042eb44`, as designed (`tg_audit_target` is replaced; §9).
+  - User rows: 0.
+  - Security advisors: one WARN (`auth_leaked_password_protection`), as before.
