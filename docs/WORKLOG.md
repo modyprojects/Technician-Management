@@ -23,6 +23,35 @@
 - **TEMPORARY behaviours** OQ-1 to OQ-10 and deviations DEV-1 to DEV-9: `docs/review/step1-pr18/README.md`. Among them: a Creator account is never deleted; a deleted account never changes again; `settings` stays an editable key (not locked like `usage`).
 - **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file. (Status update, same day: Migration 4 is applied, version `20261116120813`, and merged, PR #30 → `main` `5f57ce9`; the review ran, see the entry above.)
 
+## 2026-11-16 — Migration 4 applied to the remote project (PR 1.6)
+- **Approval:** the owner's explicit approval for one application (PR #30 `f53016a`, SQL `ad0eb314…2ffd`, payload `0b092aa4…4fcd`). A1 and A2 were also approved.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–3 were present, with no Migration 4 objects and the fingerprint unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116120813`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–4 build on 14/14 (110 functions, 36 policies).
+  - The audit chain is intact; the anchor changed to `9c962b84…` as designed.
+  - User rows 0; advisors are unchanged.
+  - Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project".
+
+## 2026-11-16 — Step 1 / PR 1.7: report and close (documentation only, local)
+- Branch `claude/step1-pr17-report`, from PR 1.6's head `f53016a` (Migrations 1–4). **Not pushed, not merged.** Nothing remote was accessed; no migration, test, script, workflow or protected file changed.
+- **New folder `docs/review/step1/`:**
+  - `README.md`: index and the Step 1 status table (Migrations 1–3 applied and merged, with their remote versions and pinned sha256; Migration 4 prepared, **not applied**, PR #30 draft), the fresh run, and the ROADMAP owner check with its evidence.
+  - `erd.md`: a Mermaid ER diagram of all 23 tables in `public` (keys, composite `(…, is_test)` foreign keys, markers), the 40 people references, every column (301), the view and the server functions by migration. Generated from the catalog of a local database built by `supabase db reset`.
+  - `who-can-see-what.he.md` (Hebrew): per data area and role, reads and writes with the matrix keys, the fixed capabilities, the TEMPORARY behaviours and the open decisions. Marks that Migration 4 is not applied and that D60 (7)–(9) arrive with Migration 5.
+  - `test-report.he.md` (Hebrew): the results below, the negative security tests, the hardening checks, the guard, the canary, the census, the rollback round trip, known gaps and hand-offs, and the commands.
+- **Fresh local results:**
+  - pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS (4 migrations, 4 fixtures, 23 tables, 301 columns, the 3 approved exceptions).
+  - Census on the migrations-only database: 30 rows, all 0.
+  - Rollback round trip: an out-of-order down script is refused with nothing dropped; the four down scripts, newest first, return to each earlier migration's counts and end with an empty catalog and hardened default privileges; rebuild and pgTAP 1,390/1,390 again.
+  - Audit-function fingerprint `9c962b84…` equals PR 1.6 §9.
+  - Lint and `git diff --check` clean.
+- **Also updated:** `docs/PROJECT-MAP.md` (the `docs/review/` row, the PR 1.7 status line, and the stale "not applied" status of Migrations 1–3, which the apply records in the per-PR reports contradict), `docs/ROADMAP.md` (PR 1.7 row status only).
+- **For the owner:** the review of the ERD and the Hebrew reports (ROADMAP Step 1 owner check). The ROADMAP row now says that PR 1.7 closes the Migration 1–4 chain and that Step 1 ends with PR 1.8 (D60).
+
 ## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
 - **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
 - **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):
