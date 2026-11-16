@@ -1,5 +1,37 @@
 # Work Log (English only)
 
+## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
+- **Approval:** the owner's explicit approval for one application (PR #32 `fa3f7ec`, SQL `6bce3911…7992`, payload `d9087910…d41b`). A1 (the canary fixture) was also approved; merging PR #32 is approved after the verification, with the D31 checks.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused and changed nothing, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–4 were present, with no Migration 5 objects, the fingerprint equal to the post-Migration 4 values, `account_requests` empty and the section 0b query 0.
+- **Apply:** one `apply_migration` call (`accounts_permissions`), first and only attempt; version `20261116142838`.
+- **After the apply (read-only):** stored statement `d9087910…d41b`, embedded SQL `6bce3911…7992`; fingerprint 14/14 equal to the local Migrations 1–5 build (functions 115, policies 36); audit chain intact, anchor unchanged (`9c962b84…eb44`); user rows 0; advisors unchanged (one WARN). Record: `docs/review/step1-pr18/README.md`, "Applied to the remote project".
+- **Next:** merge PR #32 with the D31 checks; then Step 2, the real login screen (D62).
+
+## 2026-11-16 — Step 1 / PR 1.8: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; two should and five nits, no must. Record and dispositions: `docs/review/step1-pr18/README.md` section 12.
+- **Fixed in Migration 5** (new sha256 `425ff1be…07f9`, 949 lines; `ALLOWED_WRITERS` unchanged):
+  - S-2: `admin_delete_user` also turns a deleted Technician's "פעיל" (`accepts_invitations`) off, audited, before the profile update; the frozen field profile then keeps it off. Step 6 acceptance rule: a visit goes only to a technician who accepts invitations and whose profile is active and not deleted.
+  - N-4: a read-only, fail-closed pre-apply check (section 0b) refuses the apply while a legacy request would be stranded (a pending request of a requester who left; an approved, unfulfilled creation request with no active Creator). Narrowed to those rows: the literal "any pending request" rule would fail the canary check on the merged Migration 1 fixture.
+- **Tests:** S-1: `050` regains the negative cases of `cancel_account_request` (on creation intents) and `020` the decision and rejection CHECKs; `290` covers S-2; new `310` covers N-4. pgTAP 1,508/1,508 (36 files); node 208/208; guard passed; canary PASS (no new exception); lint and typecheck clean.
+- **Docs:** README status (Migration 4 applied and merged; this branch not synced with `main` yet), counts, the pre-apply check, OQ-9, the Step 2 note on the `usage` lock (N-3), `docs/database-schema.md` (16 keys, N-2).
+- **Confirmation round:** the fixes above CONFIRMED; NIT-6 (a deadlock between `admin_delete_user` and `admin_update_technician`, introduced by the S-2 fix) fixed: `admin_delete_user` now locks the field profile before the profile, so both writers lock `technicians` first, then `profiles` (migration sha256 `6bce3911…7992`, 952 lines); a two-session check shows the deadlock with the earlier body and none with the fix. pgTAP 1,508/1,508; node 208/208; guard, canary, lint, typecheck clean.
+
+## 2026-11-16 — Step 1 / PR 1.8: Migration 5 (accounts and permissions), local only
+- Branch `claude/step1-pr18-accounts-permissions`, from PR 1.6's head `f53016a` (Migrations 1-4). Migrations 1-4 unchanged. **Not applied, not pushed.** Sources: D60 (7)-(9), D33, D34, D47, D49, D51; QA rows M-06, M-07, M-10, C-01, C-02, C-03 to C-06.
+- **Migration** `20261108120000_accounts_permissions.sql` (sha256 `028f3bec…f870`, 903 lines):
+  - Creator-only deletion, Option A: `profiles.deleted_at`, `deleted_by` (three CHECKs, a foreign key), `admin_delete_user` (audited `profile.deleted`), a reactivation guard, and a deleted account and its field profile frozen for every writer (triggers). No physical deletion; history and attribution kept.
+  - Direct Manager administration of Technician and Customer Service accounts (no Creator approval): new bodies of `authorize_account_creation`, `admin_create_profile`, `admin_set_user_active`; `assert_can_change_credentials` refuses a deleted account. The Manager never deletes, never changes a role, never sets passwords or emails.
+  - The account-request path retired: EXECUTE revoked from every role and a trigger refuses new request rows; history kept under the PR 1.3 policies.
+  - Narrow matrix keys `reasons`, `callTypes`, `ackText` (TEMPORARY: Manager on, Customer Service off); the five call-type and reason RPCs switched to them; pickup places keep `settings`.
+  - `usage` a Creator-only fixed capability in `has_permission`. The fail-closed hardening check (Migration 4's, byte for byte).
+- **Rollback** script (one DO block, refuses first); a rolled-back run leaves a catalog equal to a database built from Migrations 1-4 (11 fingerprints); `990` runs it first.
+- **Tests:** pgTAP 1,486/1,486 (35 files; new `270`-`300`; `010`, `015`, `020`, `030`, `040`, `050` (rewritten), `060`, `070`, `090`, `120`, `990` updated; every D60-changed expectation listed in the PR 1.8 README section 7); node 205/205; guard passed with no `ALLOWED_WRITERS` change; canary PASS (5 migrations, no new exception); lint and typecheck clean.
+- **Protected files:** a new canary fixture `tests/db-canary/20261108120000.sql` (approval item A1); `scripts/check-migrations.mjs` unchanged. `docs/security.md` still describes D34 (a); aligning it is a separate protected change.
+- **TEMPORARY behaviours** OQ-1 to OQ-10 and deviations DEV-1 to DEV-9: `docs/review/step1-pr18/README.md`. Among them: a Creator account is never deleted; a deleted account never changes again; `settings` stays an editable key (not locked like `usage`).
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file. (Status update, same day: Migration 4 is applied, version `20261116120813`, and merged, PR #30 → `main` `5f57ce9`; the review ran, see the entry above.)
+
 ## 2026-11-16 — Migration 4 applied to the remote project (PR 1.6)
 - **Approval:** the owner's explicit approval for one application (PR #30 `f53016a`, SQL `ad0eb314…2ffd`, payload `0b092aa4…4fcd`). A1 and A2 were also approved.
 - **Before the apply:**

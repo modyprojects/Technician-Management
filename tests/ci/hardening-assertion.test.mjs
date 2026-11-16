@@ -1,6 +1,7 @@
 // The fail-closed hardening checks of Migration 2 (section 11; owner, 2026-11-11), Migration 3
-// (section 12; owner, 2026-11-12) and Migration 4 (section 12, a byte-identical copy of Migration 3
-// section 12; PR 1.6).
+// (section 12; owner, 2026-11-12), Migration 4 (section 12, a byte-identical copy of Migration 3
+// section 12; PR 1.6) and Migration 5 (section 14, a byte-identical copy of Migration 4 section 12;
+// PR 1.8).
 // tests/db/140_hardening_assertion.test.sql runs a copy of the section 11 DO body against injected
 // leaks; this test keeps that copy byte-identical, shows that section 11 keeps the PR 1.3
 // section 15 privilege checks unchanged (it only adds checks), and that the check is the last
@@ -10,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lexSql } from "../../scripts/check-migrations.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -118,4 +120,56 @@ test("Migration 4 section 12 is Migration 3 section 12, byte for byte", () => {
 test("the section 12 check is the last statement of Migration 4", () => {
   const { end } = doBody(m4, "-- 12. Fail closed", m4File);
   assert.equal(m4.slice(end), "");
+});
+
+const m5File = "supabase/migrations/20261108120000_accounts_permissions.sql";
+const test5File = "tests/db/270_hardening_assertion_m5.test.sql";
+const m5 = read(m5File);
+
+test("tests/db/270 runs a byte-identical copy of the Migration 5 section 14 check", () => {
+  const { body } = doBody(m5, "-- 14. Fail closed", m5File);
+  const text = read(test5File);
+  const open = "language plpgsql as $assert$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test5File}: missing the copy`);
+  const stop = text.indexOf("\n$assert$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test5File}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("Migration 5 section 14 is Migration 4 section 12, byte for byte", () => {
+  const { body: m4Body } = doBody(m4, "-- 12. Fail closed", m4File);
+  const { body: m5Body } = doBody(m5, "-- 14. Fail closed", m5File);
+  assert.equal(m5Body, m4Body);
+});
+
+test("the section 14 check is the last statement of Migration 5", () => {
+  const { end } = doBody(m5, "-- 14. Fail closed", m5File);
+  assert.equal(m5.slice(end), "");
+});
+
+// PR 1.8, independent review N-4: the read-only pre-apply check (section 0b) runs before Migration 5
+// changes anything, and tests/db/310 runs a byte-identical copy of it.
+const test5PrecheckFile = "tests/db/310_precheck_m5.test.sql";
+
+test("tests/db/310 runs a byte-identical copy of the Migration 5 section 0b pre-apply check", () => {
+  const { body } = doBody(m5, "-- 0b. Fail closed", m5File);
+  const text = read(test5PrecheckFile);
+  const open = "language plpgsql as $precheck$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test5PrecheckFile}: missing the copy`);
+  const stop = text.indexOf("\n$precheck$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test5PrecheckFile}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("the section 0b check is the second statement of Migration 5, right after the postgres check, and only reads", () => {
+  const { body } = doBody(m5, "-- 0b. Fail closed", m5File);
+  const { statements, errors } = lexSql(m5);
+  assert.deepEqual(errors, []);
+  assert.match(statements[0].code, /^do\b/i);
+  assert.match(statements[0].bodies[0], /current_user <> 'postgres'/);
+  assert.match(statements[1].code, /^do\b/i);
+  assert.equal(statements[1].bodies[0], `\n${body}\n`);
+  assert.doesNotMatch(body, /\b(insert|update|delete|merge|truncate|alter|create|drop|grant|revoke|perform)\b/i);
 });

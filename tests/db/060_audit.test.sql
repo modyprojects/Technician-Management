@@ -12,6 +12,11 @@
 -- PR 1.6: the truncate triggers cover review_items, visit_corrections and offline_operations, which
 -- reference service_calls, visits and each other, so the PR 1.5 statements list them too; the D14
 -- correction and the review decision are audited (their exact rows: 240_integrity_writers).
+-- PR 1.8: the request path is retired (D60 (7), C-02), so the Manager's audited action on an
+-- account_requests row is now his direct Customer Service creation intent ('account_creation.authorized',
+-- D60 (7)) instead of a reactivation request ('account_request.created'); the counts are unchanged.
+-- The Manager's call type needs `callTypes` (on for Managers by default, D60 (8)); the PR 1.4
+-- `settings` grant below no longer opens it. The deletion's audit row: 290_account_admin.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(61);
@@ -40,7 +45,7 @@ select public.admin_update_profile('00000000-0000-4000-8000-0000000000a2', 1, '�
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
-select public.request_account_change('reactivate', '00000000-0000-4000-8000-0000000000b2', null, null, null);
+select public.authorize_account_creation('customer_service', 'new-agent@example.test', 'נציגה חדשה');
 select public.admin_update_technician('00000000-0000-4000-8000-0000000000e1', 1, 'טכנאי א', 't-y', 'tech-a2@example.test', null, true);
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
@@ -169,7 +174,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000
 set local role authenticated;
 select results_eq(
   $$ select action from public.audit_logs order by id $$,
-  $$ values ('account_request.created'), ('technician.updated'), ('technician.outlook_email_changed'), ('profile.deactivated') $$,
+  $$ values ('account_creation.authorized'), ('technician.updated'), ('technician.outlook_email_changed'), ('profile.deactivated') $$,
   'Manager: his own actions and the Technician and Customer Service accounts (incl. another Manager''s deactivation of one)');
 select is((select count(*) from public.audit_logs where target_table = 'role_permissions'), 0::bigint,
   'Manager: never matrix rows');
@@ -191,7 +196,7 @@ reset role;
 
 -- PR 1.4: Settings actions (TEMPORARY, OQ-9) --------------------------------------------------------------
 -- The real Creator acts on test rows he creates and on the real D48 rows; a1 (test Manager) gets
--- `settings` from the Creator and adds a call type.
+-- `settings` from the Creator (PR 1.4) and adds a call type (PR 1.8: with `callTypes`, D60 (8)).
 create temporary table pr14_ids (k text primary key, id uuid) on commit drop;
 grant all on pr14_ids to authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);

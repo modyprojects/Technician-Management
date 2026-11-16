@@ -17,6 +17,11 @@
 -- report of the done visit, under the Technician's claims), and the Manager runs the two new
 -- SECURITY DEFINER writers (correct_visit, resolve_review_item) through their wrappers with the
 -- domains in place.
+-- PR 1.8: the request path is retired (D60 (7), C-02), so the Manager's second creation is a direct
+-- Customer Service intent; the Manager also activates a Customer Service account directly (the
+-- replaced admin_set_user_active) and the Creator deletes it (the new SECURITY DEFINER writer
+-- admin_delete_user, which fires the new profiles triggers) with the domains in place, and the
+-- reads include a narrow matrix key.
 --
 -- The file runs in its own session (pg_prove), and the fixtures are written after the domains
 -- exist, so every function and trigger below is compiled while the domains exist (PL/pgSQL keeps
@@ -26,7 +31,7 @@
 -- dropped. Everything is rolled back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(24);
 
 -- The attacker's objects, created by `authenticated` in its own temporary schema.
 set local role authenticated;
@@ -58,12 +63,14 @@ begin
     ('00000000-0000-4000-8000-0000000000c1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-c1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000d1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-d1@example.test', now(), now()),
+    ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-b1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000f0', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-f0@example.test', now(), now());
   begin
     perform private.bootstrap_first_creator('00000000-0000-4000-8000-0000000000c1', 'יוצר');
     insert into public.profiles (id, role, full_name, work_phone, is_active) values
       ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', '03-000-0015', true),
-      ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', null, true);
+      ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', null, true),
+      ('00000000-0000-4000-8000-0000000000b1', 'customer_service', 'נציגת צל', null, false);
     insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
       ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y', 'tech-a@example.test');
     -- PR 1.5: a call of the Technician with visit 1 done (signature, summary, history) and visit 2
@@ -120,10 +127,16 @@ begin
     perform pg_catalog.set_config('tm_test.r_authorize', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
-    perform public.request_account_change('create', null, 'customer_service', 'shadow-b@example.test', 'צל ב');
+    perform public.authorize_account_creation('customer_service', 'shadow-b@example.test', 'צל ב');
     perform pg_catalog.set_config('tm_test.r_request', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_request', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform public.admin_set_user_active('00000000-0000-4000-8000-0000000000b1', true, 1, 'צל');
+    perform pg_catalog.set_config('tm_test.r_activate', 'ok', true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_activate', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
     perform public.admin_update_profile('00000000-0000-4000-8000-0000000000d1', 1, 'טכנאי א שונה', '050-000-0000', null);
@@ -140,7 +153,8 @@ begin
   end;
   begin
     perform pg_catalog.set_config('tm_test.r_reads',
-      pg_catalog.concat_ws(',', public.has_permission('settings'), public.is_creator(), public.my_technician_id(),
+      pg_catalog.concat_ws(',', public.has_permission('settings'), public.has_permission('callTypes'), public.is_creator(),
+                           public.my_technician_id(),
                            (select pg_catalog.count(*) from public.profiles)),
       true);
   exception when others then
@@ -213,7 +227,8 @@ end
 $calls$;
 reset role;
 
--- The Creator: a matrix change (role_permissions triggers) and the census (SECURITY INVOKER).
+-- The Creator: a matrix change (role_permissions triggers), a deletion (PR 1.8) and the census
+-- (SECURITY INVOKER).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
 do $calls$
@@ -223,6 +238,12 @@ begin
     perform pg_catalog.set_config('tm_test.r_creator_matrix', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_creator_matrix', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform public.admin_delete_user('00000000-0000-4000-8000-0000000000b1', 2, 'צל');
+    perform pg_catalog.set_config('tm_test.r_delete', 'ok', true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_delete', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
     perform pg_catalog.set_config('tm_test.r_census',
@@ -279,15 +300,23 @@ select is(current_setting('tm_test.r_pinned', true), 'ok',
 select ok(string_to_array(current_setting('tm_test.after_attack', true), ',') <@ array['authenticated'],
   'the domains'' CHECK never ran with more than the caller''s own rights (no RPC body, helper, wrapper or trigger ran it as postgres)');
 select is(current_setting('tm_test.r_authorize', true), 'ok', 'a Manager''s creation intent works with the domains in place');
-select is(current_setting('tm_test.r_request', true), 'ok', 'a Manager''s request works with the domains in place');
+select is(current_setting('tm_test.r_request', true), 'ok',
+  'PR 1.8: a Manager''s Customer Service creation intent (D60 (7); it was a request) works with the domains in place');
+select is(current_setting('tm_test.r_activate', true), 'ok',
+  'PR 1.8: a Manager''s direct Customer Service activation (D60 (7)) works with the domains in place');
 select is(current_setting('tm_test.r_update', true), 'ok', 'a Manager''s profile and field-profile updates work with the domains in place');
 select is(current_setting('tm_test.r_manager_matrix', true), '42501 not authorized',
   'a Manager still cannot change the matrix: the caller check, not a pg_temp domain, decides');
 select is(current_setting('tm_test.r_noprofile', true), '42501 not authorized',
   'a user without a profile gets 42501, not the result of code run during the declarations');
-select is(current_setting('tm_test.r_reads', true), 'f,f,2',
-  'the helpers and policies answer as without the domains (no settings key, not the Creator, no technician id; reads through RLS)');
+select is(current_setting('tm_test.r_reads', true), 'f,t,f,3',
+  'the helpers and policies answer as without the domains (no settings key, the callTypes key, not the Creator, no technician id; reads through RLS)');
 select is(current_setting('tm_test.r_creator_matrix', true), 'ok', 'the Creator''s matrix change works with the domains in place');
+select is(current_setting('tm_test.r_delete', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', p.is_active, p.deleted_at is not null, p.deleted_by, p.version) from public.profiles p
+   where p.id = '00000000-0000-4000-8000-0000000000b1'),
+  'ok f:t:00000000-0000-4000-8000-0000000000c1:3',
+  'PR 1.8: the Creator''s deletion works with the domains in place (the account inactive, marked deleted by him)');
 select ok(current_setting('tm_test.r_census', true) ~ '^[0-9,]+$', 'the census runs with the domains in place');
 select is(current_setting('tm_test.r_previous_visits', true), '1:done:טכנאי א:סיכום צל:written:t',
   'PR 1.5: a Technician''s previous_visits works with the domains in place');
@@ -311,9 +340,11 @@ select ok(
 select is((select count(*) from public.audit_logs where action = 'matrix.value_set'), 1::bigint,
   'only the Creator''s matrix change is audited');
 select ok(
-  exists (select 1 from public.account_requests where email = 'shadow-a@example.test' and request_type = 'direct_create')
-  and exists (select 1 from public.account_requests where email = 'shadow-b@example.test' and request_type = 'create'),
-  'the intent and the request were stored');
+  exists (select 1 from public.account_requests where email = 'shadow-a@example.test' and request_type = 'direct_create'
+            and requested_role = 'technician')
+  and exists (select 1 from public.account_requests where email = 'shadow-b@example.test' and request_type = 'direct_create'
+                and requested_role = 'customer_service'),
+  'both creation intents were stored (PR 1.8: the Customer Service one is an intent, no longer a request)');
 select is(private.audit_chain_verify(), null::bigint, 'the audit chain written while the domains existed verifies');
 select is(
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
