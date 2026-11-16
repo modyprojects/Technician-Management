@@ -508,6 +508,9 @@ begin
   if p_profile_id is null or p_expected_version is null or char_length(v_reason) > 300 then
     raise exception using errcode = '22023', message = 'invalid input';
   end if;
+  -- Review NIT-6: both writers lock technicians first, then profiles (admin_update_technician
+  -- locks its row, then tg_technician_guard shares the profile), so the two never deadlock.
+  perform 1 from public.technicians t where t.profile_id = p_profile_id for update;
   select p.* into v_target from public.profiles p where p.id = p_profile_id for update;
   if not found or v_target.role = 'creator' then
     raise exception using errcode = '42501', message = 'not authorized';
