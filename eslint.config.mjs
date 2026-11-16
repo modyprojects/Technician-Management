@@ -61,6 +61,11 @@ const NO_DEV_DYNAMIC_IMPORTS = [
     selector: "CallExpression[callee.name='require'] > Literal[value=/^(@\\/app\\/dev|(\\.{1,2}\\/)+(app\\/)?dev)(\\/|$)/]",
     message: NO_DEV_IMPORTS.message,
   },
+  {
+    // A template literal, e.g. import(`@/app/dev/x`).
+    selector: "ImportExpression > TemplateLiteral[quasis.0.value.raw=/^(@\\/app\\/dev|(\\.{1,2}\\/)+(app\\/)?dev)(\\/|$)/]",
+    message: NO_DEV_IMPORTS.message,
+  },
 ];
 
 const eslintConfig = defineConfig([
@@ -90,6 +95,8 @@ const eslintConfig = defineConfig([
         "error",
         { patterns: [...FIXTURE_PATTERNS, { regex: "^(@/|\\./)app/dev(/(?!_gate$)|$)", message: NO_DEV_IMPORTS.message }] },
       ],
+      // The gate import is static; no dynamic import of app/dev at all.
+      "no-restricted-syntax": ["error", ...NO_DEV_DYNAMIC_IMPORTS],
     },
   },
   {

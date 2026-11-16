@@ -107,7 +107,9 @@ test.describe("/dev gate", () => {
 
 // Step 2 PR 2.5 (independent review P1): forms of a /dev page that the proxy's /dev matchers also
 // catch but whose path is not literally `/dev…`: a percent-encoded segment and the `_next/data`
-// route. With the gate closed each is a 404 without the page's content.
+// route. With the gate closed each is a 404 without the page's content. Some builds do not serve
+// the `_next/data` form for App Router pages at all (a 404 with the gate open too); the test is
+// kept as a regression guard for builds that do.
 test.describe("/dev gate: encoded and data-route forms", () => {
   onlyInProject("desktop");
 

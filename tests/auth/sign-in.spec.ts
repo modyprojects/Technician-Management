@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { isSessionCookieName } from "@/features/auth/session-cookies";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { localSql, seeded, sessionCookies, signInAs, submitSignIn } from "./helpers";
 
@@ -22,6 +23,10 @@ test.describe("sign-in and role landing", () => {
     // Cookies: HttpOnly, SameSite=Lax, Path=/ (Secure is off only on the local plain-http server).
     const cookies = await sessionCookies(context);
     expect(cookies.length).toBeGreaterThan(0);
+    // Every Supabase cookie the library really set is one the sign-out fallback would delete.
+    for (const c of (await context.cookies()).filter((c) => c.name.startsWith("sb-"))) {
+      expect(isSessionCookieName(c.name), c.name).toBe(true);
+    }
     for (const c of cookies) {
       expect(c.httpOnly, c.name).toBe(true);
       expect(c.sameSite, c.name).toBe("Lax");
