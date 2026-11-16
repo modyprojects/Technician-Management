@@ -9,6 +9,7 @@
 **v1.3 changes (owner decisions D33–D51, 2026-11-03):** permission-matrix values are temporary until the owner approves the final values in Step 10 (SE-02, D51); editable permission matrix, Creator only (SE-02, PR-06); account administration with Creator approval (SE-01, SE-03, SE-05); cancellation stays pending d08 with the `cancel` key (SE-04, OF-09); operational settings and D17-required template labels (SE-06, SE-07, SE-15, new SE-16 call types); previous visits for a follow-up technician (TE-06); approval text preserved at signing (TE-19, TE-26, OF-06, SE-07, EM-01); original recordings (OF-06); service-call status display (OF-04, new OF-17); invitation changes to started visits go to review (IN-06, SIM-03); 🧪 test-data badges (new SIM-15 to SIM-19); offline stores and warnings (TE-23, TE-24).
 **v1.4 (2026-11-05, D57):** rows changed by D57 are APPROVED (owner); rows or parts marked TEMPORARY, PROPOSED or PENDING are not: T1–T8 and T12–T14 (#20), the entry row's count (#26), the former Manager home (#26), simulator placement (#27), and Claude Code's design proposals in OF-19 (PROPOSED, owner feedback pending under D53). Changed: OF-01, OF-02, OF-11, OF-12, OF-13, OF-16 (including D57 (9): "נפתחה" vs "תחילת טיפול"), SE-01, SE-03, SIM-01 (note); new: OF-18, OF-19, OF-20, G-08.
 **v1.5 (proposed, Step 2 PR 2.3):** AU-01 to AU-04 and SE-17 to SE-20 are PROPOSED (Claude Code; owner feedback pending under D53 (6), Step 2 plan Q26); the approved status of every other row is unchanged.
+**v1.6 (2026-11-12, D60):** the owner-approved QA corrections 01 override the demo where they differ (section "QA corrections 01 (D60)"); every other row is unchanged.
 **Applies to:** `docs/demo.html` ("ניהול טכנאים · דמו חי · גרסה 2").
 
 ## Precedence
@@ -215,6 +216,34 @@ PROPOSED rows (Step 2 PR 2.3, Q26): prototypes under `/dev/demo` with fictional 
 | EM-03 | Thumbnails of media in the email | PENDING | | d11 |
 | EM-04 | — (missing) business identifiers in the email | ADD | Show request number, task number, customer number, visit number, result, follow-up reason, summary and parts, for normal business use. No reference to, mapping for, or format of any external system | d22 |
 | EM-05 | Sent immediately on close | CHANGE | Transactional outbox, only after server acceptance and an approved summary | D09, D12 |
+
+## QA corrections 01 (D60)
+
+**Source:** owner-approved QA document `docs/design/qa-corrections-01.md` (PR #28), and D60.
+
+**Detail:** the mapping with acceptance criteria and tests is in `docs/qa-corrections-01-integration.md`. These rows take precedence over the demo and over earlier rows of this file where they differ.
+
+**Design:** the MODY look is kept; only the named elements change.
+
+| ID | Demo element | Category | Production behavior | Source |
+|---|---|---|---|---|
+| QA-01 | Technician home after closing a visit | CHANGE | A visit closed as "טופל" or "המשך טיפול" moves to "הושלמו היום"; the completed and remaining counters and the next-visit card update; an empty day shows a message. The demo's stale-visit bug is not reproduced | D60 (2); T-02 |
+| QA-02 | Visit status pills in every calendar view | CHANGE | Exactly five user-facing statuses, text and colour, one shared map: "שובצה", "בדרך", "בטיפול", "טופל", "המשך טיפול". "בוטלה" is never shown; cancelled visits are omitted | D60 (1); T-04, S-02, M-04 |
+| QA-03 | Close flow and confirmation screen | KEEP + CHANGE | The confirmation screen with "חזרה להיום" is kept (no automatic navigation). Added: mandatory-field messages, no duplicate submission, local vs server save | D60 (2); T-09, T-10 |
+| QA-04 | Technician sync notice | CHANGE | Pending and failed counts, "סנכרן עכשיו"; missing internet named only when it is the confirmed cause; hidden when everything is synced | D60 (2); T-01 |
+| QA-05 | "מה לאסוף לפני יציאה" | CHANGE | Same place; hidden when there are no items | D60 (12); T-07 |
+| QA-06 | Pencil-like icon (✎) | PENDING | Investigated in Step 3; removed if it has no clear function, otherwise an explained, consistent symbol | D60 (12); T-06 |
+| QA-07 | Customer Service navigation and home | CHANGE | Exactly "יומן טכנאים", "קריאות", "זימונים שלא נקלטו"; default "קריאות"; no "בית", "לקוחות" or "חזרו מהשטח" (data kept) | D60 (4); S-01, S-04, S-05 |
+| QA-08 | Call reference on calendar visit cards and the call card | CHANGE | "מס׳ פנייה" (the invitation's reference number) shown on each visit card and in the call-card header; no ONE naming | D60 (3); S-02, X-01 |
+| QA-09 | Call card (Customer Service and Manager) | CHANGE | Header (customer, מס׳ פנייה, call status); "פרטי הקריאה" right, "לקוח וכתובת" left; "שיבוץ"; one card per visit with recorded times, computed durations, summary, parts, media, recording, signature, follow-up | D60 (5); S-07 to S-12, M-05 |
+| QA-10 | General dashboard: "התקדמות הביקורים" bar | DROP | Removed for the Manager and the Creator; the activity cards stay and move up | D60 (6); M-09, C-07 |
+| QA-11 | "עמידה בתכנון" metric | DROP | Removed entirely | D60 (6); M-03 |
+| QA-12 | Service metric labels and "לא בוצעו במועד" | CHANGE | Labels renamed with unit and period; the "לא בוצעו במועד" drill-down shows planned window, arrival or "לא הגיע" / "טרם הגיע", and a link to the call card | D60 (6); M-01, M-02 |
+| QA-13 | User administration (Manager and Creator) | CHANGE | One screen and one "הוסף משתמש" button with a role choice; the Manager edits and activates/deactivates Technician and Customer Service users directly, never deletes and never changes roles; the Creator manages all roles and alone deletes (Option A) | D60 (7); M-06, C-01 |
+| QA-14 | "בקשות לאישור" | DROP | Removed (list and approve/reject controls); security mechanisms stay | D60 (7); C-02 |
+| QA-15 | Manager "הגדרות" | CHANGE | One main tab with four areas: users and permissions, continuation reasons, "טופל" text, call types; narrow keys, not `settings` | D60 (8); M-07 |
+| QA-16 | "מדדי שימוש" | CHANGE | A separate main tab for the Creator only, from real events; no simulated numbers | D60 (9); C-03 to C-06 |
+| QA-17 | Invitation simulator entry | CHANGE | A button inside "זימונים שלא נקלטו", only when the simulator is explicitly enabled in a test environment; never in Production | D60 (11) |
 
 ## Traceability: the 11 conflicts found in the 2026-10-25 review
 
