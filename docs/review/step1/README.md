@@ -21,11 +21,11 @@ Sources: the four migration files, `tests/db/*.test.sql`, and the per-PR reports
 | 1 `access_and_permissions` | PR 1.3, #12, merged (`fe370df`) | yes, 2026-11-11 | `20261111125920` (`20261104120000`) | `30e0c8b0e8638bfe38fa1d49b9eae6f7d07046aaaa436549c084b8746ebb89f7` |
 | 2 `reference_customers_products` | PR 1.4, #14, merged (`4509c6e`) | yes, 2026-11-12, inside the self-verifying wrapper `04810116…0a92` | `20261112093516` (`20261105120000`) | `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363` |
 | 3 `service_calls_visits` | PR 1.5, #25, merged (`1ed6e65`) | yes, 2026-11-16, inside the self-verifying wrapper `8b9decd8…313d` | `20261116094444` (`20261106120000`) | `37b803dbae1636bc65baec7feaf3c7723b7c3448d7b8ab27d43b5706f5c8eecb` |
-| 4 `integrity_offline` | PR 1.6, #30, **draft, not merged** | **no** | — (`20261107120000`) | `ad0eb31499715b40de63137b6a0730f9b73d51f3e3a69a650d3037d553e88715` |
+| 4 `integrity_offline` | PR 1.6, #30, merged (`5f57ce9`) | **yes**, 2026-11-16 | `20261116120813` (file `20261107120000`) | `ad0eb31499715b40de63137b6a0730f9b73d51f3e3a69a650d3037d553e88715` |
 
 - The sha256 values are the ones pinned in the per-PR reports (PR 1.3 §17, PR 1.4 §15.5, PR 1.5 §17, PR 1.6 header). The files in this branch hash to the same values (checked with `sha256sum` on 2026-11-16).
 - **Version discrepancy (documented, not repaired):** MCP `apply_migration` records a server-assigned version, so the remote history differs from the file names. Each down script also finds its row by name. Aligning the history is a remote write and needs the owner's approval.
-- **Migration 4 is not live.** Applying it needs the owner's separate approval of the exact file (D52 rule 4, D55), the same self-verifying wrapper (the file has `\u` escapes, PR 1.6 §10), and then the merge of PR #30 with the owner's approval (D59). Whether its post-review fixes need another review is D58 (9), open.
+- **Migration 4 is live** (update of 2026-11-16, after these reports were written). It was applied once with the owner's approval through the self-verifying wrapper, verified read-only (fingerprint 14/14 equal to the local Migrations 1–4 build, audit chain intact), and PR #30 was merged. The reviewer confirmed the post-review fixes before the apply. Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project". The local results below were produced before the apply, on the same files.
 
 ## Fresh local run (2026-11-16)
 

@@ -4,7 +4,7 @@
 
 **Status of each migration** (details: [`README.md`](README.md)):
 - **Migrations 1–3** are applied to the remote project and merged into `main`.
-- **Migration 4** (PR 1.6, draft PR #30) is prepared and tested locally only. It is **not applied and not merged**. Its three tables (`review_items`, `visit_corrections`, `offline_operations`), the two new columns of `visit_time_reports` (`correction_id`, `accepted_review_id`) and the new key `visits (id, service_call_id)` exist only in local databases.
+- **Migration 4** (PR 1.6, PR #30) was applied to the remote project on 2026-11-16 (version `20261116120813`) and merged. Its three tables (`review_items`, `visit_corrections`, `offline_operations`), the two new columns of `visit_time_reports` (`correction_id`, `accepted_review_id`) and the new key `visits (id, service_call_id)` are live.
 
 ## 1. Legend
 
@@ -13,7 +13,7 @@
 | 1 `access_and_permissions` | PR 1.3 (#12) | `profiles`, `technicians`, `permissions`, `role_permissions`, `account_requests`, `audit_logs` |
 | 2 `reference_customers_products` | PR 1.4 (#14) | `brands`, `suppliers`, `products`, `customers`, `call_types`, `followup_reasons`, `collection_locations` |
 | 3 `service_calls_visits` | PR 1.5 (#25) | `service_calls`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports`, `visit_events`, `entity_changes` |
-| 4 `integrity_offline` (**not applied**) | PR 1.6 (#30) | `review_items`, `visit_corrections`, `offline_operations` |
+| 4 `integrity_offline` (applied 2026-11-16) | PR 1.6 (#30) | `review_items`, `visit_corrections`, `offline_operations` |
 
 - **PK, FK, UK:** primary key, foreign key, unique key. A column marked UK may be one part of a composite unique key: `is_test` is marked UK where the table has `UNIQUE (id, is_test)`, the parent key that child tables reference. `visits.service_call_id` is UK because of `UNIQUE (service_call_id, visit_number)` and `UNIQUE (id, service_call_id)`. Partial unique indexes (for example one device time report per visit and kind) are not shown as UK.
 - **Solid line:** a foreign key. Every one of the 65 foreign keys is `ON DELETE RESTRICT`.
@@ -320,9 +320,9 @@ Generated from the local catalog: 23 tables, 301 columns (the canary-rows check'
 | `visit_events` | 10 | `id` bigint (PK) · `visit_id` uuid (FK) · `version_after` integer · `event_type` text · `from_status` text (null) · `to_status` text · `recorded_at` timestamptz · `actor_profile_id` uuid (FK, null) · `operation_id` uuid (null) · `is_test` boolean (FK) |
 | `entity_changes` | 11 | `id` bigint (PK) · `entity_table` text · `entity_id` uuid · `field` text · `old_value` jsonb (null) · `new_value` jsonb (null) · `source` text · `source_ref` text (null) · `actor_profile_id` uuid (FK, null) · `changed_at` timestamptz · `is_test` boolean |
 
-Migration 4 (not applied) adds `correction_id` and `accepted_review_id` to `visit_time_reports` (shown above, last two columns) and `UNIQUE (id, service_call_id)` to `visits`.
+Migration 4 adds `correction_id` and `accepted_review_id` to `visit_time_reports` (shown above, last two columns) and `UNIQUE (id, service_call_id)` to `visits`.
 
-### Migration 4: integrity and offline (not applied)
+### Migration 4: integrity and offline
 
 | Table | Count | Columns, in order (type; PK, FK, UK; `null` = nullable; `generated` = stored generated column) |
 |---|---|---|
@@ -343,7 +343,7 @@ Migration 4 (not applied) adds `correction_id` and `accepted_review_id` to `visi
 | 1 | Matrix: `admin_set_role_permission`; `has_permission`, `is_creator`, `my_technician_id`. Accounts: `assert_can_manage`, `assert_can_change_credentials`, `authorize_account_creation`, `admin_create_profile`, `admin_set_user_role`, `admin_set_user_active`, `admin_update_profile`, `admin_create_technician`, `admin_update_technician`, `request_account_change`, `decide_account_request`, `cancel_account_request`. Census: `public.test_data_census` (Creator only). Helpers in `private` with EXECUTE: `is_active_user`, `has_role`, `is_office_user` | `admin_approve_role_permission` (no grant in either schema, TEMPORARY), `require_caller`, `write_audit`, `audit_row_hash`, `audit_chain_verify`, `bootstrap_first_creator` (never run by a migration, D49) |
 | 2 | Settings (matrix key `settings`): `add_call_type`, `set_call_type_active`, `add_followup_reason`, `set_followup_reason_active`, `delete_followup_reason`, `add_collection_location`, `set_collection_location_active`, `delete_collection_location`; `test_data_census` replaced | — |
 | 3 | Narrow read functions for the Technician: `my_visit_details`, `visit_rep_contact` (D40), `previous_visits` (D36); `test_data_census` replaced | `can_read_visit` (no grant), `compute_call_status`, `recalc_call_status` (D38, the only writer of call status changes), `write_entity_change` (the only writer of field history); four deferred constraint-trigger functions `ct_service_call_rules`, `ct_visit_rules`, `ct_signature_rules`, `ct_report_rules` |
-| 4 (**not applied**) | Writers: `correct_visit` (D14), `resolve_review_item` (D44); `test_data_census` replaced | Helpers for the Step 4 and Step 6 writers: `create_review_item`, `offline_operation_replay`, `record_offline_operation` |
+| 4 | Writers: `correct_visit` (D14), `resolve_review_item` (D44); `test_data_census` replaced | Helpers for the Step 4 and Step 6 writers: `create_review_item`, `offline_operation_replay`, `record_offline_operation` |
 
 **Catalog totals (local, Migrations 1–4):** 23 tables, all with row-level security on (none forced); 1 view; 4 sequences; 301 columns; constraints: 23 primary keys, 28 unique, 65 foreign keys, 176 CHECKs, 4 constraint triggers; 137 triggers on `public` tables; 36 policies, all `SELECT` and all `TO authenticated` (no write policy anywhere); 110 functions (31 in `public`, 79 in `private`), of which 38 are SECURITY DEFINER, all in `private`. On a fresh build the only rows are the 13 permission keys, the 26 TEMPORARY matrix values (D51), the 2 D48 call types and the 5 D48 continuation reasons.
 
