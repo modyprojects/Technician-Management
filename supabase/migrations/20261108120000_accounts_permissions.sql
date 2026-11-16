@@ -12,7 +12,8 @@
 --   - Creator-only deletion, Option A (C-01, M-10): two nullable columns on profiles (deleted_at,
 --     deleted_by) with three CHECKs and a foreign key; a permanence trigger on profiles, a freeze
 --     trigger on technicians and a one-way trigger for deleted_by; the writer admin_delete_user
---     and its wrapper; the audit action profile.deleted.
+--     (which also turns a deleted Technician's "פעיל" off) and its wrapper; the audit action
+--     profile.deleted.
 --   - Direct Manager administration of Technician and Customer Service accounts (D60 (7), M-06):
 --     new bodies for authorize_account_creation, admin_create_profile and admin_set_user_active;
 --     assert_can_change_credentials and admin_set_user_active refuse a deleted account (the
@@ -26,7 +27,9 @@
 --     and the five Migration 2 call-type and continuation-reason RPCs switched to them.
 --   - usage as a Creator-only fixed capability (D60 (9), C-03): has_permission grants it to the
 --     Creator and never through the matrix.
---   - The fail-closed hardening check (section 14, a byte-identical copy of Migration 4 section 12).
+--   - The fail-closed hardening check (section 14, a byte-identical copy of Migration 4 section 12),
+--     and a read-only pre-apply check (section 0b) that refuses to retire the request path while a
+--     legacy request would be stranded.
 --
 -- Data: schema plus the owner-approved D60 (8) catalogue rows (3 keys) and their TEMPORARY default
 -- values (6 values, D51). No test or fictitious rows (D47). No row of an earlier migration changes.
@@ -52,8 +55,9 @@
 --   OQ-7  `ackText` is a data key with no table or function yet (Step 4, ack_text_versions, D43).
 --   OQ-8  the Manager's audit view is unchanged: he reads profile.deleted rows of Technician and
 --         Customer Service accounts (actor: the Creator).
---   OQ-9  deleting an account changes nothing else: open visits, open creation intents and the
---         technician's "פעיל" stay as they were (as for a deactivation; the office reassigns).
+--   OQ-9  deleting an account changes nothing else but a Technician's "פעיל", which it turns off
+--         (review S-2): open visits and open creation intents stay as they were (as for a
+--         deactivation; the office reassigns).
 --   OQ-10 deletion takes no confirmation token: the explicit confirmation is the screen's, and the
 --         expected version makes a stale screen fail (PT409).
 --
@@ -81,6 +85,38 @@ do $$
 begin
   if current_user <> 'postgres' then
     raise exception 'apply this migration as postgres (current role: %)', current_user;
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------------------------
+-- 0b. Fail closed when the retirement would strand a legacy request (independent review N-4).
+--     Read-only; it raises before anything is changed, and the whole migration then rolls back.
+--     The retired path (section 10) leaves a request row only cancel_account_request, which is
+--     unchanged (OQ-4): a pending request can be cancelled by its requester while his profile is
+--     active, and an approved, unfulfilled creation request by an active real Creator. A row that
+--     nobody could close any more would be stranded: a pending request whose requester is not
+--     active, or an approved, unfulfilled creation request while no active real Creator exists.
+--     Creation intents (direct_create) are not changed by the retirement and are not counted. A
+--     pending request of an active requester stays as history he can cancel. The remote project
+--     holds no request (no profile exists before the D49 bootstrap); the README's pre-apply check
+--     confirms it read-only. tests/db/310 runs a copy of this block (kept identical by
+--     tests/ci/hardening-assertion.test.mjs) against injected rows.
+-- ---------------------------------------------------------------------------------------------
+do $$
+declare
+  v_stranded bigint;
+begin
+  select pg_catalog.count(*) into v_stranded
+  from public.account_requests r
+  where r.request_type <> 'direct_create'
+    and ((r.status = 'pending'
+          and not exists (select 1 from public.profiles p where p.id = r.requested_by and p.is_active))
+         or (r.status = 'approved' and r.target_profile_id is null
+             and not exists (select 1 from public.profiles p where p.role = 'creator' and p.is_active and not p.is_test)));
+
+  if v_stranded > 0 then
+    raise exception 'pre-apply check failed, nothing is applied: % legacy account request(s) would be stranded by the retired request path (D60 (7), C-02); close them under Migration 4 first', v_stranded;
   end if;
 end
 $$;
@@ -446,10 +482,12 @@ $$;
 -- confirmation (OQ-10), never his own account and never a Creator account (TEMPORARY OQ-1). It
 -- revokes access in the database at once and for good: the profile becomes inactive and is marked
 -- deleted (deleted_at at server time, deleted_by), and it never changes again (t12_deleted_guard;
--- the field profile too, t11_deleted_profile). No row is removed: history, attribution and the
--- name stay (every foreign key is ON DELETE RESTRICT). Audited in the same transaction.
--- Step 2 hand-off (section 13): only after this call commits does the server revoke the Auth side
--- with the secret key.
+-- the field profile too, t11_deleted_profile). Review S-2: a deleted Technician also stops
+-- receiving new work: his field profile's "פעיל" (accepts_invitations) is turned off first, while
+-- t11 still allows it, and audited (technician.updated); t11 then keeps it off. No row is removed:
+-- history, attribution and the name stay (every foreign key is ON DELETE RESTRICT). Audited in the
+-- same transaction. Step 2 hand-off (section 13): only after this call commits does the server
+-- revoke the Auth side with the secret key.
 create function private.admin_delete_user(p_profile_id uuid, p_expected_version integer, p_reason text default null)
 returns integer
 language plpgsql
@@ -461,6 +499,7 @@ declare
   v_target public.profiles;
   v_reason text := nullif(btrim(p_reason), '');
   v_version integer;
+  v_technician_id uuid;
 begin
   v_caller := private.require_caller(array['creator']);
   if v_caller.is_test or p_profile_id = v_caller.id then
@@ -478,6 +517,13 @@ begin
   end if;
   if v_target.version <> p_expected_version then
     raise exception using errcode = 'PT409', message = 'version conflict';
+  end if;
+  update public.technicians t set accepts_invitations = false, updated_by = v_caller.id
+  where t.profile_id = p_profile_id and t.accepts_invitations
+  returning t.id into v_technician_id;
+  if v_technician_id is not null then
+    perform private.write_audit('technician.updated', 'technicians', v_technician_id,
+      jsonb_build_object('fields', jsonb_build_array('accepts_invitations'), 'cause', 'profile.deleted'));
   end if;
   update public.profiles p
   set is_active = false, deleted_at = now(), deleted_by = v_caller.id, updated_by = v_caller.id
@@ -789,8 +835,8 @@ insert into public.role_permissions (role, permission_key, allowed, value_status
 --     Step 3 (telemetry, C-03 to C-06): the telemetry migration adds usage_events and its Creator-
 --     only functions, gated by private.is_creator() or has_permission('usage') (Creator only).
 --     Step 4: ack_text_versions (D43) and its writer, gated by `ackText`.
---     Step 6: the ingestion assigns visits only to technicians whose profile is active and not
---     deleted.
+--     Step 6 (acceptance rule): the ingestion assigns a visit only to an eligible technician:
+--     technicians.accepts_invitations AND the profile is active AND the profile is not deleted.
 -- ---------------------------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------------------------
