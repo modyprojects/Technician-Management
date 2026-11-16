@@ -1,5 +1,18 @@
 # Work Log (English only)
 
+## 2026-11-16 — Step 1 / PR 1.6: Migration 4 (integrity and offline), local only
+- Branch `claude/step1-pr16-integrity-offline`, stacked on PR 1.5's head `5b2d2be`. Migrations 1-3 unchanged. **Not applied, not pushed.**
+- **Migration** `20261107120000_integrity_offline.sql` (sha256 `2052f4de…2ffd`, 1,349 lines):
+  - three tables: `review_items` (D44; dedupe key, the visit belongs to the call, both versions frozen, decided once), `visit_corrections` (D14; append-only, one field per row, one per visit version) and `offline_operations` (D46; one immutable final result per device operation id);
+  - `visit_time_reports` gains the `correction` source with `correction_id` or `accepted_review_id` (PR 1.5 DEV-2, OQ-11); `visits` gains `UNIQUE (id, service_call_id)` and the `field_version` trigger;
+  - writers `correct_visit` (Manager and Creator, fixed D14 capability) and `resolve_review_item` (D14 items by Manager or Creator with a note, others with `conflicts`), SECURITY DEFINER behind SECURITY INVOKER wrappers, with audit and field history; three helpers for the Step 4 and Step 6 writers (`create_review_item`, `offline_operation_replay`, `record_offline_operation`);
+  - four SELECT policies, grants, census, and the fail-closed hardening check (Migration 3 section 12, byte for byte) as the last statement.
+- **Rollback** script (one DO block, refuses first); `990` runs it first and checks that the catalog then equals a database built from Migrations 1-3 (eight fingerprints).
+- **Protected files:** `scripts/check-migrations.mjs` gains four `ALLOWED_WRITERS` entries (approval item A1); a new canary fixture `tests/db-canary/20261107120000.sql` (A2). `coverage-exceptions.json` unchanged.
+- **Local results:** pgTAP 1,387/1,387 (31 files; new `220`-`260`; `010`, `015`, `060`, `070`, `100`, `140`, `150`, `990` updated); node 190/190; guard passed; canary PASS (4 migrations, no new exception); lint and typecheck clean.
+- **TEMPORARY behaviours** OQ-1 to OQ-14 and deviations DEV-1 to DEV-12: `docs/review/step1-pr16/README.md`. Among them: corrections are append-only (as-closed values kept), no outcome correction, only `keep_current` and the accepted second device report are applied by PR 1.6.
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1 and A2; the apply only after Migration 3 is applied and merged, with a separate approval of the exact file.
+
 ## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
 - **Owner decisions:**
   - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.
