@@ -21,7 +21,16 @@ export type SeededUser = { id: string; email: string; password: string; name: st
 export type SeededUsers = Record<"mgr" | "mgr2" | "cs" | "tech", SeededUser> & { creator: SeededUser | null; techRow: string };
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
-const DB_CONTAINER = "supabase_db_technician-management";
+/**
+ * The local database container (tests/auth/global-setup.ts localDbContainer: the project's own, or
+ * another LOCAL stack's through AUTH_TEST_DB_CONTAINER, so the local Creator lives in the stack under
+ * test). Only a Supabase CLI database container name is accepted.
+ */
+const DB_CONTAINER = (() => {
+  const name = process.env.AUTH_TEST_DB_CONTAINER || "supabase_db_technician-management";
+  if (!/^supabase_db_[a-z0-9_-]{1,64}$/.test(name)) throw new Error("AUTH_TEST_DB_CONTAINER is not a local Supabase database container name");
+  return name;
+})();
 const CREATOR_EMAIL = /^accounts-e2e-creator-[0-9a-f]{8}@example\.test$/;
 
 const sqlText = (value: string): string => `'${value.replaceAll("'", "''")}'`;
