@@ -8,7 +8,7 @@ No email address, name or user id is recorded in this repository. The values are
 - Exactly one Auth user with the owner's own email address: confirmed, email provider, not anonymous, not SSO, not deleted, not banned, no profile, no MFA factor.
 - No Creator and no profile in `public.profiles`; `public.audit_logs` row count recorded; `private.audit_chain_verify()` returns NULL.
 - `md5(prosrc)` of `private.bootstrap_first_creator` is `28230a46b9d2c3ad37a9246d032eb4e5` (the body in `supabase/migrations/20261104120000_access_and_permissions.sql`, checked 2026-11-17); EXECUTE only for `postgres` and `supabase_admin`.
-- The Preview's two public Supabase values are scoped to Preview for this branch only (Vercel, names checked; values never read).
+- The two public Supabase values exist for Preview only, none for Production (Vercel, names checked; values never read).
 
 Any other result stops the procedure; the owner is told, nothing is retried.
 
