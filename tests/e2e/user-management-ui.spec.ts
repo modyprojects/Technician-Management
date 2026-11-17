@@ -139,14 +139,18 @@ test.describe("the real actions as the account port", () => {
 test.describe("the real office navigation and the settings routes", () => {
   onlyInProject("desktop");
 
-  test("Manager and Creator: the landing item and \"הגדרות\"; Customer Service \"קריאות\" only (S-01); anything else nothing", () => {
+  test("Manager and Creator: the landing item, \"זימונים שלא נקלטו\" and \"הגדרות\"; Customer Service \"קריאות\" and \"זימונים שלא נקלטו\" (S-01, S-05); anything else nothing", () => {
     for (const role of ["mgr", "creator"] as const) {
       expect(realOfficeNav(role)).toEqual([
         { key: "analytics", label: "דשבורד", href: "/office" },
+        { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },
         { key: "settings", label: "הגדרות", href: OFFICE_SETTINGS_USERS_PATH },
       ]);
     }
-    expect(realOfficeNav("cs")).toEqual([{ key: "calls", label: "קריאות", href: "/office" }]);
+    expect(realOfficeNav("cs")).toEqual([
+      { key: "calls", label: "קריאות", href: "/office" },
+      { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },
+    ]);
     for (const value of ["tech", "constructor", "__proto__", "", null, undefined]) expect(realOfficeNav(value), String(value)).toEqual([]);
     expect(OFFICE_SETTINGS_PATH).toBe("/office/settings");
     expect(OFFICE_SETTINGS_USERS_PATH).toBe("/office/settings/users");

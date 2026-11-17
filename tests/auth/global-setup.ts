@@ -13,7 +13,7 @@ import { createClient } from "@supabase/supabase-js";
 import { ensureLocalCreator } from "../accounts/global-setup";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
-export type SeededUsers = Record<"mgr" | "cs" | "tech" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive", SeededUser>;
+export type SeededUsers = Record<"mgr" | "cs" | "tech" | "tech2" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive", SeededUser>;
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
 
@@ -45,6 +45,8 @@ export default async function globalSetup(): Promise<void> {
     mgr: "מנהלת בדיקה",
     cs: "נציג שירות בדיקה",
     tech: "טכנאי בדיקה",
+    // The office screens' tests: a second active technician, for a re-assigned invitation.
+    tech2: "טכנאית שנייה בדיקה",
     techInactive: "טכנאי מושבת בדיקה",
     noProfile: "ללא פרופיל",
     // D65: the password-reset tests change these two passwords; the other accounts keep theirs.
@@ -66,17 +68,20 @@ export default async function globalSetup(): Promise<void> {
   }
 
   const techRow = randomUUID();
+  const tech2Row = randomUUID();
   const sql = `
 begin;
 insert into public.profiles (id, role, full_name, is_active, is_test) values
   (${sqlText(users.mgr.id)}, 'manager', ${sqlText(users.mgr.name)}, true, true),
   (${sqlText(users.cs.id)}, 'customer_service', ${sqlText(users.cs.name)}, true, true),
   (${sqlText(users.tech.id)}, 'technician', ${sqlText(users.tech.name)}, true, true),
+  (${sqlText(users.tech2.id)}, 'technician', ${sqlText(users.tech2.name)}, true, true),
   (${sqlText(users.techInactive.id)}, 'technician', ${sqlText(users.techInactive.name)}, false, true),
   (${sqlText(users.resetMgr.id)}, 'manager', ${sqlText(users.resetMgr.name)}, true, true),
   (${sqlText(users.resetInactive.id)}, 'technician', ${sqlText(users.resetInactive.name)}, false, true);
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email, accepts_invitations) values
-  (${sqlText(techRow)}, ${sqlText(users.tech.id)}, true, ${sqlText(users.tech.name)}, 'teal', ${sqlText(`auth-e2e-cal-${run}@example.test`)}, true);
+  (${sqlText(techRow)}, ${sqlText(users.tech.id)}, true, ${sqlText(users.tech.name)}, 'teal', ${sqlText(`auth-e2e-cal-${run}@example.test`)}, true),
+  (${sqlText(tech2Row)}, ${sqlText(users.tech2.id)}, true, ${sqlText(users.tech2.name)}, 't-e', ${sqlText(`auth-e2e-cal2-${run}@example.test`)}, true);
 commit;
 `;
   execFileSync("docker", ["exec", "-i", localDbContainer(), "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q"], {
@@ -90,6 +95,7 @@ commit;
   process.env.AUTH_E2E_USERS = JSON.stringify(users);
   process.env.AUTH_E2E_CREATOR = creator ? JSON.stringify(creator) : "";
   process.env.AUTH_E2E_TECH_ROW = techRow;
+  process.env.AUTH_E2E_TECH2_ROW = tech2Row;
   // Least privilege: no test worker needs the secret key.
   delete process.env.AUTH_TEST_SUPABASE_SECRET_KEY;
 }
