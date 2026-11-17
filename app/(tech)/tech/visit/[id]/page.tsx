@@ -7,7 +7,7 @@ import { VisitHistory } from "@/components/tech/VisitHistory";
 import { VisitInfoCard, VisitPickup, VisitProblem } from "@/components/tech/VisitInfo";
 import { PlaceWazeLink, VisitContactTiles } from "@/components/tech/VisitLinks";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
+import { TestPill, VisitSourceLine } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
 import { TECH_HOME_PATH } from "@/features/visits/data/paths";
 import type { VisitDetail } from "@/features/visits/data/types";
@@ -49,7 +49,7 @@ export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[
   const title = visit.customer.name || `ביקור ${visit.n} · ${ddmm(visit.date)}`;
   const trailing = (
     <>
-      {visit.call.isTest && <TestBadge />}
+      {visit.call.isTest && <TestPill />}
       <StatusPill status={visit.status} />
     </>
   );

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import { BellLink } from "./BellLink";
 
 // Technician home header (demo techHome() head, TE-01): date, greeting, avatar, bell, counters.
@@ -49,7 +49,7 @@ export function TechHomeHeader({
       >
         <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
           <h1 style={{ fontSize: 22 }}>{greeting}</h1>
-          {isTest && <TestBadge />}
+          {isTest && <TestPill />}
         </span>
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span

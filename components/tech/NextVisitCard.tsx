@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PinIcon } from "@/components/ui/Icons";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { TechDayVisit, VisitStatus } from "@/features/visits/data/types";
 
 // Next-visit card on the technician home (docs/demo.html techHome() L489-496; TE-02, TE-33).
@@ -65,7 +65,7 @@ export function NextVisitCard({
         {visit.isTest && (
           <>
             {" "}
-            <TestBadge />
+            <TestPill />
           </>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { IsoTimestamp } from "@/features/data-access/common";
 import { DEVICE_SYNC_LABELS, type VisitDeviceSync } from "@/features/sync/data/types";
 import { attemptsLabel, itemsLabel, operationLabel, QUEUE_WARNING, queueItemRef, sizeLabel } from "./SyncLabels";
@@ -46,7 +46,7 @@ export function SyncVisitPanel({ sync, timeLabel }: { sync: VisitDeviceSync; tim
                       {op.isTest && (
                         <>
                           {" "}
-                          <TestBadge />
+                          <TestPill />
                         </>
                       )}
                       {size && (

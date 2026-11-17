@@ -17,6 +17,22 @@ export function TestBadge({ label = false }: { label?: boolean }) {
   );
 }
 
+/**
+ * The test-data pill (D47, SIM-15 to SIM-19; owner feedback 2026-11-17 on the technician home): at a
+ * small size the icon-only 🧪 badge read as a pencil (QA T-06), so the marker carries the word
+ * "בדיקה" after the 🧪. Screen readers hear "נתוני בדיקה" (the visible "בדיקה" plus a visually
+ * hidden "נתוני "), the tooltip says the same. Same muted look as TestBadge; any screen may use it.
+ */
+export function TestPill() {
+  return (
+    <span className="pill" title={TEST_DATA_LABEL} style={{ background: "var(--warn-bg)", color: "var(--warn-fg)", padding: "1px 7px", whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">🧪 </span>
+      <span className="sr-only">נתוני </span>
+      בדיקה
+    </span>
+  );
+}
+
 /** The simulator's label (SIM-14), shared by visits and by received invitations. */
 const SIMULATOR_SOURCE_LABEL = "🧪 זימון בדיקה";
 
