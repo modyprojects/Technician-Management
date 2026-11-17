@@ -242,8 +242,9 @@ select results_eq(
   $$ values ('visit_id', 'uuid', true, null::text, '', ''), ('signer_name', 'text', true, null, '', ''),
             ('signed_ack_text', 'text', true, null, '', ''), ('ack_text_sha256', 'text', true, null, '', ''),
             ('operation_id', 'uuid', true, null, '', ''), ('is_test', 'boolean', true, null, '', ''),
-            ('created_at', 'timestamp with time zone', true, 'now()', '', ''), ('created_by', 'uuid', false, null, '', '') $$,
-  'visit_signatures: signer, the exact approval text and its hash (D43), the device operation; no version or media column (TEMPORARY OQ-15, DEV-2)');
+            ('created_at', 'timestamp with time zone', true, 'now()', '', ''), ('created_by', 'uuid', false, null, '', ''),
+            ('signature_media_id', 'uuid', false, null, '', '') $$,
+  'visit_signatures: signer, the exact approval text and its hash (D43), the device operation; no version column; the signature image column added nullable by Migration 7 (OQ-15, DEV-2)');
 select results_eq(
   $$ select * from pg_temp.tm_columns('public.visit_time_reports') $$,
   $$ values ('id', 'bigint', true, null::text, '', 'a'), ('visit_id', 'uuid', true, null, '', ''),
@@ -367,6 +368,7 @@ select results_eq(
             ('visit_signatures', 'visit_signatures_ack_text_sha256_check', 'c', 'signed_ack_text,ack_text_sha256', '', ' '),
             ('visit_signatures', 'visit_signatures_created_by_fkey', 'f', 'created_by', 'profiles', 'r'),
             ('visit_signatures', 'visit_signatures_pkey', 'p', 'visit_id', '', ' '),
+            ('visit_signatures', 'visit_signatures_signature_media_id_fkey', 'f', 'is_test,signature_media_id', 'visit_media', 'r'),
             ('visit_signatures', 'visit_signatures_signed_ack_text_check', 'c', 'signed_ack_text', '', ' '),
             ('visit_signatures', 'visit_signatures_signer_name_check', 'c', 'signer_name', '', ' '),
             ('visit_signatures', 'visit_signatures_visit_id_fkey', 'f', 'visit_id,is_test', 'visits', 'r') $$,
@@ -427,6 +429,7 @@ select results_eq(
             ('service_calls_product_id_fkey', 'FOREIGN KEY (product_id, is_test) REFERENCES products(id, is_test) ON DELETE RESTRICT'),
             ('visit_events_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
             ('visit_reports_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
+            ('visit_signatures_signature_media_id_fkey', 'FOREIGN KEY (signature_media_id, is_test) REFERENCES visit_media(id, is_test) ON DELETE RESTRICT'),
             ('visit_signatures_visit_id_fkey', 'FOREIGN KEY (visit_id, is_test) REFERENCES visits(id, is_test) ON DELETE RESTRICT'),
             ('visit_time_reports_accepted_review_id_fkey', 'FOREIGN KEY (accepted_review_id, is_test) REFERENCES review_items(id, is_test) ON DELETE RESTRICT'),
             ('visit_time_reports_correction_id_fkey', 'FOREIGN KEY (correction_id, is_test) REFERENCES visit_corrections(id, is_test) ON DELETE RESTRICT'),
@@ -526,6 +529,7 @@ select results_eq(
      ('service_calls_resolved_at_idx', 'CREATE INDEX service_calls_resolved_at_idx ON public.service_calls USING btree (resolved_at) WHERE (resolved_at IS NOT NULL)'),
      ('service_calls_status_idx', 'CREATE INDEX service_calls_status_idx ON public.service_calls USING btree (status)'),
      ('visit_events_visit_id_id_idx', 'CREATE INDEX visit_events_visit_id_id_idx ON public.visit_events USING btree (visit_id, id)'),
+     ('visit_signatures_signature_media_id_key', 'CREATE UNIQUE INDEX visit_signatures_signature_media_id_key ON public.visit_signatures USING btree (signature_media_id) WHERE (signature_media_id IS NOT NULL)'),
      ('visit_time_reports_accepted_review_id_key', 'CREATE UNIQUE INDEX visit_time_reports_accepted_review_id_key ON public.visit_time_reports USING btree (accepted_review_id) WHERE (accepted_review_id IS NOT NULL)'),
      ('visit_time_reports_correction_id_key', 'CREATE UNIQUE INDEX visit_time_reports_correction_id_key ON public.visit_time_reports USING btree (correction_id) WHERE (correction_id IS NOT NULL)'),
      ('visit_time_reports_device_once_key', 'CREATE UNIQUE INDEX visit_time_reports_device_once_key ON public.visit_time_reports USING btree (visit_id, kind) WHERE (source = ''device''::text)'),

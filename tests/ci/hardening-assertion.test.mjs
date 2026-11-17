@@ -201,3 +201,32 @@ test("the section 11 check is the last statement of Migration 6", () => {
   const { end } = doBody(m6, "-- 11. Fail closed", m6File);
   assert.equal(m6.slice(end), "");
 });
+
+// Step 4 (Migration 7): the fail-closed hardening check (section 11) is Migration 6 section 11, byte
+// for byte; tests/db/350 runs a byte-identical copy of it, and it is the last statement.
+const m7File = "supabase/migrations/20261110120000_field_visit_writers.sql";
+const test7File = "tests/db/350_hardening_assertion_m7.test.sql";
+const m7 = read(m7File);
+
+test("tests/db/350 runs a byte-identical copy of the Migration 7 section 11 check", () => {
+  const { body } = doBody(m7, "-- 11. Fail closed", m7File);
+  const text = read(test7File);
+  const open = "language plpgsql as $assert$\n";
+  const start = text.indexOf(open);
+  assert.notEqual(start, -1, `${test7File}: missing the copy`);
+  const stop = text.indexOf("\n$assert$;\n", start + open.length);
+  assert.notEqual(stop, -1, `${test7File}: unterminated copy`);
+  assert.equal(text.slice(start + open.length, stop), body);
+});
+
+test("Migration 7 section 11 is Migration 6 section 11, byte for byte", () => {
+  const m6Text = read("supabase/migrations/20261109120000_calendar_ingestion.sql");
+  const { body: m6Body } = doBody(m6Text, "-- 11. Fail closed", "Migration 6");
+  const { body: m7Body } = doBody(m7, "-- 11. Fail closed", m7File);
+  assert.equal(m7Body, m6Body);
+});
+
+test("the section 11 check is the last statement of Migration 7", () => {
+  const { end } = doBody(m7, "-- 11. Fail closed", m7File);
+  assert.equal(m7.slice(end), "");
+});
