@@ -16,7 +16,18 @@ export type SeededUser = { id: string; email: string; password: string; name: st
 export type SeededUsers = Record<"mgr" | "cs" | "tech" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive", SeededUser>;
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
-const DB_CONTAINER = "supabase_db_technician-management";
+
+/**
+ * The local database container of the stack under test: the project's own by default, or another
+ * LOCAL stack's (AUTH_TEST_DB_CONTAINER, for example an isolated copy with its own project_id, so a
+ * run never writes into a stack another session uses). Only a Supabase CLI database container name
+ * is accepted; it is passed to `docker exec` as one argv element, never through a shell.
+ */
+export function localDbContainer(): string {
+  const name = process.env.AUTH_TEST_DB_CONTAINER || "supabase_db_technician-management";
+  if (!/^supabase_db_[a-z0-9_-]{1,64}$/.test(name)) throw new Error("AUTH_TEST_DB_CONTAINER is not a local Supabase database container name");
+  return name;
+}
 
 function sqlText(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -68,7 +79,7 @@ insert into public.technicians (id, profile_id, is_test, display_name, color, ou
   (${sqlText(techRow)}, ${sqlText(users.tech.id)}, true, ${sqlText(users.tech.name)}, 'teal', ${sqlText(`auth-e2e-cal-${run}@example.test`)}, true);
 commit;
 `;
-  execFileSync("docker", ["exec", "-i", DB_CONTAINER, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q"], {
+  execFileSync("docker", ["exec", "-i", localDbContainer(), "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q"], {
     input: sql,
     stdio: ["pipe", "ignore", "inherit"],
   });

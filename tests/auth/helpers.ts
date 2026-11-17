@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, type BrowserContext, type Page } from "@playwright/test";
-import type { SeededUser, SeededUsers } from "./global-setup";
+import { localDbContainer, type SeededUser, type SeededUsers } from "./global-setup";
 
 export function seeded(): SeededUsers {
   const raw = process.env.AUTH_E2E_USERS;
@@ -28,7 +28,7 @@ export async function signInAs(page: Page, user: SeededUser, expectPath: RegExp,
 
 /** Runs SQL as postgres in the LOCAL database container (test setup only). */
 export function localSql(sql: string) {
-  execFileSync("docker", ["exec", "-i", "supabase_db_technician-management", "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q"], {
+  execFileSync("docker", ["exec", "-i", localDbContainer(), "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q"], {
     input: sql,
     stdio: ["pipe", "ignore", "inherit"],
   });

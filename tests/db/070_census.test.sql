@@ -9,9 +9,13 @@
 -- sources' row each: 3 new rows), 0 on a fresh database, and counts a test row in each.
 -- PR 1.8: no new table (the deletion columns are on profiles, which the census already counts);
 -- the reference data grows by the 3 D60 (8) keys and their 6 TEMPORARY values (16 keys, 32 values).
+-- Step 6 (Migration 6): the census covers external_calendar_events (per source, in fixed rows) and
+-- calendar_event_changes and calendar_ingestion_errors (one 'all sources' row each: 5 new rows),
+-- 0 on a fresh database; the rows the ingestion writer creates are counted in
+-- 340_calendar_ingestion_writer.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(29);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -57,6 +61,14 @@ select results_eq(
   $$ values ('offline_operations'::text, 'all sources'::text, 0::bigint), ('review_items', 'all sources', 0::bigint),
             ('visit_corrections', 'all sources', 0::bigint) $$,
   'PR 1.6: the three new census rows exist (one row each) and are 0 on a fresh database');
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census()
+     where table_name in ('external_calendar_events', 'calendar_event_changes', 'calendar_ingestion_errors')
+     order by table_name collate "C", bucket collate "C" $$,
+  $$ values ('calendar_event_changes'::text, 'all sources'::text, 0::bigint), ('calendar_ingestion_errors', 'all sources', 0::bigint),
+            ('external_calendar_events', 'automated_test', 0::bigint), ('external_calendar_events', 'other sources', 0::bigint),
+            ('external_calendar_events', 'simulator', 0::bigint) $$,
+  'Step 6: the five new census rows exist (external_calendar_events per source, one row for each child table) and are 0 on a fresh database');
 -- Views too (verification round 2, F1): a view can carry constant fictitious rows without any table
 -- row (create view ... as select * from (values (...))). Every view (and materialized view) in
 -- public and private returns no rows on the fresh database, except approved reference views: none

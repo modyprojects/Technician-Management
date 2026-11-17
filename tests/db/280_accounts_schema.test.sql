@@ -286,9 +286,12 @@ select results_eq(
   'the two retired wrappers say so');
 
 -- No new table, view or sequence; no new grant on a table ---------------------------------------------
+-- Step 6 (Migration 6) adds three tables (and no sequence); they are left out of this PR 1.8 count.
 select is(
   (select count(*) from pg_class c where c.relnamespace in ('public'::regnamespace, 'private'::regnamespace)
-     and c.relkind in ('r', 'p', 'v', 'm', 'S')),
+     and c.relkind in ('r', 'p', 'v', 'm', 'S')
+     and c.oid not in ('public.external_calendar_events'::regclass, 'public.calendar_event_changes'::regclass,
+                       'public.calendar_ingestion_errors'::regclass)),
   28::bigint, 'PR 1.8 adds no table, view or sequence (23 tables, 1 view and 4 identity sequences, as after Migration 4)');
 select is(
   (select array_agg(a.privilege_type::text order by a.privilege_type)
