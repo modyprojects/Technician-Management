@@ -1,6 +1,6 @@
-# Step 2: unified user management, the server side (D60 (7))
+# Step 2: unified user management (D60 (7)): the server side and the screens
 
-Branch `claude/step2-user-management`, stacked on `claude/step2-pr25-login` (`f615fb4`). **Server side only:** no page, route or component a user sees. The "ניהול משתמשים" screen itself waits for the owner's approval of the authentication screens (D62 (2) e). Nothing remote was accessed: no Supabase or Vercel operation, no migration, no change to `supabase/config.toml`, no new package, no protected file.
+Branch `claude/step2-user-management`, rebased on `claude/step2-password-reset` (the approved sign-in and the self-service password reset, D65). The server side (sections 1–8) and, since this pass, the **real screens**: Settings › "משתמשים" (the Manager) and Settings › "משתמשים והרשאות" (the Creator), one screen component for both (section 9). Nothing remote was accessed: no Supabase or Vercel operation, no migration, no change to `supabase/config.toml`, no new package, no protected file. Not pushed; no PR.
 
 Code written by Claude Code under the direction of the repository owner.
 
@@ -128,8 +128,111 @@ Checked and kept: deny by default without a session or configuration; every list
 - **Deletion by Auth ban** (section 5): the owner should know that the ban is permanent in practice but reversible by an Auth administrator, and that the issued access token remains valid (and useless) for up to an hour.
 - **Q1 (TEMPORARY): no password at creation.** An account the Manager creates cannot sign in until the Creator sets its first password (`setPassword`), as D50 requires until an email provider is approved.
 - Other TEMPORARY app rules kept: Q9 (no Creator account through the app), Q14 (the Manager does not change a Technician's Outlook email or "פעיל"), Q16 (an Auth user of a cancelled creation stays), Q17 (a test-marked account keeps `example.test`), Q22 (the Creator never changes his own credentials), Q12 (password strength is Supabase's policy; at most 72 bytes).
-- **No app-level rate limit** on the account actions (only signed-in Creator and Manager sessions reach them, and the database authorizes every call). To be considered with the screen.
+- **No app-level rate limit** on the account actions (only signed-in Creator and Manager sessions reach them, and the database authorizes every call). Still none with the screens (section 9.8).
 - **CI:** `tests/accounts` and `tests/auth` run locally only; a CI workflow is a protected change.
 - **Independent review (D53, D58)** of this branch is required before a PR is merged (authentication, authorization, environment handling).
-- **Rebase:** `claude/step2-pr25-login` has moved on since `f615fb4`; rebase before opening a PR.
+- **Rebase:** done in the screens pass: the branch now sits on `claude/step2-password-reset` (section 9).
 - **Next.js advisory:** the build's first run stops with the 16.4.3 advisory nudge (the same advisory recorded in PR 2.5: not exposed; the upgrade is a separate dependency PR). Not upgraded here.
+
+## 9. The real screens (this pass)
+
+### 9.1 Routes, guards and data
+| Route | Who | What it does |
+|---|---|---|
+| `/office/settings` | any office role | `requireArea("office")`, then a redirect to `/office/settings/users` (the first built tab) |
+| `/office/settings/users` | Manager: Settings › "משתמשים"; Creator: Settings › "משתמשים והרשאות" | `requireArea("office")` at request time (anonymous → `/login`; a Technician or an account without access → `/login?state=no-access`), then `accountAdminScope(role)` **before** any account read: Customer Service gets "אין הרשאה" and nothing is read. Otherwise the list (`list`, at most 100, role then name, deleted accounts left out), the viewer's own open creation intents and, for the Creator, `creatorNotices`, all under the viewer's own session (`lib/data/supabase/accounts.ts`); a failed read throws and the page fails closed |
+
+- **One screen component** for both roles, `components/office/UserManagementScreen.tsx`, with the controls of the viewer's scope (display rules in `features/accounts/data/offers.ts`, each mirroring the server's rule; a hidden button is not access control: every action is re-checked by the server and the database).
+- **Actions:** the page passes the 13 server actions of `lib/actions/accounts.ts` as props (`ACTIONS`; `components/` never imports `lib/actions`); `features/accounts/data/actions.ts` adapts them to the `AccountCommands` port, and the shared account dialogs of the prototype run them through `useAccountCommands()` (`features/accounts/commands-context.tsx`; in `/dev/demo` the same dialogs still get the simulated `Commands.accounts`). After every action the page is read again (`router.refresh`): rows and versions come from the database, and a stale version shows the server's "data changed" message (PT409). The row buttons wait while it reloads.
+- **Navigation:** `features/auth/landing.ts` `realOfficeNav` (shared by `/office` and the settings pages through `app/(office)/office/_OfficeFrame.tsx`): the landing item and "הגדרות" for the Manager and the Creator; Customer Service keeps "קריאות" only (QA S-01). TEMPORARY Q18: only built screens are listed.
+- **No password is kept:** the password dialog's field is uncontrolled (`autocomplete="new-password"`, no `name` or `value`), read once at submit and emptied when the call returns; the add dialog has no password field (D50, Q1).
+- **Test data (D47):** every listed test-marked account carries 🧪 ("נתוני בדיקה" for screen readers) and a legend line under the table; new accounts must use `@example.test` until go-live (the server enforces it too).
+
+### 9.2 What each role sees
+| | Manager (Settings › "משתמשים") | Creator (Settings › "משתמשים והרשאות") |
+|---|---|---|
+| List | Technician and Customer Service accounts only (not his own) | Every role, his own row marked "החשבון שלך" (only "עריכה") |
+| "+ הוסף משתמש" | Role: טכנאי / שירות לקוחות | Role: טכנאי / שירות לקוחות / מנהל; "יוצר · ממתין להחלטת בעלים" shown disabled (Q9) |
+| Technician fields | Colour (`t-*` allowlist), device; phone; the email is also the Outlook address; a new technician is "פעיל" | The same; in "עריכה" also "מייל ב-Outlook" and "פעיל · מקבל זימונים חדשים" (Q14) |
+| Row actions | "עריכה", "השלמה" (פרופיל טכנאי חסר), "השבתה" (confirmation) / "הפעלה" | Also "סיסמה", "מייל", "תפקיד" (never to Creator, never his own row, never a Creator row or a Technician with a field profile) and "מחיקה" (explicit checkbox) |
+| Incomplete creations | His own "יצירה שלא הושלמה" rows: "השלמת יצירה", "ביטול" | His own, the same |
+| Notices | none | "התראות חשבונות" (a Manager's deactivations, Outlook-email changes by others; no requests) |
+| "בקשות לאישור" | none (C-02) | none (C-02) |
+| Customer Service | no "הגדרות" item; the route shows "אין הרשאה" | |
+| Technician | the route sends him to the sign-in screen's no-access state | |
+
+### 9.3 Design and reuse
+The demo's visual language (`docs/demo.html` setUsers() as amended by SE-01, SE-17 to SE-20): the Settings shell and card head, the users table (name, email, role pill, state pill), the 🧪 badge, the two-per-line row actions with the ≤ 520 px stacked layout (no sideways scroll on a phone), the drawer dialogs (focus moves in, Tab stays inside, Escape and "ביטול" close, focus returns to the opener). Reused from the prototype (never imported from `app/dev`): `AccountAdminParts` (name, pills, result line), `AccountDialog`, `AccountEditForm`, `AccountCredentialForms`, `AccountCompletionForms`, `AccountNoticesCard`, `AccountAdminRules`, `SettingsShell`. New: `AccountAddDialog`, `AccountRoleDialog`, `AccountConfirmDialog`, `SettingsNoAccess`, `UserManagementRules.ts`, a few `.acct-*` classes.
+
+Differences from the prototype (recorded as SE-21 in `docs/demo-deviations.md`, PROPOSED):
+1. One "+ הוסף משתמש" opens a drawer dialog with the role choice (QA M-06, C-01), instead of the prototype's inline forms ("+ הוספת משתמש", "+ הוספת טכנאי", "+ בקשת חשבון שירות לקוחות").
+2. The deactivation confirmation is a dialog (as every other confirmation), not the prototype's strip at the bottom of the card.
+3. New Creator row actions "תפקיד" and "מחיקה" (D60 (7)); "השבתה" and "מחיקה" share the last line of the actions cell.
+4. No "בקשות לאישור" section and no request wording anywhere (C-02); the notices card's sub-line no longer mentions requests.
+5. The phone sits under the email ("מייל · טלפון"), a Technician's calendar colour under his name; an email the viewer may not read shows "—" (TEMPORARY Q5).
+6. The Creator's tab shows no permission matrix yet (Step 10, D51); a note says so.
+
+### 9.4 Tests and results (this pass)
+| Suite | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | clean |
+| Typecheck | `npm run typecheck` | clean (also right after the rebase) |
+| Node CI tests | `npm run test:ci` | 208/208 |
+| Build (no Supabase env, from an empty `.next`) | `npm run build` | passed (the first run stops with Next 16.4.3's advisory nudge; the retry builds; not upgraded) |
+| Bundle scan | `npm run scan:bundle` | passed, 7,957 browser files |
+| Default e2e suite | `npm run test:e2e` | 2,842 passed, 0 failed (3,080 skipped by project scoping and on-demand specs). The first run had 1 failure, fixed: the new source check matched the screen's own comment; it now reads the code without comments |
+| Local stack, browser, with the local Creator | `node tests/auth/run-local.mjs --with-creator tests/auth/user-management.spec.ts` | 15/15 |
+| Local stack, the whole `tests/auth` suite | `node tests/auth/run-local.mjs --no-build --with-creator` | 35 passed, 10 skipped (the on-demand screenshot cases) |
+| Local stack, service suite | `node tests/accounts/run-local.mjs` / `--with-creator` | 13 passed + 8 skipped / 21/21 |
+| Screenshots | `SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts` | 4/4, 51 images, each looked at |
+
+Every Playwright run and every `next start` ran under the shared port lock (other agents' worktrees); `SUPABASE_BIN` was the local CLI. The local-stack builds carry the two public local values only; `.next` was removed and rebuilt without them before the default suite. Sign-ins were paced (one per actor per block). pgTAP was not rerun: no migration or database file changed.
+
+
+### 9.5 Screenshots (D62 (6))
+`docs/review/step2-user-management-ui/<width>-<name>.png`, each at 390, 820 and 1440 px (51 images), from a local production build signed in to the local stack with fictional, test-marked accounts made through the real screens (`SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts`). The shared local database also holds the other suites' seeded test accounts, so the lists show them too. No password appears in any image.
+
+| Image | State |
+|---|---|
+| `nav-mgr` | The Manager's office start: the navigation with "דשבורד" and "הגדרות" |
+| `mgr-list` | Manager: Settings › "משתמשים" (Technician and Customer Service users, an incomplete creation on top) |
+| `mgr-incomplete-row` | The "יצירה שלא הושלמה" row with "השלמת יצירה" and "ביטול" |
+| `add-empty` | "+ הוסף משתמש": empty, the role not chosen yet (Manager: two roles) |
+| `add-technician` | The role "טכנאי": the technician fields (colour, device) |
+| `add-validation` | A validation error (an address outside `example.test`) |
+| `edit-mgr` | The Manager's "עריכת פרטים" of a Technician (no Outlook email or "פעיל": Q14) |
+| `deactivate-confirm` | The deactivation confirmation |
+| `creator-list` | Creator: Settings › "משתמשים והרשאות" with the notices card |
+| `creator-notices` | "התראות חשבונות" alone |
+| `creator-tech-missing` | A "פרופיל טכנאי חסר" row with "השלמה", among the Creator's rows |
+| `edit-creator` | The Creator's "עריכת פרטים" of a Technician (Outlook email, "פעיל") |
+| `role-change` | "שינוי תפקיד" (never Creator, never the current role) |
+| `password-empty` | "הגדרת סיסמה", empty |
+| `email-change` | "שינוי כתובת מייל" |
+| `delete-confirm` | The deletion confirmation (the button waits for the checkbox) |
+| `cs-no-access` | Customer Service: no "הגדרות" item; "אין הרשאה" on the route |
+
+### 9.6 מה לבדוק (לבעלים)
+- **מנהל:** בתפריט יש "דשבורד" ו"הגדרות" בלבד; "הגדרות" פותח "משתמשים" עם טכנאים ונציגי שירות לקוחות בלבד (בלי מנהלים ובלי יוצר).
+- **כפתור אחד "+ הוסף משתמש"** עם בחירת תפקיד: למנהל טכנאי / שירות לקוחות; ליוצר גם מנהל. לטכנאי מופיעים צבע ביומן ומכשיר. אין שדה סיסמה.
+- **פעולות בשורה:** למנהל "עריכה" ו"השבתה"/"הפעלה" בלבד, בלי סיסמה, מייל, תפקיד או מחיקה. ליוצר גם "סיסמה", "מייל", "תפקיד" ו"מחיקה".
+- **השבתה:** חלון אישור שאומר שמשתמש לא פעיל לא יכול להיכנס ושההיסטוריה נשמרת.
+- **מחיקה (יוצר בלבד):** כפתור "מחיקה סופית" פעיל רק אחרי סימון תיבת האישור; השורה נעלמת מהרשימה וההיסטוריה נשמרת.
+- **אין "בקשות לאישור"** בשום מקום.
+- **"יצירה שלא הושלמה"** ו**"פרופיל טכנאי חסר"**: לבדוק שהמצבים והכפתורים ("השלמת יצירה", "ביטול", "השלמה") ברורים.
+- **"התראות חשבונות"** בראש המסך של היוצר בלבד.
+- **שירות לקוחות:** אין "הגדרות" בתפריט, והכתובת מציגה "אין הרשאה".
+- **בטלפון (390):** המייל, התפקיד והמצב יורדים מתחת לשם, והכפתורים נשארים בתוך המסך בלי גלילה הצידה.
+- **🧪 נתוני בדיקה:** כל החשבונות בתמונות הם חשבונות בדיקה בדויים.
+
+### 9.7 QA IDs (D62 (4))
+- **Implemented in this screen:** M-06 (the Manager adds Technician and Customer Service users with one button and a role choice, edits, activates and deactivates; no deletion), M-10 (deletion Creator-only, enforced on the server; checked in the browser by tampered submissions), C-01 (one unified screen for every role, technician fields, deletion after confirmation), C-02 (no "בקשות לאישור"), C-09 (covered by C-01 and C-02), S-01 (Customer Service navigation unchanged: "קריאות" only).
+- **Still pending:** M-07 (the Manager's other three Settings areas: continuation reasons, the "טופל" text and call types; Step 10) and the real permission-matrix screen of "משתמשים והרשאות" (C-01 "the matrix kept"; SE-02, D51, Step 10).
+
+### 9.8 Open items of the screens
+- **Naming (no conflict found, flagged):** the QA document names the Manager's first Settings area "משתמשים והרשאות"; D57 (1), the prototype and this brief call it "משתמשים" (the Manager has no matrix). The screen uses "משתמשים" for the Manager and "משתמשים והרשאות" for the Creator.
+- **Step 2 plan Q6 (open):** the Creator's browser cases and the Creator's screenshots need `--with-creator` (the fictional, real-marked local Creator of `tests/accounts`).
+- **No app-level rate limit** on the account actions (unchanged).
+- **A shared message's direction:** the D47 address rule "נתוני בדיקה: רק כתובות @example.test" (shared with the prototype and the server) shows the address as "example.test@" in a right-to-left line (`add-validation`); changing the shared text touches the server's pinned messages, so it is left for the owner's feedback.
+- **Independent review (D53, D58)** of the whole branch before any PR (authentication, authorization, environment handling, and now the screens).
+
