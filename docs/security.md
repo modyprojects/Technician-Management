@@ -24,7 +24,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - **Only one project:** Technician-Management (ref `ooxozvvrljjkyfduuiks`). Never access, list, read, query, inspect or modify any other Supabase project or organization resource, through any tool, CLI, API, script or subagent.
 - **Banned calls:** never call `list_projects` or `get_organization`.
 - **Unexpected output:** if a tool unexpectedly returns information about another project or an unrelated resource, it is not used or repeated; Claude Code tells the owner without disclosing it.
-- **Per-operation approval:** every remote operation on Technician-Management, read-only included, needs the owner's prior approval of that specific operation. Migrations also need approval before they are applied (D52 rule 4).
+- **Per-operation approval:** every remote write on Technician-Management (data or schema change, migration, deletion, rollback, migration-history repair) needs the owner's prior approval of that specific operation. Migrations also need approval before they are applied (D52 rule 4). Read-only operations (SELECT, metadata, migration history, advisors) need no approval (D59, 2026-11-11); each `execute_sql` call of that kind starts with `set transaction read only;` so the database refuses a write, and no role, grant or blanket permission is created for it.
 - **Allowed without approval:** preparing migrations and running isolated local database tests that never contact the real project.
 - **Secret values:** never read, request, list, copy, print or expose credentials, tokens, API keys, passwords or environment-variable values.
   - Only variable **names** (and existing source references) are inspected.
@@ -146,7 +146,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - The `/dev` gate runs in `proxy.ts` before rendering; a closed gate returns 404 without showcase content.
 
 ## 11. Approval gates
-Do not perform any remote Supabase operation, read-only included, without the owner's approval of that operation (§3a, D53). Do not connect production Supabase or a live provider, send customer email, process real customer voice, import customer identities, run elevated SQL, loosen RLS, change permissions, enable the simulator in production, activate automatic deletion, or change cloud secret settings without explicit approval. The same applies to applying any migration, running the first-Creator function (D49), and cleaning test data or creating a production project (D47). Supabase Auth settings (§4a) are changed by the owner himself.
+Do not perform any remote Supabase write without the owner's approval of that operation (§3a, D53, D59); read-only operations follow §3a. Do not connect production Supabase or a live provider, send customer email, process real customer voice, import customer identities, run elevated SQL, loosen RLS, change permissions, enable the simulator in production, activate automatic deletion, or change cloud secret settings without explicit approval. The same applies to applying any migration, running the first-Creator function (D49), and cleaning test data or creating a production project (D47). Supabase Auth settings (§4a) are changed by the owner himself.
 
 ## References
 - https://supabase.com/docs/guides/getting-started/api-keys
