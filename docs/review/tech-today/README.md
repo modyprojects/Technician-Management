@@ -51,7 +51,8 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 5. **"מס׳ פנייה"** in the card header (D60 (3)) instead of the demo's "פנייה".
 6. **"סוג קריאה"** row added to the card (the coordinator's list).
 7. **Empty next-visit card**: "אין ביקורים מתוכננים להיום" / "כל הביקורים של היום הושלמו" (QA T-02).
-8. The rep tile is disabled when the invitation's rep is not linked to an active office profile (D40, OQ-8).
+8. **Test-data marker "🧪 בדיקה"** (owner feedback 2026-11-17, QA T-06: the icon-only 🧪 read as a pencil): `TestPill` in `components/ui/TestBadge.tsx`, accessible name "נתוני בדיקה", on every technician screen.
+9. The rep tile is disabled when the invitation's rep is not linked to an active office profile (D40, OQ-8).
 
 ## Open business questions (for the owner)
 
