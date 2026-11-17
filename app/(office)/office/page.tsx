@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { RoleStartCard } from "@/components/ui/RoleStartCard";
 import { ACCOUNT_ROLE_LABELS } from "@/features/accounts/data/types";
-import { officeStartItem } from "@/features/auth/landing";
+import { OFFICE_CALLS_PATH, officeStartItem } from "@/features/auth/landing";
 import { LOGIN_NO_ACCESS_PATH } from "@/features/auth/session-state";
 import { isOfficeRole } from "@/features/reference/data/types";
 import { requireArea } from "@/lib/auth/guards";
@@ -14,8 +14,8 @@ export const metadata: Metadata = { title: "ניהול טכנאים" };
 // Creator, the Manager and Customer Service, on real session data only (D61): the name, role and
 // 🧪 marker come from the user's own profile, never from a fixture.
 // Landing (features/auth/landing.ts): "דשבורד" for the Manager and the Creator (D57 (1)) and
-// "קריאות" for Customer Service (QA S-01: no "בית"). Until those screens are built, this page shows
-// the temporary start card under the landing item's title. The navigation lists only built screens
+// "קריאות" for Customer Service (QA S-01: no "בית"). "קריאות" is built, so Customer Service is sent
+// to /office/calls; until "דשבורד" is built, this page shows the temporary start card under its title. The navigation lists only built screens
 // (realOfficeNav): the landing item, and "הגדרות" for the Manager and the Creator (D57 (1), the
 // unified user management of D60 (7)).
 // The guard runs here, at the time of the request (requireArea): no layout or proxy is trusted.
@@ -23,6 +23,8 @@ export default async function OfficeStartPage() {
   const me = await requireArea("office");
   const item = officeStartItem(me.role);
   if (!item || !isOfficeRole(me.role)) redirect(LOGIN_NO_ACCESS_PATH);
+  // "קריאות" is built: Customer Service lands there (QA S-01, D60 (4)).
+  if (item.key === "calls") redirect(OFFICE_CALLS_PATH);
   return (
     <OfficeFrame me={me} active={item.key}>
       <div className="ptitle">
