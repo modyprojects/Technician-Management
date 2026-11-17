@@ -370,9 +370,14 @@ export function accountsQueriesOf(db: SupabaseClient, viewer: SessionUser | null
       const limit = clampLimit(query?.limit);
       // Creator only (D34 b, f): RLS also lets a Manager read his own audit rows.
       if (viewer?.role !== "creator" || !isUuid(viewer.id)) return emptyPage(limit);
+      // A Manager's deactivations; Outlook-email changes by anyone but the viewer; and (D67 (b)) every
+      // account created by anyone but the viewer: `profile.created` is written by `admin_create_profile`
+      // under the creating caller's session (a Creator or a Manager; no other Creator is ever made,
+      // D49 and Q9, so that is a Manager). The bootstrap and the tests' seeding write no such row.
       const filter =
         "and(action.eq.profile.deactivated,details->>actor_role.eq.manager)," +
-        `and(action.eq.technician.outlook_email_changed,actor_profile_id.neq.${viewer.id})`;
+        `and(action.eq.technician.outlook_email_changed,actor_profile_id.neq.${viewer.id}),` +
+        `and(action.eq.profile.created,actor_profile_id.neq.${viewer.id})`;
       const base = (head: boolean) =>
         db
           .from("audit_logs")
@@ -408,7 +413,14 @@ export function accountsQueriesOf(db: SupabaseClient, viewer: SessionUser | null
           : await rows<Pick<ProfileRow, "id" | "full_name" | "role">>(db.from("profiles").select("id, full_name, role").in("id", profileIds));
       const byId = new Map(people.map((p) => [p.id, p]));
       const items = result.data.flatMap((r): CreatorNotice[] => {
-        const kind = r.action === "profile.deactivated" ? "manager-deactivation" : r.action === "technician.outlook_email_changed" ? "outlook-email-change" : null;
+        const kind =
+          r.action === "profile.deactivated"
+            ? "manager-deactivation"
+            : r.action === "technician.outlook_email_changed"
+              ? "outlook-email-change"
+              : r.action === "profile.created"
+                ? "manager-creation"
+                : null;
         const targetId = targetProfile(r);
         const target = targetId ? byId.get(targetId) : undefined;
         const targetRole = uiRoleOf(target?.role) ?? (kind === "outlook-email-change" ? "tech" : null);

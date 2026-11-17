@@ -50,8 +50,8 @@ const ACTIONS: AccountActions = {
   deleteAccount,
 };
 
-/** The notices card's sub-line on the real screen (no "בקשות לאישור", C-02). */
-const NOTICES_SUB = 'חשבונות שהמנהל השבית, ושינויים במייל ב-Outlook של טכנאים שביצעו אחרים. אין סימון "נקרא".';
+/** The notices card's sub-line on the real screen (no "בקשות לאישור", C-02; a Manager's creations, D67 (b)). */
+const NOTICES_SUB = 'חשבונות שהמנהל יצר או השבית, ושינויים במייל ב-Outlook של טכנאים שביצעו אחרים. אין סימון "נקרא".';
 
 // Settings › "משתמשים" (the Manager) and Settings › "משתמשים והרשאות" (the Creator): the real
 // unified user management (D60 (7); QA M-06, M-10, C-01, C-02, C-09; D57 (1), D60 (8)), one screen
