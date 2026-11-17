@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { PASSWORD_RESET_EMAIL_SUBJECT } from "@/features/auth/password-reset/email";
-import { isRecentRecoverySession } from "@/features/auth/password-reset/recovery-session";
+import { isAppSessionClaims, isRecentRecoverySession } from "@/features/auth/password-reset/recovery-session";
 import { PASSWORD_RESET_MESSAGES as M, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { seeded, sessionCookies, signInAs, submitSignIn } from "./helpers";
 
@@ -58,6 +59,40 @@ async function requestReset(page: Page, email: string) {
   await page.getByRole("button", { name: M.send }).click();
   await expect(page.getByRole("heading", { level: 1, name: M.sentTitle })).toBeVisible();
   await expect(page.getByText(M.sent)).toBeVisible();
+  // Review fix 7: the answer replaced the form, so focus is on the card's heading.
+  await expect(page.getByRole("heading", { level: 1, name: M.sentTitle })).toBeFocused();
+}
+
+/** The app is closed to this browser: every guarded page goes to the sign-in form (review fix 2). */
+async function expectSignedOutOfApp(page: Page) {
+  for (const path of ["/office", "/tech", "/"]) {
+    await page.goto(path);
+    await expect(page, path).toHaveURL(`${ORIGIN}/login`);
+    await expect(page.getByLabel("אימייל", { exact: true }), path).toBeVisible();
+  }
+  for (const path of ["/login", "/login?state=no-access", "/login/forgot"]) {
+    await page.goto(path);
+    await expect(page, path).toHaveURL(`${ORIGIN}${path}`);
+    await expect(page.getByLabel("אימייל", { exact: true }), path).toBeVisible();
+  }
+}
+
+/** A POST straight to the app server with any Host header (a browser cannot forge one). */
+function rawPost(url: string, headers: Record<string, string>, body: string): Promise<{ status: number; text: string }> {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      { hostname: target.hostname, port: target.port, path: target.pathname, method: "POST", headers: { ...headers, "content-length": String(Buffer.byteLength(body)) } },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }));
+        response.on("error", reject);
+      },
+    );
+    request.on("error", reject);
+    request.end(body);
+  });
 }
 
 async function submitNewPassword(page: Page, password: string, confirm = password) {
@@ -105,6 +140,8 @@ test.describe("password reset (D65)", () => {
       await requestReset(page, user.email.toUpperCase());
       await expect.poll(() => mailsTo(user.email).length).toBe(1);
       const mail = onlyMailTo(user.email);
+      // Review fix 4: to the account's own address as the Auth server returns it.
+      expect(mail.to).toBe(user.email);
       expect(mail.subject).toBe(PASSWORD_RESET_EMAIL_SUBJECT);
       expect(mail.html).toContain('<html dir="rtl" lang="he">');
       const link = linkOf(mail);
@@ -153,8 +190,21 @@ test.describe("password reset (D65)", () => {
       // The fields are emptied after every call.
       await expect(page.getByLabel(M.newPassword, { exact: true })).toHaveValue("");
       await expect(page.getByLabel(M.confirmPassword, { exact: true })).toHaveValue("");
+      // Review fix 7: the answer is tied to "סיסמה חדשה", and focus is back there.
+      const first = page.getByLabel(M.newPassword, { exact: true });
+      await expect(first).toBeFocused();
+      await expect(first).toHaveAttribute("aria-invalid", "true");
+      await expect(first).toHaveAttribute("aria-describedby", (await page.locator(".login-alert").getAttribute("id")) ?? "missing");
       // A reload keeps the form (the recent reset session), without the token.
       await page.reload();
+      await expect(page.getByLabel(M.newPassword, { exact: true })).toBeVisible();
+
+      // Review fix 2: the reset session is for the reset screen only, never an app sign-in. Every
+      // guarded page goes to the sign-in form, which shows (no redirect into the app); the reset
+      // screen still takes the retry.
+      await expectSignedOutOfApp(page);
+      expect((await sessionCookies(context)).length).toBeGreaterThan(0);
+      await page.goto("/login/reset");
       await expect(page.getByLabel(M.newPassword, { exact: true })).toBeVisible();
 
       // The retry succeeds: the sign-in screen with the notice, and no session cookie.
@@ -169,12 +219,19 @@ test.describe("password reset (D65)", () => {
       await earlier.page.goto("/office");
       await expect(earlier.page).toHaveURL(/\/login$/);
 
-      // The old password no longer works; the new one does.
+      // The old password no longer works; the new one does, with the whole app.
       const fresh = await newPage(contexts, browser);
       await submitSignIn(fresh.page, user.email, user.password);
       await expect(fresh.page.locator(".login-alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
       await submitSignIn(fresh.page, user.email, newPassword);
       await expect(fresh.page).toHaveURL(/\/office$/);
+      for (const path of ["/", "/login", "/login/forgot", "/office"]) {
+        await fresh.page.goto(path);
+        await expect(fresh.page, path).toHaveURL(`${ORIGIN}/office`);
+      }
+      // A Manager on a technician page: the no-access state (a signed-in session, not anonymous).
+      await fresh.page.goto("/tech");
+      await expect(fresh.page).toHaveURL(`${ORIGIN}/login?state=no-access`);
 
       // The same link again: the invalid-link state, with the way to a new one.
       const again = await newPage(contexts, browser);
@@ -272,12 +329,100 @@ test.describe("password reset (D65)", () => {
     expect(isRecentRecoverySession(claims, now)).toBe(true);
     // An hour later the same session may no longer set a password.
     expect(isRecentRecoverySession(claims, now + 3601)).toBe(false);
+    // Review fix 2: the reset session is no app sign-in.
+    expect(isAppSessionClaims(claims)).toBe(false);
     const password = createClient(url, key, options);
     expect((await password.auth.signInWithPassword({ email: user.email, password: user.password })).error).toBeNull();
-    const passwordClaims = (await password.auth.getClaims()).data?.claims as unknown as { amr: { method: string }[] };
+    const passwordClaims = (await password.auth.getClaims()).data?.claims as unknown as { amr: { method: string; timestamp: number }[] };
     expect(passwordClaims.amr.map((entry) => entry.method)).toEqual(["password"]);
     expect(isRecentRecoverySession(passwordClaims, now)).toBe(false);
+    expect(isAppSessionClaims(passwordClaims)).toBe(true);
+    // A refreshed password session keeps its amr (method and time), so it stays an app sign-in.
+    const before = (await password.auth.getSession()).data.session?.access_token;
+    expect((await password.auth.refreshSession()).error).toBeNull();
+    expect((await password.auth.getSession()).data.session?.access_token).not.toBe(before);
+    const refreshedClaims = (await password.auth.getClaims()).data?.claims as unknown as { amr: { method: string; timestamp: number }[] };
+    expect(refreshedClaims.amr).toEqual(passwordClaims.amr);
+    expect(isAppSessionClaims(refreshedClaims)).toBe(true);
     await recovery.auth.signOut({ scope: "global" });
+  });
+
+  test("a request replayed with a forged Host and X-Forwarded-Host still links to APP_ORIGIN (review fix 8)", async ({ page }) => {
+    const { resetHost: user } = seeded();
+    // Capture the browser's real request-reset action (and stop it there), then replay it outside
+    // the browser with a forged Host and X-Forwarded-Host and a matching Origin, so Next.js's
+    // server-action Origin check lets it through: only the link's origin is under test.
+    let captured: { headers: Record<string, string>; body: string } | null = null;
+    await page.route("**/login/forgot*", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.headers()["next-action"]) {
+        captured = { headers: request.headers(), body: request.postData() ?? "" };
+        await route.abort();
+      } else {
+        await route.continue();
+      }
+    });
+    await page.goto("/login/forgot");
+    await page.getByLabel("אימייל", { exact: true }).fill(user.email);
+    await page.getByRole("button", { name: M.send }).click();
+    await expect.poll(() => captured !== null).toBe(true);
+    expect(mailsTo(user.email)).toHaveLength(0);
+    const { headers, body } = captured as unknown as { headers: Record<string, string>; body: string };
+    const forged = "evil.example";
+    const replay = await rawPost(
+      `${ORIGIN}/login/forgot`,
+      {
+        host: forged,
+        "x-forwarded-host": forged,
+        "x-forwarded-proto": "https",
+        origin: `https://${forged}`,
+        "next-action": headers["next-action"] ?? "",
+        "content-type": headers["content-type"] ?? "text/plain;charset=UTF-8",
+        accept: "text/x-component",
+      },
+      body,
+    );
+    // The action ran (the same answer as always) and the one email links to the app's own origin.
+    expect(replay.status).toBe(200);
+    expect(replay.text).toContain('{"state":"sent"}');
+    await expect.poll(() => mailsTo(user.email).length).toBe(1);
+    const mail = onlyMailTo(user.email);
+    expect(new URL(linkOf(mail)).origin).toBe(ORIGIN);
+    expect(mail.text).not.toContain(forged);
+    expect(mail.html).not.toContain(forged);
+  });
+
+  test("a newer request replaces the earlier link: the earlier one is refused, the newer one works (review fix 8)", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { resetTwice: user } = seeded();
+    const contexts: BrowserContext[] = [];
+    try {
+      const { page } = await newPage(contexts, browser);
+      await requestReset(page, user.email);
+      await expect.poll(() => mailsTo(user.email).length).toBe(1);
+      const earlier = linkOf(onlyMailTo(user.email));
+      // The interim throttle allows one email per address per minute.
+      await page.waitForTimeout(61_000);
+      await requestReset(page, user.email);
+      await expect.poll(() => mailsTo(user.email).length).toBe(2);
+      const newer = linkOf(mailsTo(user.email)[1] as MockMail);
+      expect(newer).not.toBe(earlier);
+      const newPassword = `${user.password}-new`;
+      // The earlier link: the invalid-link state, nothing changed, no session.
+      const first = await newPage(contexts, browser);
+      await first.page.goto(earlier);
+      await submitNewPassword(first.page, newPassword);
+      await expect(first.page.locator(".login-alert")).toHaveText(M.invalidLink);
+      expect(await sessionCookies(first.context)).toEqual([]);
+      // The newer link sets the password.
+      const second = await newPage(contexts, browser);
+      await second.page.goto(newer);
+      await submitNewPassword(second.page, newPassword);
+      await expect(second.page).toHaveURL(/\/login\?state=password-updated$/);
+      expect(await sessionCookies(second.context)).toEqual([]);
+    } finally {
+      for (const context of contexts) await context.close();
+    }
   });
 
   test("no address, password, token or link reaches the server's log", async () => {

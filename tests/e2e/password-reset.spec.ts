@@ -5,11 +5,11 @@ import { escapeHtml, PASSWORD_RESET_EMAIL_SUBJECT, passwordResetEmail } from "@/
 import { isRecoveryTokenHash, parseResetCompleteInput, parseResetRequestInput } from "@/features/auth/password-reset/input";
 import { FORGOT_PASSWORD_PATH, PASSWORD_UPDATED_PATH, RESET_LINK_MINUTES, RESET_PASSWORD_PATH } from "@/features/auth/password-reset/paths";
 import { appOriginOf, LOCAL_APP_ORIGIN } from "@/features/auth/password-reset/origin";
-import { isRecentRecoverySession } from "@/features/auth/password-reset/recovery-session";
+import { isAppSessionClaims, isRecentRecoverySession } from "@/features/auth/password-reset/recovery-session";
 import { createResetThrottle, resetThrottleKey } from "@/features/auth/password-reset/throttle";
 import { authLogLine } from "@/features/auth/sign-in-input";
 import { PASSWORD_RESET_MESSAGES as M, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
-import { deliveryModeOf, resendConfigOf, type MailMessage } from "@/features/mail/delivery";
+import { deliveryModeOf, mockFileOf, resendConfigOf, type MailMessage } from "@/features/mail/delivery";
 import { mockMailLine } from "@/features/mail/mock";
 import { RESEND_ENDPOINT, RESEND_TIMEOUT_MS, sendWithResend, type FetchLike } from "@/features/mail/resend";
 import { expectLoginLayout, horizontalOverflow, onlyInProject, OPEN_URL, openPage } from "./helpers";
@@ -180,11 +180,20 @@ test.describe("password reset: email delivery selection", () => {
     }
   });
 
-  test("mock everywhere except Vercel Production", () => {
-    expect(deliveryModeOf({ EMAIL_DELIVERY: "mock" })).toBe("mock");
-    expect(deliveryModeOf({ EMAIL_DELIVERY: " Mock " })).toBe("mock");
-    expect(deliveryModeOf({ EMAIL_DELIVERY: "mock", VERCEL_ENV: "preview" })).toBe("mock");
-    expect(deliveryModeOf({ EMAIL_DELIVERY: "mock", VERCEL_ENV: "production" })).toBe("disabled");
+  test("mock only locally or in CI (no VERCEL_ENV) and only into MAIL_MOCK_FILE (review fix 5)", () => {
+    const file = "/tmp/tm-auth-x/mail.jsonl";
+    expect(deliveryModeOf({ EMAIL_DELIVERY: "mock", MAIL_MOCK_FILE: file })).toBe("mock");
+    expect(deliveryModeOf({ EMAIL_DELIVERY: " Mock ", MAIL_MOCK_FILE: ` ${file} ` })).toBe("mock");
+    expect(mockFileOf({ MAIL_MOCK_FILE: ` ${file} ` })).toBe(file);
+    // Any Vercel deployment (Production, Preview, development): never, also with a file.
+    for (const vercelEnv of ["production", "preview", "development", "anything"]) {
+      expect(deliveryModeOf({ EMAIL_DELIVERY: "mock", MAIL_MOCK_FILE: file, VERCEL_ENV: vercelEnv }), vercelEnv).toBe("disabled");
+    }
+    // No file, or no usable one: disabled (there is no in-memory list that would keep live links).
+    for (const value of [undefined, "", " ", "mail.jsonl", "./mail.jsonl", "~/mail.jsonl", "/tmp/a\nb", "/tmp/a\u0000b", `/${"a".repeat(1100)}`]) {
+      expect(deliveryModeOf({ EMAIL_DELIVERY: "mock", MAIL_MOCK_FILE: value }), JSON.stringify(value)?.slice(0, 40)).toBe("disabled");
+      expect(mockFileOf({ MAIL_MOCK_FILE: value }), JSON.stringify(value)?.slice(0, 40)).toBeNull();
+    }
   });
 
   test("resend needs both the key and the sender (well-formed), else disabled", () => {
@@ -232,6 +241,47 @@ test.describe("password reset: the dormant Resend adapter (fake fetch only)", ()
     expect(JSON.parse(call?.init.body ?? "null")).toEqual({ from: config.from, to: message.to, subject: message.subject, html: message.html, text: message.text });
     expect(call?.init.signal).toBeInstanceOf(AbortSignal);
     expect(RESEND_TIMEOUT_MS).toBe(10_000);
+  });
+
+  test("the response body is never read: it is cancelled, on success and on failure (review fix 6)", async () => {
+    for (const [ok, status] of [
+      [true, 200],
+      [false, 422],
+      [false, 503],
+    ] as const) {
+      let cancelled = 0;
+      let read = 0;
+      const body = {
+        cancel: async () => {
+          cancelled += 1;
+        },
+        getReader: () => {
+          read += 1;
+          throw new Error("the body must not be read");
+        },
+      };
+      await sendWithResend(config, message, { fetch: async () => ({ ok, status, body }) });
+      expect(cancelled, String(status)).toBe(1);
+      expect(read, String(status)).toBe(0);
+    }
+    // No body, a body whose cancel fails, or one that throws at once: the result is unchanged.
+    expect(await sendWithResend(config, message, { fetch: async () => ({ ok: true, status: 200, body: null }) })).toEqual({ ok: true });
+    const rejecting = { cancel: () => Promise.reject(new Error("cancel failed")) };
+    expect(await sendWithResend(config, message, { fetch: async () => ({ ok: true, status: 200, body: rejecting }) })).toEqual({ ok: true });
+    const throwing = {
+      cancel: (): Promise<void> => {
+        throw new Error("cancel failed");
+      },
+    };
+    expect(await sendWithResend(config, message, { fetch: async () => ({ ok: false, status: 500, body: throwing }) })).toEqual({
+      ok: false,
+      code: "provider_unavailable",
+    });
+    // A real Response's body is cancelled: disturbed, yet never locked by a reader (never read).
+    const response = new Response('{"id":"fictional"}', { status: 200 });
+    expect(await sendWithResend(config, message, { fetch: async () => response })).toEqual({ ok: true });
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
   });
 
   test("failures map to codes that carry no key, address or body", async () => {
@@ -374,6 +424,29 @@ test.describe("password reset: which session may set a password", () => {
       expect(isRecentRecoverySession(claims, now), JSON.stringify(claims)).toBe(false);
     }
   });
+
+  test("a reset-link session is never an app sign-in; a password session always is (review fix 2)", () => {
+    // Reset-link sessions (an email-token method without "password"), fresh or old.
+    for (const claims of [
+      { amr: [{ method: "otp", timestamp: now }] },
+      { amr: [{ method: "recovery", timestamp: now - 7200 }] },
+      { amr: [{ method: "otp", timestamp: now }, { method: "totp", timestamp: now }] },
+    ]) {
+      expect(isAppSessionClaims(claims), JSON.stringify(claims)).toBe(false);
+    }
+    // Password sign-ins, also refreshed ones (the amr keeps the original method) and with MFA.
+    for (const claims of [
+      { amr: [{ method: "password", timestamp: now - 86_400 }] },
+      { amr: [{ method: "password", timestamp: now }, { method: "totp", timestamp: now }] },
+      { amr: [{ method: "otp", timestamp: now }, { method: "password", timestamp: now }] },
+    ]) {
+      expect(isAppSessionClaims(claims), JSON.stringify(claims)).toBe(true);
+    }
+    // Nothing malformed (fail closed).
+    for (const claims of [{ amr: [] }, { amr: [{}] }, { amr: [{ method: 5 }] }, { amr: "password" }, {}, null, undefined, "password"]) {
+      expect(isAppSessionClaims(claims), JSON.stringify(claims)).toBe(false);
+    }
+  });
 });
 
 test.describe("password reset: server modules", () => {
@@ -387,6 +460,23 @@ test.describe("password reset: server modules", () => {
     expect(actions).toContain('signOut({ scope: "global" })');
     expect(actions).toContain("isSessionCookieName(name)");
     expect(actions).toContain('verifyOtp({ type: "recovery", token_hash: tokenHash })');
+    // Review fix 1: nothing whose duration depends on the account runs before the answer; the Auth
+    // Admin call, the link and the email run only in the function handed to after().
+    const request = actions.slice(actions.indexOf("export async function requestPasswordReset"), actions.indexOf("/** Removes this browser's"));
+    expect(request).toContain("after(() => deliverResetLink(email, origin));");
+    expect(request).not.toMatch(/createRecoveryTokenHash|sendMail|passwordResetEmail|await /);
+    expect(actions.match(/createRecoveryTokenHash\(/g)).toHaveLength(1);
+    expect(actions.match(/deliverResetLink\(/g)).toHaveLength(2);
+    // Review fix 4: the email goes to the account's own address from the Auth server.
+    expect(actions).toContain("sendMail({ to: token.email, ...message })");
+    expect(source("lib/auth/password-reset-admin.ts")).toContain("accountEmailOf(data?.user?.email)");
+    // Review fix 5: no in-memory mock list.
+    expect(source("lib/mail/index.ts")).not.toMatch(/mockMemory|\.push\(/);
+    // Review fix 2: the request's session state refuses a reset-link session.
+    const session = source("lib/auth/session.ts");
+    expect(session).toContain("client.auth.getClaims()");
+    expect(session).toContain("if (!isAppSessionClaims(data.claims)) {");
+    expect(session.indexOf("isAppSessionClaims(data.claims)")).toBeLessThan(session.indexOf("return await sessionStateOf(client, userId)"));
     // The link's origin comes from configuration only (lib/auth/app-origin.ts).
     expect(actions).not.toMatch(/\bheaders\(\)|x-forwarded-host|\.get\("host"\)/i);
     expect(source("lib/auth/app-origin.ts")).not.toMatch(/next\/headers|headers\(\)/);
@@ -466,6 +556,11 @@ test.describe("password reset screens (no Supabase values, delivery disabled)", 
     await expect(page.locator(".login-alert")).toHaveText(M.deliveryOff);
     await expect(page.locator(".login-alert")).not.toHaveCSS("text-align", "center");
     await expect(page.getByRole("heading", { level: 1, name: M.forgotTitle })).toBeVisible();
+    // Review fix 7: the answer replaced the form, so focus moved to the card's heading (no ring).
+    const heading = page.getByRole("heading", { level: 1, name: M.forgotTitle });
+    await expect(heading).toBeFocused();
+    await expect(heading).toHaveAttribute("tabindex", "-1");
+    await expect(heading).toHaveCSS("outline-style", "none");
     await expect(page.getByLabel("אימייל", { exact: true })).toHaveCount(0);
     await expect(page.getByText(M.sentTitle)).toHaveCount(0);
     await expectLoginLayout(page, true);
@@ -538,6 +633,14 @@ test.describe("password reset screens (no Supabase values, delivery disabled)", 
     await page.getByRole("button", { name: M.save }).click();
     await expect(page.locator(".login-alert")).toHaveText(M.service);
     expect(posts).toBe(1);
+    // Review fix 7: the server's answer is tied to "סיסמה חדשה" and focus returns there; a service
+    // failure says nothing about the password (no aria-invalid).
+    const alertId = await page.locator(".login-alert").getAttribute("id");
+    expect(alertId).toBeTruthy();
+    await expect(first).toHaveAttribute("aria-describedby", alertId ?? "missing");
+    await expect(first).not.toHaveAttribute("aria-invalid", /.*/);
+    await expect(first).toBeFocused();
+    await expect(second).not.toHaveAttribute("aria-describedby", /.*/);
     await expect(first).toHaveValue("");
     await expect(second).toHaveValue("");
     await expect(first).toHaveAttribute("type", "password");

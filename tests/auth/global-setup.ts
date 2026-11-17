@@ -13,7 +13,10 @@ import { createClient } from "@supabase/supabase-js";
 import { ensureLocalCreator } from "../accounts/global-setup";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
-export type SeededUsers = Record<"mgr" | "cs" | "tech" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive", SeededUser>;
+export type SeededUsers = Record<
+  "mgr" | "cs" | "tech" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive" | "resetHost" | "resetTwice",
+  SeededUser
+>;
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
 const DB_CONTAINER = "supabase_db_technician-management";
@@ -39,6 +42,10 @@ export default async function globalSetup(): Promise<void> {
     // D65: the password-reset tests change these two passwords; the other accounts keep theirs.
     resetMgr: "מנהל איפוס בדיקה",
     resetInactive: "טכנאי מושבת איפוס בדיקה",
+    // D65 review fixes: Auth users without a profile, for the forged-Host replay and for a newer
+    // link replacing an earlier one (the second one's password changes).
+    resetHost: "איפוס כתובת מזויפת בדיקה",
+    resetTwice: "איפוס כפול בדיקה",
   };
   const users = {} as SeededUsers;
   for (const key of Object.keys(names) as (keyof SeededUsers)[]) {

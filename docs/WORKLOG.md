@@ -15,6 +15,20 @@
 - **Tests:** lint, typecheck clean; `test:ci` 208/208; build without Supabase env passed (Next 16.4.3's advisory nudge stops the first run; the retry builds; not upgraded); bundle scan passed; `tests/e2e/accounts-server.spec.ts` 25/25; default e2e 2,760 passed, 0 failed (after the fix below; the first run had 1 failure); `tests/accounts` 13 passed + 8 skipped without `--with-creator`, 21/21 with it; `tests/auth` 13 passed (3 on-demand screenshots skipped). Every Playwright run under the shared port lock (other agents' worktrees).
 - **Open:** Step 2 plan Q6 (the local Creator stays opt-in: `--with-creator`, real-marked because the database refuses a test Creator); Q5 (email display; one Admin read of a single account's email in `completeTechnicianProfile`, for the independent review); `docs/security.md` §5 still describes the retired request path (protected; owner); the ban approach; no app-level rate limit on account actions; independent review (D58) and a rebase on the moved `claude/step2-pr25-login` before any PR. Not pushed, no PR.
 
+## 2026-11-17 — D59 rewritten: screen approval, merges and Version 1 focus
+- **Owner (2026-11-17):** each screen is one PR; when checks are green the owner gets screenshots (390/820/1440), the Preview link and 3–5 Hebrew review points; after his "מאשר" Claude Code merges the exact approved head itself with the D31 checks; visible changes after approval need a new approval. Non-UI PRs without protected files, migrations or remote writes merge when checks are green. The automatic Production deployment after a merge is part of the merge; other Production or infrastructure actions, protected files, migrations and remote Supabase writes are asked for, batched. No idle waiting; up to 3 agents (D64); questions to the owner only about business behaviour, data or security; one short daily Hebrew report.
+- **Version 1 target (24.11.2026, online only, no external integrations):** real sign-in for all four roles and D60 user management; the invitation simulator inside "זימונים שלא נקלטו"; real technician screens; real office screens; the Manager dashboard on real data; QA corrections inside each screen. Deferred to Version 2 (ROADMAP): offline, recording and transcription, Excel, usage analytics, MFA, the versioned "טופל" text.
+- **D66 (owner, 2026-11-17, permanent):** secrets are never shared or requested through the chat; privileged integrations use server-side environment variables; every secret request first explains why, which server operations use it, how authentication and authorization protect them, the minimum Vercel scope, and dashboard steps; temporary credentials preferred for one-time tasks; no blocking of independent development.
+- **Changed:** `docs/decisions.md` D59 (and pointers in D31, D62) and D66, `CLAUDE.md` (merge rules, Production deployments, secret requests), `docs/ROADMAP.md` (Version 1 and Version 2). `main` merged into this branch (`claude/trusting-brahmagupta-yel1it`, PR #26) without rewriting history.
+
+## 2026-11-17 — D62 (6): mandatory UI screenshots and owner approval
+- **Owner (2026-11-17), permanent, all agents:** every new screen and every visible UI change is shown with real screenshots of the implemented app (desktop and mobile; tablet when it differs materially; forms, dialogs, validation errors, key interactions), sent in the conversation with the restricted Preview URL and a brief explanation; visual approval requested before the screen is marked approved; corrections come back with updated screenshots; screenshots are never replaced by descriptions or test reports; a waiting screen never blocks other agents. He explicitly authorized the documentation updates.
+- **Changed:** `docs/decisions.md` D62 (6) and D64 (5); `CLAUDE.md` "Visual approval" items 1 and 6.
+
+## 2026-11-17 — D64: multi-agent development team as the standard operating model
+- **Owner (2026-11-17, two messages):** Claude Code owns routine development; up to 3 concurrent agents are the permanent default (replaces D58 (7)); one clear ask for actions that need the owner; screens first; D62 screen-by-screen approval, D31 and every approval rule unchanged. He explicitly approved updating the workflow instructions (`CLAUDE.md`, protected) to make this permanent.
+- **Owner (third message, 2026-11-17):** the team structure (Tech Lead / Orchestrator; Agent 1 and Agent 2 full-stack developers; Agent 3 QA / security / flexible developer, never a bottleneck); flexible roles; explicit file ownership; reports never overstate running agents; separate screens may be built concurrently, but none counts as approved without his visual review (D62).
+- **Changed:** `docs/decisions.md` D64; `CLAUDE.md` (the autonomous-development line); `docs/ROADMAP.md` (process paragraph).
 ## 2026-11-17 — Step 2: self-service password reset (D65)
 - **Owner decision D65:** self-service password reset is in scope now (supersedes Step 2 plan Q2's temporary "no שכחתי סיסמה" and the AU-01 note); a Resend account exists but no sending domain is verified, so email delivery is a future integration, not a blocker; no domain purchase, paid service or remote setting change without approval; local or mock delivery only.
 - **Branch** `claude/step2-password-reset` from `claude/step2-pr25-login`. Record: `docs/review/step2-password-reset/README.md`.
@@ -22,6 +36,8 @@
 - **Finding:** Supabase Auth names the reset session's `amr` method `otp`, not `recovery` (pinned on the local stack); the app accepts both, within one hour.
 - **Tests:** default e2e `tests/e2e/password-reset.spec.ts` (units, source checks, the screens at three widths) and the new routes in the responsive and `/dev` gate checks; local stack `tests/auth/password-reset.spec.ts` (mock email into a private temporary file, the full flow, enumeration, throttle, ordinary-session refusal, deactivated account, revocation of earlier sessions, claim shape, no secret in the server log). Results in the record.
 - **Not done (needs approval):** any remote check or setting (Email OTP expiration, password policy), any Vercel value, any real email.
+- **Independent review (D58) of `a74bbdc`: APPROVE WITH FIXES; fixes in new commits (no rewrite of the pushed history), record §9 of the README.** Fixed: (1) timing enumeration: the request answers "sent" right after the throttle, and the Auth Admin `generateLink`, the link, the email and their log line run in `after()`; (2) a used reset link no longer becomes an app sign-in: `getSessionState` reads `getClaims()` and treats an `otp`/`recovery` session without `password` (or malformed claims) as anonymous everywhere, while the reset screen keeps the retry (a mutation with the check disabled makes the local-stack flow fail at `/office`); (4) the email goes to the account's own address from `generateLink`; (5) `mock` only without `VERCEL_ENV` and with `MAIL_MOCK_FILE`, no in-memory list; (6) the Resend body is cancelled; (7) accessibility: server errors tied to "סיסמה חדשה" with focus back there, focus on the heading for the "sent"/"delivery-off" views; (8) tests: forged `Host`/`X-Forwarded-Host` replay links to `APP_ORIGIN`, a newer request replaces the earlier link, the reset-only-session negatives. Documented: (3) mandatory go-live steps before `resend` anywhere (Email OTP length 10 with a read-only check, a durable per-address cap such as 5 per hour, an app-level cap on token submissions; direct redemption at Supabase `/verify` is inherent), in D65, the README and `docs/integrations.md`; (9) the token in the query string as an accepted low risk; (10) unknown addresses in the per-instance cap belong to the durable-throttle design.
+- **Review-fix checks:** lint, typecheck clean; `test:ci` 208/208; build without Supabase values passed (Next 16.4.3's advisory stopped the first attempt; the retry built; not upgraded); bundle scan passed (7,956 files); secret scan clean; default e2e 2,799 passed, 0 failed (3,012 skipped); `tests/auth` 22 passed (9 password-reset, 2 new), 6 on-demand screenshots skipped. Every Playwright run and `next start` under the shared port lock. Screenshots: all 27 retaken from local production builds of the fix commits (18 default, 9 local stack) are byte-identical to the committed ones: no visual change.
 
 ## 2026-11-17 — D49 Creator bootstrap run on the remote project (owner-approved)
 - **Investigation of the owner's failed sign-in (read-only):** the Preview reaches Supabase (password grants from the Vercel server; after the owner recreated his Auth user, a successful grant, the profile read under his session, then the app's own `logout?scope=local`). Cause: no profile, so the app signs the session out and shows the one credential message by design. No code or configuration fault.
@@ -261,6 +277,27 @@
   - `checks` failed twice in `Install Chromium for Playwright`: the runner's Ubuntu apt mirror timed out. PR #26 failed the same way. Every code step before it passed.
   - A fix would touch the protected `ci.yml`, so none was made. A comment is on PR #14 and PR #26.
 - **Not done:** apply, `010` remote run, history repair, rollback, merge of PR #14.
+## 2026-11-11 — D59 working rules; PR #12 merged
+- **D59** recorded (`docs/decisions.md`). These need no approval:
+  - read-only Supabase operations, on project `ooxozvvrljjkyfduuiks` only and enforced with `set transaction read only;`;
+  - reading the repository;
+  - local development and tests;
+  - commits, feature-branch pushes and draft PRs.
+- These still need the owner's explicit approval:
+  - remote writes, migrations, deletions, rollbacks and history repairs;
+  - merges into `main` and Production deployments;
+  - protected or security-sensitive configuration;
+  - changes to approved requirements, roles or permissions;
+  - anything that could expose credentials or delete important data.
+- Aligned with D59: `CLAUDE.md`, `docs/security.md` and `docs/ROADMAP.md`. The first two are protected, so this PR needs the owner's merge approval.
+- **PR #12 merged** with the owner's explicit approval as squash commit `fe370df`, after checking that the head was exactly `48d9321`.
+  - The approval covered the Q1/A3 guard change and the protected files in the PR.
+  - D31 pre-merge checks passed.
+- **D31 post-merge checks passed** (read-only):
+  - On `fe370df`, `main` CI succeeded (runs `43030917140` and `43030917108`).
+  - Production `dpl_AeGMNFA2i6iKvSc3kGkfEwmeZhi4` is READY from `fe370df`, with all three Production aliases.
+  - `ssoProtection` is `all`; the project has 3 domains; the team has 1 member.
+- **Not done:** Migration 2 is not applied; the history version discrepancy (`20261111125920`) is not repaired.
 
 ## 2026-11-11 — Step 1 / PR 1.3: Migration 1 applied to the remote project (owner-approved)
 - **Apply:** with the owner's explicit approval (Migration 1 only; MCP `apply_migration`; residual atomicity risk accepted on an empty database), Migration 1 (`3139628`, sha256 `30e0c8b0…89f7`) was applied once to `ooxozvvrljjkyfduuiks` under the name `access_and_permissions`: `{"success":true}`. The query string was compared byte for byte with the approved file before the call.
