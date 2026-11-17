@@ -16,13 +16,31 @@ import { createClient } from "@supabase/supabase-js";
 import { parseSupabaseAdminEnv } from "@/features/auth/env-schema";
 import { isRecoveryTokenHash } from "@/features/auth/password-reset/input";
 
-export type RecoveryTokenResult = { ok: true; tokenHash: string; email: string } | { ok: false; code: string | number };
+/**
+ * Two facts for the caller, which then sends nothing: `banned`, the account is banned now (a deleted
+ * account, D60 (7) Option A; review N4); `signedInBefore`, Auth holds a last sign-in time (D67 (a):
+ * only accounts that have signed in before reset their own password). Auth gives no lookup by
+ * address before `generateLink`, so the facts come with it.
+ */
+export type RecoveryTokenResult =
+  | { ok: true; tokenHash: string; email: string; banned: boolean; signedInBefore: boolean }
+  | { ok: false; code: string | number };
 
 /** An address as the Auth server returns it: no spaces, controls or angle brackets, bounded. */
 const ACCOUNT_EMAIL_PATTERN = /^[^\s@<>]+@[^\s@<>]+$/;
 
 function accountEmailOf(value: unknown): string | null {
   return typeof value === "string" && value.length <= 320 && ACCOUNT_EMAIL_PATTERN.test(value) ? value : null;
+}
+
+/** Whether Auth's `banned_until` lies in the future (anything else: not banned). */
+function bannedNow(value: unknown): boolean {
+  return typeof value === "string" && Date.parse(value) > Date.now();
+}
+
+/** Whether Auth's `last_sign_in_at` is a time (anything else: never signed in, fail closed). */
+function signedInBefore(value: unknown): boolean {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
 function adminEnv() {
@@ -35,11 +53,11 @@ export function recoveryAdminConfigured(): boolean {
 }
 
 /**
- * A recovery token hash for `email` and the account's own address (`data.user.email`), or a
- * refusal code: "unavailable" (not configured), the Auth error code (for example "user_not_found"
- * for an unknown address), "malformed" (no well-formed hash or address) or "exception". The caller
- * runs this after its response and treats every refusal alike, so the answer never reveals
- * whether an account exists.
+ * A recovery token hash for `email`, the account's own address (`data.user.email`), whether it is
+ * banned now and whether it has signed in before, or a refusal code: "unavailable" (not configured), the Auth error code (for example
+ * "user_not_found" for an unknown address), "malformed" (no well-formed hash or address) or
+ * "exception". The caller runs this after its response and treats every refusal (and a skipped
+ * account) alike, so the answer never reveals whether an account exists.
  */
 export async function createRecoveryTokenHash(email: string): Promise<RecoveryTokenResult> {
   const env = adminEnv();
@@ -53,7 +71,8 @@ export async function createRecoveryTokenHash(email: string): Promise<RecoveryTo
     const tokenHash = data?.properties?.hashed_token;
     const accountEmail = accountEmailOf(data?.user?.email);
     if (!isRecoveryTokenHash(tokenHash) || accountEmail === null) return { ok: false, code: "malformed" };
-    return { ok: true, tokenHash, email: accountEmail };
+    const user = data.user as { banned_until?: unknown; last_sign_in_at?: unknown };
+    return { ok: true, tokenHash, email: accountEmail, banned: bannedNow(user.banned_until), signedInBefore: signedInBefore(user.last_sign_in_at) };
   } catch {
     return { ok: false, code: "exception" };
   }

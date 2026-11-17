@@ -105,6 +105,10 @@ test.describe("D60 (7) display rules (offers.ts): each mirrors the server's rule
     expect(intentCancelOffered("cs-tech", another, SELF)).toBe(false);
     expect(intentCancelOffered(null, mine, SELF)).toBe(false);
     expect(intentCancelOffered("all", another, null)).toBe(false);
+    // D67 (b): the Creator's notices include every account created by anyone but himself (a Manager).
+    const queries = readFileSync(path.resolve("features/accounts/supabase/queries.ts"), "utf8");
+    expect(queries).toContain("`and(action.eq.profile.created,actor_profile_id.neq.${viewer.id})`");
+    expect(queries).toContain('r.action === "profile.created"\n                ? "manager-creation"');
     // The page passes the Creator every open intent and the Manager only his own.
     const page = readFileSync(path.resolve("app/(office)/office/settings/users/page.tsx"), "utf8");
     expect(page).toContain('const own = scope === "all" ? intents : ownIntents(intents, me.id);');

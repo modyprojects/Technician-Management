@@ -470,6 +470,15 @@ test.describe("password reset: server modules", () => {
     // Review fix 4: the email goes to the account's own address from the Auth server.
     expect(actions).toContain("sendMail({ to: token.email, ...message })");
     expect(source("lib/auth/password-reset-admin.ts")).toContain("accountEmailOf(data?.user?.email)");
+    // User-management review N4: a banned (deleted) account gets no link and no email, before either is made.
+    const deliver = actions.slice(actions.indexOf("async function deliverResetLink"), actions.indexOf("/** Asks for a reset link."));
+    expect(deliver).toContain('if (token.banned) {\n      logAuthEvent(REQUEST_EVENT, "skipped_banned");\n      return;\n    }');
+    expect(deliver.indexOf("if (token.banned)")).toBeLessThan(deliver.indexOf("const link ="));
+    // D67 (a): an account that has never signed in gets no link and no email either.
+    expect(deliver).toContain('if (!token.signedInBefore) {\n      logAuthEvent(REQUEST_EVENT, "skipped_never_signed_in");\n      return;\n    }');
+    expect(deliver.indexOf("if (!token.signedInBefore)")).toBeLessThan(deliver.indexOf("const link ="));
+    const admin = source("lib/auth/password-reset-admin.ts");
+    expect(admin).toContain("banned: bannedNow(user.banned_until), signedInBefore: signedInBefore(user.last_sign_in_at)");
     // Review fix 5: no in-memory mock list.
     expect(source("lib/mail/index.ts")).not.toMatch(/mockMemory|\.push\(/);
     // Review fix 2: the request's session state refuses a reset-link session.

@@ -5,8 +5,8 @@ import type { CreatorNoticeEntry } from "./AccountAdminParts";
 import { SettingsCardHead, SettingsMore } from "./SettingsShell";
 
 // The Creator's "התראות חשבונות" (Step 2 plan §4 #8, §3.10; D34 b and f; SE-18 PROPOSED): pending
-// requests that wait for him, a Manager's deactivations, and Outlook-email changes of technicians
-// made by anyone but him. No read/unread state (that would need a table). Placement: first on
+// requests that wait for him (the /dev/demo prototype only), a Manager's deactivations, Outlook-email
+// changes of technicians made by anyone but him and (D67 (b)) every account a Manager creates. No read/unread state (that would need a table). Placement: first on
 // Settings › "משתמשים והרשאות" (TEMPORARY, Step 2 plan Q13: the demo's placement, shown to the
 // owner). No hooks: a Server Component card; the page's loader reads the notices for the Creator
 // only (production: the adapter denies any other caller).
@@ -21,6 +21,8 @@ function lineOne(n: CreatorNotice): string {
       return `השבתה על ידי המנהל · ${n.target.name}`;
     case "outlook-email-change":
       return `שינוי מייל ב-Outlook · ${n.target.name}`;
+    case "manager-creation":
+      return `משתמש חדש שהמנהל יצר · ${n.target.name}`;
   }
 }
 

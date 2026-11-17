@@ -256,9 +256,12 @@ export type AccountRequestQuery = PageRequest & { statuses?: readonly AccountReq
  *   /dev/demo prototype has one; the real query never returns this kind);
  * - "manager-deactivation": a Manager deactivated an account (D34 b, kept by D60 (7));
  * - "outlook-email-change": someone other than the viewing Creator changed a technician's Outlook
- *   email (D34 f). The audit row holds no email, so neither does the notice.
+ *   email (D34 f). The audit row holds no email, so neither does the notice;
+ * - "manager-creation": a Manager created an account (D67 (b), owner 2026-11-17): the creation's
+ *   `profile.created` audit row by anyone but the viewing Creator (D49 and Q9: no other Creator is
+ *   ever made, so that is a Manager). No email in it either.
  */
-export const CREATOR_NOTICE_KINDS = ["pending-request", "manager-deactivation", "outlook-email-change"] as const;
+export const CREATOR_NOTICE_KINDS = ["pending-request", "manager-deactivation", "outlook-email-change", "manager-creation"] as const;
 export type CreatorNoticeKind = (typeof CREATOR_NOTICE_KINDS)[number];
 
 export type CreatorNotice = TestMarker & {
@@ -266,7 +269,7 @@ export type CreatorNotice = TestMarker & {
   kind: CreatorNoticeKind;
   /** When it happened: the request's time, or the audited action's time. */
   at: IsoTimestamp;
-  /** Who acted: the requesting Manager, the deactivating Manager, or who changed the email. */
+  /** Who acted: the requesting Manager, the deactivating Manager, who changed the email, or the creating Manager. */
   actor: AccountRef;
   /**
    * The acting account's role; null when unknown. Demo: from the fixture account; production: the
@@ -284,8 +287,8 @@ export type CreatorNotice = TestMarker & {
  * The Creator's notices from their sources, as every implementation selects them (Step 2 plan
  * §3.10): nothing unless the viewer is the Creator (RLS also lets a Manager read his own audit
  * rows); requests only while pending; a Manager's deactivations (`profile.deactivated` with
- * `actor_role` manager, selected by the source); Outlook-email changes by anyone but the viewer;
- * newest first.
+ * `actor_role` manager, selected by the source); Outlook-email changes and creations (D67 (b)) by
+ * anyone but the viewer; newest first.
  */
 export function creatorNoticesOf(
   viewer: { id: AccountId; role: AccountRole } | null | undefined,
@@ -296,7 +299,9 @@ export function creatorNoticesOf(
   return [
     ...requests.filter((r) => r.status === "pending" && r.notice.kind === "pending-request").map((r) => r.notice),
     ...events.filter(
-      (e) => e.kind === "manager-deactivation" || (e.kind === "outlook-email-change" && e.actor.id !== viewer.id),
+      (e) =>
+        e.kind === "manager-deactivation" ||
+        ((e.kind === "outlook-email-change" || e.kind === "manager-creation") && e.actor.id !== viewer.id),
     ),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
