@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-17 — Office screen "קריאות", the calls list (real data), local only
+- Branch `claude/office-calls-list`, stacked on `claude/office-unparsed`; not pushed, no PR. Record: `docs/review/office-calls-list/README.md`.
+- **Built:** `/office/calls` on real data (Migration 3 under the viewer's session): the demo's search, technician filter and status chips with exact counts in the URL, 40 per page, newest first; "מס׳ פנייה" (D60 (3)); no cancelled visit shown or counted (D60 (1)); source icon and 🧪 marker (D47); guarded by the session, an office role and the matrix key `calls`. A row opens `/office/calls/<מס׳ פנייה>`, a TEMPORARY page until the call card is built. Customer Service lands on "קריאות" (QA S-01); the Manager and the Creator get the item. `CallsBrowser` moved from the demo to `components/office/`.
+- **Bound:** search and the technician filter run on the server over the newest 1,000 calls by opening time (no database search function without a migration); the page says so when more match.
+- **Not done:** no remote operation; the call card, the export and the calendar item.
+
 ## 2026-11-17 — Office screen "זימונים שלא נקלטו" with the invitation simulator (real data), local only
 - Branch `claude/office-unparsed` from `claude/office-calls` (`claude/step2-user-management` + `claude/step6-calendar-ingestion`, merged again up to `2b41f9a`); not pushed, no PR. Record: `docs/review/office-unparsed/README.md`.
 - **Built:** `/office/unparsed` on real data (Migration 6 `calendar_ingestion_errors` under the viewer's session, newest first, 40 per page, validated); readable Hebrew reasons for every stored problem kind (S-05); the Outlook invitation simulator inside the screen (D60 (11)), rendered only when the server's switch is on, for Manager, Creator and Customer Service, calling the existing server action; "זימונים שלא נקלטו" in the real office navigation of every office role.
