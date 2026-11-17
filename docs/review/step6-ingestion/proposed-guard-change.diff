@@ -1,0 +1,53 @@
+diff --git a/scripts/check-migrations.mjs b/scripts/check-migrations.mjs
+index 1f8e5c0..ffe47ca 100644
+--- a/scripts/check-migrations.mjs
++++ b/scripts/check-migrations.mjs
+@@ -155,6 +155,11 @@ export const ALLOWED_WRITERS = new Map([
+     { tables: ["public.offline_operations"] }],
+   ["private.correct_visit(uuid,text,text,text,integer)", { tables: ["public.visit_corrections", "public.visit_time_reports"] }],
+   ["private.resolve_review_item(uuid,integer,text,jsonb,text)", { tables: ["public.visit_time_reports"] }],
++  ["private.ingest_calendar_event(jsonb)", {
++    tables: ["public.external_calendar_events", "public.calendar_event_changes", "public.calendar_ingestion_errors",
++      "public.customers", "public.products", "public.service_calls", "public.visits", "public.visit_events"],
++    markers: ["simulator"],
++  }],
+ ]);
+ 
+ // Extensions a migration may create (rule 6). None so far.
+@@ -1420,6 +1425,7 @@ export function checkFiles(files, options = {}) {
+       if (entry) {
+         for (const t of body.tokens) {
+           if (t.type !== "string" && t.type !== "dollar") continue;
++          if (t.type === "string" && (entry.markers ?? []).includes(t.value)) continue;
+           for (const marker of TEST_MARKERS) {
+             if (marker.pattern.test(t.value)) problems.push(`${where}: contains a test marker (${marker.label})`);
+           }
+diff --git a/tests/ci/check-migrations.test.mjs b/tests/ci/check-migrations.test.mjs
+index 69a8584..246b2c5 100644
+--- a/tests/ci/check-migrations.test.mjs
++++ b/tests/ci/check-migrations.test.mjs
+@@ -199,6 +199,7 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1
+       "private.bootstrap_first_creator(uuid,text) -> public.profiles",
+       "private.correct_visit(uuid,text,text,text,integer) -> public.visit_corrections,public.visit_time_reports",
+       "private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb) -> public.review_items",
++      "private.ingest_calendar_event(jsonb) -> public.external_calendar_events,public.calendar_event_changes,public.calendar_ingestion_errors,public.customers,public.products,public.service_calls,public.visits,public.visit_events",
+       "private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid) -> public.offline_operations",
+       "private.request_account_change(text,uuid,text,text,text) -> public.account_requests",
+       "private.resolve_review_item(uuid,integer,text,jsonb,text) -> public.visit_time_reports",
+@@ -1667,3 +1668,16 @@ test("PR 1.8: the five Settings bodies differ from Migration 2 only in the key t
+       name);
+   }
+ });
++
++// Step 6 (Migration 6, proposed): the ingestion writer is the one reviewed writer that may hold the
++// data_source value 'simulator' as an exact string (ALLOWED_WRITERS markers); any other marker text
++// in its body, and the same string in any other writer, still fails.
++test("Step 6: only the exact 'simulator' string is exempt, only in the ingestion writer", () => {
++  const writer = (name, value) =>
++    `create function private.${name}(p_command jsonb) returns jsonb language plpgsql set search_path = pg_catalog, pg_temp as $$ declare v constant text := ${value}; begin insert into public.customers (data_source) values (v); return null; end $$;`;
++  assert.deepEqual(checkSql(writer("ingest_calendar_event", "'simulator'")), []);
++  for (const value of ["'simulator data'", "'automated_test'", "'x@example.test'"]) {
++    assert.ok(checkSql(writer("ingest_calendar_event", value)).some((p) => /test marker/.test(p)), value);
++  }
++  assert.ok(checkSql(writer("write_audit", "'simulator'")).some((p) => /INSERT into "customers" is not allowed/.test(p)));
++});
