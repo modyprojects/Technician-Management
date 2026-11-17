@@ -46,7 +46,7 @@ test("calls table: short columns centred and sized to content, long text right-a
   });
 
   const byName = Object.fromEntries(report.map((c) => [c.name, c]));
-  for (const name of ["מס׳ פנייה", "מק\"ט", "טכנאי", "ביקורים", "ביקור אחרון / הבא", "סטטוס"]) {
+  for (const name of ["פנייה", "מק\"ט", "טכנאי", "ביקורים", "ביקור אחרון / הבא", "סטטוס"]) {
     expect(byName[name]?.centred, name).toBe(true);
     expect(byName[name]?.aligns, name).toEqual(["center"]);
   }
