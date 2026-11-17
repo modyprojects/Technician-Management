@@ -1,5 +1,9 @@
 # Work Log (English only)
 
+## 2026-11-17 — D49 Creator bootstrap run on the remote project (owner-approved)
+- **Investigation of the owner's failed sign-in (read-only):** the Preview reaches Supabase (password grants from the Vercel server; after the owner recreated his Auth user, a successful grant, the profile read under his session, then the app's own `logout?scope=local`). Cause: no profile, so the app signs the session out and shows the one credential message by design. No code or configuration fault.
+- **Bootstrap:** the owner's explicit approval for one run for his own Auth user; pre-check passed; one run of the self-checking block in `docs/review/step2-pr25/creator-bootstrap.md`; post-verification passed (one active, real Creator profile; one `creator.bootstrapped` audit row; chain intact; no other table changed; advisors unchanged). Details in that file. No email, name or user id recorded here.
+
 ## 2026-11-17 — Step 2 / PR 2.5: Preview setup checks, D63, Creator bootstrap prepared (nothing written remotely)
 - **Owner (2026-11-17):** visual design of the sign-in and "אין גישה" states approved; MFA timing option A chosen (recorded as D63: the Creator signs in without MFA during restricted development testing; MFA still required before production; the bootstrap itself still needs his separate approval).
 - **CI on `16ae218`:** `checks` and `pgtap` green. `tests/auth` 13/13 against the local stack on the same commit.

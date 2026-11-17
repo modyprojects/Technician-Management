@@ -65,3 +65,9 @@ $boot$;
 
 ## Rehearsal (2026-11-17, local stack only)
 On a freshly reset local database (Migrations 1–5) with one fictional Auth user: the rendered block wrote one Creator profile and one `creator.bootstrapped` audit row, chain intact. Running it again failed inside the function ("a Creator already exists") and a block with a wrong name hash failed at the first check; both left the counts unchanged (one profile, one audit row). The real project was not contacted.
+
+## Run on the remote project (2026-11-17, owner-approved)
+- **Approval:** the owner's explicit message of 2026-11-17 for one run on `ooxozvvrljjkyfduuiks`, for his own Auth user, with the name he gave; stop without retry on any failed check.
+- **Pre-check (read-only):** one Auth user (his, created 2026-11-17 in the dashboard after he deleted the 2026-11-11 user; signed in once from the Preview, then refused by the app for having no profile); confirmed, email provider, one email identity, not anonymous, not SSO, not deleted, not banned, no MFA factor, no profile; 0 profiles, 0 Creators, 0 audit rows; chain NULL; function body md5 `28230a46…eb4e5`; EXECUTE only `postgres`, `supabase_admin`. Non-zero tables before: `call_types` 2, `followup_reasons` 5, `permissions` 16, `role_permissions` 32.
+- **Run:** the rendered block (template above, placeholders only filled in) once through `execute_sql`; it completed without error.
+- **Post-verification (read-only):** one profile in total: role `creator`, active, `is_test = false`, not deleted, version 1, name md5 equal to the approved name's; one audit row (id 1) `creator.bootstrapped` on `profiles` for that id, `target_is_test = false`, no actor (run outside any session, as designed); `private.audit_chain_verify()` NULL; non-zero tables after: the four reference tables unchanged, plus `profiles` 1 and `audit_logs` 1. Security advisors: only the existing WARN `auth_leaked_password_protection`.
