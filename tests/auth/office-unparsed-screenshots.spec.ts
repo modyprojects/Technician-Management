@@ -130,10 +130,18 @@ test.describe.serial("office-unparsed screenshots", () => {
     test(`the simulator dialog at ${size.width}px`, async () => {
       test.setTimeout(120_000);
       const file = (name: string) => path.join(OUT, `${size.width}-${name}.png`);
+      // The dialog scrolls inside its fixed backdrop: a whole-dialog image needs a viewport that
+      // holds it (same width; only the height grows for that image).
       const shot = async (page: Page, name: string, target?: Locator) => {
         await ready(page);
-        if (target) await target.screenshot({ path: file(name) });
-        else await page.screenshot({ path: file(name) });
+        if (!target) {
+          await page.screenshot({ path: file(name) });
+          return;
+        }
+        await page.setViewportSize({ width: size.width, height: 2200 });
+        await ready(page);
+        await target.screenshot({ path: file(name) });
+        await page.setViewportSize(size);
       };
       const m = mgr.page;
       await m.setViewportSize(size);
