@@ -142,6 +142,9 @@ export const REAL_PAGES = [
   "/office/settings/users",
   // "זימונים שלא נקלטו" and the invitation simulator (QA S-05; D60 (11)).
   "/office/unparsed",
+  // "קריאות" and a row's call address (V1 item 4).
+  "/office/calls",
+  "/office/calls/48213",
 ] as const;
 
 export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
