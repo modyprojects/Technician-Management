@@ -14,12 +14,16 @@ import type { TechDayVisit, VisitStatus } from "@/features/visits/data/types";
 // Additions: 🧪 badge on test calls (SIM-15) and an inline error when the action fails.
 // Presentational: no data access. `status` is the caller's current (possibly optimistic) status,
 // so a parent that owns state renders it from a client component.
+// Real app (Step 3): `navigate` is a plain Waze link instead of the depart action ("ניווט · Waze"),
+// for a screen with no departure writer: it opens Waze only and never claims a status change (G-06).
+// NextVisitEmpty is the card's place when no visit is left (QA T-02: "a message when no visits remain").
 
 export function NextVisitCard({
   visit,
   status = visit.status,
   detailsHref,
   onDepart,
+  navigate,
   error,
 }: {
   visit: TechDayVisit;
@@ -29,10 +33,17 @@ export function NextVisitCard({
   detailsHref: string;
   /** Runs "יוצא · Waze" (depart); the button shows only for a scheduled visit when this is given. */
   onDepart?: () => void;
+  /**
+   * A Waze link to the visit's address ("ניווט · Waze", navigation only), shown while the visit is
+   * open, when no depart action is given.
+   */
+  navigate?: { href: string };
   /** Hebrew error of the last action, if it failed. */
   error?: string | null;
 }) {
   const canDepart = status === "new" && onDepart !== undefined;
+  const canNavigate = !canDepart && navigate !== undefined && (status === "new" || status === "go" || status === "work");
+  const twoActions = canDepart || canNavigate;
   return (
     <section className="card" style={{ padding: 14, border: "2px solid var(--accent)" }} aria-label="הביקור הבא">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -72,6 +83,18 @@ export function NextVisitCard({
             <PinIcon /> יוצא · Waze
           </button>
         )}
+        {canNavigate && (
+          <a
+            href={navigate.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bigbtn"
+            aria-label={`ניווט ב-Waze אל ${visit.address}`}
+            style={{ height: 44, fontSize: 15, background: "var(--accent)" }}
+          >
+            <PinIcon /> ניווט · Waze
+          </a>
+        )}
         <Link
           href={detailsHref}
           className="btn"
@@ -82,7 +105,7 @@ export function NextVisitCard({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gridColumn: canDepart ? undefined : "1 / -1",
+            gridColumn: twoActions ? undefined : "1 / -1",
           }}
         >
           פרטי קריאה
@@ -93,6 +116,23 @@ export function NextVisitCard({
           {error}
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * The next-visit card's place when no open visit is left today (QA T-02): every visit of the day was
+ * completed, or none was scheduled. Same card look, no actions.
+ */
+export function NextVisitEmpty({ completed }: { completed: number }) {
+  return (
+    <section className="card" aria-label="הביקור הבא" style={{ padding: 14 }}>
+      <div style={{ fontFamily: "var(--display)", fontWeight: 600, fontSize: 16 }}>
+        {completed > 0 ? "כל הביקורים של היום הושלמו" : "אין ביקורים מתוכננים להיום"}
+      </div>
+      <div className="sub" style={{ marginTop: 4 }}>
+        {completed > 0 ? "ביקור חדש שישובץ לך יופיע כאן." : "ביקור שישובץ לך יופיע כאן."}
+      </div>
     </section>
   );
 }

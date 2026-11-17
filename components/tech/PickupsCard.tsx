@@ -9,8 +9,12 @@
 // fails. In the UI demo the command is simulated (the provider's toast says nothing was saved).
 // No scheduled pickup reminder exists (TE-28, D25): this list is the reminder.
 // The caller passes the groups and the "Waze ›" element of each place (a navigation affordance).
+// Real app (Step 3, TEMPORARY): no database object keeps "נאסף" yet, so the real home passes its own
+// `onToggle` (DevicePickups: kept on this device for the day) and a `note` that says so; the demo
+// uses useCommands().visits.setPickupCollected.
 import { useRef, useState, type ReactNode } from "react";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useOptionalCommands } from "@/features/data-access/commands-context";
+import type { CommandResult } from "@/features/data-access/common";
 import type { PickupGroup, VisitRef } from "@/features/visits/data/types";
 
 const keyOf = (ref: { req: string; n: number }): string => `${ref.req}-${ref.n}`;
@@ -21,12 +25,19 @@ const forCustomer = (name: string): string => `ל${name.trim().split(/\s+/).slic
 export function PickupsCard({
   groups,
   placeActions,
+  onToggle,
+  note,
 }: {
   groups: PickupGroup[];
   /** "Waze ›" per place name. */
   placeActions?: Readonly<Record<string, ReactNode>>;
+  /** Keeps a "נאסף" tick; default: the CommandsProvider's visits.setPickupCollected. */
+  onToggle?: (ref: VisitRef, collected: boolean) => Promise<CommandResult>;
+  /** A short line under the title (where the ticks are kept). */
+  note?: string;
 }) {
-  const { visits } = useCommands();
+  const commands = useOptionalCommands();
+  const setCollected = onToggle ?? commands?.visits.setPickupCollected;
   // Ticks changed on this screen, by "req-n" (an item without a change shows its DTO value).
   const [changed, setChanged] = useState<Readonly<Record<string, boolean>>>({});
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -48,7 +59,8 @@ export function PickupsCard({
     });
     let error: string | null = null;
     try {
-      const result = await visits.setPickupCollected(ref, on);
+      if (!setCollected) throw new Error("no pickup command");
+      const result = await setCollected(ref, on);
       if (!result.ok) error = result.error;
     } catch {
       error = "הסימון לא נשמר. נסה שוב.";
@@ -74,6 +86,9 @@ export function PickupsCard({
           {doneN} מתוך {items.length} נאסף
         </span>
       </div>
+      {note && (
+        <div style={{ fontSize: 12, color: "var(--warn-fg)", marginBottom: 4 }}>{note}</div>
+      )}
       {groups.map((g, i) => (
         <div
           key={g.place}

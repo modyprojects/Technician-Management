@@ -47,8 +47,11 @@ export type Pickup = {
 /** A visit with everything the office timeline and the technician's own visit show. */
 export type VisitRecord = TestMarker &
   VisitRef & {
-    /** Task number ("מספר משימה") from the invitation. */
-    task: number;
+    /**
+     * Task number ("מספר משימה") from the invitation: a number in the demo, the stored text in the
+     * database (`visits.task_number`, printable ASCII, D41). Display only.
+     */
+    task: number | string;
     technician: TechnicianRef;
     date: IsoDate;
     start: HourMinute;
@@ -141,7 +144,8 @@ export type VisitHistoryItem = TestMarker &
 /** One visit in the technician's day. */
 export type TechDayVisit = TestMarker &
   VisitRef & {
-    task: number;
+    /** Task number as in VisitRecord. */
+    task: number | string;
     start: HourMinute;
     end: HourMinute;
     status: VisitStatus;
@@ -164,16 +168,23 @@ export type PickupGroup = {
   items: { ref: VisitRef; item: string; customerName: string; start: HourMinute; collected: boolean }[];
 };
 
+/**
+ * A day visit of the real technician screens (Step 3): the visit's database id (`visits.id`, a
+ * uuid) for its links. The real routes address a visit by id (the technician reads his own visits
+ * rows under RLS, never the calls table, Migration 3 OQ-12); the demo addresses it by `VisitRef`.
+ */
+export type TechDayVisitWithId = TechDayVisit & { id: string };
+
 /** A technician's schedule for one date plus the home-header counters (TE-01). */
-export type TechDay = {
+export type TechDay<V extends TechDayVisit = TechDayVisit> = {
   technician: TechnicianRef;
   date: IsoDate;
   /** Open visits (scheduled, en route, in progress), by start time. */
-  open: TechDayVisit[];
+  open: V[];
   /** Visits closed that day ("טופל" / "המשך טיפול"), by start time. */
-  closed: TechDayVisit[];
+  closed: V[];
   /** The featured visit: in progress, else en route, else the first scheduled; null when none. */
-  next: TechDayVisit | null;
+  next: V | null;
   /** Pickups of the open visits, by place. */
   pickups: PickupGroup[];
   stats: {
