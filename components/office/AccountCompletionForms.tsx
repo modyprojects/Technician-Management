@@ -28,7 +28,7 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import { DEVICE_MAX, deviceError, PHONE_MAX, phoneError } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import type { TechnicianColorToken } from "@/features/reference/data/types";
 import { AccountDialog, ColorChoice, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 
@@ -69,7 +69,7 @@ export function CompleteCreationForm({
   onDone: (created: CompletedCreation, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const target = sourceTarget(source);
@@ -243,7 +243,7 @@ export function CompleteTechnicianForm({
   onDone: (created: CompletedTechnicianProfile, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const deviceRef = useRef<HTMLInputElement>(null);

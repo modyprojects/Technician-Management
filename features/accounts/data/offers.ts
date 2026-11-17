@@ -13,6 +13,7 @@ import {
   type AccountRequest,
   type AccountRole,
   type CreationIntent,
+  type NewAccountRole,
   type UserAccount,
 } from "./types";
 
@@ -114,3 +115,61 @@ export function ownIntents(page: Bounded<CreationIntent>, selfId: AccountId | nu
   const items = selfId === null ? [] : page.items.filter((i) => i.requestedBy.id === selfId);
   return { items, total: items.length, limit: page.limit };
 }
+
+// ---------------------------------------------------------------------------------------------
+// D60 (7) (owner, 2026-11-12; Migration 5): what the real unified user-management screen offers.
+// Each mirrors a D60 rule of validate.ts (creationCallerError, roleChangeError, deleteAccountError,
+// the (de)activation caller check), with deny by default as above; the server and the database
+// decide in any case.
+
+/**
+ * The roles of "הוסף משתמש" (one button, a role choice; QA M-06, C-01): the Creator Technician,
+ * Customer Service and Manager; the Manager Technician and Customer Service. Never Creator
+ * (TEMPORARY, Step 2 plan Q9; D49). Mirrors creationCallerError and NEW_ACCOUNT_ROLES.
+ */
+export function creatableRoles(scope: AccountAdminScope | null, selfId: AccountId | null): readonly NewAccountRole[] {
+  if (!known(scope, selfId)) return [];
+  return scope === "all" ? CREATOR_CREATABLE_ROLES : scope === "cs-tech" ? MANAGER_CREATABLE : [];
+}
+
+const CREATOR_CREATABLE_ROLES: readonly NewAccountRole[] = ["tech", "cs", "mgr"];
+const MANAGER_CREATABLE: readonly NewAccountRole[] = ["tech", "cs"];
+
+/**
+ * "השבתה" / "הפעלה" (D60 (7): immediate, no Creator approval): the Creator on every row but his own;
+ * the Manager on Customer Service and Technician rows, never his own. Mirrors the caller check of
+ * `admin_set_user_active` (the database also refuses the last active Creator).
+ */
+export const stateChangeOffered = (
+  scope: AccountAdminScope | null,
+  row: Pick<UserAccount, "id" | "role">,
+  selfId: AccountId | null,
+): boolean => known(scope, selfId) && row.id !== selfId && (scope === "all" || (scope === "cs-tech" && managed(row.role)));
+
+/**
+ * "שינוי תפקיד" (D60 (7): the Creator only; Managers never change roles): never his own row and
+ * never a Creator row (TEMPORARY, D49: Creator accounts are not managed through the app), and not a
+ * Technician that has a field profile (Migration 1 `admin_set_user_role` refuses it, 55000).
+ * Mirrors roleChangeError.
+ */
+export const roleChangeOffered = (
+  scope: AccountAdminScope | null,
+  row: Pick<UserAccount, "id" | "role" | "technicianId">,
+  selfId: AccountId | null,
+): boolean =>
+  known(scope, selfId) && scope === "all" && row.id !== selfId && row.role !== "creator" && !(row.role === "tech" && row.technicianId !== null);
+
+/** The roles a role change may give (never Creator, never the current role). */
+export const roleChangeChoices = (current: AccountRole): readonly NewAccountRole[] =>
+  CREATOR_CREATABLE_ROLES.filter((r) => r !== current);
+
+/**
+ * "מחיקה" (D60 (7) Option A: the Creator only, after an explicit confirmation): never his own row
+ * and never a Creator row (TEMPORARY OQ-1; Migration 5 `admin_delete_user` refuses both). Mirrors
+ * deleteAccountError.
+ */
+export const deleteOffered = (
+  scope: AccountAdminScope | null,
+  row: Pick<UserAccount, "id" | "role">,
+  selfId: AccountId | null,
+): boolean => known(scope, selfId) && scope === "all" && row.id !== selfId && row.role !== "creator";

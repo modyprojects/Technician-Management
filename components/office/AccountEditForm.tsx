@@ -43,7 +43,7 @@ import {
   technicianUpdateError,
   testAccountEmailError,
 } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import { technicianColorTokenOf, type TechnicianColorToken } from "@/features/reference/data/types";
 import { AccountDialog, ColorChoice, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
@@ -84,7 +84,7 @@ export function AccountEditForm({
   onDone: (name: string, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const nameRef = useRef<HTMLInputElement>(null);

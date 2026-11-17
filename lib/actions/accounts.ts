@@ -1,8 +1,8 @@
 "use server";
 
 // Account administration server actions (D60 (7) unified user management; QA M-06, M-10, C-01,
-// C-02; Step 2 plan §3.7–§3.9). No screen calls them yet: the user-management screen waits for the
-// owner's approval of the previous screen (D62). Each action:
+// C-02; Step 2 plan §3.7–§3.9). The real Settings › "משתמשים" / "משתמשים והרשאות" page
+// (app/(office)/office/settings/users) passes them to its screen as props. Each action:
 // - takes its input as `unknown` and re-validates it (strict Zod shape, then the shared Hebrew rules:
 //   features/accounts/supabase/schemas.ts);
 // - takes the caller from the server-validated session (lib/auth/session.ts), never from the input;

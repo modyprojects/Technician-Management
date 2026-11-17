@@ -3,7 +3,7 @@
 // The Creator's credential dialogs on an account row (Step 2 plan §4 #7, §3.9; D34 e, D50; SE-17
 // PROPOSED): "הגדרת סיסמה" and "שינוי כתובת מייל". Offered by credentialActionsOffered (the Creator,
 // never on his own row: TEMPORARY Q22, P-6 not built); the server checks the caller in the database
-// before any Auth admin call (D34). Each runs one command from useCommands().accounts and returns
+// before any Auth admin call (D34). Each runs one command from useAccountCommands() and returns
 // whether it was simulated; the caller shows the result.
 // "הגדרת סיסמה": the password is never shown back, kept or sent by the app.
 // - The field is UNCONTROLLED (read through its ref; no `name`, `value` or `defaultValue`), so no
@@ -24,7 +24,7 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import type { UserAccount } from "@/features/accounts/data/types";
 import { credentialEmailError, EMAIL_MAX, NO_CHANGE, passwordError } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import { AccountDialog, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 
 const PASSWORD_NOTES = [
@@ -46,7 +46,7 @@ export function PasswordForm({
   onDone: (simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -148,7 +148,7 @@ export function EmailForm({
   onDone: (email: string, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const emailRef = useRef<HTMLInputElement>(null);

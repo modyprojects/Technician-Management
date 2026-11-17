@@ -1014,5 +1014,20 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 /* Creator notices ("התראות חשבונות", Q13 demo placement). */
 .acct-notices { list-style: none; margin: 0; padding: 0; }
 .acct-notices > li { padding: 12px 18px; border-top: 1px solid var(--line2); line-height: 1.5; overflow-wrap: anywhere; }
+/* The real unified user management (D60 (7), Step 2): addresses and phones read left to right in a
+   right-aligned cell (the demo's dir="ltr" + text-align: right); a Technician's colour line under his
+   name; the role choice and the deletion's explicit confirmation in the account dialogs. */
+.acct-ltr { display: block; direction: ltr; text-align: right; font-size: 12px; overflow-wrap: anywhere; }
+td.acct-ltr-cell { direction: ltr; text-align: right; color: var(--muted); overflow-wrap: anywhere; }
+td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
+.acct-tech-line { display: block; font-size: 12px; margin-top: 2px; }
+.acct-tech-line .set-swatch { width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.acct-roles { gap: 8px 18px; }
+.acct-roles .set-swatch-opt { min-height: 32px; }
+.acct-role-pending { color: var(--warn-fg); font-weight: 700; font-size: 13px; }
+.acct-confirm-line { line-height: 1.6; }
+.acct-legend { padding: 8px 18px 0; font-size: 12px; }
+.acct-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; line-height: 1.5; background: var(--danger-bg); color: var(--danger-fg); border-radius: 8px; padding: 10px 12px; }
+.acct-check input { margin-top: 4px; flex: none; width: 18px; height: 18px; }
 /* end step2-screens */
 

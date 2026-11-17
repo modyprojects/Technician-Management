@@ -38,14 +38,24 @@ function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null 
 /** A "ממתין להחלטת בעלים" line, in the warning colours of every such label (review UI-5). */
 const PENDING_LINE = { color: "var(--warn-fg)", fontWeight: 700 } as const;
 
-export function AccountNoticesCard({ notices }: { notices: Bounded<CreatorNoticeEntry> }) {
+/** The card's sub-line in the /dev/demo prototype, which still has the retired requests (D61 (1)). */
+const DEMO_SUB = 'בקשות שממתינות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים. אין סימון "נקרא".';
+
+export function AccountNoticesCard({
+  notices,
+  sub = DEMO_SUB,
+}: {
+  notices: Bounded<CreatorNoticeEntry>;
+  /** The sub-line; the real screen (D60 (7), no "בקשות לאישור", C-02) passes its own. */
+  sub?: string;
+}) {
   const n = notices.total;
   return (
     <section className="card" style={{ overflow: "hidden" }} aria-labelledby={TITLE_ID}>
       <SettingsCardHead
         id={TITLE_ID}
         title="התראות חשבונות"
-        sub={'בקשות שממתינות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים. אין סימון "נקרא".'}
+        sub={sub}
         action={n > 0 ? <span className="pill acct-warn">{n === 1 ? "התראה אחת" : `${n} התראות`}</span> : undefined}
       />
       {notices.items.length === 0 ? (
