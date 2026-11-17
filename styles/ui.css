@@ -1031,3 +1031,50 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
 .acct-check input { margin-top: 4px; flex: none; width: 18px; height: 18px; }
 /* end step2-screens */
 
+
+/* office-unparsed */
+/* The Outlook invitation simulator inside "זימונים שלא נקלטו" (D60 (11); X-05: the demo's Outlook
+   modal, docs/demo.html L168-170 .modal-bg / .modal / .ol-top and L1020-1036): a centred white
+   dialog with the Outlook-blue header, the form's label column (70px in the demo) beside the fields,
+   one column at 520px and below. The radio chips reuse .chip / .chip.on; the result and the field
+   errors use the existing warning and danger colours. */
+/* The dialog is rendered into document.body, outside the "stage" container: .sim-bg is its own. */
+.sim-bg { container-type: inline-size; container-name: sim; position: fixed; inset: 0; background: var(--scrim); z-index: 70; display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding-block: 30px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.sim-modal { background: var(--card); border-radius: 14px; width: min(860px, 100%); overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.sim-modal:focus { outline: none; }
+/* demo .ol-top: the Outlook blue of the demo (L170). */
+.sim-top { background: #0F6CBD; color: var(--on-dark); padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sim-top b { min-width: 0; overflow-wrap: anywhere; }
+.xbtn.sim-x { background: rgba(255, 255, 255, .15); color: var(--on-dark); }
+.sim-top :focus-visible { outline-color: var(--on-dark); }
+.sim-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.sim-samples { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sim-actions { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sim-actions > legend { font-size: 13px; font-weight: 700; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.sim-chips { display: flex; gap: 6px 8px; flex-wrap: wrap; }
+.sim-chips .chip { cursor: pointer; position: relative; min-height: 32px; display: inline-flex; align-items: center; }
+.sim-chips .chip:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sim-hint { margin: 0; }
+.sim-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px 10px; align-items: start; }
+.sim-row > label { padding-top: 9px; font-weight: 700; font-size: 14px; }
+.sim-cell { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sim-cell > select, .sim-cell > input { width: 100%; min-width: 0; }
+.sim-when { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sim-when input[type="date"] { flex: 1 1 140px; min-width: 0; max-width: 200px; }
+.sim-time { width: 72px; flex: none; }
+.sim-body-label { font-weight: 700; }
+.sim-text { width: 100%; font-size: 14px; line-height: 1.55; min-width: 0; }
+.sim-err { color: var(--danger); font-size: 13px; font-weight: 700; }
+[aria-invalid="true"] { border-color: var(--danger); }
+.sim-result { margin: 0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.sim-result.sim-ok { background: var(--s-done-bg); color: var(--s-done-fg); }
+.sim-result.sim-warn { background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-ink); }
+.sim-result.sim-error { background: var(--danger-bg); color: var(--danger-fg); font-weight: 700; }
+.sim-line { display: block; font-size: 13px; }
+.sim-problems { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sim-foot { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; }
+@container sim (max-width: 552px) {
+  .sim-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .sim-row > label { padding-top: 0; }
+}
+/* end office-unparsed */
