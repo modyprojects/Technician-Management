@@ -533,7 +533,8 @@ const productOptions = (list: readonly ProductOptionRecord[]) => {
 /** Untrusted invitation text, cut to UNPARSED_VALUE_MAX characters. */
 const invitationText = (text: string): string => (text.length > UNPARSED_VALUE_MAX ? `${text.slice(0, UNPARSED_VALUE_MAX)}…` : text);
 
-const TEMPLATE_ORDER = new Map(TEMPLATE_LABELS.map((l, i) => [l.key, i]));
+type TemplateKey = (typeof TEMPLATE_LABELS)[number]["key"];
+const TEMPLATE_ORDER = new Map<TemplateKey, number>(TEMPLATE_LABELS.map((l, i) => [l.key, i]));
 
 const templateLabel = (field: (typeof TEMPLATE_LABELS)[number]["key"]): string => TEMPLATE_LABELS.find((l) => l.key === field)?.label ?? field;
 
@@ -552,14 +553,14 @@ function unparsedInvitation(x: DemoUnparsedInvitation): UnparsedInvitation {
   const t = TECHS.find((tech) => tech.email === x.attendee);
   const problems = x.problems
     .map(unparsedProblem)
-    .sort((a, b) => (TEMPLATE_ORDER.get(a.field) ?? 0) - (TEMPLATE_ORDER.get(b.field) ?? 0));
+    .sort((a, b) => (TEMPLATE_ORDER.get(a.field as TemplateKey) ?? 0) - (TEMPLATE_ORDER.get(b.field as TemplateKey) ?? 0));
   return {
     id: x.id,
     receivedAt: x.receivedAt,
     source: x.source,
     subject: invitationText(x.subject),
     organizer: { email: x.organizer, name: USERS.find((u) => u.email === x.organizer)?.name ?? null },
-    attendee: { email: x.attendee, technician: t ? { id: t.id, name: t.name, color: t.color } : null },
+    attendees: { emails: [x.attendee], technician: t ? { id: t.id, name: t.name, color: t.color } : null },
     event: { date: x.date, start: x.start, end: x.end },
     requestNumber: x.req,
     customerName: x.customer === null ? null : invitationText(x.customer),
