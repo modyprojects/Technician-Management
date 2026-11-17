@@ -1,5 +1,14 @@
 # Work Log (English only)
 
+## 2026-11-17 — D62 (6): mandatory UI screenshots and owner approval
+- **Owner (2026-11-17), permanent, all agents:** every new screen and every visible UI change is shown with real screenshots of the implemented app (desktop and mobile; tablet when it differs materially; forms, dialogs, validation errors, key interactions), sent in the conversation with the restricted Preview URL and a brief explanation; visual approval requested before the screen is marked approved; corrections come back with updated screenshots; screenshots are never replaced by descriptions or test reports; a waiting screen never blocks other agents. He explicitly authorized the documentation updates.
+- **Changed:** `docs/decisions.md` D62 (6) and D64 (5); `CLAUDE.md` "Visual approval" items 1 and 6.
+
+## 2026-11-17 — D64: multi-agent development team as the standard operating model
+- **Owner (2026-11-17, two messages):** Claude Code owns routine development; up to 3 concurrent agents are the permanent default (replaces D58 (7)); one clear ask for actions that need the owner; screens first; D62 screen-by-screen approval, D31 and every approval rule unchanged. He explicitly approved updating the workflow instructions (`CLAUDE.md`, protected) to make this permanent.
+- **Owner (third message, 2026-11-17):** the team structure (Tech Lead / Orchestrator; Agent 1 and Agent 2 full-stack developers; Agent 3 QA / security / flexible developer, never a bottleneck); flexible roles; explicit file ownership; reports never overstate running agents; separate screens may be built concurrently, but none counts as approved without his visual review (D62).
+- **Changed:** `docs/decisions.md` D64; `CLAUDE.md` (the autonomous-development line); `docs/ROADMAP.md` (process paragraph).
+
 ## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
 - **Approval:** the owner's explicit approval for one application (PR #32 `fa3f7ec`, SQL `6bce3911…7992`, payload `d9087910…d41b`). A1 (the canary fixture) was also approved; merging PR #32 is approved after the verification, with the D31 checks.
 - **Before the apply:**
