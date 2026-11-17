@@ -18,7 +18,7 @@ export const ALL_TECHS = "all";
 export function CallFilters({
   query,
   onQueryChange,
-  searchPlaceholder = "חיפוש לפי שם, טלפון, מספר פנייה, מספר לקוח או מק״ט",
+  searchPlaceholder = "חיפוש לפי שם, טלפון, מס׳ פנייה, מספר לקוח או מק״ט",
   tech,
   techOptions,
   onTechChange,
