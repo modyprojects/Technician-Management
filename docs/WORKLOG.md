@@ -1,5 +1,9 @@
 # Work Log (English only)
 
+## 2026-11-17 — D64: concurrent agents as the standard operating model
+- **Owner (2026-11-17, two messages):** Claude Code owns routine development; up to 3 concurrent agents are the permanent default (replaces D58 (7)); one clear ask for actions that need the owner; screens first; D62 screen-by-screen approval, D31 and every approval rule unchanged. He explicitly approved updating the workflow instructions (`CLAUDE.md`, protected) to make this permanent.
+- **Changed:** `docs/decisions.md` D64; `CLAUDE.md` (the autonomous-development line); `docs/ROADMAP.md` (process paragraph).
+
 ## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
 - **Approval:** the owner's explicit approval for one application (PR #32 `fa3f7ec`, SQL `6bce3911…7992`, payload `d9087910…d41b`). A1 (the canary fixture) was also approved; merging PR #32 is approved after the verification, with the D31 checks.
 - **Before the apply:**
