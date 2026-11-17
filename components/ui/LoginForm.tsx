@@ -2,7 +2,7 @@
 
 // The sign-in form of "כניסה" (Step 2 plan §3.4; AU-01 PROPOSED, Step 2 PR 2.3): "אימייל" and
 // "סיסמה" (both LTR) and "כניסה". The caller's `onSubmit` acts (the UI demo: a simulated toast; the
-// real sign-in, PR 2.5, binds its server action and decides the form's attributes).
+// real `/login`, Step 2 PR 2.5: the server action `signIn`).
 // The password never leaves the input except into the one call:
 // - the password input is UNCONTROLLED (read through its ref), with no `value` or `defaultValue`
 //   prop: a controlled input would make React copy each keystroke into the `value` attribute, and
@@ -16,17 +16,35 @@
 // Checks before the call are the shared validators (no new rule): emailError, then passwordError.
 // The first invalid field gets focus, aria-invalid and the message (role="alert").
 import { useId, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { EMAIL_MAX, emailError, passwordError } from "@/features/accounts/data/validate";
+import { EyeIcon, EyeOffIcon } from "./Icons";
 
 type Field = "email" | "password";
 
-export function LoginForm({ onSubmit }: { onSubmit: (values: { email: string; password: string }) => void | Promise<void> }) {
+export function LoginForm({
+  onSubmit,
+  initialEmail = "",
+}: {
+  onSubmit: (values: { email: string; password: string }) => void | Promise<void>;
+  /**
+   * The email to start with (Step 2 PR 2.5: after a refused attempt the screen renders a fresh form,
+   * keyed by its state, and keeps the email the user typed; never the password).
+   */
+  initialEmail?: string;
+}) {
   const id = useId();
   const errorId = `${id}-error`;
+  const passwordId = `${id}-password`;
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [busy, setBusy] = useState(false);
+  // Show/hide password (owner UI correction, 2026-11-17). Only the input's type changes: the input
+  // stays uncontrolled, so the password never enters React state or a `value` attribute either way.
+  // Hidden again before every submission (review NIT: the field is a password field when the
+  // browser sees the submission) and after it.
+  const [passwordShown, setPasswordShown] = useState(false);
   const [error, setError] = useState<{ field: Field; text: string } | null>(null);
 
   function fail(field: Field, text: string) {
@@ -43,11 +61,15 @@ export function LoginForm({ onSubmit }: { onSubmit: (values: { email: string; pa
     const passwordProblem = passwordError(password);
     if (passwordProblem) return fail("password", passwordProblem);
     setError(null);
+    // Hide the password before the call, synchronously, so the field is type="password" while the
+    // submission is in flight (no plain text on screen, nothing for a browser's autofill history).
+    flushSync(() => setPasswordShown(false));
     setBusy(true);
     try {
       await onSubmit({ email: email.trim(), password });
     } finally {
       if (passwordRef.current) passwordRef.current.value = "";
+      setPasswordShown(false);
       setBusy(false);
     }
   }
@@ -74,20 +96,37 @@ export function LoginForm({ onSubmit }: { onSubmit: (values: { email: string; pa
           {...invalid("email")}
         />
       </label>
-      <label>
-        סיסמה
-        <input
-          ref={passwordRef}
-          type="password"
-          dir="ltr"
-          autoComplete="current-password"
-          aria-required="true"
-          onInput={() => {
-            if (error?.field === "password") setError(null);
-          }}
-          {...invalid("password")}
-        />
-      </label>
+      {/* An explicit label, so the toggle button sits beside the input without joining its name. */}
+      <div className="login-field">
+        <label htmlFor={passwordId}>סיסמה</label>
+        <div className="pw-field">
+          <input
+            id={passwordId}
+            ref={passwordRef}
+            type={passwordShown ? "text" : "password"}
+            dir="ltr"
+            autoComplete="current-password"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-required="true"
+            onInput={() => {
+              if (error?.field === "password") setError(null);
+            }}
+            {...invalid("password")}
+          />
+          <button
+            type="button"
+            className="pw-toggle"
+            aria-label="הצגת הסיסמה"
+            aria-pressed={passwordShown}
+            aria-controls={passwordId}
+            onClick={() => setPasswordShown((shown) => !shown)}
+          >
+            {passwordShown ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        </div>
+      </div>
       {error && (
         <span id={errorId} role="alert" className="set-err">
           {error.text}

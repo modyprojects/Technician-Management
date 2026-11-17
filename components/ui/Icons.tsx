@@ -78,3 +78,24 @@ export function BellIcon({ size = 19 }: IconProps) {
     </Svg>
   );
 }
+
+// The password field's show/hide control (owner UI correction, 2026-11-17): an open eye shows the
+// password, a crossed eye hides it again. Not in docs/demo.html; drawn in the same outline style.
+export function EyeIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </Svg>
+  );
+}
+
+export function EyeOffIcon({ size = 20 }: IconProps) {
+  return (
+    <Svg size={size}>
+      <path d="M10.6 5.1A9.9 9.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="M3 3l18 18" />
+    </Svg>
+  );
+}

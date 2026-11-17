@@ -219,7 +219,11 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-enable_signup = false
+# Step 2 PR 2.5: the CLI maps this key to GOTRUE_EXTERNAL_EMAIL_ENABLED, i.e. the Email provider
+# itself; with false no email/password sign-in works at all. It is true so the local stack matches
+# the owner's D50 remote settings (Email provider on, public sign-up off). Sign-up stays closed by
+# `[auth] enable_signup = false` (GOTRUE_DISABLE_SIGNUP); tests/auth checks that it is refused.
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true

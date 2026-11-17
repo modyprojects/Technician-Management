@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { CLOSED_URL, DEMO_PAGES, DEV_PAGES, OPEN_URL, onlyInProject } from "./helpers";
 
@@ -10,6 +12,8 @@ const MARKERS: Record<(typeof DEV_PAGES)[number], string> = {
   "/dev/showcase/office": "FIXTURE-SENTINEL",
   "/dev/showcase/sizes": "השוואת גדלים",
   ...(Object.fromEntries(DEMO_PAGES.map((p) => [p, "FIXTURE-SENTINEL"])) as Record<(typeof DEMO_PAGES)[number], string>),
+  // D65: the email preview carries the sentinel and its own marker.
+  "/dev/email-preview/password-reset": "data-email-preview",
 };
 
 // Document, RSC navigation, prefetch and prerendered segment requests.
@@ -100,5 +104,31 @@ test.describe("/dev gate", () => {
     const followed = await request.get(`${CLOSED_URL}/dev/showcase/`);
     expect(followed.status()).toBe(404);
     expect(await followed.text()).not.toContain("FIXTURE-SENTINEL");
+  });
+});
+
+// Step 2 PR 2.5 (independent review P1): forms of a /dev page that the proxy's /dev matchers also
+// catch but whose path is not literally `/dev…`: a percent-encoded segment and the `_next/data`
+// route. With the gate closed each is a 404 without the page's content. Some builds do not serve
+// the `_next/data` form for App Router pages at all (a 404 with the gate open too); the test is
+// kept as a regression guard for builds that do.
+test.describe("/dev gate: encoded and data-route forms", () => {
+  onlyInProject("desktop");
+
+  const buildId = () => readFileSync(path.resolve(".next/BUILD_ID"), "utf8").trim();
+  const forms = (id: string) => [
+    "/%64ev/showcase",
+    "/%64ev/demo/login",
+    `/_next/data/${id}/dev/showcase.json`,
+    `/_next/data/${id}/%64ev/showcase.json`,
+    `/_next/data/${id}/dev/demo/login.json`,
+  ];
+
+  test("each form is a 404 without the fixture sentinel when the gate is closed", async ({ request }) => {
+    for (const url of forms(buildId())) {
+      const res = await request.get(`${CLOSED_URL}${url}`, { maxRedirects: 0 });
+      expect(res.status(), url).toBe(404);
+      expect(await res.text(), url).not.toContain("FIXTURE-SENTINEL");
+    }
   });
 });

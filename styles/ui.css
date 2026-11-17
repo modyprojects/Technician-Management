@@ -120,6 +120,8 @@ a.stat { text-decoration: none; }
 .side .me .me-who { min-width: 0; overflow-wrap: anywhere; }
 .side .me .signout { margin-inline-start: auto; flex: none; background: none; border: 1px solid var(--ink3); color: var(--on-dark2); border-radius: 8px; padding: 6px 10px; min-height: 30px; font-size: 12px; font-weight: 700; }
 .side .me .signout:hover, .side .me .signout:focus-visible { color: var(--on-dark); }
+/* Step 2 PR 2.5: the real "יציאה" is a <form> around the same button; it adds no box of its own. */
+.signout-form { display: contents; }
 /* Wide layout: the sidebar is as tall as the page, so its user block (and "יציאה") stays at the
    bottom of the window instead of the end of a long page (review UI-1; AU-02 PROPOSED: the demo's
    block scrolls with the page). The narrow top bar below keeps it in the flow. */
@@ -955,20 +957,39 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
    language (.card, .btn, .chip, .pill, .note, the drawer). */
 /* Sign-in "כניסה": a dark page with the white logo (outside G-08's existing headers: PROPOSED,
    owner question Q-D) and a white card, centred, 16px side gutter. */
-.login { min-height: 100%; background: var(--ink); display: flex; justify-content: center; align-items: flex-start; padding: 48px 16px 32px; }
-.login-col { width: min(400px, 100%); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+/* Owner UI corrections (2026-11-17): the logo and the subtitle stay at the top, 48px down as before;
+   the card is centred in the viewport by the two equal 1fr rows around it. The rows never shrink
+   below their content, so on a short screen the card moves down under the logo instead of
+   overlapping it, and the page grows (min-height, not height). */
+.login { min-height: 100%; background: var(--ink); display: flex; justify-content: center; padding: 0 16px; }
+.login-col { width: min(400px, 100%); display: grid; grid-template-rows: 1fr auto minmax(32px, 1fr); justify-items: center; }
+.login-brand { align-self: start; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 0 20px; }
 .brand-logo-login { width: 132px; }
 .login-product { color: var(--on-dark2); font-size: 14px; }
-.login-card { width: 100%; padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
-.login-card h1 { font-size: 22px; }
+.login-card { width: 100%; padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; }
+.login-card h1 { font-size: 22px; text-align: center; }
 .login-alert { background: var(--danger-bg); color: var(--danger-fg); border-radius: 8px; padding: 8px 12px; font-size: 14px; font-weight: 700; line-height: 1.5; }
 .login-form { display: flex; flex-direction: column; gap: 12px; }
 .login-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .login-form input { width: 100%; min-width: 0; font-weight: 400; }
 .login-form .btn { width: 100%; min-height: 44px; }
 .login-p { margin: 0; line-height: 1.5; }
-.login-signout { display: flex; }
-.login-states { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; padding-top: 4px; }
+.login-p-center { text-align: center; }
+.login-field { display: flex; flex-direction: column; gap: 4px; }
+/* The show/hide button sits inside the LTR password field, at its left edge (the end side of the
+   RTL page); the input keeps room for it. */
+.pw-field { position: relative; }
+.login-form .pw-field input { padding-left: 44px; }
+.pw-toggle { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0; }
+.pw-toggle:hover { color: var(--ink); }
+.login-signout { display: flex; justify-content: center; }
+/* Self-service password reset (D65): the centred text links of the sign-in, request and new-password
+   screens ("שכחתי סיסמה", "חזרה לכניסה", "בקשת קישור חדש") get a taller tap area; nothing else changes. */
+.login-link { display: inline-block; padding-block: 4px; }
+/* The request screen's heading takes focus when the answer replaces the form (a screen reader
+   announces it); it is no control, so no focus ring (as .set-head h2). */
+.login-card h1[tabindex="-1"]:focus { outline: none; }
+.login-states { align-self: start; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; padding-top: 16px; }
 .login-states a { color: var(--on-dark2); padding-block: 4px; }
 .login-states a[aria-current="page"] { color: var(--on-dark); font-weight: 700; }
 /* Temporary start card (Q18). */

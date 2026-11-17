@@ -207,3 +207,33 @@ export function signInFailureKind(error: unknown): "credentials" | "service" {
 
 /** The sign-in screen's message for a failed `signInWithPassword`. */
 export const signInFailureMessage = (error: unknown): string => SIGN_IN_MESSAGES[signInFailureKind(error)];
+
+/**
+ * Self-service password reset (D65; docs/security.md §4): every text of "שכחתי סיסמה", the request
+ * screen, the new-password screen and the notice on the sign-in screen, in the sign-in messages'
+ * style. The request screen answers the same for every address ("sent"), so nothing reveals whether
+ * an account exists; "deliveryOff" depends on the environment only.
+ */
+export const PASSWORD_RESET_MESSAGES = {
+  forgotLink: "שכחתי סיסמה",
+  updated: "הסיסמה עודכנה. אפשר להיכנס עם הסיסמה החדשה.",
+  forgotTitle: "איפוס סיסמה",
+  forgotIntro: "הזינו את כתובת המייל של החשבון, ונשלח אליה קישור לבחירת סיסמה חדשה.",
+  send: "שליחת קישור",
+  sending: "שולח…",
+  backToLogin: "חזרה לכניסה",
+  sentTitle: "בדקו את תיבת המייל",
+  sent: "אם קיים חשבון עם הכתובת הזו, נשלח אליה קישור לבחירת סיסמה חדשה. הקישור תקף לשעה ולשימוש אחד.",
+  deliveryOff: "שליחת מיילים עדיין אינה פעילה בסביבה הזו. לאיפוס סיסמה פנו ליוצר המערכת.",
+  resetTitle: "בחירת סיסמה חדשה",
+  newPassword: "סיסמה חדשה",
+  confirmPassword: "אימות סיסמה",
+  save: "שמירת הסיסמה",
+  saving: "שומר…",
+  invalidLink: "הקישור אינו תקף או שפג תוקפו.",
+  requestNew: "בקשת קישור חדש",
+  mismatch: "הסיסמאות אינן תואמות.",
+  weak: "הסיסמה אינה עומדת בדרישות. בחרו סיסמה ארוכה וחזקה יותר.",
+  same: "הסיסמה החדשה זהה לסיסמה הנוכחית. בחרו סיסמה אחרת.",
+  service: "איפוס הסיסמה אינו זמין כרגע. נסו שוב מאוחר יותר.",
+} as const;
