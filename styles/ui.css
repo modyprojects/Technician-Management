@@ -983,6 +983,9 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 .pw-toggle { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 0; }
 .pw-toggle:hover { color: var(--ink); }
 .login-signout { display: flex; justify-content: center; }
+/* Self-service password reset (D65): the centred text links of the sign-in, request and new-password
+   screens ("שכחתי סיסמה", "חזרה לכניסה", "בקשת קישור חדש") get a taller tap area; nothing else changes. */
+.login-link { display: inline-block; padding-block: 4px; }
 .login-states { align-self: start; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; padding-top: 16px; }
 .login-states a { color: var(--on-dark2); padding-block: 4px; }
 .login-states a[aria-current="page"] { color: var(--on-dark); font-weight: 700; }
