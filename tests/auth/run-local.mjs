@@ -5,6 +5,9 @@
 // time), and gives the secret key only to the Playwright process for the global setup, which removes
 // it from the environment before any test worker or the app server sees it. Nothing is printed.
 // Refuses a non-loopback URL. The default build (`npm run build`, no values) must be rebuilt after.
+// Another local stack (an isolated copy with its own project_id and ports): point SUPABASE_BIN at a
+// wrapper that runs the CLI with `--workdir <copy>`, and set AUTH_TEST_DB_CONTAINER to that stack's
+// database container (supabase_db_<project_id>) so the seeding writes into the same stack.
 import { execFileSync, spawnSync } from "node:child_process";
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
