@@ -44,7 +44,7 @@ function rowOf(c: CallListItem, today: string): CallsTableRow {
 
 // "קריאות" (V1 item 4; QA S-01, S-03, X-01, X-02; D38, D57 (1), D60 (1), (3), (4)): the office calls
 // list on real data (Migration 3 under the viewer's own session, RLS), as the approved demo
-// (docs/demo.html offCalls()/callsTable(); app/dev/demo/office/[role]/calls): search, technician
+// (docs/demo.html offCalls()/callsTable() and the UI demo's calls list): search, technician
 // filter and service-call status chips with counts in the URL (?q&status&tech&page), 40 rows per
 // page, newest first; "מס׳ פנייה" (D60 (3)); the call status (D38), never a cancelled visit
 // (D60 (1)); the visit's source and the 🧪 marker of test calls (SIM-14, SIM-15, D47). A row opens
