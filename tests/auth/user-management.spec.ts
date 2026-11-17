@@ -1,0 +1,389 @@
+import { randomBytes } from "node:crypto";
+import { expect, test, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
+import { ACTION_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
+import type { SeededUser } from "./global-setup";
+import { localSqlValue, seeded, signInAs, submitSignIn } from "./helpers";
+
+// The real unified user management (D60 (7); QA M-06, M-10, C-01, C-02, C-09, S-01) in a browser,
+// against a local production build and the LOCAL Supabase stack (tests/auth/run-local.mjs). Every
+// account is fictional and test-marked (D47, `@example.test`); the names start with "ת" so they sort
+// after the review screenshots' accounts. Sign-ins are counted (the local Auth allows 30 per
+// 5 minutes per IP): each actor signs in once per describe block and keeps his page.
+//   node tests/auth/run-local.mjs [--with-creator] tests/auth/user-management.spec.ts
+// The Creator's cases need --with-creator (TEMPORARY, Step 2 plan Q6) and are skipped without it.
+
+const USERS_PATH = "/office/settings/users";
+const run = randomBytes(3).toString("hex");
+const email = (tag: string) => `ui-e2e-${tag}-${run}@example.test`;
+const nav = (page: Page) => page.getByRole("navigation", { name: "ניווט ראשי" });
+
+function creator(): SeededUser | null {
+  const raw = process.env.AUTH_E2E_CREATOR;
+  return raw ? (JSON.parse(raw) as SeededUser) : null;
+}
+
+async function signedIn(browser: Browser, user: SeededUser): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext({ locale: "he-IL", viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await signInAs(page, user, /\/office$/);
+  return { context, page };
+}
+
+/** The row of the account named `name` in the users table. */
+const rowOf = (page: Page, name: string) => page.getByRole("row").filter({ has: page.getByText(name, { exact: true }) });
+
+/** A wide-layout cell of that row: "contact" (email and phone), "role" or "state". */
+const cell = (page: Page, name: string, which: "contact" | "role" | "state") =>
+  rowOf(page, name).getByRole("cell").nth({ contact: 1, role: 2, state: 3 }[which]);
+
+/** Opens "+ הוסף משתמש" and fills the dialog (the role first). */
+async function fillAdd(page: Page, v: { role: string; name: string; email: string; phone: string; color?: string }) {
+  await page.getByRole("button", { name: "+ הוסף משתמש" }).click();
+  const dialog = page.getByRole("dialog", { name: "הוספת משתמש" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("radio", { name: v.role, exact: true }).check();
+  await dialog.getByLabel("שם", { exact: true }).fill(v.name);
+  await dialog.getByRole("textbox", { name: /^מייל/ }).fill(v.email);
+  await dialog.getByLabel("טלפון עבודה").fill(v.phone);
+  if (v.color) await dialog.getByRole("radio", { name: v.color, exact: true }).check();
+  return dialog;
+}
+
+/** Captures the next server-action POST the page sends (its action id and body), for replay tests. */
+function nextActionRequest(page: Page): Promise<Request> {
+  return page.waitForRequest((r) => r.method() === "POST" && Boolean(r.headers()["next-action"]));
+}
+
+test.describe.serial("Manager: Settings › משתמשים (Technician and Customer Service only)", () => {
+  let context: BrowserContext;
+  let page: Page;
+  const techName = `תומר טכנאי ${run}`;
+  const csName = `תהילה שירות ${run}`;
+  let captured: { action: string; body: string } | null = null;
+
+  test.beforeAll(async ({ browser }) => {
+    ({ context, page } = await signedIn(browser, seeded().mgr));
+  });
+  test.afterAll(async () => {
+    await context?.close();
+  });
+
+  test("\"הגדרות\" opens the user management; no Manager or Creator row, no Creator-only control, no requests", async () => {
+    await nav(page).getByRole("link", { name: "הגדרות" }).click();
+    await expect(page).toHaveURL(new RegExp(`${USERS_PATH}$`));
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים", exact: true })).toBeVisible();
+    await expect(nav(page).getByRole("link", { name: "הגדרות" })).toHaveAttribute("aria-current", "page");
+    const table = page.getByRole("table", { name: "משתמשים: טכנאים ושירות לקוחות" });
+    await expect(table).toBeVisible();
+    // The seeded Customer Service and Technician accounts are listed, the Manager himself is not.
+    const users = seeded();
+    await expect(rowOf(page, users.cs.name).first()).toBeVisible();
+    await expect(rowOf(page, users.mgr.name)).toHaveCount(0);
+    for (const pill of ["מנהל", "יוצר"]) await expect(table.locator(".pill").getByText(pill, { exact: true })).toHaveCount(0);
+    for (const name of [/^סיסמה/, /^מייל/, /^תפקיד/, /^מחיקה/]) await expect(page.getByRole("button", { name })).toHaveCount(0);
+    await expect(page.getByText("בקשות לאישור")).toHaveCount(0);
+    await expect(page.getByText("התראות חשבונות")).toHaveCount(0);
+  });
+
+  test("\"+ הוסף משתמש\": a role must be chosen; only Technician and Customer Service are offered", async () => {
+    await page.getByRole("button", { name: "+ הוסף משתמש" }).click();
+    const dialog = page.getByRole("dialog", { name: "הוספת משתמש" });
+    await expect(dialog.getByRole("radio")).toHaveCount(2);
+    await expect(dialog.getByRole("radio", { name: "טכנאי", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: "שירות לקוחות", exact: true })).toBeVisible();
+    const roles = dialog.getByRole("group", { name: "תפקיד" });
+    await expect(roles.getByText("מנהל", { exact: true })).toHaveCount(0);
+    await expect(roles.getByText(/יוצר/)).toHaveCount(0);
+    // No password field (D50; Q1).
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+    await dialog.getByRole("button", { name: "הוספה" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("יש לבחור תפקיד");
+    // A test account's address stays in example.test (D47).
+    await dialog.getByRole("radio", { name: "שירות לקוחות", exact: true }).check();
+    await dialog.getByLabel("שם", { exact: true }).fill("ניסיון");
+    await dialog.getByRole("textbox", { name: /^מייל/ }).fill("someone@example.com");
+    await dialog.getByLabel("טלפון עבודה").fill("050-0000000");
+    await dialog.getByRole("button", { name: "הוספה" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("textbox", { name: /^מייל/ })).toHaveAttribute("aria-invalid", "true");
+    // Escape closes it; focus returns to the opener.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "+ הוסף משתמש" })).toBeFocused();
+  });
+
+  test("adds a Technician (colour, device) and a Customer Service user at once, test-marked", async () => {
+    const dialog = await fillAdd(page, { role: "טכנאי", name: techName, email: email("tech"), phone: "050-1234567" });
+    // The technician fields appear with the role.
+    await expect(dialog.getByRole("group", { name: "פרטי טכנאי" })).toBeVisible();
+    await dialog.getByRole("button", { name: "הוספה" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("יש לבחור צבע ביומן");
+    await dialog.getByRole("radio", { name: "כחול", exact: true }).check();
+    await dialog.getByRole("button", { name: "הוספה" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(`המשתמש טכנאי ${techName} נוצר.`)).toBeVisible();
+    const techRow = rowOf(page, techName);
+    await expect(techRow).toBeVisible();
+    await expect(techRow.getByText("כחול")).toBeVisible();
+    await expect(techRow.getByText("🧪")).toBeVisible();
+    expect(localSqlValue(`select is_test || '|' || role || '|' || is_active from public.profiles where full_name = '${techName}'`)).toBe("true|technician|true");
+    expect(localSqlValue(`select color || '|' || accepts_invitations from public.technicians t join public.profiles p on p.id = t.profile_id where p.full_name = '${techName}'`)).toBe("t-s|true");
+
+    const requestPromise = nextActionRequest(page);
+    const cs = await fillAdd(page, { role: "שירות לקוחות", name: csName, email: email("cs"), phone: "050-7654321" });
+    await expect(cs.getByRole("group", { name: "פרטי טכנאי" })).toHaveCount(0);
+    await cs.getByRole("button", { name: "הוספה" }).click();
+    const request = await requestPromise;
+    captured = { action: request.headers()["next-action"] ?? "", body: request.postData() ?? "" };
+    await expect(cs).toHaveCount(0);
+    await expect(page.getByText(`המשתמש שירות לקוחות ${csName} נוצר.`)).toBeVisible();
+    await expect(rowOf(page, csName)).toBeVisible();
+    // Created directly: no Creator approval, no request row (C-02).
+    expect(localSqlValue(`select is_active || '|' || is_test from public.profiles where full_name = '${csName}'`)).toBe("true|true");
+  });
+
+  test("edits a user's phone; deactivates with the confirmation, then activates again", async () => {
+    await rowOf(page, csName).getByRole("button", { name: /^עריכה/ }).click();
+    const edit = page.getByRole("dialog", { name: `עריכת פרטים · ${csName}` });
+    await edit.getByLabel("טלפון עבודה").fill("03-5550000");
+    await edit.getByRole("button", { name: "שמירה" }).click();
+    await expect(edit).toHaveCount(0);
+    await expect(page.getByText(`הפרטים של ${csName} עודכנו ונרשמו ביומן הביקורת.`)).toBeVisible();
+    await expect(cell(page, csName, "contact")).toContainText("03-5550000");
+
+    await rowOf(page, techName).getByRole("button", { name: /^השבתה/ }).click();
+    const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${techName}` });
+    await expect(confirm).toContainText("משתמש לא פעיל לא יכול להיכנס לאפליקציה");
+    await expect(confirm).toContainText("ההיסטוריה שלו (ביקורים ופעולות) נשמרת");
+    await expect(confirm).toContainText("היוצר מקבל התראה באפליקציה");
+    await confirm.getByRole("button", { name: "השבתה" }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(cell(page, techName, "state")).toHaveText("לא פעיל");
+    expect(localSqlValue(`select is_active from public.profiles where full_name = '${techName}'`)).toBe("f");
+    // The history row stays (no deletion): the profile is still there, inactive.
+    await rowOf(page, techName).getByRole("button", { name: /^הפעלה/ }).click();
+    await expect(page.getByText(`החשבון של ${techName} הופעל.`)).toBeVisible();
+    expect(localSqlValue(`select is_active from public.profiles where full_name = '${techName}'`)).toBe("t");
+  });
+
+  test("a tampered submission is refused by the server: a Customer Service creation sent as a Manager", async () => {
+    const tampered = `תמנע מנהל ${run}`;
+    const address = email("tampered");
+    await page.route(`**${USERS_PATH}`, async (route) => {
+      const r = route.request();
+      if (r.method() === "POST" && r.headers()["next-action"]) {
+        await route.continue({ postData: (r.postData() ?? "").replace('"role":"cs"', '"role":"mgr"') });
+      } else {
+        await route.continue();
+      }
+    });
+    const dialog = await fillAdd(page, { role: "שירות לקוחות", name: tampered, email: address, phone: "050-1111111" });
+    await dialog.getByRole("button", { name: "הוספה" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(ACTION_MESSAGES.forbidden);
+    await page.unroute(`**${USERS_PATH}`);
+    await page.keyboard.press("Escape");
+    expect(localSqlValue(`select count(*) from public.profiles where full_name = '${tampered}'`)).toBe("0");
+    expect(localSqlValue(`select count(*) from public.account_requests where email = '${address}'`)).toBe("0");
+  });
+
+  test("a tampered deactivation aimed at a Manager account is refused; nothing changes", async () => {
+    const target = seeded().resetMgr;
+    const csId = localSqlValue(`select id from public.profiles where full_name = '${csName}'`);
+    await page.route(`**${USERS_PATH}`, async (route) => {
+      const r = route.request();
+      if (r.method() === "POST" && r.headers()["next-action"]) {
+        await route.continue({ postData: (r.postData() ?? "").replace(csId, target.id) });
+      } else {
+        await route.continue();
+      }
+    });
+    await rowOf(page, csName).getByRole("button", { name: /^השבתה/ }).click();
+    const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${csName}` });
+    await confirm.getByRole("button", { name: "השבתה" }).click();
+    await expect(confirm.getByRole("alert")).toHaveText(ACTION_MESSAGES.forbidden);
+    await page.unroute(`**${USERS_PATH}`);
+    await page.keyboard.press("Escape");
+    expect(localSqlValue(`select is_active from public.profiles where id = '${target.id}'`)).toBe("t");
+    expect(localSqlValue(`select is_active from public.profiles where id = '${csId}'`)).toBe("t");
+  });
+
+  test("Customer Service replaying the Manager's own action request is refused (the caller is the session's)", async ({ browser }) => {
+    expect(captured?.action).toBeTruthy();
+    const { context: csContext, page: csPage } = await signedIn(browser, seeded().cs);
+    try {
+      const address = email("replay");
+      const body = (captured?.body ?? "").replace(/"email":"[^"]*"/, `"email":"${address}"`).replace(/"name":"[^"]*"/, `"name":"תשובה ${run}"`);
+      const res = await csPage.request.post(USERS_PATH, {
+        headers: { "next-action": captured?.action ?? "", "content-type": "text/plain;charset=UTF-8", accept: "text/x-component", origin: new URL(csPage.url()).origin },
+        data: body,
+      });
+      const text = await res.text();
+      expect(text).toContain(ACTION_MESSAGES.forbidden);
+      expect(localSqlValue(`select count(*) from public.account_requests where email = '${address}'`)).toBe("0");
+    } finally {
+      await csContext.close();
+    }
+  });
+});
+
+test.describe("Customer Service and Technician cannot reach the settings routes", () => {
+  test("Customer Service: no \"הגדרות\" item; the route shows \"אין הרשאה\" and no account data", async ({ browser }) => {
+    const { context, page } = await signedIn(browser, seeded().cs);
+    try {
+      await expect(nav(page).getByRole("link")).toHaveText(["קריאות"]);
+      for (const path of ["/office/settings", USERS_PATH]) {
+        await page.goto(path);
+        await expect(page).toHaveURL(new RegExp(`${USERS_PATH}$`));
+        await expect(page.getByRole("heading", { level: 2, name: "אין הרשאה" })).toBeVisible();
+        await expect(page.getByRole("table")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "+ הוסף משתמש" })).toHaveCount(0);
+        expect(await page.content()).not.toContain(seeded().tech.name);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Technician: the settings routes send him to the no-access state of the sign-in screen", async ({ browser }) => {
+    const context = await browser.newContext({ locale: "he-IL" });
+    const page = await context.newPage();
+    try {
+      await signInAs(page, seeded().tech, /\/tech$/);
+      for (const path of ["/office/settings", USERS_PATH]) {
+        await page.goto(path);
+        await expect(page).toHaveURL(/\/login\?state=no-access$/);
+        await expect(page.getByRole("table")).toHaveCount(0);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+test.describe.serial("Creator: Settings › משתמשים והרשאות (every role)", () => {
+  test.skip(!creator(), "needs the local Creator: node tests/auth/run-local.mjs --with-creator (Step 2 plan Q6)");
+  let context: BrowserContext;
+  let page: Page;
+  const name = `תמר מנהלת ${run}`;
+  const first = email("mgr");
+  const second = email("mgr-new");
+  const password = `${randomBytes(12).toString("base64url")}Aa1!`;
+
+  test.beforeAll(async ({ browser }) => {
+    const c = creator();
+    if (!c) return;
+    ({ context, page } = await signedIn(browser, c));
+  });
+  test.afterAll(async () => {
+    await context?.close();
+  });
+
+  /** A fresh browser that tries to sign in as the new account; returns the final URL. */
+  async function trySignIn(browser: Browser, address: string): Promise<{ url: string; alert: string | null }> {
+    const ctx = await browser.newContext({ locale: "he-IL" });
+    const p = await ctx.newPage();
+    try {
+      await submitSignIn(p, address, password);
+      await p.waitForURL(/\/(office|login)(\?.*)?$/);
+      await p.waitForLoadState("networkidle");
+      const alert = (await p.locator(".login-alert").count()) > 0 ? await p.locator(".login-alert").textContent() : null;
+      return { url: p.url(), alert };
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  test("the unified list with every role, the notices card, his own row without Creator-only actions", async () => {
+    await page.goto(USERS_PATH);
+    await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים והרשאות", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "התראות חשבונות" })).toBeVisible();
+    await expect(page.getByText("בקשות לאישור")).toHaveCount(0);
+    const own = rowOf(page, creator()?.name ?? "");
+    await expect(own.getByText("החשבון שלך")).toBeVisible();
+    await expect(own.getByRole("button")).toHaveText(["עריכה"]);
+    // The Manager seeded by global-setup is listed for the Creator.
+    await expect(rowOf(page, seeded().mgr.name).first()).toBeVisible();
+  });
+
+  test("adds a Manager; the Creator role is shown but cannot be chosen", async () => {
+    await page.getByRole("button", { name: "+ הוסף משתמש" }).click();
+    const dialog = page.getByRole("dialog", { name: "הוספת משתמש" });
+    await expect(dialog.getByRole("radio", { name: "מנהל", exact: true })).toBeEnabled();
+    await expect(dialog.getByRole("radio", { name: /^יוצר/ })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    const d = await fillAdd(page, { role: "מנהל", name, email: first, phone: "052-1112223" });
+    await d.getByRole("button", { name: "הוספה" }).click();
+    await expect(d).toHaveCount(0);
+    await expect(page.getByText(`המשתמש מנהל ${name} נוצר.`)).toBeVisible();
+    await expect(cell(page, name, "contact")).toContainText(first);
+  });
+
+  test("changes the role (Manager → Customer Service), sets a password and changes the sign-in email", async () => {
+    await rowOf(page, name).getByRole("button", { name: /^תפקיד/ }).click();
+    const role = page.getByRole("dialog", { name: `שינוי תפקיד · ${name}` });
+    await expect(role.getByRole("radio", { name: "מנהל", exact: true })).toHaveCount(0);
+    await expect(role.getByRole("radio", { name: /יוצר/ })).toHaveCount(0);
+    await role.getByRole("radio", { name: "שירות לקוחות", exact: true }).check();
+    await role.getByRole("button", { name: "שינוי התפקיד" }).click();
+    await expect(role).toHaveCount(0);
+    await expect(page.getByText(`התפקיד של ${name} שונה לשירות לקוחות.`)).toBeVisible();
+    expect(localSqlValue(`select role from public.profiles where full_name = '${name}'`)).toBe("customer_service");
+
+    await rowOf(page, name).getByRole("button", { name: /^סיסמה/ }).click();
+    const pw = page.getByRole("dialog", { name: `הגדרת סיסמה · ${name}` });
+    const field = pw.getByLabel("סיסמה חדשה");
+    await expect(field).toHaveAttribute("autocomplete", "new-password");
+    await field.fill(password);
+    await pw.getByRole("button", { name: "שמירת הסיסמה" }).click();
+    await expect(pw).toHaveCount(0);
+    await expect(page.getByText(`הסיסמה של ${name} נקבעה. היא לא תוצג שוב.`)).toBeVisible();
+    expect(await page.content()).not.toContain(password);
+
+    await rowOf(page, name).getByRole("button", { name: /^מייל/ }).click();
+    const mail = page.getByRole("dialog", { name: `שינוי כתובת מייל · ${name}` });
+    await mail.getByLabel("מייל חדש").fill(second);
+    await mail.getByRole("button", { name: "שמירת המייל" }).click();
+    await expect(mail).toHaveCount(0);
+    await expect(page.getByText(`כתובת המייל לכניסה של ${name} עודכנה.`)).toBeVisible();
+  });
+
+  test("the account signs in with the new email and the password the Creator set", async ({ browser }) => {
+    const r = await trySignIn(browser, second);
+    expect(r.url).toMatch(/\/office$/);
+  });
+
+  test("deactivated: sign-in refused; reactivated: sign-in works again", async ({ browser }) => {
+    await rowOf(page, name).getByRole("button", { name: /^השבתה/ }).click();
+    const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${name}` });
+    await expect(confirm).not.toContainText("היוצר מקבל התראה");
+    await confirm.getByRole("button", { name: "השבתה" }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(cell(page, name, "state")).toHaveText("לא פעיל");
+    const refused = await trySignIn(browser, second);
+    expect(refused.url).toMatch(/\/login$/);
+    expect(refused.alert).toBe(SIGN_IN_MESSAGES.credentials);
+
+    await rowOf(page, name).getByRole("button", { name: /^הפעלה/ }).click();
+    await expect(page.getByText(`החשבון של ${name} הופעל.`)).toBeVisible();
+    const back = await trySignIn(browser, second);
+    expect(back.url).toMatch(/\/office$/);
+  });
+
+  test("deletes after the explicit confirmation: the row is gone, sign-in refused, history kept", async ({ browser }) => {
+    await rowOf(page, name).getByRole("button", { name: /^מחיקה/ }).click();
+    const confirm = page.getByRole("dialog", { name: `מחיקת החשבון · ${name}` });
+    const button = confirm.getByRole("button", { name: "מחיקה סופית" });
+    await expect(button).toBeDisabled();
+    await confirm.getByRole("checkbox").check();
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText(`החשבון של ${name} נמחק. ההתחברות חסומה וההיסטוריה שלו נשמרת.`)).toBeVisible();
+    await expect(rowOf(page, name)).toHaveCount(0);
+    // Option A: the profile stays (history and attribution), marked deleted and inactive.
+    expect(localSqlValue(`select (deleted_at is not null) || '|' || is_active from public.profiles where full_name = '${name}'`)).toBe("true|false");
+    const refused = await trySignIn(browser, second);
+    expect(refused.url).toMatch(/\/login$/);
+    expect(refused.alert).toBe(SIGN_IN_MESSAGES.credentials);
+  });
+});

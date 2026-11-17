@@ -14,7 +14,7 @@
 // create is never touched (the setup stops and asks for `supabase db reset`).
 import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
 export type SeededUsers = Record<"mgr" | "cs" | "tech", SeededUser> & { creator: SeededUser | null; techRow: string };
@@ -67,31 +67,41 @@ insert into public.technicians (id, profile_id, is_test, display_name, color, ou
 commit;
 `);
 
-  let creator: SeededUser | null = null;
-  if (process.env.ACCOUNTS_TEST_LOCAL_CREATOR === "1") {
-    const password = randomBytes(18).toString("base64url");
-    const existing = psql("select p.id || '|' || coalesce(u.email, '') from public.profiles p join auth.users u on u.id = p.id where p.role = 'creator';");
-    if (existing) {
-      const [id = "", email = ""] = existing.split("\n")[0]?.split("|") ?? [];
-      if (existing.includes("\n") || !CREATOR_EMAIL.test(email)) {
-        throw new Error("a Creator that these tests did not create exists in the local database: run `supabase db reset` first");
-      }
-      const { error } = await admin.auth.admin.updateUserById(id, { password });
-      if (error) throw new Error(`could not reset the local test Creator's password: ${error.code ?? "error"}`);
-      creator = { id, email, password, name: "יוצר ניהול-משתמשים" };
-    } else {
-      const email = `accounts-e2e-creator-${run}@example.test`;
-      const { data, error } = await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        app_metadata: { is_test: true, data_source: "automated_test" },
-      });
-      if (error || !data.user) throw new Error(`could not create the local test Creator's Auth user: ${error?.code ?? "no user"}`);
-      psql(`select private.bootstrap_first_creator(${sqlText(data.user.id)}, ${sqlText("יוצר ניהול-משתמשים")});`);
-      creator = { id: data.user.id, email, password, name: "יוצר ניהול-משתמשים" };
-    }
-  }
+  const creator = process.env.ACCOUNTS_TEST_LOCAL_CREATOR === "1" ? await ensureLocalCreator(admin, run) : null;
 
   process.env.ACCOUNTS_E2E_USERS = JSON.stringify({ ...users, creator, techRow } satisfies SeededUsers);
+}
+
+/**
+ * TEMPORARY, Step 2 plan Q6 (open owner question): the fictional local Creator of the Creator's
+ * cases, shared by this suite and the browser tests of tests/auth (`--with-creator` in both). The
+ * database refuses a test-marked Creator (`profiles_no_test_creator`), so it is real-marked in
+ * `profiles` (its Auth user carries the test marker) and made the only way a Creator can be made,
+ * `private.bootstrap_first_creator` as `postgres`, locally. Reused by later runs (its password is
+ * reset per run); a Creator these tests did not create is never touched (the setup stops and asks
+ * for `supabase db reset`). LOCAL STACK ONLY: `admin` is the caller's local secret-key client.
+ */
+export async function ensureLocalCreator(admin: SupabaseClient, run: string): Promise<SeededUser> {
+  const name = "יוצר ניהול-משתמשים";
+  const password = randomBytes(18).toString("base64url");
+  const existing = psql("select p.id || '|' || coalesce(u.email, '') from public.profiles p join auth.users u on u.id = p.id where p.role = 'creator';");
+  if (existing) {
+    const [id = "", email = ""] = existing.split("\n")[0]?.split("|") ?? [];
+    if (existing.includes("\n") || !CREATOR_EMAIL.test(email)) {
+      throw new Error("a Creator that these tests did not create exists in the local database: run `supabase db reset` first");
+    }
+    const { error } = await admin.auth.admin.updateUserById(id, { password });
+    if (error) throw new Error(`could not reset the local test Creator's password: ${error.code ?? "error"}`);
+    return { id, email, password, name };
+  }
+  const email = `accounts-e2e-creator-${run}@example.test`;
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    app_metadata: { is_test: true, data_source: "automated_test" },
+  });
+  if (error || !data.user) throw new Error(`could not create the local test Creator's Auth user: ${error?.code ?? "no user"}`);
+  psql(`select private.bootstrap_first_creator(${sqlText(data.user.id)}, ${sqlText(name)});`);
+  return { id: data.user.id, email, password, name };
 }
