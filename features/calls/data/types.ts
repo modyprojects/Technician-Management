@@ -83,6 +83,13 @@ export type CallDetail = TestMarker & {
   visits: VisitRecord[];
 };
 
+/**
+ * A row of the real calls list (Supabase adapter): D60 (1), a cancelled visit is never shown, so
+ * `visitCount` counts the other visits and `latestVisit` is the latest of them, null when every visit
+ * was cancelled (the call is then "ממתינה לשיבוץ", D38). A CallSummary is one of these.
+ */
+export type CallListItem = Omit<CallSummary, "latestVisit"> & { latestVisit: CallVisitBrief | null };
+
 /** Calls-list query. Every field is optional; adapters validate and clamp it. */
 export type CallFilter = {
   /** Search over request number, customer number, customer name, phone (digits too), SKU, product name and city. */
@@ -106,7 +113,16 @@ export type CallsPage = Page<CallSummary> & {
   statusCounts: Record<CallStatus, number>;
   /** Every call the viewer may see ("הכל"). */
   allCount: number;
+  /**
+   * True when the list was searched within a bounded window of the newest calls (the real adapter
+   * reads at most a fixed number per request) and more calls matched the status filter than it
+   * holds: the screen says so instead of implying the result is complete.
+   */
+  capped?: boolean;
 };
+
+/** A page of the real calls list (its rows may have no shown visit, D60 (1)). */
+export type CallsListPage = Omit<CallsPage, "items"> & { items: CallListItem[] };
 
 // ---------------------------------------------------------------------------------------------
 // "חזרו מהשטח" (back from field; spec office screens, OF-16)
