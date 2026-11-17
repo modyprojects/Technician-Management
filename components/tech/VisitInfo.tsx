@@ -12,6 +12,7 @@ import type { VisitDetail } from "@/features/visits/data/types";
 // - TE-11 (ADD): "ביקור בתשלום" marker when the warranty is "לא".
 // - SIM-16, SIM-17: 🧪 badge on a test customer (next to the customer number) and product.
 // - Added: the second phone when the invitation has one.
+// - Added (Step 3, the coordinator's visit-card list): "סוג קריאה" ("תיקון" / "התקנה", D48).
 // Presentational: the caller passes the pickup place's "Waze ›" element.
 
 export const WARRANTY_NOT_GIVEN = "לא צוין";
@@ -79,6 +80,11 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           )}
         </span>
       </Row>
+      {call.type && (
+        <Row k="סוג קריאה">
+          <span>{call.type}</span>
+        </Row>
+      )}
       <Row k="מוצר">
         <span>
           {p.name}
@@ -105,9 +111,11 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           )}
         </span>
       </Row>
-      <Row k="נציגה מטפלת">
-        <span>{call.representative.name}</span>
-      </Row>
+      {call.representative.name && (
+        <Row k="נציגה מטפלת">
+          <span>{call.representative.name}</span>
+        </Row>
+      )}
     </section>
   );
 }

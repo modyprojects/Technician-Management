@@ -29,7 +29,7 @@ export type CallDetailTech = { name: string; color: string; phone: string };
 /** An open visit (scheduled, en route, in progress) in the assignment card. */
 export type ScheduledVisit = {
   n: number;
-  task: number;
+  task: number | string;
   status: VisitStatus;
   /** "היום · 09:00–11:00" or "חמישי 22.10 · 09:00–10:30". */
   when: string;
