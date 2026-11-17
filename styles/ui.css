@@ -1078,9 +1078,3 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
   .sim-row > label { padding-top: 0; }
 }
 /* end office-unparsed */
-
-/* test-badge */
-/* The compact test-data badge (components/ui/TestBadge.tsx; owner feedback 2026-11-17, QA T-06): a
-   small muted text pill "🧪 בדיקה" instead of the icon alone, which read as a pencil. */
-.pill.test-badge { background: var(--tint); color: var(--muted); border: 1px solid var(--line); padding: 0 6px; font-size: 11px; line-height: 18px; vertical-align: 1px; }
-/* end test-badge */
