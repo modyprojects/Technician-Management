@@ -1,9 +1,10 @@
 "use client";
 
-// The calls list's interactive controls for the UI demo (D53). The rows come from the server,
-// already filtered and paged by the data-access layer (calls.list); this component only keeps
-// the controls in the URL (?q=&status=&tech=&page=), so the same query works against Supabase
-// later (OF-04). Search is debounced; chips and the technician select update the URL at once.
+// The calls list's interactive controls, shared by the real "קריאות" (app/(office)/office/calls) and
+// the UI demo (D53). The rows come from the server, already filtered and paged by the data-access
+// layer (calls.list); this component only keeps the controls in the URL (?q=&status=&tech=&page=),
+// so the same query reaches the Supabase adapter (OF-04). Search is debounced; chips and the
+// technician select update the URL at once.
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { CallFilters, type CallStatusFilter, type CallStatusOption, type CallTechOption } from "@/components/office/CallFilters";
