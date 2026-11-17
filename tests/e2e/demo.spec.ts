@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAccountEmailError } from "@/features/accounts/data/validate";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage, verticalPageOverflow } from "./helpers";
 
@@ -1251,7 +1252,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await form.getByLabel("הרשאה").selectOption("mgr");
     // Test users get example.test addresses only (D47): the simulated command refuses others.
     await form.getByRole("button", { name: "יצירת חשבון" }).click();
-    await expect(form.getByRole("alert")).toContainText("רק כתובות @example.test");
+    await expect(form.getByRole("alert")).toContainText(testAccountEmailError("") ?? "");
     await expect(users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" })).toHaveCount(0);
 
     await form.getByLabel("מייל", { exact: true }).fill("manager2@example.test");
@@ -3937,7 +3938,7 @@ test.describe("Step 2 credentials (Creator only)", () => {
     const save = dialog.getByRole("button", { name: "שמירת המייל" });
     await field.fill("hadas@example.com");
     await save.click();
-    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("alert")).toHaveText(testAccountEmailError("") ?? "");
     await field.fill("REP2@example.test");
     await save.click();
     await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
@@ -4170,7 +4171,7 @@ test.describe("Step 2 routine edit", () => {
     const outlook = dialog.getByLabel("מייל ב-Outlook");
     await outlook.fill("a@b.com");
     await save.click();
-    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("alert")).toHaveText(testAccountEmailError("") ?? "");
     await expect(outlook).toBeFocused();
     await outlook.fill("yoram@example.test");
     await save.click();

@@ -22,12 +22,12 @@ import { flushSync } from "react-dom";
 import { useAccountCommands } from "@/features/accounts/commands-context";
 import { ACCOUNT_ROLE_LABELS, DEFAULT_TECHNICIAN_DEVICE, type NewAccountRole, type UserAccount } from "@/features/accounts/data/types";
 import {
+  accountEmailError,
   ACCOUNT_NAME_MAX,
   accountNameError,
   DEVICE_MAX,
   deviceError,
   EMAIL_MAX,
-  emailError,
   PHONE_MAX,
   phoneError,
   TEST_EMAIL_DOMAIN,
@@ -119,7 +119,7 @@ export function AccountAddDialog({
     const checks: [Field, string | null][] = [
       ["role", role === null ? ROLE_REQUIRED : null],
       ["name", accountNameError(name)],
-      ["email", emailError(email) ?? testAccountEmailError(email)],
+      ["email", accountEmailError(email) ?? testAccountEmailError(email)],
       ["phone", phoneError(phone)],
     ];
     if (tech) {
@@ -184,14 +184,17 @@ export function AccountAddDialog({
         aria-describedby={error && !error.field ? errorId : undefined}
       >
         <div className="db">
+          {/* A radio group (review N1): aria-required and aria-invalid belong to role="radiogroup". */}
           <fieldset
             ref={roleRef}
             className="set-swatches acct-roles"
+            role="radiogroup"
+            aria-labelledby={`${id}-role-legend`}
             aria-required="true"
             aria-invalid={error?.field === "role" ? true : undefined}
             aria-describedby={error?.field === "role" ? errorId : undefined}
           >
-            <legend>תפקיד</legend>
+            <legend id={`${id}-role-legend`}>תפקיד</legend>
             {roles.map((r) => (
               <label key={r} className="set-swatch-opt">
                 <input

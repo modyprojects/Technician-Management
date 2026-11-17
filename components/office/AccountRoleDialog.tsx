@@ -71,14 +71,17 @@ export function AccountRoleDialog({
             <span>התפקיד הנוכחי:</span>
             <b>{ACCOUNT_ROLE_LABELS[account.role]}</b>
           </div>
+          {/* A radio group (review N1): aria-required and aria-invalid belong to role="radiogroup". */}
           <fieldset
             ref={groupRef}
             className="set-swatches acct-roles"
+            role="radiogroup"
+            aria-labelledby={`${id}-role-legend`}
             aria-required="true"
             aria-invalid={error?.field ? true : undefined}
             aria-describedby={error?.field ? errorId : undefined}
           >
-            <legend>תפקיד חדש</legend>
+            <legend id={`${id}-role-legend`}>תפקיד חדש</legend>
             {choices.map((r) => (
               <label key={r} className="set-swatch-opt">
                 <input

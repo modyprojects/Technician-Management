@@ -62,10 +62,12 @@ export interface AccountsQueries {
    */
   get(accountId: AccountId): Promise<AccountListEntry | null>;
   /**
-   * The viewer's own open creation intents (`direct_create`, approved, no account bound yet), newest
-   * first; paged (default 40, at most 100). Production: `requested_by` is the session's user (RLS
-   * lets a requester read his own rows). The demo adapter has no session and returns every
-   * fictional intent: its loader filters by the viewer before anything reaches a page (PR 2.3).
+   * Open creation intents (`direct_create`, approved, no account bound yet), newest first; paged
+   * (default 40, at most 100). Production: the Manager's own (`requested_by` is the session's user;
+   * RLS lets a requester read his own rows); the Creator's view holds every open intent with its
+   * requester (review S3: he may cancel anyone's; completing stays the requester's). The demo adapter
+   * has no session and returns every fictional intent: its loader filters by the viewer before
+   * anything reaches a page (PR 2.3).
    */
   openCreations(query?: PageRequest): Promise<Page<CreationIntent>>;
   /**

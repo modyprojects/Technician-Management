@@ -27,12 +27,12 @@ import { flushSync } from "react-dom";
 import type { AccountAdminScope, TechnicianEditField } from "@/features/accounts/data/offers";
 import type { UserAccount } from "@/features/accounts/data/types";
 import {
+  accountEmailError,
   ACCOUNT_NAME_MAX,
   accountNameError,
   DEVICE_MAX,
   deviceError,
   EMAIL_MAX,
-  emailError,
   INVITATION_ALIAS_MAX,
   invitationAliasError,
   MANAGER_TECHNICIAN_FIELDS_PENDING,
@@ -149,7 +149,7 @@ export function AccountEditForm({
       checks.push(["device", device.trim() === "" ? null : deviceError(device)]);
       if (creatorTech) {
         // A test-marked technician keeps an example.test Outlook address (D47), as the command checks.
-        checks.push(["outlook", emailError(outlook) ?? (tech.isTest !== false ? testAccountEmailError(outlook) : null)]);
+        checks.push(["outlook", accountEmailError(outlook) ?? (tech.isTest !== false ? testAccountEmailError(outlook) : null)]);
       }
     }
     const hit = checks.find(([, text]) => text !== null);

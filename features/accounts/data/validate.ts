@@ -68,6 +68,17 @@ export function emailError(email: string): string | null {
 }
 
 /**
+ * An account's address (creation, the Creator's email change, a Technician's Outlook email):
+ * emailError, and printable ASCII only (review N3). The app lower-cases an address in JavaScript and
+ * the database with `lower()`; the two agree only on ASCII, and a creation whose stored address
+ * differed from the app's spelling would leave an intent the app refuses to finish. Internationalized
+ * addresses are not supported. Sign-in and the password reset keep emailError (they only look up).
+ */
+export function accountEmailError(email: string): string | null {
+  return emailError(email) ?? (/^[\x21-\x7e]+$/.test(email.trim()) ? null : "כתובת מייל לא תקינה");
+}
+
+/**
  * A work phone as the database CHECK allows it (`profiles.work_phone ~ '^[0-9+ -]{3,20}$'`): digits,
  * "+", "-" and the ASCII space only (never a tab, a line break or another space character), at most
  * 20 characters after trimming, with at least three digits.
@@ -87,7 +98,8 @@ export const TEST_EMAIL_DOMAIN = "example.test";
  */
 export function testAccountEmailError(email: string): string | null {
   const t = typeof email === "string" ? email.trim().toLowerCase() : "";
-  return t.endsWith(`@${TEST_EMAIL_DOMAIN}`) ? null : `נתוני בדיקה: רק כתובות @${TEST_EMAIL_DOMAIN}`;
+  // The left-to-right mark keeps "@example.test" in one piece in a right-to-left line (review S4).
+  return t.endsWith(`@${TEST_EMAIL_DOMAIN}`) ? null : `נתוני בדיקה: רק כתובות \u200E@${TEST_EMAIL_DOMAIN}`;
 }
 
 /**
@@ -101,7 +113,7 @@ export function newAccountError(input: NewAccountInput): string | null {
   const role: unknown = input?.role;
   return (
     accountNameError(input?.name) ??
-    emailError(input.email) ??
+    accountEmailError(input.email) ??
     phoneError(input.phone) ??
     (isNewAccountRole(role) ? null : role === "creator" ? CREATOR_ACCOUNT_PENDING : "תפקיד לא תקין")
   );
@@ -118,7 +130,7 @@ export function accountRequestError(input: AccountRequestInput): string | null {
       // No phone: a request stores none (Migration 1 `account_requests`, Step 2 plan §3.7 h); a
       // phone, or any other extra field, is refused rather than dropped.
       if (!onlyKeys(input, CREATE_REQUEST_KEYS)) return "קלט לא תקין";
-      return accountNameError(input.name) ?? emailError(input.email);
+      return accountNameError(input.name) ?? accountEmailError(input.email);
     case "activate":
     case "reactivate":
       return accountIdError(input.accountId);
@@ -149,7 +161,7 @@ export function deviceError(device: string): string | null {
 
 export function newTechnicianError(input: NewTechnicianInput): string | null {
   if (!input || typeof input !== "object") return "פרטי הטכנאי לא תקינים";
-  const base = accountNameError(input.name) ?? emailError(input.email) ?? phoneError(input.phone);
+  const base = accountNameError(input.name) ?? accountEmailError(input.email) ?? phoneError(input.phone);
   if (base) return base;
   if (!isTechnicianColorToken(input.color)) return "צבע לא תקין";
   return deviceError(input.device);
@@ -370,7 +382,7 @@ export function passwordError(password: unknown): string | null {
  * rule (the database check never receives the new email), pending the owner (Step 2 plan Q17).
  */
 export function credentialEmailError(email: string, target: { isTest: boolean }): string | null {
-  return emailError(email) ?? (target?.isTest === false ? null : testAccountEmailError(email));
+  return accountEmailError(email) ?? (target?.isTest === false ? null : testAccountEmailError(email));
 }
 
 /** Only the Creator sets passwords and changes emails (D34 e). `viewerRole` comes from the session. */
@@ -449,7 +461,7 @@ export function technicianUpdateError(input: UpdateTechnicianInput): string | nu
     if (e) return e;
   }
   if (input.outlookEmail !== undefined) {
-    const e = emailError(input.outlookEmail);
+    const e = accountEmailError(input.outlookEmail);
     if (e) return e;
   }
   return input.active === undefined || typeof input.active === "boolean" ? null : "מצב לא תקין";
@@ -670,6 +682,8 @@ const CANCEL_CREATION_KEYS: ReadonlySet<string> = new Set(["intentId", "expected
  * Creator only; Managers never change roles, D60 (7)), the input (only these keys; a new role of
  * NEW_ACCOUNT_ROLES: nothing makes a Creator, D49), never his own account (42501). The database also
  * refuses a Technician with a field profile, the last active Creator and a deleted account (55000).
+ * Like the database, it does not refuse another Creator's account as the target; the screen does not
+ * offer that row (roleChangeOffered, a display subset, review N6).
  */
 export function roleChangeError(input: RoleChangeInput, viewer: AccountViewer | null | undefined): string | null {
   const caller = creatorOnlyError(viewer?.role);

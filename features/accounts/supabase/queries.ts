@@ -148,14 +148,25 @@ export function accountEntryOf(row: ProfileRow, facts: AccountFacts, viewer: Pic
   };
 }
 
-/** A creation intent row as the viewer's "יצירה שלא הושלמה", or null when it is not one. */
-export function creationIntentOf(row: IntentRow, viewer: Pick<SessionUser, "id" | "name">): CreationIntent | null {
+/**
+ * A creation intent row as a "יצירה שלא הושלמה" row for `viewer`, or null when it is not one: the
+ * Manager sees his own intents only; the Creator every open intent (review S3: he may cancel anyone's,
+ * `cancel_account_request`; completion stays the requester's), with the requester's name from
+ * `requesterName` (the requester's profile under the Creator's session; "" when unknown).
+ */
+export function creationIntentOf(
+  row: IntentRow,
+  viewer: Pick<SessionUser, "id" | "name" | "role">,
+  requesterName: (id: string) => string | null = () => null,
+): CreationIntent | null {
   const role = uiRoleOf(row.requested_role);
+  const own = row.requested_by === viewer.id;
   if (
     row.request_type !== "direct_create" ||
     row.status !== "approved" ||
     row.target_profile_id !== null ||
-    row.requested_by !== viewer.id ||
+    !(own || viewer.role === "creator") ||
+    !isUuid(row.requested_by) ||
     !isNewAccountRole(role) ||
     row.email === null ||
     row.full_name === null ||
@@ -168,7 +179,7 @@ export function creationIntentOf(row: IntentRow, viewer: Pick<SessionUser, "id" 
     role,
     name: row.full_name,
     email: row.email,
-    requestedBy: { id: viewer.id, name: viewer.name },
+    requestedBy: own ? { id: viewer.id, name: viewer.name } : { id: row.requested_by, name: requesterName(row.requested_by) ?? "" },
     authorizedAt: row.decided_at,
     version: row.version,
     isTest: row.is_test,
@@ -324,14 +335,18 @@ export function accountsQueriesOf(db: SupabaseClient, viewer: SessionUser | null
     async openCreations(query) {
       const limit = clampLimit(query?.limit);
       if (!administersAccounts(viewer)) return emptyPage(limit);
-      const base = (head: boolean) =>
-        db
+      // The Manager: his own intents. The Creator: every open intent (review S3; RLS lets him read
+      // them all, and `cancel_account_request` lets him cancel an approved one).
+      const everyone = viewer.role === "creator";
+      const base = (head: boolean) => {
+        const q = db
           .from("account_requests")
           .select(head ? "id" : INTENT_COLUMNS, { count: head ? "exact" : undefined, head })
           .eq("request_type", "direct_create")
           .eq("status", "approved")
-          .is("target_profile_id", null)
-          .eq("requested_by", viewer.id);
+          .is("target_profile_id", null);
+        return everyone ? q : q.eq("requested_by", viewer.id);
+      };
       const result = await paged<IntentRow>(
         () => ({
           count: base(true),
@@ -340,8 +355,12 @@ export function accountsQueriesOf(db: SupabaseClient, viewer: SessionUser | null
         clampPage(query?.page),
         limit,
       );
+      const others = everyone ? [...new Set(result.data.map((r) => r.requested_by).filter((id) => id !== viewer.id && isUuid(id)))] : [];
+      const requesters =
+        others.length === 0 ? [] : await rows<Pick<ProfileRow, "id" | "full_name">>(db.from("profiles").select("id, full_name").in("id", others));
+      const names = new Map(requesters.map((p) => [p.id, p.full_name]));
       const items = result.data.flatMap((r) => {
-        const intent = creationIntentOf(r, viewer);
+        const intent = creationIntentOf(r, viewer, (id) => names.get(id) ?? null);
         return intent ? [intent] : [];
       });
       return { items, total: result.total, page: result.page, limit, pageCount: result.pageCount };

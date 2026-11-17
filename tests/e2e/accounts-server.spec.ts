@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccountCommands } from "@/features/accounts/data/ports";
 import type { AccountRequestStored } from "@/features/accounts/data/validate";
 import {
+  accountEmailError,
   ACTION_REASON_MAX,
   actionReasonError,
   cancelCreationError,
@@ -16,6 +17,7 @@ import {
   OWN_ACCOUNT_REFUSED,
   ownCreationIntentError,
   roleChangeError,
+  testAccountEmailError,
 } from "@/features/accounts/data/validate";
 import {
   authAdminFailureOf,
@@ -23,6 +25,8 @@ import {
   authUserIdForIntent,
   BAN_DURATION,
   UNAVAILABLE_AUTH_ADMIN,
+  type AuthAdminPort,
+  type AuthAdminResult,
 } from "@/features/accounts/supabase/auth-admin";
 import { accountCommandsOf } from "@/features/accounts/supabase/commands";
 import {
@@ -284,8 +288,10 @@ test.describe("input re-validation (features/accounts/supabase/schemas.ts)", () 
     });
     expect(parseNewAccount({ name: "x", email: "x@real-company.co.il", phone: "050-000-1111", role: "cs" })).toEqual({
       ok: false,
-      error: "נתוני בדיקה: רק כתובות @example.test",
+      error: testAccountEmailError("x@real-company.co.il"),
     });
+    // The address keeps its direction in a right-to-left line: a left-to-right mark before "@" (review S4).
+    expect(testAccountEmailError("x@real-company.co.il")).toBe("נתוני בדיקה: רק כתובות \u200E@example.test");
     expect(parseNewAccount({ name: "x", email: "x@example.test", phone: "050-000-1111", role: "creator" })).toEqual({
       ok: false,
       error: "יצירת חשבון יוצר: ממתין להחלטת בעלים",
@@ -303,6 +309,16 @@ test.describe("input re-validation (features/accounts/supabase/schemas.ts)", () 
       error: "צבע לא תקין",
     });
     expect(parseNewTechnician({ name: "x", email: "x@example.test", phone: "050-000-1111", color: "t-y", device: "סמארטפון" }).ok).toBe(true);
+  });
+
+  test("account addresses are printable ASCII, so JavaScript and the database lower-case them alike (review N3)", () => {
+    expect(accountEmailError("a.b+c@example.test")).toBeNull();
+    for (const bad of ["אבג@example.test", "a@exämple.test", "İ@example.test", "a\u00a0b@example.test", "a@example.test\u200e"]) {
+      expect(accountEmailError(bad), bad).toBe("כתובת מייל לא תקינה");
+      expect(parseNewAccount({ name: "x", email: bad, phone: "050-000-1111", role: "cs" }), bad).toEqual({ ok: false, error: "כתובת מייל לא תקינה" });
+      expect(parseChangeEmail({ accountId: UUID_A, email: bad }, { id: SELF, role: "creator" }), bad).toEqual({ ok: false, error: "כתובת מייל לא תקינה" });
+    }
+    expect(parseUpdateTechnician({ technicianId: UUID_A, expectedVersion: 1, outlookEmail: "ü@example.test" })).toEqual({ ok: false, error: "כתובת מייל לא תקינה" });
   });
 
   test("ids are UUIDs (fixture keys are refused), versions are positive integers, patches name only known fields", () => {
@@ -453,7 +469,7 @@ test.describe("list mapping (features/accounts/supabase/queries.ts)", () => {
       decided_at: "2026-11-17T08:00:00+00:00",
       is_test: true,
     };
-    const viewer = { id: SELF, name: "מנהלת" };
+    const viewer = { id: SELF, name: "מנהלת", role: "mgr" as const };
     expect(creationIntentOf(row, viewer)).toEqual({
       id: UUID_B,
       role: "cs",
@@ -467,6 +483,34 @@ test.describe("list mapping (features/accounts/supabase/queries.ts)", () => {
     for (const over of [{ request_type: "create" }, { requested_by: UUID_A }, { target_profile_id: UUID_A }, { status: "cancelled" }, { requested_role: "creator" }]) {
       expect(creationIntentOf({ ...row, ...over }, viewer), JSON.stringify(over)).toBeNull();
     }
+  });
+
+  test("the Creator's view: every open intent with its requester's name; still never a request or a bound one (review S3)", () => {
+    const row: IntentRow = {
+      id: UUID_B,
+      request_type: "direct_create",
+      requested_by: UUID_A,
+      status: "approved",
+      target_profile_id: null,
+      requested_role: "technician",
+      email: "t@example.test",
+      full_name: "טכנאי חדש",
+      version: 2,
+      decided_at: "2026-11-17T08:00:00+00:00",
+      is_test: true,
+    };
+    const creator = { id: SELF, name: "יוצר", role: "creator" as const };
+    const names = (id: string) => (id === UUID_A ? "מנהלת" : null);
+    expect(creationIntentOf(row, creator, names)?.requestedBy).toEqual({ id: UUID_A, name: "מנהלת" });
+    expect(creationIntentOf({ ...row, requested_by: SELF }, creator, names)?.requestedBy).toEqual({ id: SELF, name: "יוצר" });
+    // An unknown requester name is "" (the screen says "משתמש אחר"); a non-UUID requester is left out.
+    expect(creationIntentOf(row, creator)?.requestedBy).toEqual({ id: UUID_A, name: "" });
+    expect(creationIntentOf({ ...row, requested_by: "not-a-uuid" }, creator, names)).toBeNull();
+    for (const over of [{ request_type: "create" }, { target_profile_id: UUID_A }, { status: "pending" }, { requested_role: "creator" }, { email: null }]) {
+      expect(creationIntentOf({ ...row, ...over }, creator, names), JSON.stringify(over)).toBeNull();
+    }
+    // The Manager never sees another's intent, whatever names are known.
+    expect(creationIntentOf(row, { ...creator, role: "mgr" }, names)).toBeNull();
   });
 });
 
@@ -572,6 +616,108 @@ test.describe("the commands refuse before any database or Auth call", () => {
     expect(await c.createAccount({ name: "x", email: "x@example.test", phone: "050-000-1111", role: "mgr" })).toEqual(unavailable);
     expect(await c.completeCreation({ requestId: UUID_A, phone: null })).toEqual(unavailable);
     expect(touched).toEqual([]);
+  });
+});
+
+test.describe("deletion: the Auth ban after the database (review S1)", () => {
+  const creator: SessionUser = { id: SELF, role: "creator", name: "יוצר", technicianId: null, isTest: false };
+  const DELETED_ROW = {
+    id: UUID_A,
+    role: "customer_service",
+    full_name: "x",
+    work_phone: null,
+    invitation_rep_name: null,
+    is_active: false,
+    is_test: true,
+    version: 7,
+    deleted_at: "2026-11-17T08:00:00+00:00",
+  };
+
+  /** A database that answers `admin_delete_user` with `answer` and reads the deleted profile; it records its calls. */
+  function fakeDb(answer: { data: unknown; error: { code: string; message: string } | null }): { db: SupabaseClient; calls: string[] } {
+    const calls: string[] = [];
+    const read = { select: () => read, eq: () => read, limit: () => Promise.resolve({ data: [DELETED_ROW], error: null }) };
+    const db = {
+      rpc: (name: string) => (calls.push(`rpc:${name}`), Promise.resolve(answer)),
+      from: (table: string) => (calls.push(`from:${table}`), read),
+    } as unknown as SupabaseClient;
+    return { db, calls };
+  }
+
+  /** An Auth Admin port whose ban answers each call from `bans` in turn (the last one repeats). */
+  function banning(bans: AuthAdminResult[]): { admin: AuthAdminPort; calls: string[] } {
+    const calls: string[] = [];
+    const never = async (): Promise<never> => {
+      throw new Error("only the ban may be called");
+    };
+    const admin: AuthAdminPort = {
+      available: true,
+      createUserForIntent: never,
+      getUser: never,
+      setPassword: never,
+      setEmail: never,
+      revokeAccess: async (id) => {
+        calls.push(`revokeAccess:${id}`);
+        return bans[Math.min(calls.length - 1, bans.length - 1)] as AuthAdminResult;
+      },
+    };
+    return { admin, calls };
+  }
+
+  const input = { accountId: UUID_A, expectedVersion: 6, confirm: true } as const;
+  const uncertain: AuthAdminResult = { ok: false, kind: "uncertain", code: null };
+
+  test("an uncertain ban is tried once more at once; still failing, the result says the deletion is incomplete", async () => {
+    const { db, calls } = fakeDb({ data: 7, error: null });
+    const ban = banning([uncertain, uncertain]);
+    const log: string[] = [];
+    const r = await accountCommandsOf({ db, admin: ban.admin, viewer: creator, log: (e, c) => void log.push(`${e} ${String(c)}`) }).deleteAccount(input);
+    expect(r).toEqual({ ok: false, simulated: false, error: ACCOUNT_MESSAGES.revokeIncomplete });
+    expect(calls).toEqual(["rpc:admin_delete_user"]);
+    expect(ban.calls).toEqual([`revokeAccess:${UUID_A}`, `revokeAccess:${UUID_A}`]);
+    expect(log).toEqual(["accounts.delete.revoke_retry uncertain", "accounts.delete.revoke_failed null"]);
+  });
+
+  test("an uncertain ban that succeeds on the immediate retry completes the deletion", async () => {
+    const { db } = fakeDb({ data: 7, error: null });
+    const ban = banning([uncertain, { ok: true, value: undefined }]);
+    expect(await accountCommandsOf({ db, admin: ban.admin, viewer: creator }).deleteAccount(input)).toEqual({
+      ok: true,
+      simulated: false,
+      message: ACCOUNT_MESSAGES.deletedOk,
+      data: { version: 7 },
+    });
+    expect(ban.calls).toHaveLength(2);
+  });
+
+  test("a definite refusal is not retried at once; \"user_not_found\" counts as done (nothing left to ban)", async () => {
+    const refused = banning([{ ok: false, kind: "refused", code: "over_request_rate_limit" }]);
+    expect(await accountCommandsOf({ db: fakeDb({ data: 7, error: null }).db, admin: refused.admin, viewer: creator }).deleteAccount(input)).toEqual({
+      ok: false,
+      simulated: false,
+      error: ACCOUNT_MESSAGES.revokeIncomplete,
+    });
+    expect(refused.calls).toHaveLength(1);
+    const gone = banning([{ ok: false, kind: "refused", code: "user_not_found" }]);
+    expect((await accountCommandsOf({ db: fakeDb({ data: 7, error: null }).db, admin: gone.admin, viewer: creator }).deleteAccount(input)).ok).toBe(true);
+  });
+
+  test("\"נסו שוב\": the same deletion again; the database's \"already deleted\" refusal authorizes the ban alone", async () => {
+    const { db, calls } = fakeDb({ data: null, error: { code: "55000", message: "the account is deleted" } });
+    const ban = banning([{ ok: true, value: undefined }]);
+    expect(await accountCommandsOf({ db, admin: ban.admin, viewer: creator }).deleteAccount(input)).toEqual({
+      ok: true,
+      simulated: false,
+      message: ACCOUNT_MESSAGES.deletedOk,
+      data: { version: 7 },
+    });
+    expect(calls).toEqual(["rpc:admin_delete_user", "from:profiles"]);
+    expect(ban.calls).toEqual([`revokeAccess:${UUID_A}`]);
+    // Any other refusal (here: not authorized) stops before the ban.
+    const other = banning([{ ok: true, value: undefined }]);
+    const denied = fakeDb({ data: null, error: { code: "42501", message: "not authorized" } });
+    expect(await accountCommandsOf({ db: denied.db, admin: other.admin, viewer: creator }).deleteAccount(input)).toEqual({ ok: false, simulated: false, error: forbidden });
+    expect(other.calls).toEqual([]);
   });
 });
 

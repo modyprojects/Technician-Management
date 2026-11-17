@@ -22,6 +22,7 @@ import {
   type UpdateTechnicianInput,
 } from "@/features/accounts/data/types";
 import {
+  accountEmailError,
   accountIdError,
   cancelCreationError,
   credentialEmailError,
@@ -29,7 +30,6 @@ import {
   deleteAccountError,
   deviceError,
   EMAIL_MAX,
-  emailError,
   expectedVersionError,
   newAccountError,
   newTechnicianError,
@@ -262,7 +262,7 @@ const changeEmailSchema = z.strictObject({ accountId: uuid, email });
  * address stays in example.test, D47, Q17) is checked against the stored row: credentialEmailError.
  */
 export function parseChangeEmail(input: unknown, viewer: AccountViewer): Parsed<ChangeEmailInput> {
-  const r = parse(changeEmailSchema, input, (v) => credentialTargetError(viewer, v?.accountId) ?? emailError(v?.email));
+  const r = parse(changeEmailSchema, input, (v) => credentialTargetError(viewer, v?.accountId) ?? accountEmailError(v?.email));
   return r.ok ? { ok: true, value: { accountId: r.value.accountId.toLowerCase(), email: normalizedEmail(r.value.email) } } : r;
 }
 

@@ -90,8 +90,10 @@ export default async function SettingsUsersPage() {
     queries.openCreations({ limit: MAX_PAGE_LIMIT }),
     scope === "all" ? queries.creatorNotices({ limit: MAX_PAGE_LIMIT }) : Promise.resolve(null),
   ]);
-  // The viewer's own intents only (the query already asks for them; kept as defence in depth).
-  const own = ownIntents(intents, me.id);
+  // The Manager: his own intents only (the query already asks for them; kept as defence in depth).
+  // The Creator: every open intent, so he can cancel another's (review S3); completing stays the
+  // requester's (the screen offers it on his own rows only, the server checks it).
+  const own = scope === "all" ? intents : ownIntents(intents, me.id);
   const intentEntries: CreationIntentEntry[] = own.items.map((intent) => ({ intent, startedLabel: accountTimeLabel(intent.authorizedAt, now) }));
   const noticeEntries: CreatorNoticeEntry[] | null = notices
     ? notices.items.map((notice) => ({ notice, atLabel: accountTimeLabel(notice.at, now) }))

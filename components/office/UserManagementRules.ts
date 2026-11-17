@@ -43,12 +43,17 @@ export const USER_MANAGEMENT_SUBS: Readonly<Record<AccountAdminScope, string>> =
   "cs-tech": "טכנאים ונציגי שירות לקוחות",
 };
 
-/** The created line: who was created, and how he gets his first password (TEMPORARY, Step 2 plan Q1). */
+/**
+ * The created line: who was created, and that he has no password yet (TEMPORARY, Step 2 plan Q1:
+ * the account is created without one, D50). Worded so it stays true once email delivery lets a user
+ * choose his own password through the reset (D65; review N7): the Manager is not told that only the
+ * Creator can give him one.
+ */
 export function createdLine(name: string, role: NewAccountRole, scope: AccountAdminScope): string {
   const who = `${ACCOUNT_ROLE_LABELS[role]} ${name}`;
   return scope === "all"
-    ? `המשתמש ${who} נוצר. כדי שיוכל להיכנס, קבעו לו סיסמה ב"סיסמה".`
-    : `המשתמש ${who} נוצר. עד שהיוצר יקבע לו סיסמה הוא לא יוכל להיכנס.`;
+    ? `המשתמש ${who} נוצר בלי סיסמה. כדי שיוכל להיכנס, קבעו לו סיסמה ב"סיסמה".`
+    : `המשתמש ${who} נוצר בלי סיסמה, ולכן עדיין לא יכול להיכנס. היוצר יכול לקבוע לו סיסמה.`;
 }
 
 /** The deactivation line; a Manager's deactivation is also a notice to the Creator (D34 b). */

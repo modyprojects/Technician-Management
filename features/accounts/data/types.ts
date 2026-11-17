@@ -311,7 +311,10 @@ export type CreationIntent = TestMarker & {
   role: NewAccountRole;
   name: string;
   email: string;
-  /** Who authorized it (only the requester sees his own intents; the demo loader filters by it). */
+  /**
+   * Who authorized it. The Manager sees his own intents only; the Creator also sees others' (he may
+   * cancel them, review S3); the demo loader filters by it.
+   */
   requestedBy: AccountRef;
   authorizedAt: IsoTimestamp;
   version: number;

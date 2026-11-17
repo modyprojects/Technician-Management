@@ -88,12 +88,15 @@ const codeOf = (error: unknown): string | null => {
   return typeof code === "string" ? code : null;
 };
 
-/** The message of a failed Auth Admin call: Auth's code mapped to Hebrew; "uncertain" is generic. */
-const authFailureMessage = (failure: AuthAdminFailure, requestRef?: string): string =>
+/**
+ * The message of a failed Auth Admin call: Auth's code mapped to Hebrew; "uncertain" is generic.
+ * `forCreator`: the caller is the Creator, who is never told to ask the Creator (review N2).
+ */
+const authFailureMessage = (failure: AuthAdminFailure, context: { requestRef?: string; forCreator: boolean }): string =>
   failure.kind === "unavailable"
     ? ACTION_MESSAGES.unavailable
     : failure.kind === "refused"
-      ? authAdminErrorMessage({ code: failure.code }, requestRef ? { requestRef } : {})
+      ? authAdminErrorMessage({ code: failure.code }, context)
       : ACTION_MESSAGES.unknown;
 
 /** A creation intent as the shared rules read it (AccountRequestStored). */
@@ -133,6 +136,9 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
   const log = deps.log ?? (() => undefined);
   const queries = accountsQueriesOf(db, viewer);
   const who: AccountViewer | null = viewer ? { id: viewer.id, role: viewer.role } : null;
+  /** A failed Auth Admin call's message for this caller (the Creator is never told to ask himself). */
+  const authFailure = (failure: AuthAdminFailure, requestRef?: string): string =>
+    authFailureMessage(failure, { ...(requestRef ? { requestRef } : {}), forCreator: who?.role === "creator" });
 
   /** Runs one action; an exception is logged by name and becomes the generic message. */
   async function guarded<T>(event: string, body: (self: AccountViewer) => Promise<CommandResult<T>>): Promise<CommandResult<T>> {
@@ -207,7 +213,7 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
         log(`accounts.${event}.auth_${created.kind}`, created.kind === "unavailable" ? "unavailable" : created.code);
         if (created.kind === "uncertain") return fail(ACCOUNT_MESSAGES.creationIncomplete);
         if (created.kind === "refused") await cancelIntent(event, intent);
-        return fail(authFailureMessage(created, intent.id));
+        return fail(authFailure(created, intent.id));
       }
     } else {
       log(`accounts.${event}.auth_lookup_${existing.kind}`, existing.kind === "unavailable" ? "unavailable" : existing.code);
@@ -365,7 +371,7 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
         const facts = await admin.getUser(accountId);
         if (!facts.ok || facts.value.email === null) {
           log("accounts.complete_technician.auth_lookup", facts.ok ? "no_email" : facts.kind);
-          return fail(facts.ok ? ACTION_MESSAGES.unknown : authFailureMessage(facts));
+          return fail(facts.ok ? ACTION_MESSAGES.unknown : authFailure(facts));
         }
         const t = await rpc<string>("admin_create_technician", {
           p_profile_id: accountId,
@@ -464,7 +470,7 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
         const r = await admin.setPassword(parsed.value.accountId, parsed.value.password);
         if (!r.ok) {
           log("accounts.password.auth_failed", r.kind === "unavailable" ? "unavailable" : r.code);
-          return fail(authFailureMessage(r));
+          return fail(authFailure(r));
         }
         return done(ACCOUNT_MESSAGES.passwordSet);
       }),
@@ -483,7 +489,7 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
         const r = await admin.setEmail(parsed.value.accountId, parsed.value.email);
         if (!r.ok) {
           log("accounts.email.auth_failed", r.kind === "unavailable" ? "unavailable" : r.code);
-          return fail(authFailureMessage(r));
+          return fail(authFailure(r));
         }
         return done(ACCOUNT_MESSAGES.emailChanged);
       }),
@@ -513,8 +519,15 @@ export function accountCommandsOf(deps: AccountCommandsDeps): AccountCommands {
         } else {
           return fail(ACTION_MESSAGES.unknown);
         }
-        // Only after the database committed: the Auth side (Option A), sign-in revoked for good.
-        const revoked = await admin.revokeAccess(v.accountId);
+        // Only after the database committed: the Auth side (Option A), sign-in revoked for good. A
+        // ban that may not have taken effect (network, timeout, 5xx) is tried once more at once (the
+        // ban is idempotent); if it still fails, the screen keeps the account and offers "נסו שוב",
+        // which repeats this action: the database refusal above then authorizes the ban alone (S1).
+        let revoked = await admin.revokeAccess(v.accountId);
+        if (!revoked.ok && revoked.kind === "uncertain") {
+          log("accounts.delete.revoke_retry", revoked.code ?? "uncertain");
+          revoked = await admin.revokeAccess(v.accountId);
+        }
         if (!revoked.ok && !(revoked.kind === "refused" && revoked.code === "user_not_found")) {
           log("accounts.delete.revoke_failed", revoked.kind === "unavailable" ? "unavailable" : revoked.code);
           return fail(ACCOUNT_MESSAGES.revokeIncomplete);

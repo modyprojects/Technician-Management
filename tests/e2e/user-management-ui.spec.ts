@@ -7,6 +7,8 @@ import {
   creatableRoles,
   credentialActionsOffered,
   deleteOffered,
+  intentCancelOffered,
+  intentCompletionOffered,
   profileEditOffered,
   roleChangeChoices,
   roleChangeOffered,
@@ -80,6 +82,32 @@ test.describe("D60 (7) display rules (offers.ts): each mirrors the server's rule
     expect(deleteAccountError({ accountId: OTHER, expectedVersion: 1, confirm: true }, viewerOf("all"))).toBeNull();
     expect(roleChangeError({ accountId: SELF.toUpperCase(), expectedVersion: 1, newRole: "cs" }, viewerOf("all"))).not.toBeNull();
     expect(deleteAccountError({ accountId: SELF, expectedVersion: 1, confirm: true }, viewerOf("all"))).not.toBeNull();
+    // Review N6, pinned: a Creator row's role change is a display subset only. The rule (like
+    // `admin_set_user_role`) cannot see the target's role and lets another Creator's id through;
+    // the database's last-active-Creator rule guards it. The comments of both say so.
+    expect(roleChangeError({ accountId: OTHER, expectedVersion: 1, newRole: "mgr" }, viewerOf("all"))).toBeNull();
+    const offers = readFileSync(path.resolve("features/accounts/data/offers.ts"), "utf8");
+    const rules = readFileSync(path.resolve("features/accounts/data/validate.ts"), "utf8");
+    expect(offers).toContain("The screen offers a SUBSET of what the");
+    expect(offers).not.toContain("D49: Creator accounts are not managed through the app");
+    expect(rules).toContain("the screen does not\n * offer that row (roleChangeOffered, a display subset, review N6)");
+  });
+
+  test("\"יצירה שלא הושלמה\": completion by the requester only; \"ביטול\" also by the Creator on anyone's (review S3)", () => {
+    const mine = { requestedBy: { id: SELF, name: "x" } };
+    const another = { requestedBy: { id: OTHER, name: "y" } };
+    expect(intentCompletionOffered("all", mine, SELF)).toBe(true);
+    expect(intentCompletionOffered("all", another, SELF)).toBe(false);
+    expect(intentCompletionOffered("cs-tech", another, SELF)).toBe(false);
+    expect(intentCancelOffered("all", mine, SELF)).toBe(true);
+    expect(intentCancelOffered("all", another, SELF)).toBe(true);
+    expect(intentCancelOffered("cs-tech", mine, SELF)).toBe(true);
+    expect(intentCancelOffered("cs-tech", another, SELF)).toBe(false);
+    expect(intentCancelOffered(null, mine, SELF)).toBe(false);
+    expect(intentCancelOffered("all", another, null)).toBe(false);
+    // The page passes the Creator every open intent and the Manager only his own.
+    const page = readFileSync(path.resolve("app/(office)/office/settings/users/page.tsx"), "utf8");
+    expect(page).toContain('const own = scope === "all" ? intents : ownIntents(intents, me.id);');
   });
 
   test("the new role is never Creator and never the current one", () => {

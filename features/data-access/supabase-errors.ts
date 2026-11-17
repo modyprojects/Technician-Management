@@ -68,8 +68,11 @@ export const ACCOUNT_MESSAGES = {
   creationCancelled: "לא ניתן היה להשלים את יצירת המשתמש, והיא בוטלה.",
   /** Phase 4 failed: the account exists without its field profile ("פרופיל טכנאי חסר", plan §3.8). */
   technicianProfileMissing: "המשתמש נוצר, אבל פרופיל הטכנאי לא נשמר. השלימו אותו ברשימה („פרופיל טכנאי חסר”).",
-  /** The deletion committed in the database, but the Auth step failed: a repeated deletion completes it. */
-  revokeIncomplete: "המשתמש נמחק במערכת, אבל חסימת ההתחברות לא הושלמה. נסו למחוק שוב כדי להשלים.",
+  /**
+   * The deletion committed in the database, but the Auth step failed: a repeated deletion completes
+   * it (the screen keeps the account and offers "נסו שוב", review S1, since the row is gone).
+   */
+  revokeIncomplete: "המשתמש נמחק במערכת, אבל חסימת ההתחברות לא הושלמה. נסו שוב כדי להשלים אותה.",
   created: "המשתמש נוצר.",
   saved: "השינוי נשמר.",
   passwordSet: "הסיסמה נשמרה.",
@@ -80,7 +83,9 @@ export const ACCOUNT_MESSAGES = {
 
 /** Auth Admin messages (account creation and the Creator's credential changes, PRs 2.6–2.7). */
 export const AUTH_ADMIN_MESSAGES = {
-  emailExists: "כתובת המייל כבר רשומה במערכת ההתחברות. פנו ליוצר",
+  /** An address Auth already holds. A Manager is also told to ask the Creator (askCreator); the Creator is not (review N2). */
+  emailExists: "כתובת המייל כבר רשומה במערכת ההתחברות",
+  askCreator: "פנו ליוצר",
   weakPassword: "הסיסמה אינה עומדת בדרישות.",
   userNotFound: "חשבון ההתחברות לא נמצא.",
   rateLimited: "בוצעו יותר מדי פעולות. נסו שוב מאוחר יותר.",
@@ -206,16 +211,19 @@ const AUTH_ADMIN_TEXTS: ReadonlyMap<string, string> = new Map([
 /**
  * The Hebrew message for a Supabase Auth Admin error (account creation, password and email
  * changes). An address that Auth already holds names the request reference when one is given,
- * so the Creator can find the case (Step 2 plan §3.8, Q16). A network failure or an unknown code
- * gets the generic message; whether the call took effect is the caller's question (plan §3.8).
+ * so the Creator can find the case (Step 2 plan §3.8, Q16); anyone but the Creator (`forCreator`)
+ * is also told to ask the Creator (review N2: the Creator is never told to ask himself). A network
+ * failure or an unknown code gets the generic message; whether the call took effect is the
+ * caller's question (plan §3.8).
  */
-export function authAdminErrorMessage(error: unknown, context: { requestRef?: string } = {}): string {
+export function authAdminErrorMessage(error: unknown, context: { requestRef?: string; forCreator?: boolean } = {}): string {
   const code = codeOf(error);
   if (code === "email_exists" || code === "user_already_exists") {
     const ref = context.requestRef;
+    const ask = context.forCreator === true ? "" : `. ${AUTH_ADMIN_MESSAGES.askCreator}`;
     return ref !== undefined && REQUEST_REF_PATTERN.test(ref)
-      ? `${AUTH_ADMIN_MESSAGES.emailExists} (מספר בקשה ${ref}).`
-      : `${AUTH_ADMIN_MESSAGES.emailExists}.`;
+      ? `${AUTH_ADMIN_MESSAGES.emailExists}${ask} (מספר בקשה ${ref}).`
+      : `${AUTH_ADMIN_MESSAGES.emailExists}${ask}.`;
   }
   return (code !== null && AUTH_ADMIN_TEXTS.get(code)) || ACTION_MESSAGES.unknown;
 }

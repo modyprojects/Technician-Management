@@ -29,7 +29,8 @@ import { AccountDialog, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 
 const PASSWORD_NOTES = [
   { text: "רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה." },
-  // TEMPORARY (Step 2 plan Q1): no reset link or forced change until the owner decides.
+  // TEMPORARY (Step 2 plan Q1): the Creator hands the password over himself and no change is forced
+  // at the first sign-in; the self-service reset (D65) needs email delivery, which is not enabled.
   { text: "עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.", pending: true },
   // TEMPORARY (Q12).
   { text: "חוזק הסיסמה נבדק במערכת ההתחברות." },

@@ -15,7 +15,11 @@
 //   "השלמה" of "פרופיל טכנאי חסר", "תפקיד" (the Creator only), "השבתה" with a confirmation ("an
 //   inactive user cannot sign in; history kept") / "הפעלה", "מחיקה" (the Creator only, after an
 //   explicit confirmation). No "בקשות לאישור" anywhere (C-02).
-// - "יצירה שלא הושלמה" rows (the viewer's own creation intents) with "השלמת יצירה" and "ביטול".
+// - "יצירה שלא הושלמה" rows: the requester's own with "השלמת יצירה" and "ביטול"; for the Creator
+//   also other people's open intents, with "ביטול" only and the requester's name (review S3).
+// - A deletion stored in the database whose Auth ban failed (ACCOUNT_MESSAGES.revokeIncomplete):
+//   the row is gone, so the card keeps the account and its version and offers "נסו שוב", which sends
+//   the same deletion again; the server then repeats only the ban (review S1).
 // - Every edit sends the version read (`expectedVersion`); after every action the page is read
 //   again (router.refresh), so the rows and their versions are the database's, and a stale one
 //   shows the server's "data changed" message (PT409). The row buttons wait while it reloads.
@@ -33,6 +37,7 @@ import {
   creatableRoles,
   credentialActionsOffered,
   deleteOffered,
+  intentCancelOffered,
   intentCompletionOffered,
   profileEditOffered,
   roleChangeOffered,
@@ -78,6 +83,9 @@ const SHORT = "col-center col-fit";
 const ROW_BTN = { padding: "4px 12px", fontSize: 12 } as const;
 /** A deletion stored in the database whose Auth step failed: the row is gone, the message stays. */
 const DELETE_SETTLED: ReadonlySet<string> = new Set([ACCOUNT_MESSAGES.revokeIncomplete]);
+
+/** A deletion whose Auth ban is still to be completed ("נסו שוב", review S1): what the retry sends. */
+type DeleteRetry = { accountId: string; version: number; name: string };
 
 type Dialog =
   | { kind: "add"; opener: string }
@@ -151,6 +159,7 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<ActionMessageValue>(null);
+  const [deleteRetry, setDeleteRetry] = useState<DeleteRetry | null>(null);
   const running = useRef(false);
   /** An element to focus once it exists (a row that a reload brings), with a fallback. */
   const focusWanted = useRef<{ id: string; fallback: string } | null>(null);
@@ -162,6 +171,7 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
   const commands = useAccountCommands();
 
   const addId = `${id}-add`;
+  const retryId = `${id}-delete-retry`;
   const rowId = (accountId: string) => `${id}-row-${accountId}`;
   const intentRowId = (intentId: string) => `${id}-intent-${intentId}`;
   const openerId = (kind: string, key: string) => `${id}-${kind}-${key}`;
@@ -192,6 +202,7 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
     running.current = true;
     setBusy(key);
     setMessage(null);
+    setDeleteRetry(null);
     try {
       const r = await run();
       if (r.ok) {
@@ -209,8 +220,42 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
     }
   }
 
+  /**
+   * "נסו שוב" after a deletion whose ban failed (review S1): the same deletion again, with the version
+   * the dialog sent; the server sees the account already deleted and repeats only the ban. The offer
+   * stays while the ban is still incomplete; any other answer ends it.
+   */
+  async function retryDeletion() {
+    const target = deleteRetry;
+    if (!target || running.current) return;
+    running.current = true;
+    setBusy("delete-retry");
+    setMessage(null);
+    try {
+      const r = await commands.deleteAccount({ accountId: target.accountId, expectedVersion: target.version, confirm: true });
+      if (r.ok) {
+        setDeleteRetry(null);
+        setMessage({ kind: "ok", text: deletedLine(target.name) });
+        wantFocus(addId);
+      } else {
+        const again = r.error === ACCOUNT_MESSAGES.revokeIncomplete;
+        if (!again) setDeleteRetry(null);
+        setMessage({ kind: "error", text: r.error });
+        wantFocus(again ? retryId : addId);
+      }
+    } catch {
+      setMessage({ kind: "error", text: DIALOG_FAILED });
+      wantFocus(retryId);
+    } finally {
+      running.current = false;
+      setBusy(null);
+      reload();
+    }
+  }
+
   function open(next: Dialog) {
     setMessage(null);
+    setDeleteRetry(null);
     savedInDialog.current = false;
     setDialog(next);
   }
@@ -390,7 +435,11 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
             run={() => commands.deleteAccount({ accountId: a.id, expectedVersion: a.version, confirm: true })}
             onClose={close}
             onDone={() => finish("ok", deletedLine(a.name), addId)}
-            onSettled={(text) => finish("error", text, addId)}
+            onSettled={(text) => {
+              // The profile is deleted, the ban is not: keep what the retry needs (the row is gone).
+              if (text === ACCOUNT_MESSAGES.revokeIncomplete) setDeleteRetry({ accountId: a.id, version: a.version, name: a.name });
+              finish("error", text, text === ACCOUNT_MESSAGES.revokeIncomplete ? retryId : addId);
+            }}
           />
         );
     }
@@ -451,11 +500,16 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
                   const intent = entry.intent;
                   const opener = openerId("complete-intent", intent.id);
                   const cancelKey = `cancel-${intent.id}`;
+                  const canComplete = intentCompletionOffered(scope, intent, selfId);
+                  const canCancel = intentCancelOffered(scope, intent, selfId);
+                  // The Creator also sees other people's open intents (review S3): who started it.
+                  const byOther = intent.requestedBy.id !== selfId ? ` · על ידי ${intent.requestedBy.name || "משתמש אחר"}` : "";
                   const state = (
                     <>
                       <span className="pill acct-warn">יצירה שלא הושלמה</span>
                       <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
                         התחילה {entry.startedLabel}
+                        {byOther}
                       </span>
                     </>
                   );
@@ -477,31 +531,35 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
                       </td>
                       <td className={`${SHORT} set-col-wide`}>{state}</td>
                       <td className="col-fit">
-                        {intentCompletionOffered(scope, intent, selfId) && (
+                        {(canComplete || canCancel) && (
                           <div className="acct-actions">
-                            <button
-                              type="button"
-                              id={opener}
-                              className="btn pri"
-                              style={ROW_BTN}
-                              disabled={blocked}
-                              aria-label={`השלמת יצירה · ${intent.name}`}
-                              onClick={() => open({ kind: "complete-intent", intentId: intent.id, opener })}
-                            >
-                              השלמת יצירה
-                            </button>
-                            <button
-                              type="button"
-                              className="chip"
-                              style={ROW_BTN}
-                              disabled={blocked}
-                              aria-label={`ביטול · היצירה של ${intent.name}`}
-                              onClick={() =>
-                                void act(cancelKey, () => commands.cancelCreation(cancelCreationInput(intent)), intentCancelledLine(intent.name), addId)
-                              }
-                            >
-                              {busy === cancelKey ? "מבטל…" : "ביטול"}
-                            </button>
+                            {canComplete && (
+                              <button
+                                type="button"
+                                id={opener}
+                                className="btn pri"
+                                style={ROW_BTN}
+                                disabled={blocked}
+                                aria-label={`השלמת יצירה · ${intent.name}`}
+                                onClick={() => open({ kind: "complete-intent", intentId: intent.id, opener })}
+                              >
+                                השלמת יצירה
+                              </button>
+                            )}
+                            {canCancel && (
+                              <button
+                                type="button"
+                                className="chip"
+                                style={ROW_BTN}
+                                disabled={blocked}
+                                aria-label={`ביטול · היצירה של ${intent.name}`}
+                                onClick={() =>
+                                  void act(cancelKey, () => commands.cancelCreation(cancelCreationInput(intent)), intentCancelledLine(intent.name), addId)
+                                }
+                              >
+                                {busy === cancelKey ? "מבטל…" : "ביטול"}
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -551,7 +609,22 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
             <span aria-hidden="true">🧪</span> {TEST_DATA_LABEL}: חשבונות שנוצרו לבדיקות ואינם חשבונות אמיתיים.
           </div>
         )}
-        <ActionMessage message={message} style={{ padding: message ? "10px 18px 12px" : 0 }} />
+        <ActionMessage message={message} style={{ padding: message ? `10px 18px ${deleteRetry ? 6 : 12}px` : 0 }} />
+        {deleteRetry && (
+          <div style={{ padding: message ? "0 18px 12px" : "10px 18px 12px" }}>
+            <button
+              type="button"
+              id={retryId}
+              className="chip"
+              style={ROW_BTN}
+              disabled={blocked}
+              aria-label={`נסו שוב · השלמת המחיקה של ${deleteRetry.name}`}
+              onClick={() => void retryDeletion()}
+            >
+              {busy === "delete-retry" ? "מנסה שוב…" : "נסו שוב"}
+            </button>
+          </div>
+        )}
       </section>
 
       {renderDialog()}

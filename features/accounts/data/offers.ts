@@ -77,14 +77,25 @@ export const technicianProfileCompletionOffered = (
 ): boolean => known(scope, selfId) && row.technicianMissing && (scope === "all" || (scope === "cs-tech" && row.role === "tech"));
 
 /**
- * "השלמת יצירה" and "ביטול" on a "יצירה שלא הושלמה" row: only the intent's requester. Mirrors
- * completeCreationError and cancelRequestError.
+ * "השלמת יצירה" on a "יצירה שלא הושלמה" row: only the intent's requester (Migration 5 OQ-4).
+ * Mirrors ownCreationIntentError (and completeCreationError).
  */
 export const intentCompletionOffered = (
   scope: AccountAdminScope | null,
   intent: Pick<CreationIntent, "requestedBy">,
   selfId: AccountId | null,
 ): boolean => known(scope, selfId) && intent.requestedBy.id === selfId;
+
+/**
+ * "ביטול" on a "יצירה שלא הושלמה" row: the requester, or the Creator on anyone's open intent (review
+ * S3; Migration 1 `cancel_account_request` lets a real Creator cancel an approved request). Mirrors
+ * the database's rule; the command refuses nothing more (cancelCreationError checks the shape only).
+ */
+export const intentCancelOffered = (
+  scope: AccountAdminScope | null,
+  intent: Pick<CreationIntent, "requestedBy">,
+  selfId: AccountId | null,
+): boolean => intentCompletionOffered(scope, intent, selfId) || (known(scope, selfId) && scope === "all");
 
 /**
  * "השלמת יצירה" on an approved creation request with no account yet (Variant B; TEMPORARY, Q15):
@@ -147,10 +158,15 @@ export const stateChangeOffered = (
 ): boolean => known(scope, selfId) && row.id !== selfId && (scope === "all" || (scope === "cs-tech" && managed(row.role)));
 
 /**
- * "שינוי תפקיד" (D60 (7): the Creator only; Managers never change roles): never his own row and
- * never a Creator row (TEMPORARY, D49: Creator accounts are not managed through the app), and not a
- * Technician that has a field profile (Migration 1 `admin_set_user_role` refuses it, 55000).
- * Mirrors roleChangeError.
+ * "שינוי תפקיד" (D60 (7): the Creator only; Managers never change roles): never his own row, not a
+ * Technician that has a field profile (Migration 1 `admin_set_user_role` refuses it, 55000) and,
+ * as a display choice, never a Creator row (review N6). The screen offers a SUBSET of what the
+ * server allows: roleChangeError and `admin_set_user_role` refuse the caller's own account and a
+ * new role of Creator (D49), but not a Creator target; the database's last-active-Creator rule is
+ * the only guard there. Demoting another Creator is left out of the screen, TEMPORARY, until the
+ * owner decides how Creator accounts are managed; the other Creator-row offers ("עריכה", "סיסמה",
+ * "מייל", "השבתה") follow their own rules (the database refuses deactivating the last active
+ * Creator). tests/e2e/user-management-ui.spec.ts pins the difference.
  */
 export const roleChangeOffered = (
   scope: AccountAdminScope | null,
