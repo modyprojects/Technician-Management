@@ -52,7 +52,7 @@ for (const size of SIZES) {
 
     for (const [name, user, home] of [
       ["start-mgr", users.mgr, /\/office$/],
-      ["start-cs", users.cs, /\/office$/],
+      ["start-cs", users.cs, /\/office\/calls$/],
       ["start-tech", users.tech, /\/tech$/],
     ] as const) {
       const { context, page } = await fresh();
