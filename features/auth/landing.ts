@@ -4,9 +4,9 @@
 // corresponding structure; QA corrections 01 (D60, D62) S-01: for Customer Service "בית" is removed
 // and the default screen is "קריאות" (docs/qa-corrections-01-integration.md, Step 2 "role landing").
 //
-// TEMPORARY until those screens are built (Step 2 plan Q18; AU-03 PROPOSED): the landing item is
-// the only item of the real office navigation, and `/office` shows the temporary start card under
-// that item's title. When "דשבורד" and "קריאות" are built, `/office` sends each role to its screen.
+// TEMPORARY until "דשבורד" is built (Step 2 plan Q18; AU-03 PROPOSED): `/office` shows the temporary
+// start card under that item's title for the Manager and the Creator. "קריאות" is built, so `/office`
+// sends Customer Service there (OFFICE_CALLS_PATH).
 // Display only (G-04): every page checks the session and the role itself.
 import { isOfficeRole, type OfficeRole } from "@/features/reference/data/types";
 
@@ -36,6 +36,12 @@ export const TECH_PROFILE_PATH = "/tech/profile";
 export const OFFICE_SETTINGS_PATH = "/office/settings";
 export const OFFICE_SETTINGS_USERS_PATH = "/office/settings/users";
 
+/** "קריאות" (V1 item 4; D57 (1), D60 (4)): the calls list; Customer Service's landing (QA S-01). */
+export const OFFICE_CALLS_PATH = "/office/calls";
+
+/** The call card of one request number (the card itself is the next screen; a temporary page until then). */
+export const officeCallPath = (req: string): string => `${OFFICE_CALLS_PATH}/${encodeURIComponent(req)}`;
+
 /**
  * "זימונים שלא נקלטו" (QA S-05; D57 (1), D60 (4)): the unparsed invitations and, where the simulator
  * is switched on, the Outlook invitation simulator (D60 (11)).
@@ -47,18 +53,21 @@ export type RealOfficeNavItem = { key: "analytics" | "calls" | "unparsed" | "set
 
 /**
  * The real office navigation (TEMPORARY, Step 2 plan Q18: only screens that are built are listed),
- * in the order of D57 (1) and D60 (4): the role's landing item, "זימונים שלא נקלטו" for every office
- * role (the TEMPORARY #15 rule, features/auth/roles.ts workQueueScreensOffered), then "הגדרות" for
- * the Manager and the Creator (D57 (1): the Manager's Settings opens "משתמשים", a fixed capability,
- * never the matrix key `settings`, SE-03). Customer Service has "קריאות" and "זימונים שלא נקלטו"
- * ("יומן טכנאים" is not built yet; QA S-01, S-04, S-05) and no Settings. Anything that is no office
- * role gets nothing (deny by default). Display only (G-04): every page checks the session and the
- * role itself.
+ * in the order of D57 (1) and D60 (4): the role's landing item ("דשבורד" for the Manager and the
+ * Creator, still the temporary start card; "קריאות" for Customer Service, QA S-01), "קריאות" for the
+ * Manager and the Creator, "זימונים שלא נקלטו" for every office role (the TEMPORARY #15 rule,
+ * features/auth/roles.ts workQueueScreensOffered), then "הגדרות" for the Manager and the Creator
+ * (D57 (1): the Manager's Settings opens "משתמשים", a fixed capability, never the matrix key
+ * `settings`, SE-03). Customer Service has "קריאות" and "זימונים שלא נקלטו" ("יומן טכנאים" is not
+ * built yet; QA S-01, S-04, S-05) and no Settings. Anything that is no office role gets nothing (deny
+ * by default). Display only (G-04): every page checks the session and the role itself (the calls
+ * list also checks the matrix key `calls` on the server).
  */
 export function realOfficeNav(role: unknown): RealOfficeNavItem[] {
   const start = officeStartItem(role);
   if (!start) return [];
-  const items: RealOfficeNavItem[] = [{ key: start.key, label: start.label, href: OFFICE_START_PATH }];
+  const items: RealOfficeNavItem[] = [{ key: start.key, label: start.label, href: start.key === "calls" ? OFFICE_CALLS_PATH : OFFICE_START_PATH }];
+  if (start.key !== "calls") items.push({ key: "calls", label: "קריאות", href: OFFICE_CALLS_PATH });
   items.push({ key: "unparsed", label: "זימונים שלא נקלטו", href: OFFICE_UNPARSED_PATH });
   if (role === "creator" || role === "mgr") items.push({ key: "settings", label: "הגדרות", href: OFFICE_SETTINGS_USERS_PATH });
   return items;

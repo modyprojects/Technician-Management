@@ -33,14 +33,14 @@ export type CallsTableRow = {
   /** Product name. */
   product: string;
   sku: string;
-  /** Technician of the last (or next) visit. */
-  tech: { name: string; color: string };
+  /** Technician of the last (or next) visit; null when no visit is shown (D60 (1): every visit cancelled). */
+  tech: { name: string; color: string } | null;
   /** Number of visits. */
   visits: number;
-  /** Last (or next) visit: day label and start time, e.g. "היום 09:00" or "22.10 13:00". */
+  /** Last (or next) visit: day label and start time, e.g. "היום 09:00" or "22.10 13:00"; "" when none. */
   when: string;
-  /** Source of that visit (SIM-14). */
-  source: VisitSource;
+  /** Source of that visit (SIM-14); null when no visit is shown. */
+  source: VisitSource | null;
   /** That visit was cancelled: "בוטל" after the time. */
   whenCancelled?: boolean;
   /** Service-call status (OF-17). */
@@ -86,7 +86,7 @@ export function CallsTable({
           <thead>
             <tr>
               <th scope="col" className={SHORT}>
-                פנייה
+                מס׳ פנייה
               </th>
               <th scope="col">לקוח</th>
               <th scope="col" className={`${SHORT} oc-custno-col`}>
@@ -120,7 +120,7 @@ export function CallsTable({
             {rows.map((r) => (
               <tr key={r.req} className="click" onClick={(e) => openRow(e, r.href)}>
                 <td className={SHORT}>
-                  <Link href={r.href} prefetch={false} className="lnk num" aria-label={`פנייה ${r.req} · ${r.customer}`}>
+                  <Link href={r.href} prefetch={false} className="lnk num" aria-label={`מס׳ פנייה ${r.req} · ${r.customer}`}>
                     {r.req}
                   </Link>
                   {r.isTest && (
@@ -143,11 +143,17 @@ export function CallsTable({
                   {r.sku}
                 </td>
                 <td className={SHORT}>
-                  <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                  {r.tech ? (
+                    <>
+                      <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                    </>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
-                  <VisitSourceIcon source={r.source} /> {r.when}
+                  {r.source && <VisitSourceIcon source={r.source} />} {r.when || "—"}
                   {r.whenCancelled && (
                     <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
                       <span className="oc-sep"> · </span>בוטל
