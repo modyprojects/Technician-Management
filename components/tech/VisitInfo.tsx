@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { VisitDetail } from "@/features/visits/data/types";
 
 // Details of an open visit on the technician visit card (docs/demo.html techCall() L530-543).
@@ -75,7 +75,7 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           {cu.isTest && (
             <>
               {" "}
-              <TestBadge />
+              <TestPill />
             </>
           )}
         </span>
@@ -91,7 +91,7 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           {p.isTest && (
             <>
               {" "}
-              <TestBadge />
+              <TestPill />
             </>
           )}
         </span>

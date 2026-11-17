@@ -7,7 +7,7 @@
 // placeholder. The demo's "+ דוגמה" tile is not part of the app (X-08). Test media carry the 🧪
 // badge (SIM-19).
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import { useCommands } from "@/features/data-access/commands-context";
 import type { MediaItem, MediaKind, MediaPhase, VisitRef } from "@/features/visits/data/types";
 import { MEDIA_PER_PHASE_MAX, type UpdateDraft } from "./WorkDraft";
@@ -73,7 +73,7 @@ function Thumb({
       </span>
       {item.isTest && (
         <span aria-hidden="true" style={{ position: "absolute", bottom: 4, insetInlineStart: 4, lineHeight: 1 }}>
-          <TestBadge />
+          <TestPill />
         </span>
       )}
       <button
