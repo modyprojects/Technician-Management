@@ -1,5 +1,223 @@
 # Work Log (English only)
 
+## 2026-11-17 — D59 rewritten: screen approval, merges and Version 1 focus
+- **Owner (2026-11-17):** each screen is one PR; when checks are green the owner gets screenshots (390/820/1440), the Preview link and 3–5 Hebrew review points; after his "מאשר" Claude Code merges the exact approved head itself with the D31 checks; visible changes after approval need a new approval. Non-UI PRs without protected files, migrations or remote writes merge when checks are green. The automatic Production deployment after a merge is part of the merge; other Production or infrastructure actions, protected files, migrations and remote Supabase writes are asked for, batched. No idle waiting; up to 3 agents (D64); questions to the owner only about business behaviour, data or security; one short daily Hebrew report.
+- **Version 1 target (24.11.2026, online only, no external integrations):** real sign-in for all four roles and D60 user management; the invitation simulator inside "זימונים שלא נקלטו"; real technician screens; real office screens; the Manager dashboard on real data; QA corrections inside each screen. Deferred to Version 2 (ROADMAP): offline, recording and transcription, Excel, usage analytics, MFA, the versioned "טופל" text.
+- **Changed:** `docs/decisions.md` D59 (and pointers in D31, D62), `CLAUDE.md` (merge rules, Production deployments), `docs/ROADMAP.md` (Version 1 and Version 2). `main` merged into this branch (`claude/trusting-brahmagupta-yel1it`, PR #26) without rewriting history.
+
+## 2026-11-17 — D62 (6): mandatory UI screenshots and owner approval
+- **Owner (2026-11-17), permanent, all agents:** every new screen and every visible UI change is shown with real screenshots of the implemented app (desktop and mobile; tablet when it differs materially; forms, dialogs, validation errors, key interactions), sent in the conversation with the restricted Preview URL and a brief explanation; visual approval requested before the screen is marked approved; corrections come back with updated screenshots; screenshots are never replaced by descriptions or test reports; a waiting screen never blocks other agents. He explicitly authorized the documentation updates.
+- **Changed:** `docs/decisions.md` D62 (6) and D64 (5); `CLAUDE.md` "Visual approval" items 1 and 6.
+
+## 2026-11-17 — D64: multi-agent development team as the standard operating model
+- **Owner (2026-11-17, two messages):** Claude Code owns routine development; up to 3 concurrent agents are the permanent default (replaces D58 (7)); one clear ask for actions that need the owner; screens first; D62 screen-by-screen approval, D31 and every approval rule unchanged. He explicitly approved updating the workflow instructions (`CLAUDE.md`, protected) to make this permanent.
+- **Owner (third message, 2026-11-17):** the team structure (Tech Lead / Orchestrator; Agent 1 and Agent 2 full-stack developers; Agent 3 QA / security / flexible developer, never a bottleneck); flexible roles; explicit file ownership; reports never overstate running agents; separate screens may be built concurrently, but none counts as approved without his visual review (D62).
+- **Changed:** `docs/decisions.md` D64; `CLAUDE.md` (the autonomous-development line); `docs/ROADMAP.md` (process paragraph).
+
+## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
+- **Approval:** the owner's explicit approval for one application (PR #32 `fa3f7ec`, SQL `6bce3911…7992`, payload `d9087910…d41b`). A1 (the canary fixture) was also approved; merging PR #32 is approved after the verification, with the D31 checks.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused and changed nothing, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–4 were present, with no Migration 5 objects, the fingerprint equal to the post-Migration 4 values, `account_requests` empty and the section 0b query 0.
+- **Apply:** one `apply_migration` call (`accounts_permissions`), first and only attempt; version `20261116142838`.
+- **After the apply (read-only):** stored statement `d9087910…d41b`, embedded SQL `6bce3911…7992`; fingerprint 14/14 equal to the local Migrations 1–5 build (functions 115, policies 36); audit chain intact, anchor unchanged (`9c962b84…eb44`); user rows 0; advisors unchanged (one WARN). Record: `docs/review/step1-pr18/README.md`, "Applied to the remote project".
+- **Next:** merge PR #32 with the D31 checks; then Step 2, the real login screen (D62).
+
+## 2026-11-16 — Step 1 / PR 1.8: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; two should and five nits, no must. Record and dispositions: `docs/review/step1-pr18/README.md` section 12.
+- **Fixed in Migration 5** (new sha256 `425ff1be…07f9`, 949 lines; `ALLOWED_WRITERS` unchanged):
+  - S-2: `admin_delete_user` also turns a deleted Technician's "פעיל" (`accepts_invitations`) off, audited, before the profile update; the frozen field profile then keeps it off. Step 6 acceptance rule: a visit goes only to a technician who accepts invitations and whose profile is active and not deleted.
+  - N-4: a read-only, fail-closed pre-apply check (section 0b) refuses the apply while a legacy request would be stranded (a pending request of a requester who left; an approved, unfulfilled creation request with no active Creator). Narrowed to those rows: the literal "any pending request" rule would fail the canary check on the merged Migration 1 fixture.
+- **Tests:** S-1: `050` regains the negative cases of `cancel_account_request` (on creation intents) and `020` the decision and rejection CHECKs; `290` covers S-2; new `310` covers N-4. pgTAP 1,508/1,508 (36 files); node 208/208; guard passed; canary PASS (no new exception); lint and typecheck clean.
+- **Docs:** README status (Migration 4 applied and merged; this branch not synced with `main` yet), counts, the pre-apply check, OQ-9, the Step 2 note on the `usage` lock (N-3), `docs/database-schema.md` (16 keys, N-2).
+- **Confirmation round:** the fixes above CONFIRMED; NIT-6 (a deadlock between `admin_delete_user` and `admin_update_technician`, introduced by the S-2 fix) fixed: `admin_delete_user` now locks the field profile before the profile, so both writers lock `technicians` first, then `profiles` (migration sha256 `6bce3911…7992`, 952 lines); a two-session check shows the deadlock with the earlier body and none with the fix. pgTAP 1,508/1,508; node 208/208; guard, canary, lint, typecheck clean.
+
+## 2026-11-16 — Step 1 / PR 1.8: Migration 5 (accounts and permissions), local only
+- Branch `claude/step1-pr18-accounts-permissions`, from PR 1.6's head `f53016a` (Migrations 1-4). Migrations 1-4 unchanged. **Not applied, not pushed.** Sources: D60 (7)-(9), D33, D34, D47, D49, D51; QA rows M-06, M-07, M-10, C-01, C-02, C-03 to C-06.
+- **Migration** `20261108120000_accounts_permissions.sql` (sha256 `028f3bec…f870`, 903 lines):
+  - Creator-only deletion, Option A: `profiles.deleted_at`, `deleted_by` (three CHECKs, a foreign key), `admin_delete_user` (audited `profile.deleted`), a reactivation guard, and a deleted account and its field profile frozen for every writer (triggers). No physical deletion; history and attribution kept.
+  - Direct Manager administration of Technician and Customer Service accounts (no Creator approval): new bodies of `authorize_account_creation`, `admin_create_profile`, `admin_set_user_active`; `assert_can_change_credentials` refuses a deleted account. The Manager never deletes, never changes a role, never sets passwords or emails.
+  - The account-request path retired: EXECUTE revoked from every role and a trigger refuses new request rows; history kept under the PR 1.3 policies.
+  - Narrow matrix keys `reasons`, `callTypes`, `ackText` (TEMPORARY: Manager on, Customer Service off); the five call-type and reason RPCs switched to them; pickup places keep `settings`.
+  - `usage` a Creator-only fixed capability in `has_permission`. The fail-closed hardening check (Migration 4's, byte for byte).
+- **Rollback** script (one DO block, refuses first); a rolled-back run leaves a catalog equal to a database built from Migrations 1-4 (11 fingerprints); `990` runs it first.
+- **Tests:** pgTAP 1,486/1,486 (35 files; new `270`-`300`; `010`, `015`, `020`, `030`, `040`, `050` (rewritten), `060`, `070`, `090`, `120`, `990` updated; every D60-changed expectation listed in the PR 1.8 README section 7); node 205/205; guard passed with no `ALLOWED_WRITERS` change; canary PASS (5 migrations, no new exception); lint and typecheck clean.
+- **Protected files:** a new canary fixture `tests/db-canary/20261108120000.sql` (approval item A1); `scripts/check-migrations.mjs` unchanged. `docs/security.md` still describes D34 (a); aligning it is a separate protected change.
+- **TEMPORARY behaviours** OQ-1 to OQ-10 and deviations DEV-1 to DEV-9: `docs/review/step1-pr18/README.md`. Among them: a Creator account is never deleted; a deleted account never changes again; `settings` stays an editable key (not locked like `usage`).
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1; the apply only after Migration 4 is applied and merged, with a separate approval of the exact file. (Status update, same day: Migration 4 is applied, version `20261116120813`, and merged, PR #30 → `main` `5f57ce9`; the review ran, see the entry above.)
+
+## 2026-11-16 — Migration 4 applied to the remote project (PR 1.6)
+- **Approval:** the owner's explicit approval for one application (PR #30 `f53016a`, SQL `ad0eb314…2ffd`, payload `0b092aa4…4fcd`). A1 and A2 were also approved.
+- **Before the apply:**
+  - Locally, a corrupted wrapper was refused, and the wrapper equals a plain apply on 14/14.
+  - On the remote (read-only), only Migrations 1–3 were present, with no Migration 4 objects and the fingerprint unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116120813`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–4 build on 14/14 (110 functions, 36 policies).
+  - The audit chain is intact; the anchor changed to `9c962b84…` as designed.
+  - User rows 0; advisors are unchanged.
+  - Details: `docs/review/step1-pr16/README.md`, "Applied to the remote project".
+
+## 2026-11-16 — Step 1 / PR 1.7: report and close (documentation only, local)
+- Branch `claude/step1-pr17-report`, from PR 1.6's head `f53016a` (Migrations 1–4). **Not pushed, not merged.** Nothing remote was accessed; no migration, test, script, workflow or protected file changed.
+- **New folder `docs/review/step1/`:**
+  - `README.md`: index and the Step 1 status table (Migrations 1–3 applied and merged, with their remote versions and pinned sha256; Migration 4 prepared, **not applied**, PR #30 draft), the fresh run, and the ROADMAP owner check with its evidence.
+  - `erd.md`: a Mermaid ER diagram of all 23 tables in `public` (keys, composite `(…, is_test)` foreign keys, markers), the 40 people references, every column (301), the view and the server functions by migration. Generated from the catalog of a local database built by `supabase db reset`.
+  - `who-can-see-what.he.md` (Hebrew): per data area and role, reads and writes with the matrix keys, the fixed capabilities, the TEMPORARY behaviours and the open decisions. Marks that Migration 4 is not applied and that D60 (7)–(9) arrive with Migration 5.
+  - `test-report.he.md` (Hebrew): the results below, the negative security tests, the hardening checks, the guard, the canary, the census, the rollback round trip, known gaps and hand-offs, and the commands.
+- **Fresh local results:**
+  - pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS (4 migrations, 4 fixtures, 23 tables, 301 columns, the 3 approved exceptions).
+  - Census on the migrations-only database: 30 rows, all 0.
+  - Rollback round trip: an out-of-order down script is refused with nothing dropped; the four down scripts, newest first, return to each earlier migration's counts and end with an empty catalog and hardened default privileges; rebuild and pgTAP 1,390/1,390 again.
+  - Audit-function fingerprint `9c962b84…` equals PR 1.6 §9.
+  - Lint and `git diff --check` clean.
+- **Also updated:** `docs/PROJECT-MAP.md` (the `docs/review/` row, the PR 1.7 status line, and the stale "not applied" status of Migrations 1–3, which the apply records in the per-PR reports contradict), `docs/ROADMAP.md` (PR 1.7 row status only).
+- **For the owner:** the review of the ERD and the Hebrew reports (ROADMAP Step 1 owner check). The ROADMAP row now says that PR 1.7 closes the Migration 1–4 chain and that Step 1 ends with PR 1.8 (D60).
+
+## 2026-11-16 — Step 1 / PR 1.6: independent review fixes (local only)
+- **Independent review (D58), one reviewer:** APPROVE WITH FIXES; three should and six nits, no must.
+- **Fixed in Migration 4** (new sha256 `ad0eb314…8715`, 1,416 lines; the four guard signatures are unchanged):
+  - S1: accepting a second device report after an office correction of the same field time is refused (PT409).
+  - S2: a reused review dedupe key returns the stored item only for an exact replay; anything else is refused (23505).
+  - S3 (TEMPORARY, OQ-7): a treatment summary never changes after insert (`t11_frozen`), and a closed visit keeps its continuation reason and next-visit notes (`t14_closed_fields`); the D44 path for cancelled visits stays open.
+  - N1: unique indexes on the two correction keys. N2: the second-report contract checks its times and kind. N3: `conflicts` is checked before any lock.
+- **Documented:** N4 (READ COMMITTED for the Step 4 writers) and N5 (ownership checks and a server-side payload hash). N6 was already covered by `990`.
+- **Local results:** pgTAP 1,390/1,390 (31 files); node 190/190; guard passed; canary PASS; lint and typecheck clean. The record is in `docs/review/step1-pr16/README.md` section 12.
+
+## 2026-11-16 — Migration 3 applied to the remote project (PR 1.5)
+- **Approval:** the owner's explicit approval for one application (PR #25 `5b2d2be`, SQL `37b803db…eecb`, payload `8b9decd8…313d`).
+- **Pre-checks (read-only):** hashes matched, only Migrations 1 and 2 were present, no Migration 3 objects, fingerprint 14/14 unchanged.
+- **Apply:** one `apply_migration` with the self-verifying wrapper. It succeeded; the server version is `20261116094444`.
+- **Post-apply (read-only):**
+  - The stored statement equals the approved payload, and its embedded SQL equals the approved file.
+  - The fingerprint equals the local Migrations 1–3 build on 14/14.
+  - User rows 0; the audit anchor is unchanged; advisors are unchanged (one WARN).
+  - Details: `docs/review/step1-pr15/README.md` §17.
+
+## 2026-11-16 — Step 1 / PR 1.6: Migration 4 (integrity and offline), local only
+- Branch `claude/step1-pr16-integrity-offline`, stacked on PR 1.5's head `5b2d2be`. Migrations 1-3 unchanged. **Not applied, not pushed.**
+- **Migration** `20261107120000_integrity_offline.sql` (sha256 `2052f4de…2ffd`, 1,349 lines):
+  - three tables: `review_items` (D44; dedupe key, the visit belongs to the call, both versions frozen, decided once), `visit_corrections` (D14; append-only, one field per row, one per visit version) and `offline_operations` (D46; one immutable final result per device operation id);
+  - `visit_time_reports` gains the `correction` source with `correction_id` or `accepted_review_id` (PR 1.5 DEV-2, OQ-11); `visits` gains `UNIQUE (id, service_call_id)` and the `field_version` trigger;
+  - writers `correct_visit` (Manager and Creator, fixed D14 capability) and `resolve_review_item` (D14 items by Manager or Creator with a note, others with `conflicts`), SECURITY DEFINER behind SECURITY INVOKER wrappers, with audit and field history; three helpers for the Step 4 and Step 6 writers (`create_review_item`, `offline_operation_replay`, `record_offline_operation`);
+  - four SELECT policies, grants, census, and the fail-closed hardening check (Migration 3 section 12, byte for byte) as the last statement.
+- **Rollback** script (one DO block, refuses first); `990` runs it first and checks that the catalog then equals a database built from Migrations 1-3 (eight fingerprints).
+- **Protected files:** `scripts/check-migrations.mjs` gains four `ALLOWED_WRITERS` entries (approval item A1); a new canary fixture `tests/db-canary/20261107120000.sql` (A2). `coverage-exceptions.json` unchanged.
+- **Local results:** pgTAP 1,387/1,387 (31 files; new `220`-`260`; `010`, `015`, `060`, `070`, `100`, `140`, `150`, `990` updated); node 190/190; guard passed; canary PASS (4 migrations, no new exception); lint and typecheck clean.
+- **TEMPORARY behaviours** OQ-1 to OQ-14 and deviations DEV-1 to DEV-12: `docs/review/step1-pr16/README.md`. Among them: corrections are append-only (as-closed values kept), no outcome correction, only `keep_current` and the accepted second device report are applied by PR 1.6.
+- **Gates:** one independent review (D58), not run yet; the owner's acceptance of A1 and A2; the apply only after Migration 3 is applied and merged, with a separate approval of the exact file.
+
+## 2026-11-16 — D62: QA corrections per real screen
+- **Owner clarification (2026-11-16), recorded as D62:** the 50 QA corrections are implemented with their real screens, not at the end. The per-screen cycle is:
+  - review the QA requirements;
+  - build the screen with them;
+  - test its acceptance criteria;
+  - give the owner an owner-only Preview;
+  - apply the owner's requested changes before the next screen.
+- Outdated demo behaviour is never rebuilt first. The MODY design is kept except where the QA document requires a change.
+- **Reporting:** each screen is reported in Hebrew with the QA IDs implemented and still pending.
+- **Order:** the approved order continues: Migration 3 (apply on approval), PR 1.6 (Migration 4), PR 1.7, PR 1.8 (Migration 5), then Step 2.
+- `docs/ROADMAP.md` "Current priority" updated. Documentation only.
+
+## 2026-11-12 — D61: the real application and the demo
+- **Owner requirement (2026-11-12), recorded as D61:**
+  - `/dev/demo` stays a development and demonstration environment with fictional data. It is isolated from the real application, restricted to authorized development access, and not deleted yet.
+  - The real application uses only Supabase-backed data and Supabase Auth, and never shows demo records as operational data.
+  - The MODY design is the baseline; only the approved QA corrections (D60) change it, and they are applied while each real screen is built.
+- **Current controls (verified on `main` `4509c6e`):**
+  - The lint rules keep demo `_data` and `_components` out of every file outside `app/dev`, and keep `app/` imports out of `components/`, `features/` and `lib/`.
+  - Every demo screen carries the strip "🧪 נתוני בדיקה · פעולות מדומות".
+  - `/dev` opens in Production only during the testing period, behind Vercel Authentication (D31).
+  - The only real route today is the temporary home page.
+- **Gap and plan:** a file outside `app/dev` could still import other `app/dev/demo` modules. The first real-route PR (Step 2) widens the lint rule (no `app/dev` import outside `app/dev` except the gate) and adds tests that real routes never render the demo strip.
+
+## 2026-11-12 — D60: QA corrections 01 integrated into the roadmap (documentation only)
+- **Source:** the owner's QA document "קובץ תיקונים 01" (`docs/design/qa-corrections-01.md`, PR #28, not merged yet). The owner approved the Hebrew integration plan on 2026-11-12 with three decisions:
+  - Creator-only deletion, Option A;
+  - the simulator button inside "זימונים שלא נקלטו", only when enabled in a test environment;
+  - Managers cannot change roles.
+- **D60** recorded in `docs/decisions.md`. Open decisions 10 and 27 resolved; 7, 15 and 20 annotated.
+- **Mapping:** `docs/qa-corrections-01-integration.md` maps all 50 requirements (T-01 to T-10, S-01 to S-12, M-01 to M-10, C-01 to C-09, X-01 to X-09). Each has its current status, work, step, acceptance criteria and tests. **Nothing is implemented yet.**
+- **ROADMAP:** every step row names its QA IDs. Added PR 1.8 (Migration 5, accounts and permissions) and Step 12 (the full usage-analytics dashboard after the pilot), plus a "QA corrections 01" section and the current priority.
+- **Other documents:**
+  - `docs/demo-deviations.md` v1.6: QA-01 to QA-17 override the demo where they differ.
+  - `docs/database-schema.md`: the planned D60 changes (Migration 5, telemetry). Migrations 1–3 unchanged.
+  - `docs/PROJECT-MAP.md` updated.
+- **Merge order:** PR #28 first, then this PR. Both need the owner's merge approval. No code, migration or protected file changed.
+
+## 2026-11-12 — Step 1 / PR 1.5: owner decisions and Migration 3 pre-apply preparation (not applied)
+- **Owner decisions:**
+  - OQ-13 approved: the three narrow read functions comply with `docs/security.md` §5.
+  - A1 approved: the `write_entity_change` guard writer.
+  - Section 12 needs no further review.
+  - Approved SQL sha256 for the preparation: `37b803db…eecb`.
+- **Read-only preflight:** history holds Migrations 1 and 2 only. The catalog fingerprint equals the post-Migration 2 values on 14/14. No Migration 3 object exists. Section 12's checks find 0 leftovers. Advisors are unchanged.
+- **Wrapper:** sha256 `8b9decd8…313d`.
+  - Locally, a corrupted copy was refused and nothing was created; the real one equals a normal apply on 14/14.
+  - A read-only full-size dry run on the remote returned the same wrapper and embedded hashes.
+- **Not done:** the apply, the merge of PR #25. Details: `docs/review/step1-pr15/README.md` section 16.
+
+## 2026-11-12 — Step 1 / PR 1.5: Migration 3 prepared for the apply approval (not applied)
+- **Synced** with PR 1.4's head, which carries section 11, the Migration 2 apply record and the CI fix. The conflicts in `PROJECT-MAP.md` and `WORKLOG.md` are resolved.
+- **Section 12** is a fail-closed hardening check. It is Migration 2 section 11, except that it allows invoker-rights views such as `visit_time_current`, and any materialized view still fails.
+  - `tests/db/210` (30) and `tests/ci/hardening-assertion.test.mjs` cover it.
+  - `tests/db/140` now expects the applied Migration 2 check to flag exactly `visit_time_current`.
+- **Local:** pgTAP 1259/1259 (26 files), node 174/174, guard passed, canary PASS, lint and typecheck clean.
+- **New sha256:** `37b803db…eecb`. **Not applied.**
+- **Gates before the apply:** the owner's approval of the exact file; OQ-13; A1 (guard) before the merge.
+
+## 2026-11-12 — Step 1 / PR 1.4: Migration 2 applied to the remote project (owner-approved)
+- **Apply:** the owner approved it and was present for Supabase's confirmation prompt. Migration 2 (sha256 `874742…b363`) was applied once to `ooxozvvrljjkyfduuiks`, name `reference_customers_products`: `{"success":true}`.
+  - **Wrapper:** the file was sent inside a self-verifying wrapper, sha256 `04810116…0a92`. The server checks the embedded file's hash before running it, because the tool layer turns a typed `\uXXXX` (570 in the file) into the literal character.
+  - **Earlier attempt:** a first attempt the same morning timed out on the unanswered confirmation prompt. Nothing was applied (verified read-only).
+- **Verification (read-only):** the stored statement equals the approved wrapper, and its embedded SQL equals the approved file. The catalog fingerprint equals the local build on 14/14 values. The audit anchor and function hashes equal the README section 9 values. D48 rows: 2 call types and 5 reasons; the other new tables are empty. Advisors: one WARN (`auth_leaked_password_protection`). Details: `docs/review/step1-pr14/README.md` section 15.5.
+- **Discrepancy (documented, not repaired):** the recorded version is **`20261112093516`**; the file version is `20261105120000`.
+- **CI fix:** PR #27 drops `--with-deps` from the Playwright Chromium install step (owner-approved change to a protected file). Its CI is green (Chromium install 5 s, e2e passed). It waits for the owner's merge approval.
+- **Not done:** merge of PR #14, the `010` remote run, history repair, Migration 3.
+
+## 2026-11-11 — Step 1, PR 1.5: Migration 3 (service calls, visits and their history), local only
+- Branch `claude/step1-pr15-calls-visits`, stacked on PR 1.4 (`a33617d`). The build workflow of 2026-11-06 stopped at the weekly usage limit; the uncommitted work was checkpointed as-is (`03e4267`, owner-approved) and finished sequentially under D58.
+- **Migration** `20261106120000_service_calls_visits.sql`: seven tables (`service_calls`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports`, `visit_events`, `entity_changes`), the view `visit_time_current`, ten SELECT policies, the narrow read functions `previous_visits` (D36), `visit_rep_contact` (D40) and `my_visit_details`, the call-status writer (D38), the field-history writer, four deferred constraint triggers; rollback script and canary fixture. **Not applied** to any remote database.
+- **MIG-1 fixed** (`e9d1d9e`): the warranty CHECK accepted a warranty month while the status was NULL.
+- **Tests** (D58 (5) priorities): new `180_calls_visits_rls` (40), `190_visit_functions` (20), `200_time_reports` (16); `170` completed (88). Local: 24 files, 1196 assertions pass; canary-rows check PASS (3 migrations, no coverage exception); migration guard passed; `tests/ci` 166 pass. No mutation testing (D58).
+- **Docs:** `docs/review/step1-pr15/README.md` (objects, who can do what, tests, approval items A1-A4, TEMPORARY behaviours OQ-1 to OQ-15), `docs/PROJECT-MAP.md`, `docs/testing.md`.
+- **Independent review (D58, one review, head `eba7971`):** APPROVE WITH SHOULD-FIXES, no must. Fixed: S1 (warranty CHECK and infinite dates), S2 (180 named rows through a join with `visits`; now a postgres-owned lookup and direct counts), N1 (infinite schedule times), N2 (`cancelled_by` frozen), N3, N4 (Asia/Jerusalem day boundary, re-assignment cases), N5. Recorded: S3 as DEV-17 with a `c50` proposal for the first writer PR, N2 rest as DEV-18, N6 as a Step 4 hand-off. Reviewer's OQ-13 answer: yes, with conditions (README section 12). After the fixes: 24 files, 1202 assertions pass; canary PASS; guard and `tests/ci` pass.
+- **Gates:** A1 (the `write_entity_change` writer in the protected migration guard) before any merge; apply only after Migrations 1 and 2 are applied and merged and OQ-13 is answered, with a separate approval of the exact file.
+
+## 2026-11-11 — Step 1 / PR 1.4: Migration 2 pre-apply round (section 11, D58 review, read-only preflight; not applied)
+- **Owner approval (2026-11-11):** steps 1-3 for Migration 2. Not approved: the apply, the merge of PR #14 and any remote write. PR #26 stays a draft.
+- **Section 11** (`77fb618`): a read-only, fail-closed hardening check, last in the file. It keeps PR 1.3 section 15's privilege checks unchanged and adds checks for:
+  - a table without RLS;
+  - a table, sequence or function not owned by `postgres`;
+  - a policy for any role but `authenticated`;
+  - a function without the exact pinned `search_path`;
+  - any view or materialized view.
+- **Tests for section 11:**
+  - `tests/db/140` (27) runs a byte-identical copy against 25 injected leaks.
+  - `tests/ci/hardening-assertion.test.mjs` (3) keeps the copy identical, the section 15 checks unchanged and the block last.
+- **Local results:** pgTAP 865/865 (18 files), node 153/153, migration guard passed, canary PASS, lint and typecheck clean.
+- **Migration sha256** `874742381f39711f5039a5f3933c432c22a113249fd9db148c7c766fc841b363` (1220 lines; it was `d07cfd34…`). The down script is unchanged (`cefde1d3…`).
+- **Independent review (D58, one reviewer, local only): APPROVE WITH FIXES.**
+  - Every round-1 fix holds; there is no security defect in the SQL.
+  - F-1, the stale pin in the README: fixed in the docs.
+  - F-2, run section 11 read-only on the remote: done, 0 leftovers.
+  - F-3 to F-7: recorded in `docs/review/step1-pr14/README.md` section 15.2. F-5 became a go-live item in `docs/deployment.md`; F-7 became a hand-off.
+  - The migration is unchanged, so no further review round is needed.
+- **Read-only preflight** (`ooxozvvrljjkyfduuiks` only; every SQL `set transaction read only;`, verified on):
+  - History holds `20261111125920 access_and_permissions` only.
+  - The catalog fingerprint equals the local build of Migration 1 on all 12 values.
+  - Section 11's checks find 0 leftovers, and none of review F-4's gaps are present.
+  - No name collisions.
+  - Row counts: `profiles` and `audit_logs` 0; `auth.users` 1 (not read).
+  - The audit anchor equals the PR 1.3-only value.
+  - Advisors: one WARN (`auth_leaked_password_protection`).
+  - Details: README section 15.3.
+- **CI on `77fb618`:**
+  - `pgtap` passed (pgTAP, canary-rows check).
+  - `checks` failed twice in `Install Chromium for Playwright`: the runner's Ubuntu apt mirror timed out. PR #26 failed the same way. Every code step before it passed.
+  - A fix would touch the protected `ci.yml`, so none was made. A comment is on PR #14 and PR #26.
+- **Not done:** apply, `010` remote run, history repair, rollback, merge of PR #14.
 ## 2026-11-11 — D59 working rules; PR #12 merged
 - **D59** recorded (`docs/decisions.md`). These need no approval:
   - read-only Supabase operations, on project `ooxozvvrljjkyfduuiks` only and enforced with `set transaction read only;`;
@@ -90,6 +308,7 @@
   - **Tests:** a "PR 2.2 review fixes" unit block (9 tests) and 2 more unit tests in the "PR 2.2 port alignment" block; an e2e raw-response test of `selfRole` per account screen (CA-5 a). Mutations checked: removing either stale check, the caller check of "פעיל", the cancelled-after-approval branch, the notices' pending filter, the session's inactive check, `versionAfter`'s simulated rule, `selfRole` "creator" on every page and a hard-coded `expectedVersion: 1` for deactivation each fail a test.
   - **Not changed (reasons in the README):** no visible fixture of an approved, unfulfilled request (the visible changes of PR 2.2 stay the plan's two; its UI path is a PR 2.3 test obligation); no matrix cell version yet (CA-4); `createAccount` keeps "tech" at the port (CA-11).
   - **Checks after the fix pass (local):** `npm run lint` clean; `npm run typecheck` clean; `npm run test:ci` 52/52; `npm run check:migrations` passed; `npm run build` (Turbopack) passes (1,415 static pages); `npm run scan:bundle` passed (7,920 browser files); `npx playwright test` (all projects) 2,426 passed, 2,716 skipped, 0 failed (8.5 min; before the fix pass 2,414 / 2,692: +11 unit tests and +1 e2e on desktop); `tests/e2e/data-validate.spec.ts` 48/48 (desktop), of which the two PR 2.2 blocks hold 21. The step2-pr22 screenshots, taken again from the fix build, are pixel-identical (none replaced).
+
 ## 2026-11-05 — Manager dashboard, office navigation and the MODY logo (D57)
 - **Owner (2026-11-05, messages 1–6), recorded as D57** (`docs/decisions.md`, after D56): the five-item Manager and Creator navigation with "דשבורד" as the landing page; follow-up visits and review items off the dashboard; the three dashboard tabs of `docs/design/manager-dashboard-spec.md` and the visual reference `docs/design/manager-dashboard-demo.html`; the metric categories (computed / "הגדרה ממתינה" / "לא זמין"); the follow-up analytics and current call status of message 5; the white logo in the existing dark headers; and (message 6, D57 (9)) "נפתחה" = `opened_at` and "תחילת טיפול" = the first visit's arrival as two labelled fields. Open #15 and #20 amended; new open #26 (navigation leftovers, review count) and #27 (simulator placement). `docs/demo-deviations.md` v1.4 (OF-01, OF-02, OF-11, OF-12, OF-13, OF-16, SE-01, SE-03, SIM-01; new OF-18, OF-19, OF-20, G-08); `docs/spec.md`, `docs/design-system.md`, `docs/architecture-data-access.md`, `docs/testing.md`, `docs/PROJECT-MAP.md`, `docs/ROADMAP.md`, `docs/THINKING-AHEAD.md` updated.
 - Branch `claude/manager-dashboard` (from `main` `ba47e8b`), three local commits: the data layer (registry, formulas, periods, time helpers, demo `DEMO_NOW` 21.10.2026 12:45 and fictional call `openedAt` / `resolvedAt`), the navigation and logo, and the dashboard UI with docs and screenshots. UI demo only (`/dev/demo`); fictional, test-marked data; no migration, no remote Supabase operation, no permission value changed, no new package.
@@ -133,6 +352,17 @@
 - **F1 evidence (shown to the owner on 2026-11-05):** an owner message in the Claude Code session, "Merge approved — PR #6 at head a4057ec (Squash and merge)" (2026-11-04T14:29:24Z), before the merge at 14:29:41Z; not recorded as approval until the owner confirms.
 - **Checks (local):** `npm run test:ci` 52/52 pass; `npm run lint` clean; `node scripts/check-migrations.mjs` passed.
 - **Next (not done):** B1 (owner action) → B2 → B3/B4 execution approvals → PR #12 merge approval; then PR #14 rebased onto `main`, checked and reviewed again, C3/C4 approvals and its merge approval. Non-blocking: the owner's confirmation of the F1 evidence.
+
+## 2026-11-05 — Step 1 / PR 1.4 prepared: Migration 2, reference data, customers and products (local only, not applied, not pushed)
+- Branch `claude/step1-pr14-reference-data`, stacked on PR 1.3 (`9229949`, draft PR #12, not applied). Built from the reviewed plan (two critics) by a migration author and two test writers, then integrated. Nothing contacted any remote Supabase project (no MCP Supabase tool, no `link`, no `--linked`/`--project-ref`); every database run used an isolated local copy with its own project id and ports; `supabase/config.toml` is unchanged. Report: `docs/review/step1-pr14/README.md`.
+- **Migration** `supabase/migrations/20261105120000_reference_customers_products.sql`: seven tables (`brands`, `suppliers`, `products`, `customers`, `call_types`, `followup_reasons`, `collection_locations`), RLS on all, every FK `ON DELETE RESTRICT`; three trigger functions (`tg_immutable_except`, `tg_one_way_product_refs`, `tg_followup_reason_delete_guard`) and 40 triggers (AFTER one-way triggers on the two root tables, because BEFORE triggers see the generated `is_test` as NULL, V1); eight Settings RPCs (private SECURITY DEFINER bodies, public SECURITY INVOKER wrappers, key `settings`, masked errors, advisory locks, 100-row cap, at least one active continuation reason); the audit extension (11 actions, 3 target tables; `tg_audit_target` replaced, so the anchor fingerprint changes) and the census extension; 10 SELECT policies; per-object grants; the D48 rows only (2 call types, 5 continuation reasons).
+- **TEMPORARY, deny by default (owner questions OQ-1 to OQ-13 in the report, section 13):** no product, brand or supplier write path (OQ-1, OQ-3); product, brand and supplier reads need `cal` or `calls` (OQ-2); every row created in the app is test data until go-live, enforced by CHECKs (OQ-4); no rename (OQ-5); closed place-type list (OQ-6); strict text, SKU, customer-number and phone rules and a 100-row cap (OQ-8); Settings writes audited, Manager audit policy unchanged (OQ-9); `customers.name` and `phone` NOT NULL (OQ-10); no Technician reads of customers, products, brands or suppliers until PR 1.5 (OQ-12); no migration deletes test data, and test call types, brands, suppliers, products and customers cannot be deleted by any role, while test pickup places and user-added test reasons can (OQ-13; corrected in review CONF-1).
+- **Guard:** `ALLOWED_WRITERS` +3 (`add_call_type`, `add_followup_reason`, `add_collection_location`, each pinned to its table). Owner acceptance is a merge gate, with PR 1.3 Q1.
+- **Integration pass:** the test writers reported no migration defect. Three fixes, each with tests that fail without it: INT-1 the CHECK strings held 225 literal invisible characters (bidi overrides included) instead of the plan's escapes, now ASCII escapes, plus a new node test `tests/ci/source-text.test.mjs` that rejects invisible characters in SQL sources; INT-2 every Unicode default-ignorable character is rejected and keys allow no space but U+0020 (a test Manager could add an invisible duplicate of a D48 label); INT-3 no leading or trailing non-ASCII space (a required address of one no-break space was accepted). G-3 (`is_test` nullable in the catalog) is a PR 1.5 hand-off.
+- **Verification:** V1–V9 and V11 settled locally (V4: ICU `he-IL-x-icu` available, query-level only; V9: the CLI runs `.sql` files in `tests/db` subfolders, so fixtures stay outside it; V11: without the handlers the DETAIL shows the failing row). V10 and V12 need the approved remote checks. Pinned hashes: README sections 9 and the status table.
+- **Counts (integration pass):** guard passes; `npm run test:ci` 105/105 (guard 66, rollback 7, anchor files 10, source text 22); `npm run lint` and `npm run typecheck` pass; `supabase db reset --local --no-seed` then `supabase test db tests/db`: **821/821** (17 files; new `100`=67, `110`=34, `120`=81, `130`=52; `010`=35, `060`=51, `070`=20, `990`=32). 35 negative-control mutants (the 17 of plan §9 and 18 more): every one fails at least one test. Rollback round trip: refused with a committed test brand under plain `psql -f` and the recommended flags (exit 3); run on a fresh database back to the exact PR 1.3 state (function counts, history, pins); re-applied 821/821. The local stack was stopped.
+- **Independent review, round 1 (D53; security and conformance lenses, isolated local projects) and its fix round:** 2 findings and 9 nits, each fixed or recorded (report section 12). SEC-1 (should): the claim that KEY-SAFE blocks look-alike keys was false; a test Manager with `settings` could add 'תיקון' with a wide tav (U+FB28) next to the real D48 label. KEY-SAFE now also requires NFKC (all D48 labels are NFKC), and the claim is reworded: cross-script, combining-mark and case look-alikes stay possible and are an OQ-8 question, not to be described as blocked in the Hebrew approval message. CONF-1 (should, docs only): the go-live checklist said no test row of any PR 1.4 table can be deleted; test pickup places and user-added test reasons can be, so `docs/deployment.md` item 10, the report and this entry are corrected. Nits: SEC-2 TEXT-SAFE also rejects every Unicode format character, private-use characters, BMP noncharacters, U+FFFC, U+FFFD and U+1D159 ("never looks blank" reworded; lone combining marks remain, OQ-8); SEC-3 the 100-row cap counts test rows and is permanent for call types (recorded, owner choice under OQ-8/OQ-13); SEC-4 the structural write check reads quoted, spaced and commented names, with controls; TEST-1 `updated_by` after every set-active RPC; TEST-2 each down-script refusal condition alone (a sixth copy inside a test function, eight refused runs); TEST-3 no duplicate census row; DOC-1, DOC-2 wording and stale copy counts (down-script header, `docs/testing.md`); OPS-1 stage explicit paths when committing (the worktree's `node_modules` symlink is not ignored). New pins: migration `d07cfd34…`, down script `cefde1d3…` (header comment only), constraint fingerprint `abfabf3e…`; function values and the anchor fingerprint unchanged. **Counts (isolated project `tmpr14fx`, ports +2000):** guard passes; `npm run test:ci` 105/105; `npm run lint` and `npm run typecheck` pass; `supabase db reset --local --no-seed` then `supabase test db tests/db` **838/838** (`070`=21, `120`=87, `130`=53, `990`=41); the new tests fail on the pre-fix migration; the reviewers' 60 mutants: 56 killed (R50, R56, R57, R60 newly), 4 equivalent survivors; 15 text-rule and 10 down-script mutants killed; rollback round trip repeated (refused with a committed test brand, exit 3 with the recommended flags; run back to the exact PR 1.3 state; re-applied with `psql`, fingerprints equal, 838/838). The local stack was stopped.
+- **Still required:** an independent check of the review fix round on the exact merge candidate (D53; it changes CHECKs, tests and the down script), the owner's acceptance of the guard entries, the owner's answers or acceptance of the TEMPORARY behaviours, and, after PR 1.3 is applied and merged, the approved checks and the owner's separate migration approval (D52 rule 4).
 
 ## 2026-11-05 — Canary-rows check for migrations (runtime, D47)
 - **Owner decisions (D54, 2026-11-05):** fixtures test-marked only; a migration that fails by design waits for the owner's decision at the first case; the self-test runs in CI only when the check's own files change (always on pushes to `main`), the check itself on every run; the check's own files are on the protected list (`CLAUDE.md`, `docs/ROADMAP.md`, PR template).
@@ -310,6 +540,7 @@
   - Simulated actions change only their own screen: an approved "create" request does not add an account row (the id comes from the server), and a technician added on "טכנאים" does not appear on "משתמשים".
   - Call types have no delete (`docs/database-schema.md` allows deletes only for unreferenced places and user-added unused reasons).
   - Production must take the signed-in user from the session and scope the Manager's requests on the server (the demo matches the viewpoint's name and filters in memory). The Manager's own requests carry the deciding Creator's account reference (id and name), as the outcome line needs.
+
 ## 2026-11-04 — UI demo, phase D
 - Branch `claude/ui-demo-2`, started on `claude/ui-demo-1`; PR #5 is now squash-merged to `main` (`013fd2f`), and `main` is merged into this branch. Fictional data only (`/dev/demo`); no Supabase, network or real email; every action is simulated ("פעולה מדומה · לא נשמר"). Every screen reads through `demoDataAccess` and renders through the demo frames (sentinel and "נתוני בדיקה" strip).
 - **Screens** (placeholders replaced):

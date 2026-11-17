@@ -1,456 +1,369 @@
--- PR 1.3: Manager-initiated Customer Service requests and the Creator's decisions (D34 a;
--- docs/database-schema.md §4 account_requests, §8.5; docs/security.md §10 "Account-approval
--- escalation"; docs/testing.md category 4).
+-- PR 1.3 tested here the D34 (a) request path: Manager-initiated Customer Service requests and the
+-- Creator's decisions (98 assertions, docs/review/step1-pr13). PR 1.8 (Migration 5): D60 (7)
+-- supersedes D34 (a) and C-02 retires that path (docs/review/step1-pr18/README.md section 7), so this
+-- file now proves the retirement for every caller and what the history keeps (docs/security.md §5,
+-- docs/testing.md categories 2 and 4; TEMPORARY PR 1.8 OQ-4):
+--   - request_account_change and decide_account_request (wrappers and bodies) run for nobody, the
+--     Creator included, and a refused call changes nothing and writes no audit row;
+--   - their bodies are Migration 1's text, unchanged (the rollback only grants them again);
+--   - no new request row can be stored, even by the owner's role (t05_requests_retired); a
+--     creation intent (direct_create) still can;
+--   - the history stays readable under the PR 1.3 policies (the Creator every row, a Manager his
+--     own) and nobody else reads it;
+--   - a pending request never takes effect; cancel_account_request is unchanged (a requester
+--     cancels his own pending request, the Creator an approved, unfulfilled creation, nobody a
+--     decided one), audited;
+--   - cancel_account_request, still executable by every role, on creation intents (independent
+--     review S-1): another Manager, Customer Service and a Technician cannot cancel a Manager's
+--     intent, a Manager cannot cancel the Creator's, a stale version is a conflict, a fulfilled
+--     intent and a cancelled one cannot be cancelled;
+--   - an approved Customer Service 'create' request is no longer bound by admin_create_profile;
+--   - an open legacy creation request still holds its email until it is cancelled, and a
+--     Manager's direct Customer Service intent then works (D60 (7)).
+-- The request rows below stand for history written before Migration 5: they are inserted as
+-- postgres with t05_requests_retired disabled only around that insert (inside the rolled-back
+-- transaction). Every call runs as `authenticated` with the caller's JWT claims, as PostgREST does.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(98);
+select plan(43);
 
--- Fixtures (local, rolled back): see 020_markers.test.sql. b2 and b3 are inactive Customer Service
--- accounts; d4 an inactive Technician without a field profile; a3 a Manager who leaves later.
+-- Fixtures (local, rolled back): see 020_markers.test.sql. a9 is a deactivated Manager; a8, b8 and
+-- d8 are real-marked; f1 is an Auth user without a profile; f2 the Auth user of a legacy creation.
 insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select ('00000000-0000-4000-8000-0000000000' || k)::uuid, '00000000-0000-0000-0000-000000000000'::uuid,
        'authenticated', 'authenticated', 'user-' || k || '@example.test',
        '{"role": "creator"}'::jsonb, '{"role": "creator"}'::jsonb, now(), now()
-from unnest(array['c1', 'a1', 'a2', 'a3', 'a8', 'b1', 'b2', 'b3', 'b8', 'b9', 'd1', 'd4', 'd8']) as k;
+from unnest(array['c1', 'a1', 'a2', 'a8', 'a9', 'b1', 'b2', 'b8', 'd1', 'd8', 'f1']) as k;
 select private.bootstrap_first_creator('00000000-0000-4000-8000-0000000000c1', 'יוצר');
 insert into public.profiles (id, role, full_name, is_active) values
   ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', true),
   ('00000000-0000-4000-8000-0000000000a2', 'manager', 'מנהל ב', true),
-  ('00000000-0000-4000-8000-0000000000a3', 'manager', 'מנהל ג', true),
+  ('00000000-0000-4000-8000-0000000000a9', 'manager', 'מנהל לא פעיל', false),
   ('00000000-0000-4000-8000-0000000000b1', 'customer_service', 'נציגה א', true),
   ('00000000-0000-4000-8000-0000000000b2', 'customer_service', 'נציגה לא פעילה', false),
-  ('00000000-0000-4000-8000-0000000000b3', 'customer_service', 'נציגה לא פעילה ב', false),
-  ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', true),
-  ('00000000-0000-4000-8000-0000000000d4', 'technician', 'טכנאי לא פעיל', false);
+  ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', true);
 insert into public.profiles (id, role, full_name, is_active, is_test) values
-  ('00000000-0000-4000-8000-0000000000b9', 'customer_service', 'נציגה אמיתית', false, false),
-  -- a8, b8 and d8: a real-marked active Manager, Customer Service user and Technician (review T1).
   ('00000000-0000-4000-8000-0000000000a8', 'manager', 'מנהל אמיתי', true, false),
-  ('00000000-0000-4000-8000-0000000000b8', 'customer_service', 'נציגה אמיתית ב', true, false),
+  ('00000000-0000-4000-8000-0000000000b8', 'customer_service', 'נציגה אמיתית', true, false),
   ('00000000-0000-4000-8000-0000000000d8', 'technician', 'טכנאי אמיתי', true, false);
-insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
-  ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y', 'tech-a@example.test');
+
+-- History written before Migration 5 (as Migration 1's functions wrote it): a1's pending
+-- reactivation of b2 (r1) and pending Customer Service creation (r2); a2's creation request that
+-- the Creator approved and nobody fulfilled (r3); a1's role change that the Creator rejected (r4).
+alter table public.account_requests disable trigger t05_requests_retired;
+insert into public.account_requests (id, request_type, target_profile_id, target_version, requested_role, email, full_name,
+                                     requested_by, status, decided_by, decided_at, rejection_reason, is_test) values
+  ('00000000-0000-4000-8000-000000005001', 'reactivate', '00000000-0000-4000-8000-0000000000b2', 1, null, null, null,
+   '00000000-0000-4000-8000-0000000000a1', 'pending', null, null, null, true),
+  ('00000000-0000-4000-8000-000000005002', 'create', null, null, 'customer_service', 'legacy.agent@example.test', 'נציגה ותיקה',
+   '00000000-0000-4000-8000-0000000000a1', 'pending', null, null, null, true),
+  ('00000000-0000-4000-8000-000000005003', 'create', null, null, 'customer_service', 'legacy.approved@example.test', 'נציגה מאושרת',
+   '00000000-0000-4000-8000-0000000000a2', 'approved', '00000000-0000-4000-8000-0000000000c1', now() - interval '1 day', null, true),
+  ('00000000-0000-4000-8000-000000005004', 'role_change', '00000000-0000-4000-8000-0000000000b1', 1, 'technician', null, null,
+   '00000000-0000-4000-8000-0000000000a1', 'rejected', '00000000-0000-4000-8000-0000000000c1', now() - interval '1 day',
+   'בקשה ישנה שנדחתה', true);
+alter table public.account_requests enable trigger t05_requests_retired;
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000f2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'legacy.approved@example.test', '{"provider": "email", "account_request_id": "00000000-0000-4000-8000-000000005003"}',
+   now(), now());
+
+-- Outcome of one statement ('ok' plus its first value, or the SQLSTATE and message), as in 120.
+create function pg_temp.tm_try(p_sql text)
+returns text
+language plpgsql
+as $f$
+declare
+  v_out text;
+begin
+  execute p_sql into v_out;
+  return 'ok' || coalesce(' ' || nullif(v_out, ''), '');
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end
+$f$;
+
+-- The four retired entry points, each called with arguments that Migration 1 would have accepted.
+create function pg_temp.tm_retired()
+returns table (call text, outcome text)
+language sql
+as $f$
+  select v.call, pg_temp.tm_try(v.q)
+  from (values
+    (1, 'public request', $q$ select public.request_account_change('create', null, 'customer_service', 'retired@example.test', 'x') $q$),
+    (2, 'private request', $q$ select private.request_account_change('activate', '00000000-0000-4000-8000-0000000000b2', null, null, null) $q$),
+    (3, 'public decision', $q$ select public.decide_account_request('00000000-0000-4000-8000-000000005001', 'approve', 1, null) $q$),
+    (4, 'private decision', $q$ select private.decide_account_request('00000000-0000-4000-8000-000000005001', 'reject', 1, 'x') $q$)
+  ) v (n, call, q)
+  order by v.n
+$f$;
+create function pg_temp.tm_denied_for_authenticated()
+returns table (call text, outcome text)
+language sql
+as $f$
+  values ('public request', '42501 permission denied for function request_account_change'),
+         ('private request', '42501 permission denied for function request_account_change'),
+         ('public decision', '42501 permission denied for function decide_account_request'),
+         ('private decision', '42501 permission denied for function decide_account_request')
+$f$;
+grant execute on function pg_temp.tm_try(text), pg_temp.tm_retired(), pg_temp.tm_denied_for_authenticated()
+  to anon, authenticated, service_role;
 
 create temporary table counts_before on commit drop as
-  select (select count(*) from auth.users) as users, (select count(*) from public.profiles) as profiles;
+  select (select count(*) from public.account_requests) as requests,
+         (select sum(r.version) from public.account_requests r) as versions,
+         (select count(*) from public.audit_logs) as audit_rows,
+         (select count(*) from public.profiles where is_active) as active_profiles;
 
--- Requests by the Manager: nothing changes while pending ----------------------------------------
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok(
-  $$ select public.request_account_change('create', null, 'customer_service', ' New.Agent@Example.test ', 'נציגה חדשה') $$,
-  'a Manager asks to create a Customer Service account');
-select lives_ok($$ select public.request_account_change('reactivate', '00000000-0000-4000-8000-0000000000b2', null, null, null) $$,
-  'a Manager asks to reactivate a Customer Service account');
-select lives_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000b1', 'technician', null, null) $$,
-  'a Manager asks to change a Customer Service role');
-select throws_ok($$ select public.request_account_change('activate', '00000000-0000-4000-8000-0000000000b2', null, null, null) $$,
-  '55000', 'a pending request exists', 'one pending request per account');
-select throws_ok($$ select public.request_account_change('create', null, 'customer_service', 'new.agent@example.test', 'x') $$,
-  '55000', 'an open request exists', 'one open create request per email');
-select throws_ok($$ select public.request_account_change('create', null, 'manager', 'm@example.test', 'x') $$,
-  '42501', 'not authorized', 'a Manager never requests the manager role');
-select throws_ok($$ select public.request_account_change('create', null, 'creator', 'c@example.test', 'x') $$,
-  '42501', 'not authorized', 'a Manager never requests the creator role');
-select throws_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000b1', 'manager', null, null) $$,
-  '42501', 'not authorized', 'a Manager never requests a promotion to Manager');
-select throws_ok($$ select public.request_account_change('create', null, 'technician', 't@example.test', 'x') $$,
-  '22023', 'invalid input', 'Technician creation is immediate, not a request (D34 c)');
-select throws_ok($$ select public.request_account_change('activate', '00000000-0000-4000-8000-0000000000d4', null, null, null) $$,
-  '55000', 'the request does not apply', 'Technician activation is immediate, not a request (D34 c)');
-select throws_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000d1', 'customer_service', null, null) $$,
-  '55000', 'the request does not apply', 'a Technician with a field profile keeps his role (owner question Q5)');
-select throws_ok($$ select public.request_account_change('activate', '00000000-0000-4000-8000-0000000000a2', null, null, null) $$,
-  '42501', 'not authorized', 'requests never target a Manager');
-select throws_ok($$ select public.request_account_change('activate', '00000000-0000-4000-8000-0000000000b9', null, null, null) $$,
-  '42501', 'not authorized', 'a test Manager cannot request a change to a real account (D47)');
-select throws_ok($$ select public.request_account_change('create', null, 'customer_service', 'agent@company.example', 'x') $$,
-  '23514', null, 'TEMPORARY (owner question Q12): a test request''s email must be in example.test');
-reset role;
-
-select ok(
-  (select users = (select count(*) from auth.users) and profiles = (select count(*) from public.profiles) from counts_before),
-  'while a create request is pending no Auth user and no profile exist');
-select ok((select not is_active from public.profiles where id = '00000000-0000-4000-8000-0000000000b2'),
-  'while a reactivation is pending the account stays inactive');
-select is((select role from public.profiles where id = '00000000-0000-4000-8000-0000000000b1'), 'customer_service',
-  'while a role change is pending the role is unchanged');
-select ok(
-  (select bool_and(status = 'pending' and is_test) and count(*) = 3 from public.account_requests),
-  'the three requests are pending test records');
-select ok(
-  (select bool_and(target_version = 1) from public.account_requests where request_type <> 'create')
-  and (select target_version is null from public.account_requests where request_type = 'create'),
-  'a request on an account stores the account''s version, so a later change makes it stale (review S6)');
-select is((select email from public.account_requests where request_type = 'create'), 'new.agent@example.test',
-  'the create request stores the email trimmed and lower-case');
-select is((select count(*) from public.audit_logs where action = 'account_request.created'), 3::bigint,
-  'every request is audited');
-select is((select count(*) from public.audit_logs where action = 'account_request.created' and details ? 'email'), 0::bigint,
-  'audit details never contain the email');
-
--- Who may request ---------------------------------------------------------------------------------
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok($$ select public.request_account_change('create', null, 'customer_service', 'x@example.test', 'x') $$,
-  '42501', 'not authorized', 'Customer Service cannot make requests');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok($$ select public.request_account_change('create', null, 'customer_service', 'x@example.test', 'x') $$,
-  '42501', 'not authorized', 'a Technician cannot make requests');
-reset role;
-
--- RLS on requests ------------------------------------------------------------------------------------
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'second@example.test', 'נציגה נוספת') $$,
-  'a second Manager makes his own request');
-select is((select count(*) from public.account_requests), 1::bigint, 'a Manager sees only his own requests');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select is((select count(*) from public.account_requests), 3::bigint, 'the first Manager sees his three requests');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
-set local role authenticated;
-select is((select count(*) from public.account_requests), 0::bigint, 'Customer Service sees no requests');
-reset role;
+-- A. The retired path runs for nobody (C-02) ---------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
-select is((select count(*) from public.account_requests), 4::bigint, 'the Creator sees every request');
-reset role;
-
--- Decisions: Creator only ------------------------------------------------------------------------------
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where request_type = 'reactivate'), 'approve', 1, null) $$,
-  '42501', 'not authorized', 'a Manager cannot approve requests (not even his own)');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.decide_account_request('00000000-0000-4000-8000-000000000000', 'approve', 1, null) $$,
-  '42501', 'not authorized', 'Customer Service cannot decide requests');
-reset role;
-
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where request_type = 'role_change'), 'reject', 1, '  ') $$,
-  '22023', 'invalid input', 'a rejection needs a reason');
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where request_type = 'role_change'), 'approve', 7, null) $$,
-  'PT409', 'version conflict', 'a stale expected_version is a conflict');
-select is(
-  public.decide_account_request((select id from public.account_requests where request_type = 'reactivate'), 'approve', 1, null),
-  2, 'the Creator approves the reactivation');
-select is(
-  public.decide_account_request((select id from public.account_requests where request_type = 'role_change'), 'approve', 1, null),
-  2, 'the Creator approves the role change');
-select is(
-  public.decide_account_request((select id from public.account_requests where email = 'second@example.test'), 'reject', 1, 'אין צורך'),
-  2, 'the Creator rejects a request with a reason');
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where request_type = 'reactivate'), 'reject', 2, 'x') $$,
-  '55000', 'the request is not pending', 'a decided request cannot be decided again');
-select is(
-  public.decide_account_request((select id from public.account_requests where request_type = 'create' and email = 'new.agent@example.test'), 'approve', 1, null),
-  2, 'the Creator approves the create request');
-reset role;
-
-select ok((select is_active from public.profiles where id = '00000000-0000-4000-8000-0000000000b2'),
-  'an approved reactivation activates the account');
-select is((select role from public.profiles where id = '00000000-0000-4000-8000-0000000000b1'), 'technician',
-  'an approved role change applies the role');
-select ok(
-  (select status = 'rejected' and rejection_reason = 'אין צורך' and decided_by = '00000000-0000-4000-8000-0000000000c1'
-   from public.account_requests where email = 'second@example.test'),
-  'a rejection stores the reason and the decider');
-select ok(
-  (select status = 'approved' and target_profile_id is null from public.account_requests where email = 'new.agent@example.test'),
-  'an approved create changes nothing yet: the Auth user is created in Step 2');
-select results_eq(
-  $$ select action from public.audit_logs where action in ('account_request.approved', 'account_request.rejected',
-       'profile.activated', 'profile.role_changed') order by id $$,
-  $$ values ('profile.activated'), ('account_request.approved'), ('profile.role_changed'), ('account_request.approved'),
-            ('account_request.rejected'), ('account_request.approved') $$,
-  'every decision and every change it applies is audited in the same transaction');
-
--- Fulfilment of an approved create (Step 2 flow: Auth Admin API first, then the profile) ----------
--- The Step 2 server creates the Auth user with app_metadata.account_request_id = the request id
--- (re-review R-S1); f6 carries the same nonce with another email.
-insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at)
-select v.id::uuid, '00000000-0000-0000-0000-000000000000'::uuid, 'authenticated', 'authenticated', v.email,
-       jsonb_build_object('provider', 'email', 'account_request_id', r.id::text), now(), now()
-from (values ('00000000-0000-4000-8000-0000000000f5', 'new.agent@example.test'),
-             ('00000000-0000-4000-8000-0000000000f6', 'other@example.test')) as v (id, email)
-cross join public.account_requests r
-where r.email = 'new.agent@example.test';
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f5', 'customer_service', 'נציגה חדשה', null, null,
-       (select id from public.account_requests where email = 'new.agent@example.test')) $$,
-  '42501', 'not authorized', 'only the Creator fulfils an approved create request');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f6', 'customer_service', 'x', null, null,
-       (select id from public.account_requests where email = 'new.agent@example.test')) $$,
-  '42501', 'not authorized', 'the Auth user''s email must match the request');
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f5', 'manager', 'x', null, null,
-       (select id from public.account_requests where email = 'new.agent@example.test')) $$,
-  '42501', 'not authorized', 'the Creator cannot fulfil a Customer Service request with another role');
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f5', 'customer_service', 'x', null, null,
-       (select id from public.account_requests where request_type = 'reactivate')) $$,
-  '42501', 'not authorized', 'a request that is not a creation cannot be fulfilled');
-select lives_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f5', 'customer_service', 'נציגה חדשה', null, null,
-       (select id from public.account_requests where email = 'new.agent@example.test')) $$,
-  'the Creator creates the approved Customer Service profile');
-select is(
-  (select count(*) from public.audit_logs a join public.account_requests r on r.email = 'new.agent@example.test'
-   where a.action = 'profile.created' and a.target_id = '00000000-0000-4000-8000-0000000000f5'
-     and a.actor_profile_id = '00000000-0000-4000-8000-0000000000c1'
-     and a.details = jsonb_build_object('role', 'customer_service', 'request_id', r.id)),
-  1::bigint, 'T3: the fulfilment is audited (profile.created with the role and the request)');
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f6', 'customer_service', 'x', null, null,
-       (select id from public.account_requests where email = 'new.agent@example.test')) $$,
-  '42501', 'not authorized', 'a request is fulfilled once');
-reset role;
-select is((select target_profile_id from public.account_requests where email = 'new.agent@example.test'),
-  '00000000-0000-4000-8000-0000000000f5'::uuid, 'the approved request is linked to the new profile');
-
--- A pending create cannot be fulfilled; stale approvals (review S6, owner question Q17) ---------
-insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at) values
-  ('00000000-0000-4000-8000-0000000000f7', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-   'pending.agent@example.test', now(), now());
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'pending.agent@example.test', 'נציגה ממתינה') $$,
-  'setup: a pending create request');
-select lives_ok($$ select public.request_account_change('activate', '00000000-0000-4000-8000-0000000000b3', null, null, null) $$,
-  'setup: a request to activate b3');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'fourth@example.test', 'נציגה רביעית') $$,
-  'setup: a request by Manager a3');
-reset role;
--- f7 carries the nonce of the pending request, so only its state refuses the binding below.
-update auth.users u set raw_app_meta_data = jsonb_build_object('provider', 'email', 'account_request_id', r.id::text)
-from public.account_requests r where r.email = u.email and u.id = '00000000-0000-4000-8000-0000000000f7';
-
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f7', 'customer_service', 'x', null, null,
-       (select id from public.account_requests where email = 'pending.agent@example.test')) $$,
-  '42501', 'not authorized', 'a pending (not approved) create cannot be fulfilled');
--- The Creator activates b3 directly and deactivates it again for cause; the old request is stale.
-select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', true, 1, null) $$,
-  'setup: the Creator activates b3 directly');
-select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000b3', false, 2, 'סיבה') $$,
-  'setup: the Creator deactivates b3 again');
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where request_type = 'activate'
-       and target_profile_id = '00000000-0000-4000-8000-0000000000b3'), 'approve', 1, null) $$,
-  '55000', 'the request no longer applies', 'a request whose account changed after it was made cannot be approved');
-select lives_ok($$ select public.admin_set_user_active('00000000-0000-4000-8000-0000000000a3', false, 1, 'עזב') $$,
-  'setup: the Creator deactivates Manager a3');
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where email = 'fourth@example.test'), 'approve', 1, null) $$,
-  '55000', 'the request no longer applies', 'a request of a Manager who is no longer active cannot be approved');
-select lives_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where email = 'fourth@example.test'), 'reject', 1, 'המבקש עזב') $$,
-  'the Creator can still reject it');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
-set local role authenticated;
-select is((select count(*) from public.account_requests), 0::bigint,
-  'T4: a deactivated Manager no longer reads his own requests (their sign-in emails included)');
-reset role;
-select ok((select not is_active from public.profiles where id = '00000000-0000-4000-8000-0000000000b3'),
-  'the stale activation changed nothing');
-
--- Cancellation by the requester ---------------------------------------------------------------------
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'third@example.test', 'נציגה שלישית') $$,
-  'setup: another pending request');
-reset role;
--- The id is passed in a setting: the other Manager cannot read the request (RLS).
-select set_config('tm_test.request_id', (select id::text from public.account_requests where email = 'third@example.test'), true);
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.cancel_account_request(current_setting('tm_test.request_id')::uuid, 1) $$,
-  '42501', 'not authorized', 'another Manager cannot cancel the request');
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'the Creator: no request and no decision, through the wrappers or the private bodies (C-02)');
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 set local role authenticated;
-select is(
-  public.cancel_account_request((select r.id from public.account_requests r where r.email = 'third@example.test'), 1),
-  2, 'the requester cancels his pending request');
-select throws_ok(
-  $$ select public.cancel_account_request((select r.id from public.account_requests r where r.email = 'third@example.test'), 2) $$,
-  '55000', 'the request cannot be cancelled', 'a cancelled request cannot be cancelled again');
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'a test Manager: no request and no decision (D60 (7): he acts directly instead)');
 reset role;
-select ok(
-  (select status = 'cancelled' and decided_by = '00000000-0000-4000-8000-0000000000a1' and decided_at is not null
-   from public.account_requests where email = 'third@example.test')
-  and exists (select 1 from public.audit_logs where action = 'account_request.cancelled'),
-  'the cancellation is stored and audited');
-
--- An approved creation that is not fulfilled yet can be cancelled by its requester or the Creator,
--- so a failed Auth call never blocks the email for good; the Creator never cancels another
--- requester's pending request (he rejects it).
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.cancel_account_request((select id from public.account_requests where email = 'pending.agent@example.test'), 1) $$,
-  '42501', 'not authorized', 'the Creator cannot cancel a Manager''s pending request');
-select is(
-  public.decide_account_request((select id from public.account_requests where email = 'pending.agent@example.test'), 'approve', 1, null),
-  2, 'setup: the Creator approves the create request');
-select is(
-  public.cancel_account_request((select id from public.account_requests where email = 'pending.agent@example.test'), 2),
-  3, 'the Creator cancels the approved, unfulfilled creation');
-select throws_ok(
-  $$ select public.cancel_account_request((select id from public.account_requests where email = 'new.agent@example.test'), 3) $$,
-  '55000', 'the request cannot be cancelled', 'a fulfilled creation cannot be cancelled');
-select throws_ok(
-  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f7', 'customer_service', 'x', null, null,
-       (select id from public.account_requests where email = 'pending.agent@example.test')) $$,
-  '42501', 'not authorized', 'a cancelled creation cannot be fulfilled');
-reset role;
-select ok(
-  (select status = 'cancelled' and decided_by = '00000000-0000-4000-8000-0000000000c1' from public.account_requests
-   where email = 'pending.agent@example.test')
-  and exists (select 1 from public.audit_logs where action = 'account_request.cancelled'
-                and details = '{"from_status": "approved", "request_type": "create"}'::jsonb
-                and actor_profile_id = '00000000-0000-4000-8000-0000000000c1'),
-  'the cancellation keeps the decider and is audited with the canceller as actor');
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'pending.agent@example.test', 'נציגה ממתינה') $$,
-  'after the cancellation the email can be requested again');
-reset role;
-
--- Re-review R-S5: only the requester or the Creator cancels an approved, unfulfilled creation;
--- R-S1 (b): an Auth user created for a cancelled request is never bound through a later intent.
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('create', null, 'customer_service', 'rebind.cs@example.test', 'נציגה') $$,
-  'setup: a Manager asks to create a Customer Service account');
-select lives_ok($$ select public.authorize_account_creation('technician', 'tech.intent@example.test', 'טכנאי') $$,
-  'setup: the same Manager authorizes a Technician creation');
-reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
-set local role authenticated;
-select is(public.decide_account_request((select id from public.account_requests where email = 'rebind.cs@example.test'), 'approve', 1, null),
-  2, 'setup: the Creator approves the create request');
-select lives_ok($$ select public.authorize_account_creation('manager', 'creator.intent@example.test', 'מנהל') $$,
-  'setup: the Creator authorizes a Manager creation');
-reset role;
-select set_config('tm_test.req_cs', (select id::text from public.account_requests where email = 'rebind.cs@example.test'), true);
-select set_config('tm_test.intent_tech', (select id::text from public.account_requests where email = 'tech.intent@example.test'), true);
-select set_config('tm_test.intent_creator', (select id::text from public.account_requests where email = 'creator.intent@example.test'), true);
--- The Auth user for the approved request was created with its nonce, then the bind failed.
-insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
-  ('00000000-0000-4000-8000-0000000000f8', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-   'rebind.cs@example.test', jsonb_build_object('provider', 'email', 'account_request_id', current_setting('tm_test.req_cs')),
-   now(), now());
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.req_cs')::uuid, 2) $$,
-  '42501', 'not authorized', 'R-S5: another Manager cannot cancel a Manager''s approved, unfulfilled creation request');
-select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_tech')::uuid, 1) $$,
-  '42501', 'not authorized', 'R-S5: another Manager cannot cancel a Manager''s creation intent');
-select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_creator')::uuid, 1) $$,
-  '42501', 'not authorized', 'R-S5: a Manager cannot cancel the Creator''s creation intent');
-reset role;
-select ok(
-  (select bool_and(status = 'approved') and count(*) = 3 from public.account_requests
-   where id in (current_setting('tm_test.req_cs')::uuid, current_setting('tm_test.intent_tech')::uuid,
-                current_setting('tm_test.intent_creator')::uuid)),
-  'the refused cancellations changed nothing');
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select is(public.cancel_account_request(current_setting('tm_test.req_cs')::uuid, 2), 3,
-  'setup: the requesting Manager cancels his approved request after the failed bind');
-select lives_ok($$ select public.authorize_account_creation('technician', 'rebind.cs@example.test', 'x') $$,
-  'setup: and authorizes a Technician creation for the same email');
-select throws_ok($$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f8', 'technician', 'x', null, null,
-     (select id from public.account_requests where email = 'rebind.cs@example.test' and request_type = 'direct_create')) $$,
-  '42501', 'not authorized', 'R-S1 (b): the Auth user created for the cancelled request cannot be bound through the Manager''s new intent');
-reset role;
-
-
--- Final independent review SEC-2 (TEMPORARY, owner question Q19): no role change request for an
--- inactive account, so two approved role changes around a Manager's immediate Technician activation
--- cannot turn an inactive Customer Service account into an active one without an activation request.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a8","role":"authenticated"}', true);
 set local role authenticated;
-select throws_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000b9', 'technician', null, null) $$,
-  '55000', 'the request does not apply', 'SEC-2: a Manager cannot request a role change for an inactive Customer Service account');
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'a real-marked Manager: no request and no decision');
 reset role;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
-set local role authenticated;
-select throws_ok(
-  $$ select public.cancel_account_request((select id from public.account_requests where email = 'pending.agent@example.test' and status = 'pending'), 9) $$,
-  'PT409', 'version conflict', 'T5: a stale expected_version is a conflict for a cancellation');
-reset role;
-select ok((select role = 'customer_service' and not is_active and version = 1 from public.profiles where id = '00000000-0000-4000-8000-0000000000b9')
-          and not exists (select 1 from public.account_requests where target_profile_id = '00000000-0000-4000-8000-0000000000b9'),
-  'the inactive account is unchanged and no request was stored');
-
--- Review T1: real-marked callers (after go-live every account is one). The test-user rule does not
--- refuse them, so the role checks are what keeps decisions with the Creator; and a request takes its
--- marker from its target (A32).
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a8","role":"authenticated"}', true);
-set local role authenticated;
-select lives_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000b8', 'technician', null, null) $$,
-  'setup: a real-marked Manager asks to change a real Customer Service account''s role');
-select lives_ok($$ select public.request_account_change('role_change', '00000000-0000-4000-8000-0000000000b1', 'customer_service', null, null) $$,
-  'setup: and a test account''s role');
-select throws_ok(
-  $$ select public.decide_account_request((select id from public.account_requests where target_profile_id = '00000000-0000-4000-8000-0000000000b8'), 'approve', 1, null) $$,
-  '42501', 'not authorized', 'T1: a real-marked Manager cannot approve his own request');
-reset role;
-select ok(
-  (select not is_test from public.account_requests where target_profile_id = '00000000-0000-4000-8000-0000000000b8' and status = 'pending')
-  and (select is_test from public.account_requests where target_profile_id = '00000000-0000-4000-8000-0000000000b1' and status = 'pending'),
-  'T1 (A32): a request takes its test marker from its target (real for the real account, test for the test account)');
-select set_config('tm_test.req_b8', (select id::text from public.account_requests where target_profile_id = '00000000-0000-4000-8000-0000000000b8' and status = 'pending'), true);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b8","role":"authenticated"}', true);
 set local role authenticated;
-select throws_ok($$ select public.decide_account_request(current_setting('tm_test.req_b8')::uuid, 'approve', 1, null) $$,
-  '42501', 'not authorized', 'T1: a real-marked Customer Service user cannot decide requests (not even about his own account)');
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'Customer Service: no request and no decision');
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d8","role":"authenticated"}', true);
 set local role authenticated;
-select throws_ok($$ select public.decide_account_request(current_setting('tm_test.req_b8')::uuid, 'reject', 1, 'x') $$,
-  '42501', 'not authorized', 'T2: a (real-marked) Technician cannot decide requests');
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'a Technician: no request and no decision');
 reset role;
-select is((select role from public.profiles where id = '00000000-0000-4000-8000-0000000000b8'), 'customer_service',
-  'the refused decisions changed nothing');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a9","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'a deactivated Manager: no request and no decision');
+reset role;
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-0000000000f1","role":"authenticated","app_metadata":{"role":"creator"}}', true);
+set local role authenticated;
+select results_eq($$ select * from pg_temp.tm_retired() $$, $$ select * from pg_temp.tm_denied_for_authenticated() $$,
+  'a signed-in user without a profile, with forged Creator claims: no request and no decision');
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local role anon;
+select results_eq($$ select * from pg_temp.tm_retired() $$,
+  $$ values ('public request', '42501 permission denied for function request_account_change'),
+            ('private request', '42501 permission denied for schema private'),
+            ('public decision', '42501 permission denied for function decide_account_request'),
+            ('private decision', '42501 permission denied for schema private') $$,
+  'anon: no request and no decision');
+reset role;
+set local role service_role;
+select results_eq($$ select * from pg_temp.tm_retired() $$,
+  $$ values ('public request', '42501 permission denied for function request_account_change'),
+            ('private request', '42501 permission denied for schema private'),
+            ('public decision', '42501 permission denied for function decide_account_request'),
+            ('private decision', '42501 permission denied for schema private') $$,
+  'service_role: no request and no decision (it bypasses RLS, not grants)');
+reset role;
 
--- Review T5: the decision CHECKs hold even for the owner's database role.
-select throws_ok($$ update public.account_requests set status = 'approved' where id = current_setting('tm_test.req_b8')::uuid $$,
-  '23514', 'new row for relation "account_requests" violates check constraint "account_requests_decision_check"',
-  'T5: a decided request has a decider and a time');
+select ok(
+  (select requests = (select count(*) from public.account_requests)
+          and versions = (select sum(r.version) from public.account_requests r)
+          and audit_rows = (select count(*) from public.audit_logs)
+          and active_profiles = (select count(*) from public.profiles where is_active)
+   from counts_before)
+  and (select status = 'pending' and version = 1 from public.account_requests where id = '00000000-0000-4000-8000-000000005001')
+  and (select not is_active and version = 1 from public.profiles where id = '00000000-0000-4000-8000-0000000000b2'),
+  'the refused calls changed nothing: no request row, no decision, no audit row; the pending reactivation never took effect');
+
+select results_eq(
+  $$ select p.oid::regprocedure::text collate "default", md5(p.prosrc) collate "default" from pg_proc p
+     where p.proname in ('request_account_change', 'decide_account_request') order by p.oid::regprocedure::text collate "C" $$,
+  $$ values ('decide_account_request(uuid,text,integer,text)', '29a0f950eb90e8e5aba2476dcb626303'),
+            ('private.decide_account_request(uuid,text,integer,text)', 'd4a6a566c25b2896b6fd6fe256e053fe'),
+            ('private.request_account_change(text,uuid,text,text,text)', '1c9dadb9f8991aabd5ceb4453a33769c'),
+            ('request_account_change(text,uuid,text,text,text)', '02bc4bc9a488886d9cfec844ef6466a2') $$,
+  'the four retired functions keep Migration 1''s text (only their grants were revoked; the rollback grants them again)');
+
+-- B. No new request row, even as postgres (t05_requests_retired) ----------------------------------------
 select throws_ok(
-  $$ update public.account_requests set status = 'rejected', decided_by = '00000000-0000-4000-8000-0000000000c1', decided_at = now()
-     where id = current_setting('tm_test.req_b8')::uuid $$,
-  '23514', 'new row for relation "account_requests" violates check constraint "account_requests_rejection_check"',
-  'T5: a rejection has a reason');
+  $$ insert into public.account_requests (request_type, requested_role, email, full_name, requested_by, is_test)
+     values ('create', 'customer_service', 'new.request@example.test', 'x', '00000000-0000-4000-8000-0000000000a1', true) $$,
+  '55000', 'account_requests: account requests are retired (D60 (7))', 'a creation request is refused, even as postgres');
+select throws_ok(
+  $$ insert into public.account_requests (request_type, target_profile_id, target_version, requested_by, is_test)
+     values ('activate', '00000000-0000-4000-8000-0000000000b1', 1, '00000000-0000-4000-8000-0000000000a2', true) $$,
+  '55000', 'account_requests: account requests are retired (D60 (7))', 'an activation request is refused, even as postgres');
+select throws_ok(
+  $$ insert into public.account_requests (request_type, target_profile_id, target_version, requested_by, is_test)
+     values ('reactivate', '00000000-0000-4000-8000-0000000000d1', 1, '00000000-0000-4000-8000-0000000000a2', true) $$,
+  '55000', 'account_requests: account requests are retired (D60 (7))', 'a reactivation request is refused, even as postgres');
+select throws_ok(
+  $$ insert into public.account_requests (request_type, target_profile_id, target_version, requested_role, requested_by, is_test)
+     values ('role_change', '00000000-0000-4000-8000-0000000000d1', 1, 'customer_service', '00000000-0000-4000-8000-0000000000a2', true) $$,
+  '55000', 'account_requests: account requests are retired (D60 (7))', 'a role-change request is refused, even as postgres');
+
+-- C. The history stays readable under the PR 1.3 policies -----------------------------------------------
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq($$ select right(id::text, 4), status from public.account_requests order by id $$,
+  $$ values ('5001', 'pending'), ('5002', 'pending'), ('5003', 'approved'), ('5004', 'rejected') $$,
+  'the Creator reads every history row');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq($$ select right(id::text, 4) from public.account_requests order by id $$,
+  $$ values ('5001'), ('5002'), ('5004') $$, 'a Manager reads his own history rows only');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+set local role authenticated;
+select results_eq($$ select right(id::text, 4) from public.account_requests order by id $$,
+  $$ values ('5003') $$, 'another Manager reads his own row only');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a9","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.account_requests), 0::bigint, 'a deactivated Manager reads no history row');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.account_requests), 0::bigint,
+  'Customer Service reads no history row (also not the rejected role change of his own account)');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.account_requests), 0::bigint, 'a Technician reads no history row');
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local role anon;
+select throws_ok($$ select count(*) from public.account_requests $$, '42501', null, 'anon cannot read account_requests');
+reset role;
+
+-- D. An approved legacy creation is no longer bound (OQ-4) ------------------------------------------------
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok(
+  $$ select public.admin_create_profile('00000000-0000-4000-8000-0000000000f2', 'customer_service', 'x', null, null,
+                                        '00000000-0000-4000-8000-000000005003') $$,
+  '42501', 'not authorized',
+  'the Creator can no longer complete an approved Customer Service creation request (PR 1.3 Q14), even with the Auth user''s nonce');
+reset role;
+select is((select count(*) from public.profiles where id = '00000000-0000-4000-8000-0000000000f2'), 0::bigint,
+  'no profile was bound to the legacy creation');
+
+-- E. Cancellation is unchanged (OQ-4) -----------------------------------------------------------------------
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request('00000000-0000-4000-8000-000000005001', 1) $$,
+  '42501', 'not authorized', 'another Manager cannot cancel a Manager''s pending request');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request('00000000-0000-4000-8000-000000005001', 1) $$,
+  '42501', 'not authorized', 'the Creator cannot cancel a Manager''s pending request (he rejected those, which is retired)');
+select is(public.cancel_account_request('00000000-0000-4000-8000-000000005003', 1), 2,
+  'the Creator cancels the approved, unfulfilled legacy creation');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.cancel_account_request('00000000-0000-4000-8000-000000005001', 1), 2,
+  'a Manager cancels his own pending legacy request');
+select throws_ok($$ select public.cancel_account_request('00000000-0000-4000-8000-000000005004', 1) $$,
+  '55000', 'the request cannot be cancelled', 'a decided request cannot be cancelled');
+reset role;
+select results_eq(
+  $$ select a.action, right(a.target_id::text, 4), right(a.actor_profile_id::text, 2), a.details
+     from public.audit_logs a where a.action = 'account_request.cancelled' order by a.id $$,
+  $$ values ('account_request.cancelled', '5003', 'c1', '{"from_status": "approved", "request_type": "create"}'::jsonb),
+            ('account_request.cancelled', '5001', 'a1', '{"from_status": "pending", "request_type": "reactivate"}'::jsonb) $$,
+  'each cancellation is audited with its actor, the request type and the status it left');
+
+-- E2. Creation intents (direct_create): cancel_account_request is still executable by every role,
+--     so its refusals are the remaining guard on account_requests (independent review S-1). The
+--     ids are passed in settings: the other callers cannot read the rows (RLS).
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('tm_test.intent_a1', public.authorize_account_creation('technician', 'intent.a1@example.test', 'טכנאי בכוונה')::text, true);
+select set_config('tm_test.intent_bound', public.authorize_account_creation('customer_service', 'bound.agent@example.test', 'נציגה מקושרת')::text, true);
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('tm_test.intent_c1', public.authorize_account_creation('manager', 'intent.c1@example.test', 'מנהל בכוונה')::text, true);
+reset role;
+insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, created_at, updated_at) values
+  ('00000000-0000-4000-8000-0000000000f3', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'bound.agent@example.test', jsonb_build_object('provider', 'email', 'account_request_id', current_setting('tm_test.intent_bound')),
+   now(), now());
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select public.admin_create_profile('00000000-0000-4000-8000-0000000000f3', 'customer_service', 'נציגה מקושרת', null, null,
+                                   current_setting('tm_test.intent_bound')::uuid);
+reset role;
+create temporary table intent_versions on commit drop as
+  select r.id, r.status, r.version from public.account_requests r where r.request_type = 'direct_create';
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: another Manager cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: Customer Service cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: a Technician cannot cancel a Manager''s creation intent');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_c1')::uuid, 1) $$,
+  '42501', 'not authorized', 'S-1: a Manager cannot cancel the Creator''s creation intent');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 7) $$,
+  'PT409', 'version conflict', 'S-1: a stale version is a conflict, also for the requester');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_bound')::uuid, 2) $$,
+  '55000', 'the request cannot be cancelled', 'S-1: a fulfilled intent (an account is bound to it) cannot be cancelled');
+reset role;
+select ok(
+  not exists (select 1 from pg_temp.intent_versions v join public.account_requests r on r.id = v.id
+              where r.status <> v.status or r.version <> v.version)
+  and not exists (select 1 from public.audit_logs a
+                  where a.action = 'account_request.cancelled'
+                    and a.target_id in (select v.id from pg_temp.intent_versions v)),
+  'S-1: the refused cancellations changed no intent and wrote no audit row');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select is(public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 1), 2,
+  'the requester cancels his own unfulfilled intent');
+select throws_ok($$ select public.cancel_account_request(current_setting('tm_test.intent_a1')::uuid, 2) $$,
+  '55000', 'the request cannot be cancelled', 'S-1: a cancelled intent cannot be cancelled again');
+reset role;
+
+-- F. An open legacy creation holds its email until it is cancelled; then the Manager's direct
+--    Customer Service intent works (D60 (7)) -----------------------------------------------------------
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok($$ select public.authorize_account_creation('customer_service', 'legacy.agent@example.test', 'נציגה') $$,
+  '55000', 'an open request exists', 'a pending legacy creation request still holds its email (one open creation per email)');
+select is(public.cancel_account_request('00000000-0000-4000-8000-000000005002', 1), 2,
+  'its requester cancels it');
+select lives_ok($$ select public.authorize_account_creation('customer_service', 'legacy.agent@example.test', 'נציגה') $$,
+  'then the Manager authorizes the Customer Service creation directly (D60 (7))');
+reset role;
+select ok(
+  (select request_type = 'direct_create' and status = 'approved' and requested_role = 'customer_service'
+          and requested_by = '00000000-0000-4000-8000-0000000000a1' and decided_by = requested_by and is_test
+          and target_profile_id is null
+   from public.account_requests where email = 'legacy.agent@example.test' and status = 'approved')
+  and (select count(*) from public.audit_logs a join public.account_requests r on r.id = a.target_id
+       where a.action = 'account_creation.authorized' and r.email = 'legacy.agent@example.test'
+         and a.details = '{"actor_role": "manager", "requested_role": "customer_service"}'::jsonb) = 1,
+  'the intent is a test-marked direct_create approved by its own requester, and audited');
 
 select * from finish();
 rollback;

@@ -9,6 +9,19 @@
 -- timestamptz (the type names that are plain identifiers; integer, bigint and boolean are grammar
 -- keywords that always mean pg_catalog) with domains whose CHECK refuses to run as anyone but
 -- `authenticated`, then calls RPCs, helpers and policies as `authenticated`.
+-- PR 1.5: the fixtures also write a service call with a closed and an open visit (every trigger
+-- fires, and the deferred SECURITY DEFINER checks run at SET CONSTRAINTS ... IMMEDIATE while the
+-- domains exist), and the Technician calls the three narrow read functions (previous_visits,
+-- visit_rep_contact, my_visit_details) through their wrappers with the domains in place.
+-- PR 1.6: the fixtures also store a review item through create_review_item (a second departure
+-- report of the done visit, under the Technician's claims), and the Manager runs the two new
+-- SECURITY DEFINER writers (correct_visit, resolve_review_item) through their wrappers with the
+-- domains in place.
+-- PR 1.8: the request path is retired (D60 (7), C-02), so the Manager's second creation is a direct
+-- Customer Service intent; the Manager also activates a Customer Service account directly (the
+-- replaced admin_set_user_active) and the Creator deletes it (the new SECURITY DEFINER writer
+-- admin_delete_user, which fires the new profiles triggers) with the domains in place, and the
+-- reads include a narrow matrix key.
 --
 -- The file runs in its own session (pg_prove), and the fixtures are written after the domains
 -- exist, so every function and trigger below is compiled while the domains exist (PL/pgSQL keeps
@@ -18,7 +31,7 @@
 -- dropped. Everything is rolled back.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(24);
 
 -- The attacker's objects, created by `authenticated` in its own temporary schema.
 set local role authenticated;
@@ -50,14 +63,51 @@ begin
     ('00000000-0000-4000-8000-0000000000c1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-c1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000d1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-d1@example.test', now(), now()),
+    ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-b1@example.test', now(), now()),
     ('00000000-0000-4000-8000-0000000000f0', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-f0@example.test', now(), now());
   begin
     perform private.bootstrap_first_creator('00000000-0000-4000-8000-0000000000c1', 'יוצר');
-    insert into public.profiles (id, role, full_name, is_active) values
-      ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', true),
-      ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', true);
+    insert into public.profiles (id, role, full_name, work_phone, is_active) values
+      ('00000000-0000-4000-8000-0000000000a1', 'manager', 'מנהל א', '03-000-0015', true),
+      ('00000000-0000-4000-8000-0000000000d1', 'technician', 'טכנאי א', null, true),
+      ('00000000-0000-4000-8000-0000000000b1', 'customer_service', 'נציגת צל', null, false);
     insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
       ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000d1', true, 'טכנאי א', 't-y', 'tech-a@example.test');
+    -- PR 1.5: a call of the Technician with visit 1 done (signature, summary, history) and visit 2
+    -- scheduled, written as Step 4 and Step 6 writers will write them.
+    insert into public.customers (id, customer_number, name, phone, data_source, source_ref) values
+      ('00000000-0000-4000-8000-0000000015c1', 'C-1501', 'לקוח צל', '050-000-1501', 'automated_test', 'pr15-015-1');
+    insert into public.products (id, sku_display, sku_normalized, name, data_source, source_ref) values
+      ('00000000-0000-4000-8000-0000000015d1', 'SH-1501', 'SH-1501', 'מוצר צל', 'automated_test', 'pr15-015-1');
+    insert into public.service_calls (id, request_number, customer_id, product_id, call_type_id, fault_description,
+                                      warranty_status, warranty_until, warranty_raw, handling_rep_name,
+                                      handling_rep_profile_id, status, next_visit_number, data_source, source_ref) values
+      ('00000000-0000-4000-8000-0000000015a1', 'R-1501', '00000000-0000-4000-8000-0000000015c1',
+       '00000000-0000-4000-8000-0000000015d1', (select t.id from public.call_types t where t.sort_order = 1),
+       'תקלת צל', 'yes', '2027-05-01', 'כן עד 05/2027', 'נציגת צל', '00000000-0000-4000-8000-0000000000a1', 'open', 3,
+       'automated_test', 'pr15-015-1');
+    insert into public.visits (id, service_call_id, technician_id, visit_number, task_number, scheduled_start,
+                               scheduled_end, status, city, street, source_ref) values
+      ('00000000-0000-4000-8000-0000000015b1', '00000000-0000-4000-8000-0000000015a1', '00000000-0000-4000-8000-0000000000e1',
+       1, 'T-1501', '2026-11-01 08:00:00+00', '2026-11-01 09:00:00+00', 'done', 'עיר צל', 'רחוב צל', 'pr15-015-1'),
+      ('00000000-0000-4000-8000-0000000015b2', '00000000-0000-4000-8000-0000000015a1', '00000000-0000-4000-8000-0000000000e1',
+       2, 'T-1502', '2026-11-20 08:00:00+00', '2026-11-20 09:00:00+00', 'scheduled', 'עיר צל', 'רחוב צל', 'pr15-015-2');
+    insert into public.visit_reports (visit_id, summary_text, summary_source) values
+      ('00000000-0000-4000-8000-0000000015b1', 'סיכום צל', 'written');
+    insert into public.visit_signatures (visit_id, signer_name, signed_ack_text, ack_text_sha256, operation_id) values
+      ('00000000-0000-4000-8000-0000000015b1', 'חותם צל', 'נוסח אישור צל',
+       '2b2fba45e6799f70e41a174407c0247e6d7299375f240a00dda725c43f617925', '00000000-0000-4000-8000-0000000015e1');
+    insert into public.visit_events (visit_id, version_after, event_type, to_status) values
+      ('00000000-0000-4000-8000-0000000015b1', 1, 'created', 'done'),
+      ('00000000-0000-4000-8000-0000000015b2', 1, 'created', 'scheduled');
+    set constraints all immediate;
+    perform pg_catalog.set_config('request.jwt.claims',
+      '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+    perform private.create_review_item('duplicate_time_report', 'pr16-015-1', '00000000-0000-4000-8000-0000000015a1',
+      '00000000-0000-4000-8000-0000000015b1', 'device', null, '00000000-0000-4000-8000-0000000015f1',
+      '{"kind": "departed", "reported_at": "2026-11-01T07:40:00+00:00", "device_tz": "Asia/Jerusalem", "device_utc_offset_min": 120, "device_sent_at": "2026-11-01T07:45:00+00:00"}',
+      '{"kind": "departed"}', null);
+    perform pg_catalog.set_config('request.jwt.claims', '', true);
     perform pg_catalog.set_config('tm_test.r_fixtures', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_fixtures', sqlstate || ' ' || sqlerrm, true);
@@ -77,10 +127,16 @@ begin
     perform pg_catalog.set_config('tm_test.r_authorize', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
-    perform public.request_account_change('create', null, 'customer_service', 'shadow-b@example.test', 'צל ב');
+    perform public.authorize_account_creation('customer_service', 'shadow-b@example.test', 'צל ב');
     perform pg_catalog.set_config('tm_test.r_request', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_request', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform public.admin_set_user_active('00000000-0000-4000-8000-0000000000b1', true, 1, 'צל');
+    perform pg_catalog.set_config('tm_test.r_activate', 'ok', true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_activate', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
     perform public.admin_update_profile('00000000-0000-4000-8000-0000000000d1', 1, 'טכנאי א שונה', '050-000-0000', null);
@@ -97,11 +153,60 @@ begin
   end;
   begin
     perform pg_catalog.set_config('tm_test.r_reads',
-      pg_catalog.concat_ws(',', public.has_permission('settings'), public.is_creator(), public.my_technician_id(),
+      pg_catalog.concat_ws(',', public.has_permission('settings'), public.has_permission('callTypes'), public.is_creator(),
+                           public.my_technician_id(),
                            (select pg_catalog.count(*) from public.profiles)),
       true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_reads', sqlstate || ' ' || sqlerrm, true);
+  end;
+  -- PR 1.6: the D14 correction and the review decision (SECURITY DEFINER bodies) with the domains.
+  begin
+    perform pg_catalog.set_config('tm_test.r_correct',
+      (select pg_catalog.concat_ws(':', c.version_after, c.correction_id is not null)
+       from public.correct_visit('00000000-0000-4000-8000-0000000015b1', 'summary', 'סיכום צל מתוקן', 'סיבת צל', 1) c), true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_correct', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform pg_catalog.set_config('tm_test.r_resolve',
+      public.resolve_review_item((select r.id from public.review_items r where r.dedupe_key = 'pr16-015-1'), 1,
+                                 'apply_incoming', null, 'הערת צל')::pg_catalog.text, true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_resolve', sqlstate || ' ' || sqlerrm, true);
+  end;
+end
+$calls$;
+reset role;
+
+-- PR 1.5: the Technician reads his open visit through the three narrow read functions (SECURITY
+-- DEFINER bodies behind SECURITY INVOKER wrappers) with the domains in place.
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
+set local role authenticated;
+do $calls$
+begin
+  begin
+    perform pg_catalog.set_config('tm_test.r_previous_visits',
+      (select pg_catalog.string_agg(pg_catalog.concat_ws(':', v.visit_number, v.status, v.technician_name, v.summary_text,
+                                                         v.summary_source, v.is_test), ',')
+       from public.previous_visits('00000000-0000-4000-8000-0000000015b2') v), true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_previous_visits', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform pg_catalog.set_config('tm_test.r_rep_contact',
+      (select pg_catalog.concat_ws(':', r.rep_name, r.work_phone)
+       from public.visit_rep_contact('00000000-0000-4000-8000-0000000015b2') r), true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_rep_contact', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform pg_catalog.set_config('tm_test.r_visit_details',
+      (select pg_catalog.concat_ws(':', d.request_number, d.fault_description, d.warranty_status, d.warranty_until,
+                                   d.is_test, d.customer_number, d.customer_name, d.product_sku_display)
+       from public.my_visit_details('00000000-0000-4000-8000-0000000015b2') d), true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_visit_details', sqlstate || ' ' || sqlerrm, true);
   end;
 end
 $calls$;
@@ -122,7 +227,8 @@ end
 $calls$;
 reset role;
 
--- The Creator: a matrix change (role_permissions triggers) and the census (SECURITY INVOKER).
+-- The Creator: a matrix change (role_permissions triggers), a deletion (PR 1.8) and the census
+-- (SECURITY INVOKER).
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
 set local role authenticated;
 do $calls$
@@ -132,6 +238,12 @@ begin
     perform pg_catalog.set_config('tm_test.r_creator_matrix', 'ok', true);
   exception when others then
     perform pg_catalog.set_config('tm_test.r_creator_matrix', sqlstate || ' ' || sqlerrm, true);
+  end;
+  begin
+    perform public.admin_delete_user('00000000-0000-4000-8000-0000000000b1', 2, 'צל');
+    perform pg_catalog.set_config('tm_test.r_delete', 'ok', true);
+  exception when others then
+    perform pg_catalog.set_config('tm_test.r_delete', sqlstate || ' ' || sqlerrm, true);
   end;
   begin
     perform pg_catalog.set_config('tm_test.r_census',
@@ -178,7 +290,7 @@ select set_config('request.jwt.claims', '', true);
 
 -- Results (the domains are gone; pgTAP may run again).
 select is(current_setting('tm_test.r_fixtures', true), 'ok',
-  'the fixtures written as postgres (bootstrap, profiles, field profile) fired the triggers without evaluating the domains');
+  'the fixtures written as postgres (bootstrap, profiles, field profile; PR 1.5 call, visits and their deferred checks) fired the triggers without evaluating the domains');
 select is(current_setting('tm_test.r_unpinned', true), 'P0001 pg_temp shadowing ran as postgres',
   'positive control: a SECURITY DEFINER function with an empty search_path runs the caller''s pg_temp domain CHECK as postgres');
 select is(current_setting('tm_test.r_pinned', true), 'ok',
@@ -188,16 +300,39 @@ select is(current_setting('tm_test.r_pinned', true), 'ok',
 select ok(string_to_array(current_setting('tm_test.after_attack', true), ',') <@ array['authenticated'],
   'the domains'' CHECK never ran with more than the caller''s own rights (no RPC body, helper, wrapper or trigger ran it as postgres)');
 select is(current_setting('tm_test.r_authorize', true), 'ok', 'a Manager''s creation intent works with the domains in place');
-select is(current_setting('tm_test.r_request', true), 'ok', 'a Manager''s request works with the domains in place');
+select is(current_setting('tm_test.r_request', true), 'ok',
+  'PR 1.8: a Manager''s Customer Service creation intent (D60 (7); it was a request) works with the domains in place');
+select is(current_setting('tm_test.r_activate', true), 'ok',
+  'PR 1.8: a Manager''s direct Customer Service activation (D60 (7)) works with the domains in place');
 select is(current_setting('tm_test.r_update', true), 'ok', 'a Manager''s profile and field-profile updates work with the domains in place');
 select is(current_setting('tm_test.r_manager_matrix', true), '42501 not authorized',
   'a Manager still cannot change the matrix: the caller check, not a pg_temp domain, decides');
 select is(current_setting('tm_test.r_noprofile', true), '42501 not authorized',
   'a user without a profile gets 42501, not the result of code run during the declarations');
-select is(current_setting('tm_test.r_reads', true), 'f,f,2',
-  'the helpers and policies answer as without the domains (no settings key, not the Creator, no technician id; reads through RLS)');
+select is(current_setting('tm_test.r_reads', true), 'f,t,f,3',
+  'the helpers and policies answer as without the domains (no settings key, the callTypes key, not the Creator, no technician id; reads through RLS)');
 select is(current_setting('tm_test.r_creator_matrix', true), 'ok', 'the Creator''s matrix change works with the domains in place');
+select is(current_setting('tm_test.r_delete', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', p.is_active, p.deleted_at is not null, p.deleted_by, p.version) from public.profiles p
+   where p.id = '00000000-0000-4000-8000-0000000000b1'),
+  'ok f:t:00000000-0000-4000-8000-0000000000c1:3',
+  'PR 1.8: the Creator''s deletion works with the domains in place (the account inactive, marked deleted by him)');
 select ok(current_setting('tm_test.r_census', true) ~ '^[0-9,]+$', 'the census runs with the domains in place');
+select is(current_setting('tm_test.r_previous_visits', true), '1:done:טכנאי א:סיכום צל:written:t',
+  'PR 1.5: a Technician''s previous_visits works with the domains in place');
+select is(current_setting('tm_test.r_rep_contact', true), 'נציגת צל:03-000-0015',
+  'PR 1.5: a Technician''s visit_rep_contact works with the domains in place');
+select is(current_setting('tm_test.r_visit_details', true), 'R-1501:תקלת צל:yes:2027-05-01:t:C-1501:לקוח צל:SH-1501',
+  'PR 1.5: a Technician''s my_visit_details works with the domains in place');
+select is(current_setting('tm_test.r_correct', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', c.field, c.new_value #>> '{}', c.version_before) from public.visit_corrections c),
+  '2:t summary:סיכום צל מתוקן:1',
+  'PR 1.6: a Manager''s correct_visit works with the domains in place (the correction stored, the visit''s version raised)');
+select is(current_setting('tm_test.r_resolve', true) || ' ' ||
+  (select pg_catalog.concat_ws(':', t.source, t.kind, t.accepted_review_id is not null) from public.visit_time_reports t
+   where t.visit_id = '00000000-0000-4000-8000-0000000015b1'),
+  '2 correction:departed:t',
+  'PR 1.6: a Manager''s resolve_review_item works with the domains in place (the accepted report stored)');
 select ok(
   (select not allowed and version = 1 and updated_by is null from public.role_permissions
    where role = 'manager' and permission_key = 'settings'),
@@ -205,9 +340,11 @@ select ok(
 select is((select count(*) from public.audit_logs where action = 'matrix.value_set'), 1::bigint,
   'only the Creator''s matrix change is audited');
 select ok(
-  exists (select 1 from public.account_requests where email = 'shadow-a@example.test' and request_type = 'direct_create')
-  and exists (select 1 from public.account_requests where email = 'shadow-b@example.test' and request_type = 'create'),
-  'the intent and the request were stored');
+  exists (select 1 from public.account_requests where email = 'shadow-a@example.test' and request_type = 'direct_create'
+            and requested_role = 'technician')
+  and exists (select 1 from public.account_requests where email = 'shadow-b@example.test' and request_type = 'direct_create'
+                and requested_role = 'customer_service'),
+  'both creation intents were stored (PR 1.8: the Customer Service one is an intent, no longer a request)');
 select is(private.audit_chain_verify(), null::bigint, 'the audit chain written while the domains existed verifies');
 select is(
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace

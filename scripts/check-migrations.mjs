@@ -137,6 +137,24 @@ export const ALLOWED_WRITERS = new Map([
   ["private.admin_create_technician(uuid,text,text,text,text,boolean)", { tables: ["public.technicians"] }],
   ["private.request_account_change(text,uuid,text,text,text)", { tables: ["public.account_requests"] }],
   ["private.bootstrap_first_creator(uuid,text)", { tables: ["public.profiles"] }],
+  // PR 1.4 Settings writers (key settings; TEMPORARY test marking, owner question OQ-4). Accepting
+  // them needs the owner's acceptance (PR 1.4 approval item 1, with PR 1.3 Q1).
+  ["private.add_call_type(text)", { tables: ["public.call_types"] }],
+  ["private.add_followup_reason(text)", { tables: ["public.followup_reasons"] }],
+  ["private.add_collection_location(text,text,text,text,text)", { tables: ["public.collection_locations"] }],
+  // PR 1.5 field-history writer (database-schema.md §6: history stays in entity_changes; the actor
+  // is auth.uid() of the session). Accepting it needs the owner's acceptance (PR 1.5 approval item
+  // A1).
+  ["private.write_entity_change(text,uuid,text,jsonb,jsonb,text,text)", { tables: ["public.entity_changes"] }],
+  // PR 1.6 writers (database-schema.md §4 "Migration 4"; D14, D44, D45, D46): the review-item and
+  // offline-operation helpers (the submitter and the actor are auth.uid() of the session), the D14
+  // correction writer and the review-resolution writer. Accepting them needs the owner's acceptance
+  // (PR 1.6 approval item A1).
+  ["private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb)", { tables: ["public.review_items"] }],
+  ["private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid)",
+    { tables: ["public.offline_operations"] }],
+  ["private.correct_visit(uuid,text,text,text,integer)", { tables: ["public.visit_corrections", "public.visit_time_reports"] }],
+  ["private.resolve_review_item(uuid,integer,text,jsonb,text)", { tables: ["public.visit_time_reports"] }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.

@@ -1,5 +1,10 @@
 -- PR 1.3: the permission matrix (D33, D51; docs/database-schema.md §8.1, §8.2, §8.4;
 -- docs/testing.md category 4 "Matrix metadata"). Values are TEMPORARY until Step 10 (D51).
+-- PR 1.8 (Migration 5): the catalogue holds 16 keys (D60 (8): reasons, callTypes and ackText,
+-- data keys, TEMPORARY values Manager on and Customer Service off) and 32 values; `usage` is a
+-- Creator-only fixed capability (D60 (9), resolving open decision 10), so the Creator now has it
+-- (it was denied to him too until d13) and the matrix still never grants it. The narrow keys' gates
+-- and `usage` per caller: 300_narrow_keys.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(60);
@@ -28,8 +33,9 @@ select results_eq(
   $$ select key, enforcement from public.permissions order by sort_order $$,
   $$ values ('cal', 'screen'), ('calls', 'data'), ('card', 'data'), ('cancel', 'data'), ('dashGen', 'screen'),
             ('dashTech', 'screen'), ('dashProd', 'screen'), ('export', 'screen'), ('settings', 'data'),
-            ('usage', 'screen'), ('products', 'data'), ('conflicts', 'data'), ('recordings', 'data') $$,
-  'the catalogue holds exactly the 13 D33 keys with their enforcement (data or screen)');
+            ('usage', 'screen'), ('products', 'data'), ('conflicts', 'data'), ('recordings', 'data'),
+            ('reasons', 'data'), ('callTypes', 'data'), ('ackText', 'data') $$,
+  'the catalogue holds exactly the 13 D33 keys and the 3 D60 (8) narrow keys with their enforcement (data or screen)');
 
 select throws_ok(
   $$ insert into public.permissions (key, label_he, enforcement, sort_order) values ('matrix', 'עריכת הרשאות', 'data', 99) $$,
@@ -40,16 +46,17 @@ select throws_ok(
   'T5: the closed key list itself refuses an unknown key (also when its enforcement would pass)');
 select is(
   (select pg_get_constraintdef(oid) from pg_constraint where conname = 'permissions_key_check' and conrelid = 'public.permissions'::regclass),
-  'CHECK ((key = ANY (ARRAY[''cal''::text, ''calls''::text, ''card''::text, ''cancel''::text, ''dashGen''::text, ''dashTech''::text, ''dashProd''::text, ''export''::text, ''settings''::text, ''usage''::text, ''products''::text, ''conflicts''::text, ''recordings''::text])))',
-  'T5: the closed catalogue CHECK lists exactly the 13 D33 keys (D33: a new key needs a reviewed migration)');
+  'CHECK ((key = ANY (ARRAY[''cal''::text, ''calls''::text, ''card''::text, ''cancel''::text, ''dashGen''::text, ''dashTech''::text, ''dashProd''::text, ''export''::text, ''settings''::text, ''usage''::text, ''products''::text, ''conflicts''::text, ''recordings''::text, ''reasons''::text, ''callTypes''::text, ''ackText''::text])))',
+  'T5: the closed catalogue CHECK lists exactly the 13 D33 keys and the 3 D60 (8) keys (a new key needs a reviewed migration; PR 1.8 added three)');
 select results_eq(
   $$ select key, label_he from public.permissions order by sort_order $$,
   $$ values ('cal', 'יומן טכנאים'), ('calls', 'קריאות – צפייה וחיפוש'), ('card', 'כרטיס קריאה – תמונות, חתימה'),
             ('cancel', 'ביטול קריאה'), ('dashGen', 'דשבורד · כללי'), ('dashTech', 'דשבורד · טכנאים'),
             ('dashProd', 'דשבורד · מוצרים וספקים'), ('export', 'ייצוא ל-Excel'), ('settings', 'הגדרות'),
             ('usage', 'מדדי שימוש'), ('products', 'עריכת מוצרים'), ('conflicts', 'טיפול בפריטים לבדיקה'),
-            ('recordings', 'הקלטות מקוריות') $$,
-  'T5: the Hebrew labels are the demo''s and the TEMPORARY SE-02 labels, exactly');
+            ('recordings', 'הקלטות מקוריות'), ('reasons', 'סיבות המשך טיפול'), ('callTypes', 'סוגי קריאה'),
+            ('ackText', 'נוסח אישור ״טופל״') $$,
+  'T5: the Hebrew labels are the demo''s, the TEMPORARY SE-02 labels and the QA document''s words for the narrow keys (TEMPORARY), exactly');
 
 select results_eq(
   $$ select role, permission_key, allowed from public.role_permissions rp
@@ -59,16 +66,18 @@ select results_eq(
      ('customer_service', 'cancel', false), ('customer_service', 'dashGen', false), ('customer_service', 'dashTech', false),
      ('customer_service', 'dashProd', false), ('customer_service', 'export', false), ('customer_service', 'settings', false),
      ('customer_service', 'usage', false), ('customer_service', 'products', false), ('customer_service', 'conflicts', false),
-     ('customer_service', 'recordings', false),
+     ('customer_service', 'recordings', false), ('customer_service', 'reasons', false),
+     ('customer_service', 'callTypes', false), ('customer_service', 'ackText', false),
      ('manager', 'cal', true), ('manager', 'calls', true), ('manager', 'card', true), ('manager', 'cancel', true),
      ('manager', 'dashGen', true), ('manager', 'dashTech', true), ('manager', 'dashProd', true), ('manager', 'export', true),
      ('manager', 'settings', false), ('manager', 'usage', false), ('manager', 'products', true),
-     ('manager', 'conflicts', true), ('manager', 'recordings', true) $$,
-  'the 26 seeded values equal the D33 defaults');
+     ('manager', 'conflicts', true), ('manager', 'recordings', true), ('manager', 'reasons', true),
+     ('manager', 'callTypes', true), ('manager', 'ackText', true) $$,
+  'the 32 seeded values equal the D33 defaults and the D60 (8) defaults (narrow keys: Manager on, Customer Service off)');
 
 select is(
   (select count(*) from public.role_permissions where value_status = 'temporary' and approved_by is null and approved_at is null),
-  26::bigint, 'every seeded value is TEMPORARY (D51) and unapproved');
+  32::bigint, 'every seeded value is TEMPORARY (D51) and unapproved (the 6 D60 (8) values too)');
 
 select throws_ok(
   $$ insert into public.role_permissions (role, permission_key, allowed) values ('creator', 'cal', true) $$,
@@ -81,7 +90,7 @@ select throws_ok(
   '23514', null, 'TEMPORARY: Customer Service cancel stays off until d08, even as postgres');
 select throws_ok(
   $$ update public.role_permissions set allowed = true where role = 'manager' and permission_key = 'usage' $$,
-  '23514', null, 'TEMPORARY: usage stays off until d13, even as postgres');
+  '23514', null, 'usage stays off for the Manager, even as postgres (PR 1.8: for good, a Creator-only fixed capability, D60 (9))');
 
 -- has_permission per role -----------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000c1","role":"authenticated"}', true);
@@ -89,9 +98,9 @@ set local role authenticated;
 select results_eq(
   $$ select k.key, public.has_permission(k.key) from public.permissions k order by k.sort_order $$,
   $$ values ('cal', true), ('calls', true), ('card', true), ('cancel', true), ('dashGen', true), ('dashTech', true),
-            ('dashProd', true), ('export', true), ('settings', true), ('usage', false), ('products', true),
-            ('conflicts', true), ('recordings', true) $$,
-  'Creator: every key (TEMPORARY: usage denied until d13)');
+            ('dashProd', true), ('export', true), ('settings', true), ('usage', true), ('products', true),
+            ('conflicts', true), ('recordings', true), ('reasons', true), ('callTypes', true), ('ackText', true) $$,
+  'Creator: every key, usage included (PR 1.8, D60 (9): a Creator-only fixed capability; it was denied until d13)');
 select is(public.has_permission('no_such_key'), false, 'Creator: an unknown key is denied');
 reset role;
 
@@ -116,8 +125,8 @@ reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000d1","role":"authenticated"}', true);
 set local role authenticated;
 select is((select count(*) from unnest(array['cal', 'calls', 'card', 'cancel', 'dashGen', 'dashTech', 'dashProd', 'export',
-  'settings', 'usage', 'products', 'conflicts', 'recordings']) k where public.has_permission(k)), 0::bigint,
-  'Technician: no matrix key (fixed capabilities)');
+  'settings', 'usage', 'products', 'conflicts', 'recordings', 'reasons', 'callTypes', 'ackText']) k where public.has_permission(k)),
+  0::bigint, 'Technician: no matrix key (fixed capabilities), the narrow keys included');
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a9","role":"authenticated"}', true);
@@ -187,7 +196,7 @@ select throws_ok($$ select public.admin_set_role_permission('technician', 'cal',
 select throws_ok($$ select public.admin_set_role_permission('customer_service', 'cancel', true, 1, null) $$,
   '55000', null, 'TEMPORARY: Customer Service cancel cannot be granted until d08');
 select throws_ok($$ select public.admin_set_role_permission('manager', 'usage', true, 1, null) $$,
-  '55000', null, 'TEMPORARY: usage cannot be granted until d13');
+  '55000', null, 'usage cannot be granted to the Manager (PR 1.8: never, D60 (9))');
 reset role;
 
 select is(

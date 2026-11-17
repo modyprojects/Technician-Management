@@ -1,6 +1,8 @@
 -- PR 1.3: helpers and who reads what (docs/database-schema.md §8.3, §9; docs/security.md §5, §10;
 -- docs/testing.md categories 2, 3 and 4). Roles come from profiles only, never from JWT or Auth
 -- metadata claims.
+-- PR 1.8: the catalogue holds 16 keys and the matrix 32 values (D60 (8)), 16 per role; deleted
+-- accounts and their reads: 290_account_admin.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(42);
@@ -36,8 +38,8 @@ select is(public.is_creator(), true, 'Creator: is_creator() is true');
 select is(public.my_technician_id(), null::uuid, 'Creator: no technician id');
 select is((select count(*) from public.profiles), 11::bigint, 'Creator: reads every profile');
 select is((select count(*) from public.technicians), 3::bigint, 'Creator: reads every technician');
-select is((select count(*) from public.permissions), 13::bigint, 'Creator: reads the catalogue');
-select is((select count(*) from public.role_permissions), 26::bigint, 'Creator: reads every matrix value');
+select is((select count(*) from public.permissions), 16::bigint, 'Creator: reads the catalogue');
+select is((select count(*) from public.role_permissions), 32::bigint, 'Creator: reads every matrix value');
 reset role;
 
 -- Manager -----------------------------------------------------------------------------------------------
@@ -49,7 +51,7 @@ select results_eq(
   $$ values ('customer_service', 3::bigint), ('manager', 1::bigint), ('technician', 4::bigint) $$,
   'Manager: reads Technician and Customer Service profiles and his own, never other Managers or the Creator');
 select is((select count(*) from public.technicians), 3::bigint, 'Manager: reads every technician');
-select is((select count(*) from public.role_permissions where role = 'manager'), 13::bigint, 'Manager: reads his role''s values');
+select is((select count(*) from public.role_permissions where role = 'manager'), 16::bigint, 'Manager: reads his role''s values');
 select is((select count(*) from public.role_permissions where role <> 'manager'), 0::bigint,
   'Manager: never reads Customer Service values (owner question Q8)');
 reset role;
@@ -61,10 +63,10 @@ select is(public.is_creator(), false, 'Customer Service: is_creator() is false')
 select is((select array_agg(id) from public.profiles), array['00000000-0000-4000-8000-0000000000b1'::uuid],
   'Customer Service: reads only his own profile');
 select is((select count(*) from public.technicians), 3::bigint, 'Customer Service with cal/calls: reads technicians');
-select is((select count(*) from public.permissions), 13::bigint, 'Customer Service: reads the catalogue');
-select is((select count(*) from public.role_permissions where role = 'customer_service'), 13::bigint,
+select is((select count(*) from public.permissions), 16::bigint, 'Customer Service: reads the catalogue');
+select is((select count(*) from public.role_permissions where role = 'customer_service'), 16::bigint,
   'Customer Service: reads his role''s values only');
-select is((select count(*) from public.role_permissions), 13::bigint, 'Customer Service: never Manager values');
+select is((select count(*) from public.role_permissions), 16::bigint, 'Customer Service: never Manager values');
 reset role;
 
 -- Technician A vs B -------------------------------------------------------------------------------------

@@ -9,7 +9,7 @@
 - **Time:** `timestamptz` in UTC, displayed in `Asia/Jerusalem`. Server times are authoritative for receipt, sync and audit; device times are reported values (D45, section 7).
 - **Value sets:** `text` columns with explicit `CHECK` constraints (roles, statuses, kinds, sources, request and review types). No Postgres enums. The codes are English; their Hebrew display labels belong to the UI.
 - **Concurrency:** `version` (`int`) on every editable row, raised by trigger. Edit RPCs take `expected_version` and per-field `{base, new}` changes (D44): same version → applied; different version but every `base` equals the current value → automatic merge, recorded as `merge`; otherwise → conflict, both versions are returned and the rejected submission is stored as a `review_items` row (`edit_conflict`). Nothing is lost.
-- **`visits.field_version`:** raised by trigger only by the changes that matter to a device: status, assignment, cancellation and the critical fields of D39 (customer, address, SKU). Non-critical changes do not raise it (tested). Offline operations carry the `expected_field_version` they were based on.
+- **`visits.field_version`:** raised by trigger only by the changes that matter to a device: status, assignment, cancellation and the critical fields of D39 (customer, address, SKU). Non-critical changes do not raise it (tested). Offline operations carry the `expected_field_version` they were based on. *Migration 4 (PR 1.6):* the trigger `t13_field_version` starts it at 1 and raises it by one for a change of status, technician, city, street, building, floor or apartment; the call-level customer and SKU changes raise it in their Step 6 writer (exactly one step; TEMPORARY, PR 1.6 OQ-14).
 - **Foreign keys:** every foreign key is `ON DELETE RESTRICT`, including `profiles.id` → `auth.users.id`. No cascades anywhere.
 - **No DELETE of business or history records** (customers, products, service calls, visits, reports, signatures, time reports, events, corrections, review items, offline operations, account requests, audit). No DELETE grant exists for them. Accounts are deactivated (`profiles.is_active`), never deleted.
 - **Reference data** (`brands`, `suppliers`, `call_types`, `followup_reasons`, `collection_locations`) is deactivated with `is_active`. The only deletes are those SE-06 and SE-07 in `docs/demo-deviations.md` allow: a pickup place that nothing references, and an unused follow-up reason (as in the demo, only a user-added one, `is_user_added`). `ON DELETE RESTRICT` makes any delete of a referenced row fail.
@@ -320,35 +320,44 @@ erDiagram
   }
   visit_corrections {
     uuid id PK
-    uuid visit_id FK
-    uuid corrected_by FK
+    uuid visit_id FK "(id, is_test)"
+    text field "one field per row"
+    jsonb old_value
+    jsonb new_value
     text reason
-    jsonb changes
     int version_before
-    int version_after
+    int version_after "UK with the visit"
+    uuid corrected_by FK
+    timestamptz recorded_at "server"
     bool is_test
   }
   review_items {
     uuid id PK
     text review_type
     text dedupe_key UK
-    uuid service_call_id FK
+    uuid service_call_id FK "(id, is_test)"
     uuid visit_id FK "(id, service_call_id)"
-    uuid submitted_by_profile_id FK
-    uuid operation_id
+    text source "invitation or device"
+    text source_ref "invitation"
+    uuid submitted_by_profile_id FK "device"
+    uuid operation_id "device"
     jsonb submitted_version "version A"
     jsonb current_version "version B"
+    jsonb base_version "D44 base"
     text status
-    timestamptz created_at
+    timestamptz created_at "server receipt"
     timestamptz resolved_at
     uuid resolved_by FK
     text resolution
+    jsonb resolution_choices
+    text resolution_note "D14"
     bool is_test
+    int version
   }
   offline_operations {
     uuid operation_id PK
     uuid actor_profile_id FK
-    uuid visit_id FK
+    uuid visit_id FK "(id, is_test)"
     text op_type
     text payload_sha256
     int expected_field_version
@@ -356,8 +365,9 @@ erDiagram
     text device_tz
     int device_utc_offset_min
     timestamptz received_at
-    text result
+    text result "applied or review"
     int resulting_field_version
+    uuid review_item_id FK
     bool is_test
   }
 ```
@@ -369,11 +379,11 @@ Every table has RLS enabled, explicit grants and the test marker of section 2 (o
 
 | Table | Responsibility | Key constraints and rules |
 |---|---|---|
-| `profiles` | Account: role, name, work phone (D40), invitation alias, active state | `id` = `auth.users.id` (FK, RESTRICT). `role` `CHECK` (Technician, Customer Service, Manager, Creator). `invitation_rep_name` unique. `is_active` controls sign-in and data access. No direct INSERT, UPDATE or DELETE for any user; changes only through RPCs. The role never comes from `user_metadata` or `app_metadata` |
+| `profiles` | Account: role, name, work phone (D40), invitation alias, active state | `id` = `auth.users.id` (FK, RESTRICT). `role` `CHECK` (Technician, Customer Service, Manager, Creator). `invitation_rep_name` unique. `is_active` controls sign-in and data access. No direct INSERT, UPDATE or DELETE for any user; changes only through RPCs. The role never comes from `user_metadata` or `app_metadata`. *Migration 5 (D60 (7), Option A):* `deleted_at`, `deleted_by` (set together by the Creator's `admin_delete_user`, only on an inactive row; a deleted row never changes again and is never removed) |
 | `technicians` | Technician field profile: display name, colour, Outlook email, device, eligibility for new invitations | `profile_id` unique and linked only to a profile with the Technician role. `outlook_email` unique (matches invitation attendees; test users use `example.test`). `accepts_invitations` is the SE-05 "פעיל" toggle (new invitations only), never access. Every `outlook_email` change notifies the Creator in the app (D34 f). No direct writes |
-| `permissions` | Closed catalogue of matrix keys and how each is enforced (data or screen) | `key` primary key; exactly the 13 keys of D33. No direct writes |
+| `permissions` | Closed catalogue of matrix keys and how each is enforced (data or screen) | `key` primary key; exactly 16 keys: the 13 of D33 and, since Migration 5, the narrow keys `reasons`, `callTypes`, `ackText` (D60 (8)). No direct writes |
 | `role_permissions` | Editable matrix values (D33) | Primary key `(role, permission_key)`. `role` `CHECK`: `manager` or `customer_service` only; the Creator is never in the matrix. Written only by `admin_set_role_permission` (Creator), effective immediately, audited in the same transaction. Every value carries `value_status`: `temporary` for the seeded defaults until the owner approves the final values in Step 10 (D51), then `approved` with `approved_by` and `approved_at`; a key introduced later is seeded denied unless approved; temporary values never override hard restrictions |
-| `account_requests` | Manager-initiated Customer Service creation, activation, reactivation and role changes awaiting the Creator (D34 a) | `status` `CHECK`: `pending`, `approved`, `rejected`, `cancelled`. While pending nothing changes: no Auth user on creation, reactivation keeps the account inactive, a role change keeps the current role. Decision by the Creator only (RPC); the requester may cancel a pending request; rejection stores a reason; every step is audited; no automatic expiry (D25) |
+| `account_requests` | Manager-initiated Customer Service creation, activation, reactivation and role changes awaiting the Creator (D34 a) | `status` `CHECK`: `pending`, `approved`, `rejected`, `cancelled`. While pending nothing changes: no Auth user on creation, reactivation keeps the account inactive, a role change keeps the current role. Decision by the Creator only (RPC); the requester may cancel a pending request; rejection stores a reason; every step is audited; no automatic expiry (D25). *Migration 5 (D60 (7), C-02):* the request types are retired (no new row, no request or decision function for any role); the rows stay as history; the phase-1 creation intents (`direct_create`) are the only new rows |
 | `audit_logs` | Sensitive and administrative actions | Append-only, hash chain (`prev_hash` → `row_hash`), written in the same transaction as the action. `target_is_test` by trigger. Minimal metadata, no raw customer data |
 
 **Migration 2 — reference data, customers and products (PR 1.4)**
@@ -403,9 +413,11 @@ Every table has RLS enabled, explicit grants and the test marker of section 2 (o
 
 | Table | Responsibility | Key constraints and rules |
 |---|---|---|
-| `offline_operations` | Server-side idempotency record for device sync | Primary key = the device's operation UUID; `payload_sha256`; `expected_field_version` and `resulting_field_version`; device and server times (D45). A replay of the same id returns the stored result |
-| `review_items` | Everything that needs review; both versions preserved (D44) | `dedupe_key` unique. Composite FK `(visit_id, service_call_id)` so the visit belongs to the call. `review_type` includes `sku_change`, `customer_change` and `edit_conflict`, plus the other review cases of D39, D43, D44 and D45; the exact value set is fixed in this PR. Who resolves: section 8 |
-| `visit_corrections` | Audited Manager/Creator corrections of server-closed visits (D14) | Append-only. Reason, change set, `version_before` and `version_after`; original values are never overwritten |
+| `offline_operations` | Server-side idempotency record for device sync | Primary key = the device's operation UUID; `payload_sha256`; `expected_field_version` and `resulting_field_version`; device and server times (D45). A replay of the same id returns the stored result. *As built (PR 1.6):* one immutable row per operation with its final result (`applied` or `review`, with `review_item_id`); a refused operation is not stored, so the device may retry it (TEMPORARY OQ-10). The Step 4 writers call `private.offline_operation_replay` (the stored result, or NULL; the same id with another payload or user is refused) and `private.record_offline_operation` (the actor is `auth.uid()`) |
+| `review_items` | Everything that needs review; both versions preserved (D44) | `dedupe_key` unique. Composite FK `(visit_id, service_call_id)` so the visit belongs to the call. `review_type` includes `sku_change`, `customer_change` and `edit_conflict`, plus the other review cases of D39, D43, D44 and D45; the exact value set is fixed in this PR. Who resolves: section 8. *As built (PR 1.6):* `reassignment`, `cancellation`, `address_change`, `customer_change`, `sku_change` (invitations), `edit_conflict`, `closure_of_cancelled_visit`, `approval_text_mismatch`, `duplicate_time_report` (devices); created open through `private.create_review_item` (one item per dedupe key; only an exact replay returns the stored item), decided once through `resolve_review_item`; both versions and the base are frozen. PR 1.6 applies `keep_current` for every type and `apply_incoming` for `duplicate_time_report` only (TEMPORARY OQ-4) |
+| `visit_corrections` | Audited Manager/Creator corrections of server-closed visits (D14) | Append-only. Reason, change set, `version_before` and `version_after`; original values are never overwritten. *As built (PR 1.6):* one field per row (summary, continuation reason, next-visit notes, departed, arrived, ended; TEMPORARY OQ-5) with old and new value; `visit_reports` and `visits` keep the as-closed values and the newest correction is current (OQ-7; enforced by triggers: a summary never changes after insert, a closed visit keeps its continuation reason and next-visit notes); a corrected field time is also a `visit_time_reports` row (`source = 'correction'`, `correction_id`); written only by `correct_visit` (Manager and Creator) |
+
+Migration 4 also adds `correction_id` and `accepted_review_id` to `visit_time_reports` (a second device report accepted in review is a `correction` row that keeps its original receipt time), `UNIQUE (id, service_call_id)` and the `field_version` trigger to `visits`, two audit actions (`visit.corrected`, `review_item.resolved`) and two audit targets (`visits`, `review_items`). Details, deviations (DEV-1 to DEV-12) and TEMPORARY behaviours (OQ-1 to OQ-14): `docs/review/step1-pr16/README.md`.
 
 **Not in the Step 1 design:** the TE-03 "נאסף" state (persisted per technician per day, `docs/demo-deviations.md`). Where it is stored is settled with the Step 3 plan.
 
@@ -451,7 +463,10 @@ One function, `recalc_call_status`, is the only writer of `service_calls.status`
 ### 8.1 Fixed capabilities (never matrix keys)
 - Editing the matrix: Creator only (D33).
 - Creator and Manager account administration: Creator only (D34).
-- Customer Service and Technician account administration: Manager and Creator, under the D34 rules (Creator approval for Manager-initiated Customer Service creation, activation, reactivation and role changes; immediate deactivation; no passwords or emails for Managers).
+- Customer Service and Technician account administration: Manager and Creator. *Migration 5 (D60 (7), superseding D34 a and c):* the Manager creates, edits, activates and deactivates these accounts directly, with no Creator approval; he never deletes, never changes a role, never sets or resets passwords and never changes emails.
+- Role changes: Creator only (D60 (7)); nobody becomes Creator (D49); the last active Creator is never demoted or deactivated.
+- Deletion (D60 (7), Option A): Creator only, never a Creator account (TEMPORARY, PR 1.8 OQ-1).
+- Usage analytics (`usage`): Creator only (D60 (9)); the matrix never grants it to the Manager or Customer Service.
 - D14 audited corrections and any conflict resolution that changes a server-closed or cancelled visit (status, report, signature, times, media): Manager and Creator only; `conflicts` alone is not enough.
 - Simulator access (D24): Manager, Creator and Customer Service, test environments only.
 - Security settings: Creator.
@@ -469,11 +484,14 @@ The Creator always has every capability and is not in the matrix. Defaults follo
 | `cancel` | In-app cancellation, if d08 approves it | Data (RPC) | ✓ | ✗ until d08 |
 | `dashGen`, `dashTech`, `dashProd` | Dashboard tabs | Screen | ✓ | ✗ |
 | `export` | Excel export | Screen; every export is authorized on the server | ✓ | ✗ |
-| `settings` | Operational settings (D35): continuation reasons, pickup places, call types, "טופל" text, template labels | Data | ✗ | ✗ |
-| `usage` | Usage metrics; not built until d13 (open decision 10) | Screen | ✗ | ✗ |
+| `settings` | Operational settings (D35). *Since Migration 5 (D60 (8)):* pickup places, email, notifications and template labels; continuation reasons, call types and the "טופל" text have their own keys below | Data | ✗ | ✗ |
+| `usage` | Usage metrics. *Since Migration 5 (D60 (9)):* a Creator-only fixed capability; the matrix never grants it (CHECK and `has_permission`) | Screen | ✗ (never) | ✗ (never) |
 | `products` | Product, brand and supplier editing | Data (RPC) | ✓ | ✗ |
 | `conflicts` | Resolving review items that are not D14 cases (SKU or customer change, edit conflict) | Data (RPC) | ✓ | ✗ |
 | `recordings` | Original recordings (D37) | Data (database and Storage authorization; every access audited) | ✓ | ✗ |
+| `reasons` | Continuation reasons (Migration 5, D60 (8)) | Data (RPC) | ✓ | ✗ |
+| `callTypes` | Call types (Migration 5, D60 (8)) | Data (RPC) | ✓ | ✗ |
+| `ackText` | The "טופל" approval text (Migration 5, D60 (8); no table until Step 4, D43) | Data | ✓ | ✗ |
 
 **Accepted limitation (D33):** screen keys hide screens, not data. A user with `calls` can read the same rows through the API with his own account, so turning off `export` is not a data-exfiltration control. Screen keys never bypass database and server-side authorization.
 
@@ -489,14 +507,14 @@ Base rules: every policy requires an active profile (`profiles.is_active`). `hp(
 | `visit_time_reports` | Only rows he reported himself; whether he sees his own times at all is open decision 2 (d05, Step 3) | Read with `hp(cal)` or `hp(calls)` |
 | `visit_events` | Not directly; through a function if needed | Read with `hp(calls)` |
 | `entity_changes` | — | Read with `hp(calls)`; changes to `card` content only with `hp(card)` |
-| `visit_corrections` | — | Read with `hp(card)` (technical recommendation). Write: Manager and Creator (D14) |
-| `review_items` | Only through a function: the status and what he submitted himself, never the current server version | Read with `hp(card)`. Resolution: D14 cases Manager and Creator only; others `hp(conflicts)` |
+| `visit_corrections` | — | Read with `hp(card)` (technical recommendation). Write: Manager and Creator (D14). *PR 1.6, TEMPORARY OQ-1, OQ-2:* read with `hp(card)` and (`hp(cal)` or `hp(calls)`); `correct_visit` also needs those keys |
+| `review_items` | Only through a function: the status and what he submitted himself, never the current server version | Read with `hp(card)`. Resolution: D14 cases Manager and Creator only; others `hp(conflicts)`. *PR 1.6, TEMPORARY OQ-1 to OQ-3, OQ-11:* read with `hp(card)` and (`hp(cal)` or `hp(calls)`); a D14 item also needs `hp(conflicts)` and a note; no Technician function yet |
 | `offline_operations` | His own | Read with `hp(conflicts)` |
-| `followup_reasons`, `collection_locations`, `call_types` | Active rows | Read. Write: `hp(settings)` (D35) |
+| `followup_reasons`, `collection_locations`, `call_types` | Active rows | Read. Write: `hp(settings)` (D35). *Since Migration 5 (D60 (8)):* `followup_reasons` with `hp(reasons)`, `call_types` with `hp(callTypes)`, `collection_locations` still with `hp(settings)` |
 | `technicians` | His own | Read for Manager and Creator, or with `hp(cal)` or `hp(calls)`. Write: Manager and Creator |
-| `profiles` | His own | Creator: all. Manager: Customer Service, Technicians and himself. Customer Service: a narrow function |
+| `profiles` | His own | Creator: all. Manager: Customer Service, Technicians and himself. Customer Service: a narrow function. A deleted account stays readable like a deactivated one (attribution; PR 1.8 OQ-3) and reads nothing itself |
 | `permissions`, `role_permissions` | — | Write: Creator only, through `admin_set_role_permission`. `has_permission()` reads them for every policy; the direct read policy is fixed in PR 1.3 |
-| `account_requests` | — | Manager: his own requests. Creator: all. Decision: Creator only |
+| `account_requests` | — | Manager: his own requests. Creator: all. Decision: Creator only. *Since Migration 5:* no decision for anyone (C-02); history and creation intents |
 | `audit_logs` | — | Creator: all. Manager: the accounts he manages and operational actions. No direct writes for anyone |
 | `visit_media` photos and videos (Step 4) | His own, plus the earlier closed visits (D36) | Read with `hp(card)` |
 | `visit_media` original recordings (Step 4) | **Only a recording he created**, only to review and correct its transcription, while his visit is not server-closed or the transcript awaits his approval (D36) | Creator always; Manager and Customer Service with `hp(recordings)` (D37). **Every access audited.** Never exported (D11) |
@@ -514,14 +532,15 @@ Base rules: every policy requires an active profile (`profiles.is_active`). `hp(
 3. `admin_set_role_permission(role, key, allowed, expected_version, reason)` checks `is_creator()` from `profiles` (never from the matrix), takes effect immediately and writes the audit row in the same transaction. When MFA is enforced it requires `aal2`.
 4. A Manager never touches Managers, Creators or his own account, and never grants `manager` or `creator`. The last Creator is protected by a lock.
 5. `technicians.profile_id` links only to a Technician profile.
-6. No escalation through a Customer Service account (D34): Manager-initiated Customer Service creation, activation, reactivation and role changes wait for the Creator; Managers never set or reset passwords for others or change emails; Customer Service permissions need not be a subset of the Manager's.
+6. No escalation through a Customer Service account (D34): Manager-initiated Customer Service creation, activation, reactivation and role changes wait for the Creator; Managers never set or reset passwords for others or change emails; Customer Service permissions need not be a subset of the Manager's. *Since Migration 5 (D60 (7)):* the Manager creates and activates Customer Service accounts directly, but never changes a role (so never turns one into a Manager), never deletes, and never sets passwords or emails; the Creator alone changes roles.
 7. Conflict resolution that changes a server-closed or cancelled visit: Manager and Creator only (D14).
 8. MFA (Step 2, open decision 19), technical recommendation: once enforced, a restrictive policy requires `aal2` for all data access by Creator and Manager, not only for admin actions.
 9. Test users: `is_test` set by the server and immutable; a test user manages only test targets; no test Creator in the remote project.
 
 ### 8.5 Account functions (D34, D49)
-- `request_account_change`, `decide_account_request` (Creator only), `cancel_account_request`.
+- `request_account_change`, `decide_account_request` (Creator only), `cancel_account_request`. *Migration 5 (C-02):* the first two are executable by no role; `cancel_account_request` stays (creation intents and history).
 - `assert_can_manage(target_role)`, `admin_create_profile(uid, role)`, `admin_set_user_role`, `admin_set_user_active` (immediate deactivation, audited, Creator notified). Like `update_product`, they write `entity_changes` and `audit_logs` in the same transaction.
+- *Migration 5 (D60 (7)):* `authorize_account_creation` and `admin_create_profile` accept the Manager's Customer Service accounts; `admin_set_user_active` activates them without approval and refuses a deleted account; `admin_delete_user(profile, expected_version, reason)` is the Creator's deletion (Option A, audited `profile.deleted`; it also turns a deleted Technician's `accepts_invitations` off, audited `technician.updated`); `assert_can_change_credentials` refuses a deleted account. The Auth side of a deletion (ban or soft-delete, sessions ended) is the Step 2 server's, after the database call commits.
 - `assert_can_change_credentials` (Creator only) runs before any Auth Admin API call that sets a password or changes an email.
 - **User creation (Step 2) is always two-phase:** first an authorization RPC under the caller's own JWT (D34 rules, approval workflow, audit); only then the Auth Admin API call with the secret key. A profile is never inserted through `service_role`.
 - **First Creator (D49):** `private.bootstrap_first_creator(uid)` is created in PR 1.3 but not run. It runs once in Step 2, only with the owner's separate explicit approval and only by the owner's database role; it fails if a Creator exists or the user does not exist, and writes an audit row. MFA follows immediately. A future production project repeats this with its own approval.
@@ -569,7 +588,7 @@ No ONE-related table, column, status, flag, export or adapter.
 | 1.3 | Hardening, `private` schema, shared triggers (`version`, `is_test`, `data_source`, append-only, truncate), `profiles`, `technicians`, matrix and its RPC, `account_requests` and its RPCs, user RPCs, `audit_logs` with hash chain, helpers, census, `bootstrap_first_creator` (not run) |
 | 1.4 | `brands`, `suppliers`, `products` and RPC, `customers`, `call_types`, `followup_reasons` (initial values per D48), `collection_locations` |
 | 1.5 | `service_calls` and `recalc_call_status`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports` and its view, `visit_events`, `entity_changes`, constraint triggers, D36 and D40 functions |
-| 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` |
+| 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` (prepared and tested locally, not applied: `docs/review/step1-pr16/README.md`) |
 
 **Before PR 1.3 is applied:** the owner sets the invitation-only Supabase Auth settings himself (D50: "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, exposed schemas `public` and `graphql_public` only) and gives a separate explicit approval to apply.
 
@@ -582,3 +601,22 @@ No ONE-related table, column, status, flag, export or adapter.
 6. CI: local Supabase, the "no test rows in migrations" check, census = 0 on a fresh database built from migrations, and the rollback (down) script tested.
 7. Rollout risks and rollback plan.
 8. Applied through MCP only (`apply_migration`, with the file name without its version prefix as `name`; the server assigns the version, which the apply report records, and the down script matches the name: PR 1.3 review OPS-1) with the owner's separate approval before it is applied, for that migration or for an explicitly approved and precisely scoped migration batch (a batch approval covers only the exact reviewed migrations in it; any material change needs renewed approval; D52 rule 4), immediately before the merge. Every other remote Supabase operation, read-only included, needs the owner's approval of that operation (D53). The PR merge follows D53: every mandatory check has passed on the exact approved merge candidate. PR #12, PR #14 and their migrations also need the owner's separate approval before merging (D55 (10)), and no migration PR is merged without the required separate approvals (D55 (11)).
+
+## Planned changes from D60 (QA corrections 01; Migration 5 built in PR 1.8, the rest not implemented)
+
+Migrations 1–4 are not modified (Migration 5 replaces function bodies forward-only). The details are in `docs/qa-corrections-01-integration.md` §5, and each migration needs its own approval (D52 rule 4).
+
+- **Migration 5 (PR 1.8), accounts and permissions: applied to the remote project (version `20261116142838`, owner-approved, 2026-11-16)** (`supabase/migrations/20261108120000_accounts_permissions.sql`; details, deviations DEV-1 to DEV-9 and TEMPORARY behaviours OQ-1 to OQ-10 in `docs/review/step1-pr18/README.md`). As built:
+  - Direct Manager administration of Technician and Customer Service accounts: new bodies for `authorize_account_creation`, `admin_create_profile` and `admin_set_user_active`; `assert_can_manage` and `admin_set_user_role` already followed D60 (7) and are unchanged (DEV-1). The Manager never changes a role and never deletes.
+  - The account-request path retired: EXECUTE on `request_account_change` and `decide_account_request` revoked from every role, and a trigger refuses new request rows; `account_requests` stays readable as history under the PR 1.3 policies and still stores the creation intents (DEV-2).
+  - A read-only pre-apply check (section 0b) refuses the apply while a legacy request would be stranded by the retirement (independent review N-4).
+  - Creator-only deletion, Option A: `profiles.deleted_at`, `profiles.deleted_by` (three CHECKs, a foreign key), `admin_delete_user` (a deleted Technician's `accepts_invitations` turned off too), the reactivation guard (CHECK, trigger and the writers' `the account is deleted`), a frozen deleted account and field profile (triggers), the audit action `profile.deleted`. No physical deletion; history and attribution kept.
+  - The audit action CHECK extended (the target tables and the audit anchor's functions unchanged).
+  - The narrow matrix keys `reasons`, `callTypes`, `ackText` (TEMPORARY, D51; Manager on, Customer Service off), with the five Migration 2 call-type and reason RPCs switched to them; pickup places keep `settings`.
+  - `usage` made a Creator-only fixed capability in `has_permission` (the Migration 1 CHECK keeps it off for the matrix roles).
+  - A fail-closed hardening check (Migration 4's, byte for byte).
+- **Telemetry migration (with Step 3):**
+  - `usage_events`: a closed event catalogue with no customer content, recordings or signatures.
+  - A rate-limited insert function.
+  - Creator-only aggregate functions and a manual purge function. No scheduled jobs (D25).
+- **Visit visibility:** `visits.status = 'cancelled'` stays internal (D38). Read functions and screens omit cancelled visits from every user-facing list and counter (D60 (1)).
