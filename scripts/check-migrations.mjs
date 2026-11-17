@@ -155,6 +155,11 @@ export const ALLOWED_WRITERS = new Map([
     { tables: ["public.offline_operations"] }],
   ["private.correct_visit(uuid,text,text,text,integer)", { tables: ["public.visit_corrections", "public.visit_time_reports"] }],
   ["private.resolve_review_item(uuid,integer,text,jsonb,text)", { tables: ["public.visit_time_reports"] }],
+  ["private.ingest_calendar_event(jsonb)", {
+    tables: ["public.external_calendar_events", "public.calendar_event_changes", "public.calendar_ingestion_errors",
+      "public.customers", "public.products", "public.service_calls", "public.visits", "public.visit_events"],
+    markers: ["simulator"],
+  }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.
@@ -1420,6 +1425,7 @@ export function checkFiles(files, options = {}) {
       if (entry) {
         for (const t of body.tokens) {
           if (t.type !== "string" && t.type !== "dollar") continue;
+          if (t.type === "string" && (entry.markers ?? []).includes(t.value)) continue;
           for (const marker of TEST_MARKERS) {
             if (marker.pattern.test(t.value)) problems.push(`${where}: contains a test marker (${marker.label})`);
           }
