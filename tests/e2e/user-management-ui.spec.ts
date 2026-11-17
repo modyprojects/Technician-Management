@@ -170,7 +170,10 @@ test.describe("the real office navigation and the settings routes", () => {
       "components/office/AccountConfirmDialog.tsx",
       "components/office/SettingsNoAccess.tsx",
     ]) {
-      const source = readFileSync(path.resolve(file), "utf8");
+      // The code without its comments (which do name what the screen leaves out).
+      const source = readFileSync(path.resolve(file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
       expect(source, file).not.toMatch(/from "@\/lib\/|from "@\/app\//);
       expect(source, file).not.toMatch(/בקשות לאישור|requestAccount|decideAccountRequest|cancelAccountRequest|useCommands\(/);
     }
