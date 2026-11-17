@@ -29,7 +29,8 @@ function creator(): SeededUser | null {
 async function signedIn(browser: Browser, user: SeededUser): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ locale: "he-IL", viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await signInAs(page, user, /\/office$/);
+  // Customer Service lands on "קריאות" (/office/calls), the other office roles on /office.
+  await signInAs(page, user, /\/office(\/calls)?$/);
   return { context, page };
 }
 
