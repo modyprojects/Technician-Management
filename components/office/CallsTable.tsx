@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { MouseEvent } from "react";
 import { CallStatusPill } from "@/components/ui/CallStatusPill";
-import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
+import { TEST_DATA_SHORT_LABEL, TestBadge, VISIT_SOURCE_LABELS, VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { CallStatus } from "@/features/calls/data/types";
 import type { VisitSource } from "@/features/visits/data/types";
 
@@ -55,6 +55,23 @@ export type CallsTableRow = {
 
 // Short columns: centred and sized to their content (G-07).
 const SHORT = "col-center col-fit";
+
+/** The simulator's source name without its icon ("זימון בדיקה"). */
+const SIMULATOR_SOURCE_NAME = VISIT_SOURCE_LABELS.simulator.replace(/^\S+\s/, "");
+
+/**
+ * The shown visit's source (SIM-14). Owner feedback (2026-11-17, QA T-06): the 🧪 icon alone read as
+ * a pencil, so a simulated visit's source is the small "🧪 בדיקה" pill of the test badge (named
+ * "זימון בדיקה"); an Outlook visit keeps the 📅 icon.
+ */
+function SourceMark({ source }: { source: VisitSource }) {
+  if (source !== "simulator") return <VisitSourceIcon source={source} />;
+  return (
+    <span className="pill test-badge" role="img" aria-label={SIMULATOR_SOURCE_NAME} title={SIMULATOR_SOURCE_NAME}>
+      <span aria-hidden="true">🧪 {TEST_DATA_SHORT_LABEL}</span>
+    </span>
+  );
+}
 
 export function CallsTable({
   rows,
@@ -153,7 +170,7 @@ export function CallsTable({
                 </td>
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
-                  {r.source && <VisitSourceIcon source={r.source} />} {r.when || "—"}
+                  {r.source && <SourceMark source={r.source} />} {r.when || "—"}
                   {r.whenCancelled && (
                     <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
                       <span className="oc-sep"> · </span>בוטל
