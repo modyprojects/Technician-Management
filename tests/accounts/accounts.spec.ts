@@ -226,6 +226,125 @@ test.describe("Manager (D60 (7): Technician and Customer Service directly)", () 
     expect(err(await keep(c.updateTechnician({ technicianId: t.id, expectedVersion: recolored.version, active: false })))).toBe(MANAGER_TECHNICIAN_FIELDS_PENDING);
     expect(err(await keep(c.updateTechnician({ technicianId: t.id, expectedVersion: recolored.version, color: "red" as never })))).toBe("צבע לא תקין");
   });
+
+  test("tampering aimed at a Manager or the Creator: routine updates, the field profile and (de)activation are refused by the app and the database; no Admin call (review S6 b)", async () => {
+    const s = seeded();
+    const targets = [{ label: "manager", id: s.mgr2.id }, ...(s.creator ? [{ label: "creator", id: s.creator.id }] : [])];
+    const ids = targets.map((t) => sqlText(t.id)).join(", ");
+    const snapshot = () =>
+      sql(
+        `select (select count(*) from public.audit_logs where target_id in (${ids}) or actor_profile_id = ${sqlText(mgr.user.id)}) || '|' || ` +
+          `(select string_agg(version || ':' || is_active || ':' || full_name, ',' order by id) from public.profiles where id in (${ids})) || '|' || ` +
+          `(select count(*) from public.technicians where profile_id in (${ids}))`,
+      );
+    const before = snapshot();
+    const admin = spy(realAdmin());
+    // The Manager's own session, as the screen would send it; then a session user claiming to be the Creator.
+    for (const viewer of [mgr.viewer, { ...mgr.viewer, role: "creator" as const }]) {
+      const c = commandsOf(mgr, admin.port, viewer);
+      for (const { label, id } of targets) {
+        const v = Number(sql(`select version from public.profiles where id = ${sqlText(id)}`));
+        const where = `${viewer.role} → ${label}`;
+        const answers = [
+          await keep(c.updateProfile({ accountId: id, expectedVersion: v, name: "שם אחר" })),
+          await keep(c.updateProfile({ accountId: id.toUpperCase(), expectedVersion: v, phone: "050-000-9999" })),
+          await keep(c.updateTechnician({ technicianId: id, expectedVersion: v, name: "שם אחר" })),
+          await keep(c.completeTechnicianProfile({ accountId: id, color: "t-y", device: "סמארטפון" })),
+          await keep(c.activateAccount({ accountId: id, expectedVersion: v })),
+          await keep(c.deactivateAccount({ accountId: id, expectedVersion: v })),
+        ];
+        for (const [i, r] of answers.entries()) expect(err(r), `${where} #${i}`).toBe(forbidden);
+      }
+    }
+    expect(admin.calls).toEqual([]);
+
+    // The database's own refusals of the same calls under the Manager's session (the control).
+    for (const { label, id } of targets) {
+      const v = Number(sql(`select version from public.profiles where id = ${sqlText(id)}`));
+      expect(
+        await rpcCode(mgr, "admin_update_profile", { p_profile_id: id, p_expected_version: v, p_full_name: "x", p_work_phone: null, p_invitation_rep_name: null }),
+        label,
+      ).toBe("42501");
+      expect(
+        await rpcCode(mgr, "admin_update_technician", {
+          p_technician_id: id,
+          p_expected_version: v,
+          p_display_name: "x",
+          p_color: "t-y",
+          p_outlook_email: testEmail("x"),
+          p_device_label: null,
+          p_accepts_invitations: true,
+        }),
+        label,
+      ).toBe("42501");
+      expect(
+        await rpcCode(mgr, "admin_create_technician", {
+          p_profile_id: id,
+          p_display_name: "x",
+          p_color: "t-y",
+          p_outlook_email: testEmail("x"),
+          p_device_label: "x",
+          p_accepts_invitations: true,
+        }),
+        label,
+      ).toBe("42501");
+      for (const active of [true, false]) {
+        expect(await rpcCode(mgr, "admin_set_user_active", { p_profile_id: id, p_active: active, p_expected_version: v }), `${label} ${active}`).toBe("42501");
+      }
+    }
+    expect(snapshot()).toBe(before);
+  });
+
+  test("a deactivated Manager whose session is still valid is refused by every action; nothing is written; no Admin call (review S6 c)", async () => {
+    const target = byManager.cs;
+    if (!target) throw new Error("needs the Manager's Customer Service account");
+    const off = await actor(seeded().mgr2);
+    const stale = off.viewer;
+    // Deactivated while signed in (as postgres in the LOCAL database: the test's setup step).
+    sql(`update public.profiles set is_active = false where id = ${sqlText(off.user.id)}`);
+    try {
+      // Auth still accepts the session, but the server derives no viewer from it (lib/auth/session.ts:
+      // the own-profile read needs an active profile).
+      expect((await off.client.auth.getUser()).error).toBeNull();
+      expect(await viewerOf(off.client)).toBeNull();
+      const v = Number(sql(`select version from public.profiles where id = ${sqlText(target.id)}`));
+      const admin = spy(realAdmin());
+      // No viewer (what the server derives), and the stale viewer from before (defence in depth: the database).
+      for (const viewer of [null, stale]) {
+        const c = commandsOf(off, admin.port, viewer);
+        const label = viewer ? "stale viewer" : "no viewer";
+        const answers = [
+          await keep(c.createAccount({ name: "x", email: testEmail("off"), phone: PHONE, role: "cs" })),
+          await keep(c.createTechnician({ name: "x", email: testEmail("off"), phone: PHONE, color: "t-y", device: "x" })),
+          await keep(c.completeCreation({ requestId: randomUUID(), phone: null })),
+          await keep(c.cancelCreation({ intentId: randomUUID(), expectedVersion: 1 })),
+          await keep(c.completeTechnicianProfile({ accountId: target.id, color: "t-y", device: "x" })),
+          await keep(c.deactivateAccount({ accountId: target.id, expectedVersion: v })),
+          await keep(c.activateAccount({ accountId: target.id, expectedVersion: v })),
+          await keep(c.updateProfile({ accountId: target.id, expectedVersion: v, name: "x" })),
+          await keep(c.updateTechnician({ technicianId: seeded().techRow, expectedVersion: 1, name: "x" })),
+          await keep(c.changeRole({ accountId: target.id, expectedVersion: v, newRole: "tech" })),
+          await keep(c.setPassword(target.id, newPassword())),
+          await keep(c.changeEmail(target.id, testEmail("off"))),
+          await keep(c.deleteAccount({ accountId: target.id, expectedVersion: v, confirm: true })),
+        ];
+        for (const [i, r] of answers.entries()) expect(err(r), `${label} #${i}`).toBe(forbidden);
+        const q = queriesOf(off, viewer);
+        expect((await q.list()).total, label).toBe(0);
+        expect((await q.openCreations()).total, label).toBe(0);
+      }
+      expect(admin.calls).toEqual([]);
+      // The database refuses his still-valid session (the control).
+      expect(await rpcCode(off, "authorize_account_creation", { p_role: "customer_service", p_email: testEmail("off"), p_full_name: "x" })).toBe("42501");
+      expect(await rpcCode(off, "admin_set_user_active", { p_profile_id: target.id, p_active: false, p_expected_version: v })).toBe("42501");
+      expect(await rpcCode(off, "assert_can_manage", { p_target_role: "technician" })).toBe("42501");
+      expect(sql(`select count(*) from public.account_requests where requested_by = ${sqlText(off.user.id)}`)).toBe("0");
+      expect(sql(`select count(*) from public.audit_logs where actor_profile_id = ${sqlText(off.user.id)}`)).toBe("0");
+      expect(sql(`select is_active || '|' || version from public.profiles where id = ${sqlText(target.id)}`)).toBe(`true|${v}`);
+    } finally {
+      sql(`update public.profiles set is_active = true where id = ${sqlText(off.user.id)}`);
+    }
+  });
 });
 
 test.describe("Customer Service and Technician", () => {
@@ -345,6 +464,8 @@ test.describe("Incomplete creations (Step 2 plan §3.8)", () => {
     expect(error).toBeNull();
     const r = await keep(commandsOf(mgr).createAccount({ name: "כתובת תפוסה", email, phone: PHONE, role: "cs" }));
     expect(err(r)?.startsWith(AUTH_ADMIN_MESSAGES.emailExists)).toBe(true);
+    // The Manager is told to ask the Creator (review N2).
+    expect(err(r)).toContain(AUTH_ADMIN_MESSAGES.askCreator);
     expect(sql(`select status from public.account_requests where email = ${sqlText(email)}`)).toBe("cancelled");
     expect((await queriesOf(mgr).openCreations()).items.some((i) => i.email === email)).toBe(false);
   });
@@ -543,6 +664,80 @@ test.describe("Creator (D60 (7): every role, role changes, credentials, deletion
     const repeated = data(await keep(commandsOf(creator, retry.port).deleteAccount({ accountId: target.id, expectedVersion: 1, confirm: true })));
     expect(repeated.version).toBe(deleted.version);
     expect(retry.calls).toEqual(["revokeAccess"]);
+  });
+
+  test("an address Auth already holds: the Creator is not told to ask the Creator (review N2)", async () => {
+    const email = testEmail("taken-creator");
+    const { error } = await adminClient().auth.admin.createUser({ email, email_confirm: true, app_metadata: { is_test: true, data_source: "automated_test" } });
+    expect(error).toBeNull();
+    const r = await keep(commandsOf(creator).createAccount({ name: "כתובת תפוסה", email, phone: PHONE, role: "mgr" }));
+    const intent = sql(`select id from public.account_requests where email = ${sqlText(email)}`);
+    expect(err(r)).toBe(`${AUTH_ADMIN_MESSAGES.emailExists} (מספר בקשה ${intent}).`);
+    expect(err(r)).not.toContain(AUTH_ADMIN_MESSAGES.askCreator);
+    expect(sql(`select status from public.account_requests where id = ${sqlText(intent)}`)).toBe("cancelled");
+  });
+
+  test("sees every open creation intent and cancels another's; completing it stays the requester's (review S3)", async () => {
+    const flaky: AuthAdminPort = { ...realAdmin(), createUserForIntent: async () => ({ ok: false, kind: "uncertain", code: null }) };
+    const byMgr = testEmail("s3-mgr");
+    expect(err(await keep(commandsOf(mgr, flaky).createAccount({ name: "יצירה של המנהלת", email: byMgr, phone: PHONE, role: "cs" })))).toBe(
+      ACCOUNT_MESSAGES.creationIncomplete,
+    );
+    const theirs = (await queriesOf(creator).openCreations({ limit: 100 })).items.find((i) => i.email === byMgr);
+    if (!theirs) throw new Error("the Creator should see the Manager's open intent");
+    expect(theirs).toMatchObject({ role: "cs", name: "יצירה של המנהלת", requestedBy: { id: mgr.user.id, name: mgr.user.name }, isTest: true });
+    // The Creator's own intent is never the Manager's to see.
+    const byCreator = testEmail("s3-creator");
+    expect(err(await keep(commandsOf(creator, flaky).createAccount({ name: "יצירה של היוצר", email: byCreator, phone: PHONE, role: "mgr" })))).toBe(
+      ACCOUNT_MESSAGES.creationIncomplete,
+    );
+    const mine = (await queriesOf(creator).openCreations({ limit: 100 })).items.find((i) => i.email === byCreator);
+    if (!mine) throw new Error("the Creator should see his own open intent");
+    expect(mine.requestedBy).toEqual({ id: creator.user.id, name: creator.viewer.name });
+    expect((await queriesOf(mgr).openCreations({ limit: 100 })).items.some((i) => i.email === byCreator)).toBe(false);
+
+    // Completing another's intent: refused before any Auth Admin call (Migration 5 OQ-4: the requester only).
+    const admin = spy(realAdmin());
+    expect(err(await keep(commandsOf(creator, admin.port).completeCreation({ requestId: theirs.id, phone: null })))).toBe(forbidden);
+    expect(admin.calls).toEqual([]);
+
+    // "ביטול" of another's intent (Migration 1 `cancel_account_request`: a real Creator, an approved request).
+    data(await keep(commandsOf(creator).cancelCreation({ intentId: theirs.id, expectedVersion: theirs.version })));
+    expect(sql(`select status from public.account_requests where id = ${sqlText(theirs.id)}`)).toBe("cancelled");
+    expect((await queriesOf(mgr).openCreations({ limit: 100 })).items.some((i) => i.id === theirs.id)).toBe(false);
+    expect(err(await keep(commandsOf(mgr).completeCreation({ requestId: theirs.id, phone: null })))).toBe(REQUEST_MESSAGES.noLongerApplies);
+    // The Manager cannot cancel the Creator's (the database refuses: not his request).
+    expect(err(await keep(commandsOf(mgr).cancelCreation({ intentId: mine.id, expectedVersion: mine.version })))).toBe(forbidden);
+    data(await keep(commandsOf(creator).cancelCreation({ intentId: mine.id, expectedVersion: mine.version })));
+  });
+
+  test("a deletion whose ban failed: deleted and hidden at once; the same deletion again completes the ban (review S1)", async () => {
+    const email = testEmail("s1");
+    const created = data(await keep(commandsOf(creator).createAccount({ name: "תמחק בשניים", email, phone: PHONE, role: "cs" })));
+    const target = created.account;
+    const banned = () => sql(`select coalesce(banned_until > now(), false) from auth.users where id = ${sqlText(target.id)}`);
+    const base = realAdmin();
+    const failing = spy({ ...base, revokeAccess: async () => ({ ok: false, kind: "uncertain", code: null }) });
+    const input = { accountId: target.id, expectedVersion: target.version, confirm: true } as const;
+    expect(err(await keep(commandsOf(creator, failing.port).deleteAccount(input)))).toBe(ACCOUNT_MESSAGES.revokeIncomplete);
+    // An uncertain ban is tried once more at once.
+    expect(failing.calls).toEqual(["revokeAccess", "revokeAccess"]);
+    expect(sql(`select (deleted_at is not null) || '|' || is_active from public.profiles where id = ${sqlText(target.id)}`)).toBe("true|false");
+    expect(banned()).toBe("f");
+    expect(await queriesOf(creator).get(target.id)).toBeNull();
+
+    // "נסו שוב" sends the same deletion (the version the dialog sent): only the ban runs again.
+    const retry = spy(base);
+    const repeated = data(await keep(commandsOf(creator, retry.port).deleteAccount(input)));
+    expect(retry.calls).toEqual(["revokeAccess"]);
+    expect(repeated.version).toBe(Number(sql(`select version from public.profiles where id = ${sqlText(target.id)}`)));
+    expect(banned()).toBe("t");
+    expect(sql(`select count(*) from public.audit_logs where target_id = ${sqlText(target.id)} and action = 'profile.deleted'`)).toBe("1");
+    // Nobody else reaches the repeated path: the Manager is refused by the app and by the database.
+    const other = spy(base);
+    expect(err(await keep(commandsOf(mgr, other.port).deleteAccount(input)))).toBe(forbidden);
+    expect(await rpcCode(mgr, "admin_delete_user", { p_profile_id: target.id, p_expected_version: target.version })).toBe("42501");
+    expect(other.calls).toEqual([]);
   });
 
   test("without the Auth Admin API, password, email and deletion change nothing", async () => {

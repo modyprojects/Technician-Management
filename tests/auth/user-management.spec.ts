@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { expect, test, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
-import { ACTION_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
+import { createClient } from "@supabase/supabase-js";
+import { testAccountEmailError } from "@/features/accounts/data/validate";
+import { ACCOUNT_MESSAGES, ACTION_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { SeededUser } from "./global-setup";
-import { localSqlValue, seeded, signInAs, submitSignIn } from "./helpers";
+import { localSql, localSqlValue, seeded, signInAs, submitSignIn } from "./helpers";
 
 // The real unified user management (D60 (7); QA M-06, M-10, C-01, C-02, C-09, S-01) in a browser,
 // against a local production build and the LOCAL Supabase stack (tests/auth/run-local.mjs). Every
@@ -91,7 +93,8 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     await expect(dialog.getByRole("radio")).toHaveCount(2);
     await expect(dialog.getByRole("radio", { name: "טכנאי", exact: true })).toBeVisible();
     await expect(dialog.getByRole("radio", { name: "שירות לקוחות", exact: true })).toBeVisible();
-    const roles = dialog.getByRole("group", { name: "תפקיד" });
+    const roles = dialog.getByRole("radiogroup", { name: "תפקיד" });
+    await expect(roles).toHaveAttribute("aria-required", "true");
     await expect(roles.getByText("מנהל", { exact: true })).toHaveCount(0);
     await expect(roles.getByText(/יוצר/)).toHaveCount(0);
     // No password field (D50; Q1).
@@ -104,7 +107,8 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     await dialog.getByRole("textbox", { name: /^מייל/ }).fill("someone@example.com");
     await dialog.getByLabel("טלפון עבודה").fill("050-0000000");
     await dialog.getByRole("button", { name: "הוספה" }).click();
-    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("alert")).toHaveText(testAccountEmailError("someone@example.com") ?? "");
+    await expect(roles).not.toHaveAttribute("aria-invalid", "true");
     await expect(dialog.getByRole("textbox", { name: /^מייל/ })).toHaveAttribute("aria-invalid", "true");
     // Escape closes it; focus returns to the opener.
     await page.keyboard.press("Escape");
@@ -121,7 +125,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     await dialog.getByRole("radio", { name: "כחול", exact: true }).check();
     await dialog.getByRole("button", { name: "הוספה" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText(`המשתמש טכנאי ${techName} נוצר.`)).toBeVisible();
+    await expect(page.getByText(`המשתמש טכנאי ${techName} נוצר בלי סיסמה`)).toBeVisible();
     const techRow = rowOf(page, techName);
     await expect(techRow).toBeVisible();
     await expect(techRow.getByText("כחול")).toBeVisible();
@@ -136,7 +140,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     const request = await requestPromise;
     captured = { action: request.headers()["next-action"] ?? "", body: request.postData() ?? "" };
     await expect(cs).toHaveCount(0);
-    await expect(page.getByText(`המשתמש שירות לקוחות ${csName} נוצר.`)).toBeVisible();
+    await expect(page.getByText(`המשתמש שירות לקוחות ${csName} נוצר בלי סיסמה`)).toBeVisible();
     await expect(rowOf(page, csName)).toBeVisible();
     // Created directly: no Creator approval, no request row (C-02).
     expect(localSqlValue(`select is_active || '|' || is_test from public.profiles where full_name = '${csName}'`)).toBe("true|true");
@@ -314,7 +318,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     const d = await fillAdd(page, { role: "מנהל", name, email: first, phone: "052-1112223" });
     await d.getByRole("button", { name: "הוספה" }).click();
     await expect(d).toHaveCount(0);
-    await expect(page.getByText(`המשתמש מנהל ${name} נוצר.`)).toBeVisible();
+    await expect(page.getByText(`המשתמש מנהל ${name} נוצר בלי סיסמה`)).toBeVisible();
     await expect(cell(page, name, "contact")).toContainText(first);
   });
 
@@ -385,5 +389,77 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     const refused = await trySignIn(browser, second);
     expect(refused.url).toMatch(/\/login$/);
     expect(refused.alert).toBe(SIGN_IN_MESSAGES.credentials);
+  });
+
+  test("a deletion whose ban did not complete: the card keeps the account and \"נסו שוב\" completes it (review S1)", async () => {
+    const retryName = `תמיר מחיקה ${run}`;
+    const d = await fillAdd(page, { role: "שירות לקוחות", name: retryName, email: email("retry"), phone: "052-3334445" });
+    await d.getByRole("button", { name: "הוספה" }).click();
+    await expect(d).toHaveCount(0);
+    await expect(rowOf(page, retryName)).toBeVisible();
+    const id = localSqlValue(`select id from public.profiles where full_name = '${retryName}'`);
+    const banned = () => localSqlValue(`select coalesce(banned_until > now(), false) from auth.users where id = '${id}'`);
+
+    // The real server deletes and bans; the browser is told that the ban failed (its answer to this
+    // one action is rewritten to the server's revokeIncomplete result), and the ban is lifted in the
+    // local database, so only "נסו שוב" can complete it.
+    let rewritten = false;
+    await page.route(`**${USERS_PATH}`, async (route) => {
+      const r = route.request();
+      if (rewritten || r.method() !== "POST" || !r.headers()["next-action"]) return route.continue();
+      const response = await route.fetch();
+      const original = await response.text();
+      const body = original.replace(
+        /\{"ok":true,"simulated":false,"message":"[^"]*","data":\{"version":\d+\}\}/,
+        JSON.stringify({ ok: false, simulated: false, error: ACCOUNT_MESSAGES.revokeIncomplete }),
+      );
+      rewritten = body !== original;
+      await route.fulfill({ response, body });
+    });
+    await rowOf(page, retryName).getByRole("button", { name: /^מחיקה/ }).click();
+    const confirm = page.getByRole("dialog", { name: `מחיקת החשבון · ${retryName}` });
+    await confirm.getByRole("checkbox").check();
+    await confirm.getByRole("button", { name: "מחיקה סופית" }).click();
+    await expect(confirm).toHaveCount(0);
+    await page.unroute(`**${USERS_PATH}`);
+    expect(rewritten).toBe(true);
+    await expect(page.getByText(ACCOUNT_MESSAGES.revokeIncomplete)).toBeVisible();
+    const retry = page.getByRole("button", { name: `נסו שוב · השלמת המחיקה של ${retryName}` });
+    await expect(retry).toBeFocused();
+    await expect(rowOf(page, retryName)).toHaveCount(0);
+    expect(localSqlValue(`select (deleted_at is not null) || '|' || is_active from public.profiles where id = '${id}'`)).toBe("true|false");
+    localSql(`update auth.users set banned_until = null where id = '${id}';`);
+    expect(banned()).toBe("f");
+
+    await retry.click();
+    await expect(page.getByText(`החשבון של ${retryName} נמחק. ההתחברות חסומה וההיסטוריה שלו נשמרת.`)).toBeVisible();
+    await expect(retry).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "+ הוסף משתמש" })).toBeFocused();
+    expect(banned()).toBe("t");
+    expect(localSqlValue(`select count(*) from public.audit_logs where target_id = '${id}' and action = 'profile.deleted'`)).toBe("1");
+  });
+
+  test("another's open creation: listed with its requester; only \"ביטול\" is offered, and it cancels (review S3)", async () => {
+    // An intent the Manager authorized whose Auth step never ran: phase 1 alone, under his own session
+    // (the publishable key and the local URL of run-local.mjs; one sign-in).
+    const mgr = seeded().mgr;
+    const intentName = `תיק פתוח ${run}`;
+    const address = email("open-mgr");
+    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "", {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    expect((await client.auth.signInWithPassword({ email: mgr.email, password: mgr.password })).error).toBeNull();
+    const authorized = await client.rpc("authorize_account_creation", { p_role: "customer_service", p_email: address, p_full_name: intentName });
+    expect(authorized.error).toBeNull();
+    await page.goto(USERS_PATH);
+    const row = rowOf(page, intentName);
+    await expect(row).toBeVisible();
+    await expect(row.getByText("יצירה שלא הושלמה").first()).toBeVisible();
+    await expect(row.getByText(`על ידי ${mgr.name}`).first()).toBeVisible();
+    await expect(row.getByRole("button")).toHaveText(["ביטול"]);
+    await row.getByRole("button", { name: `ביטול · היצירה של ${intentName}` }).click();
+    await expect(page.getByText(`היצירה של ${intentName} בוטלה.`)).toBeVisible();
+    await expect(rowOf(page, intentName)).toHaveCount(0);
+    expect(localSqlValue(`select status from public.account_requests where email = '${address}'`)).toBe("cancelled");
   });
 });

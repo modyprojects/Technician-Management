@@ -1,10 +1,10 @@
 // Seeding for the account-administration tests (D60 (7)). LOCAL STACK ONLY: it refuses any Supabase
 // URL that is not a loopback address, so it can never write to the remote project. Fictional,
 // test-marked accounts only (D47): `@example.test` addresses, Auth users with app_metadata
-// { is_test: true, data_source: "automated_test" } and profiles with is_test = true (a Manager, a
-// Customer Service account and a Technician with his field profile), inserted as `postgres` inside
-// the local database container as tests/auth does (every trigger, CHECK and the one-way rule still
-// apply). Passwords are random per run, kept in this process's environment for the test workers,
+// { is_test: true, data_source: "automated_test" } and profiles with is_test = true (two Managers,
+// a Customer Service account and a Technician with his field profile), inserted as `postgres`
+// inside the local database container as tests/auth does (every trigger, CHECK and the one-way
+// rule still apply). Passwords are random per run, kept in this process's environment for the test workers,
 // never written to a file or printed.
 // TEMPORARY, Step 2 plan Q6 (open owner question): only with ACCOUNTS_TEST_LOCAL_CREATOR=1, a
 // fictional Creator for the Creator's cases. The database refuses a test-marked Creator
@@ -17,7 +17,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
-export type SeededUsers = Record<"mgr" | "cs" | "tech", SeededUser> & { creator: SeededUser | null; techRow: string };
+/** `mgr2`: a second Manager, the target of the Manager tampering cases and the deactivated-Manager case (review S6). */
+export type SeededUsers = Record<"mgr" | "mgr2" | "cs" | "tech", SeededUser> & { creator: SeededUser | null; techRow: string };
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
 const DB_CONTAINER = "supabase_db_technician-management";
@@ -41,7 +42,7 @@ export default async function globalSetup(): Promise<void> {
 
   const admin = createClient(url, secretKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
   const run = randomBytes(4).toString("hex");
-  const names = { mgr: "מנהלת ניהול-משתמשים", cs: "נציגת ניהול-משתמשים", tech: "טכנאי ניהול-משתמשים" } as const;
+  const names = { mgr: "מנהלת ניהול-משתמשים", mgr2: "מנהל שני ניהול-משתמשים", cs: "נציגת ניהול-משתמשים", tech: "טכנאי ניהול-משתמשים" } as const;
   const users = {} as Record<keyof typeof names, SeededUser>;
   for (const key of Object.keys(names) as (keyof typeof names)[]) {
     const email = `accounts-e2e-${key}-${run}@example.test`;
@@ -60,6 +61,7 @@ export default async function globalSetup(): Promise<void> {
 begin;
 insert into public.profiles (id, role, full_name, is_active, is_test) values
   (${sqlText(users.mgr.id)}, 'manager', ${sqlText(users.mgr.name)}, true, true),
+  (${sqlText(users.mgr2.id)}, 'manager', ${sqlText(users.mgr2.name)}, true, true),
   (${sqlText(users.cs.id)}, 'customer_service', ${sqlText(users.cs.name)}, true, true),
   (${sqlText(users.tech.id)}, 'technician', ${sqlText(users.tech.name)}, true, true);
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email, accepts_invitations) values
