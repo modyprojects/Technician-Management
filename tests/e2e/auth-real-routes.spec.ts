@@ -17,7 +17,7 @@ import {
 import { isSessionCookieName } from "@/features/auth/session-cookies";
 import { authLogLine, parseSignInInput } from "@/features/auth/sign-in-input";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
-import { horizontalOverflow, onlyInProject, openPage } from "./helpers";
+import { expectLoginLayout, onlyInProject, openPage } from "./helpers";
 
 // Step 2 PR 2.5: the real sign-in and start screens. Unit tests of the pure session decisions
 // (no database, network or browser), and the real routes WITHOUT the Supabase variables (the
@@ -217,13 +217,13 @@ test.describe("real routes without the Supabase variables (fail closed)", () => 
     }
   });
 
-  test("no sign-up or reset route and no link to one", async ({ page, request }) => {
+  test("no sign-up route; the only link is the self-service reset (D65)", async ({ page, request }) => {
     for (const p of ["/signup", "/register", "/forgot-password", "/reset-password"]) {
       expect((await request.get(p)).status(), p).toBe(404);
     }
     await openPage(page, "/login");
-    await expect(page.getByRole("link")).toHaveCount(0);
-    await expect(page.getByText("שכחתי סיסמה")).toHaveCount(0);
+    await expect(page.getByRole("link")).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "שכחתי סיסמה" })).toHaveAttribute("href", "/login/forgot");
   });
 
   test("real routes never render the demo frame or demo records (D61)", async ({ page }) => {
@@ -246,40 +246,8 @@ test.describe("real routes without the Supabase variables (fail closed)", () => 
 // desktop) on the real /login (unavailable without Supabase values) and on the prototype, which
 // shares the same components (LoginScreen, LoginForm).
 test.describe("sign-in layout (owner UI corrections, 2026-11-17)", () => {
-  type Page = import("@playwright/test").Page;
   const centreX = (b: { x: number; width: number }) => b.x + b.width / 2;
-
-  /**
-   * The logo group sits at the top of the sign-in page (.login) and the card is centred in it. On
-   * the real route the page is the whole viewport (`fullViewport`); the prototype keeps the demo's
-   * strip above it (dev chrome), so there the page is the area under the strip.
-   */
-  async function expectLayout(page: Page, fullViewport = false) {
-    const viewport = page.viewportSize();
-    if (!viewport) throw new Error("no viewport");
-    const area = await page.locator("main.login").boundingBox();
-    const brand = await page.locator(".login-brand").boundingBox();
-    const logo = await page.locator(".brand-logo-login").boundingBox();
-    const card = await page.locator(".login-card").boundingBox();
-    if (!area || !brand || !logo || !card) throw new Error("no sign-in page");
-    if (fullViewport) {
-      expect(area.y).toBeLessThanOrEqual(0.5);
-      expect(area.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
-    }
-    // Logo and subtitle at the top (48px down, as before), horizontally centred.
-    expect(Math.abs(logo.y - (area.y + 48))).toBeLessThanOrEqual(1);
-    expect(Math.abs(centreX(logo) - viewport.width / 2)).toBeLessThanOrEqual(2);
-    expect(Math.abs(centreX(brand) - viewport.width / 2)).toBeLessThanOrEqual(2);
-    // The card: horizontally centred; vertically centred in the page when it fits under the logo,
-    // otherwise below the logo (never overlapping it).
-    expect(Math.abs(centreX(card) - viewport.width / 2)).toBeLessThanOrEqual(2);
-    expect(card.y).toBeGreaterThanOrEqual(brand.y + brand.height - 0.5);
-    const centredTop = area.y + (area.height - card.height) / 2;
-    if (centredTop >= brand.y + brand.height) {
-      expect(Math.abs(card.y + card.height / 2 - (area.y + area.height / 2))).toBeLessThanOrEqual(2);
-    }
-    expect(await horizontalOverflow(page)).toEqual([]);
-  }
+  const expectLayout = expectLoginLayout;
 
   test("real /login (unavailable): logo at the top, card centred; heading and note centred", async ({ page }) => {
     await openPage(page, "/login");
