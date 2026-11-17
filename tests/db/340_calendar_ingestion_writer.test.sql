@@ -14,13 +14,17 @@
 -- re-assignment and an address change; schedule and notes applied); a deletion never cancels a
 -- visit (TEMPORARY OQ-2); identity changes on an existing call go to review (OQ-4); contact details
 -- follow the newest invitation field by field (D39); an existing product name is never overwritten
--- and the SKU is matched normalized (D19); the rate limit (OQ-8).
+-- and the SKU is matched normalized (D19); a visit en route opens a review item only for a
+-- technician or address changed in that version, also after keep_current (independent review M1);
+-- the answer counts only the items on its own call (N3); a version for a closed visit resolves the
+-- open unparsed row as superseded (N5); every text value meets its column's rule, also on the
+-- stale and after-deletion paths (S1, N1); the rate limit (OQ-8).
 -- Mechanics: callers run as authenticated with their JWT claims and then run SET CONSTRAINTS ALL
 -- IMMEDIATE themselves, so the deferred integrity checks of Migration 3 (c10, c20) hold for every
 -- ingestion; closed visits are set up as postgres with their summary, signature and history.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(47);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -579,6 +583,216 @@ select results_eq(
   'D19: an existing SKU (matched normalized) links the existing product; its name is never overwritten; the customer is reused');
 
 -- ---------------------------------------------------------------------------------------------
+-- 9b. D39 "changed in that invitation" for a visit en route (independent review M1): a later
+--     version that keeps the technician and the address opens no second review item, also after a
+--     keep_current decision; a new change of the address opens one again. The answer counts only
+--     the items on the change's own call (N3). Caller: the Creator (the Manager's changes stay
+--     under the rate limit of section 10).
+-- ---------------------------------------------------------------------------------------------
+-- tm_keep_current: one keep_current decision as p_sub (PR 1.6 resolve_review_item).
+create function pg_temp.tm_keep_current(p_sub uuid, p_item uuid)
+returns integer
+language plpgsql
+as $f$
+declare
+  v_version integer;
+begin
+  select r.version into v_version from public.review_items r where r.id = p_item;
+  perform set_config('request.jwt.claims', json_build_object('sub', p_sub, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  v_version := public.resolve_review_item(p_item, v_version, 'keep_current', null, null);
+  set constraints all immediate;
+  set constraints all deferred;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  return v_version;
+end
+$f$;
+insert into tm_r values ('m1-create', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k1', '2026-01-11T08:00:00.000Z', '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420"}')));
+update public.visits set status = 'en_route' where id = (select (v ->> 'visit_id')::uuid from tm_r where k = 'm1-create');
+insert into public.visit_events (visit_id, version_after, event_type, from_status, to_status, is_test)
+select v.id, v.version, 'status_changed', 'scheduled', 'en_route', true from public.visits v
+where v.id = (select (x.v ->> 'visit_id')::uuid from tm_r x where x.k = 'm1-create');
+set constraints all immediate;
+set constraints all deferred;
+-- v2 re-assigns to B and moves the visit to another city; v3 adds a note only; v4 moves the time only.
+insert into tm_r values ('m1-v2', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k2', '2026-01-11T08:10:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר אחרת"}',
+    '{"attendee_emails": ["tech-b-340@example.test"]}')));
+insert into tm_r values ('m1-v3', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k3', '2026-01-11T08:20:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר אחרת", "tech_notes": "הערה שלישית"}',
+    '{"attendee_emails": ["tech-b-340@example.test"]}')));
+insert into tm_r values ('m1-v4', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k4', '2026-01-11T08:30:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר אחרת", "tech_notes": "הערה שלישית"}',
+    '{"attendee_emails": ["tech-b-340@example.test"], "start": "2026-11-18T11:00:00.000Z", "end": "2026-11-18T13:00:00.000Z"}')));
+select results_eq(
+  $$ select x.k, x.v ->> 'outcome', x.v ->> 'review_items', x.v -> 'applied_fields'
+     from tm_r x where x.k in ('m1-v2', 'm1-v3', 'm1-v4') order by x.k collate "C" $$,
+  $$ values ('m1-v2', 'review', '2', '[]'::jsonb),
+            ('m1-v3', 'applied', '0', '["visits.tech_notes"]'::jsonb),
+            ('m1-v4', 'applied', '0', '["visits.scheduled_start", "visits.scheduled_end"]'::jsonb) $$,
+  'M1: a visit en route: the version that re-assigns and moves it opens two review items; later versions that keep the technician and the address (a note, a new time) open none and apply their own change (D39)');
+select results_eq(
+  $$ select i.review_type, count(*), count(*) filter (where i.status = 'open'), min(v.technician_id::text), min(v.city)
+     from public.review_items i join public.visits v on v.id = i.visit_id
+     where i.visit_id = (select (x.v ->> 'visit_id')::uuid from tm_r x where x.k = 'm1-create')
+     group by i.review_type order by i.review_type $$,
+  $$ values ('address_change', 1::bigint, 1::bigint, '00000000-0000-4000-8000-0000000034e1', 'עיר בדיקה'),
+            ('reassignment', 1::bigint, 1::bigint, '00000000-0000-4000-8000-0000000034e1', 'עיר בדיקה') $$,
+  'M1: one open item of each type for the visit; its technician and address wait for the decision');
+select is(
+  (select count(pg_temp.tm_keep_current('00000000-0000-4000-8000-0000000034c1', i.id)) from public.review_items i
+   where i.visit_id = (select (x.v ->> 'visit_id')::uuid from tm_r x where x.k = 'm1-create')),
+  2::bigint,
+  'set-up: the Creator keeps the current technician and address (keep_current)');
+-- v5 adds arrival notes only (still technician B and the other city); v6 moves the address again.
+insert into tm_r values ('m1-v5', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k5', '2026-01-11T08:40:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר אחרת", "tech_notes": "הערה שלישית", "arrival_notes": "קומה שנייה"}',
+    '{"attendee_emails": ["tech-b-340@example.test"], "start": "2026-11-18T11:00:00.000Z", "end": "2026-11-18T13:00:00.000Z"}')));
+select results_eq(
+  $$ select x.v ->> 'outcome', x.v ->> 'review_items', x.v -> 'applied_fields',
+            (select count(*) from public.review_items i where i.visit_id = (x.v ->> 'visit_id')::uuid),
+            (select count(*) from public.review_items i where i.visit_id = (x.v ->> 'visit_id')::uuid and i.status = 'open'),
+            (select v.technician_id::text || ' ' || v.city from public.visits v where v.id = (x.v ->> 'visit_id')::uuid)
+     from tm_r x where x.k = 'm1-v5' $$,
+  $$ values ('applied', '0', '["visits.arrival_notes"]'::jsonb, 2::bigint, 0::bigint, '00000000-0000-4000-8000-0000000034e1 עיר בדיקה') $$,
+  'M1: after keep_current, a later unrelated version opens no item again; the kept technician and address stay');
+insert into tm_r values ('m1-v6', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-m1', 'k6', '2026-01-11T08:50:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר שלישית", "tech_notes": "הערה שלישית", "arrival_notes": "קומה שנייה"}',
+    '{"attendee_emails": ["tech-b-340@example.test"], "start": "2026-11-18T11:00:00.000Z", "end": "2026-11-18T13:00:00.000Z"}')));
+select results_eq(
+  $$ select x.v ->> 'outcome', x.v ->> 'review_items',
+            (select string_agg(i.review_type || ':' || i.status, ',') from public.review_items i
+             where i.source_ref = 'cal-change:' || (x.v ->> 'change_id'))
+     from tm_r x where x.k = 'm1-v6' $$,
+  $$ values ('review', '1', 'address_change:open') $$,
+  'M1: a version that changes the address again opens a new address item (the technician, unchanged since the base, does not)');
+-- N3: an item on another call that names the same change does not count in that change's answer.
+select is(
+  private.create_review_item('customer_change', 'tm-340-n3', (select s.id from public.service_calls s where s.request_number = 'R-3401'),
+    null, 'invitation', 'cal-change:' || (select v ->> 'change_id' from tm_r where k = 'm1-v3'), null, '{}'::jsonb, '{}'::jsonb, null)
+    is not null,
+  true,
+  'set-up: an item on another call with the reference of change m1-v3');
+insert into tm_r values ('m1-v3-replay', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034a1',
+  pg_temp.tm_cmd('sim-340-m1', 'k3', '2026-01-11T08:20:00.000Z',
+    '{"request_number": "R-3420", "customer_number": "C-3420", "sku": "KT-3420", "city": "עיר אחרת", "tech_notes": "הערה שלישית"}',
+    '{"attendee_emails": ["tech-b-340@example.test"]}')));
+select results_eq(
+  $$ select x.v ->> 'replay', x.v ->> 'review_items', x.v ->> 'change_id' = (select v ->> 'change_id' from tm_r where k = 'm1-v3')
+     from tm_r x where x.k = 'm1-v3-replay' $$,
+  $$ values ('true', '0', true) $$,
+  'N3: the answer counts only the review items on the change''s own call');
+
+-- N5: a valid version for a closed visit resolves the event's open unparsed row as 'superseded',
+-- never as 'ingested' (nothing of it was applied, D39).
+insert into tm_r values ('n5-create', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-n5', 'k1', '2026-01-11T09:00:00.000Z', '{"request_number": "R-3421", "customer_number": "C-3421", "sku": "KT-3421"}')));
+insert into public.visit_reports (visit_id, summary_text, summary_source, is_test)
+select (v ->> 'visit_id')::uuid, 'טופל בבדיקה', 'written', true from tm_r where k = 'n5-create';
+insert into public.visit_signatures (visit_id, signer_name, signed_ack_text, ack_text_sha256, operation_id, is_test)
+select (v ->> 'visit_id')::uuid, 'חותם בדיקה', 'נוסח בדיקה', encode(sha256(convert_to('נוסח בדיקה', 'UTF8')), 'hex'), gen_random_uuid(), true
+from tm_r where k = 'n5-create';
+update public.visits set status = 'done' where id = (select (v ->> 'visit_id')::uuid from tm_r where k = 'n5-create');
+insert into public.visit_events (visit_id, version_after, event_type, from_status, to_status, is_test)
+select v.id, v.version, 'status_changed', 'scheduled', 'done', true from public.visits v
+where v.id = (select (x.v ->> 'visit_id')::uuid from tm_r x where x.k = 'n5-create');
+select private.recalc_call_status((select (v ->> 'service_call_id')::uuid from tm_r where k = 'n5-create'));
+set constraints all immediate;
+set constraints all deferred;
+insert into tm_r values ('n5-unparsed', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_unparsed('sim-340-n5', 'k2', '2026-01-11T09:10:00.000Z', '[{"kind":"missing","field":"customerNo"}]', 'R-3421')));
+insert into tm_r values ('n5-valid', pg_temp.tm_ingest('00000000-0000-4000-8000-0000000034c1',
+  pg_temp.tm_cmd('sim-340-n5', 'k3', '2026-01-11T09:20:00.000Z',
+    '{"request_number": "R-3421", "customer_number": "C-3421", "sku": "KT-3421", "tech_notes": "מאוחר מדי"}')));
+select results_eq(
+  $$ select (select v ->> 'outcome' from tm_r where k = 'n5-unparsed'), (select v ->> 'outcome' from tm_r where k = 'n5-valid'),
+            x.status, x.resolution, x.resolved_by_change_id = (select (v ->> 'change_id')::uuid from tm_r where k = 'n5-valid'),
+            (select v.status || ' ' || coalesce(v.tech_notes, '-') from public.visits v
+             where v.id = (select (r.v ->> 'visit_id')::uuid from tm_r r where r.k = 'n5-create'))
+     from public.calendar_ingestion_errors x where x.change_id = (select (v ->> 'change_id')::uuid from tm_r where k = 'n5-unparsed') $$,
+  $$ values ('unparsed', 'no_effect', 'resolved', 'superseded', true, 'done -') $$,
+  'N5: a version for a closed visit has no effect and resolves the open unparsed row as superseded, not ingested');
+
+-- ---------------------------------------------------------------------------------------------
+-- 9c. Every value meets its column's rule before anything is read or written (independent review
+--     S1, N1), also where no CHECK reads it (a review item, the snapshot, a problem), and also on
+--     the stale and after-deletion paths and for a deletion's unused members. Each command below
+--     would otherwise reach a row (the Manager's calls are undone).
+-- ---------------------------------------------------------------------------------------------
+select results_eq(
+  $$ select x.n, pg_temp.tm_call('authenticated', '00000000-0000-4000-8000-0000000034a1', x.cmd)
+     from (values
+       -- A follow-up of R-3401 whose identity differs from the call (stored in a review item) or a new call.
+       (1, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('customer_name', repeat('ש', 2999) || chr(8238)))),
+       (2, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('customer_name', 'לקוח' || chr(8238) || 'בדיקה'))),
+       (3, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('customer_number', 'C-3401' || chr(8203)))),
+       (4, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('sku', 'KT-3401' || chr(8203)))),
+       (5, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('product_name', 'מוצר' || chr(8238)))),
+       (6, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('city', 'עיר' || chr(160)))),
+       (7, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('tech_notes', repeat('ה', 1001)))),
+       (8, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('arrival_notes', 'שורה' || chr(13) || chr(10) || 'שנייה'))),
+       (9, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('handling_rep_name', repeat('נ', 61)))),
+       (10, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('call_type', 'תיקון' || chr(8238)))),
+       (11, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('pickup_location', 'מחסן' || chr(8238)))),
+       (12, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{"task_number": "T  1"}')),
+       (13, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{"phone_alt": "abc"}')),
+       (14, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{"warranty_status": "maybe", "warranty_raw": "כן"}')),
+       (15, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{"warranty_status": "no", "warranty_raw": "לא", "warranty_until": "2027-03-01"}')),
+       (16, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('street', 'e' || chr(769) || ' רחוב'))),
+       (17, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', jsonb_build_object('fault_description', 'תקלה' || chr(8206) || ' בדיקה'))),
+       (18, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{}', jsonb_build_object('subject', '[קריאת שירות] ' || chr(8238) || 'בדיקה'))),
+       (19, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{}', jsonb_build_object('organizer_email', 'rep' || chr(8238) || '@example.test'))),
+       (20, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{}',
+              jsonb_build_object('attendee_emails', jsonb_build_array('tech-a-340@example.test', 'a' || chr(8238) || '@x.y')))),
+       (21, pg_temp.tm_cmd('sim-340-s1', 'k1', '2026-01-10T15:00:00.000Z', '{}', jsonb_build_object('attendee_emails', jsonb_build_array('e' || chr(769) || '@x.y')))),
+       -- An unparsed change: its problems, its event and the values that recognise it.
+       (22, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"missing","field":"req","extra":1}]')),
+       (23, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"invalid","field":"phone","rule":"anything","value":"x"}]')),
+       (24, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z',
+              jsonb_build_array(jsonb_build_object('kind', 'invalid', 'field', 'phone', 'rule', 'format', 'value', repeat('x', 5004) || chr(8238))))),
+       (25, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z',
+              jsonb_build_array(jsonb_build_object('kind', 'invalid', 'field', 'phone', 'rule', 'format', 'value', repeat('x', 121))))),
+       (26, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"missing","field":"req","rule":"format"}]')),
+       (27, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"invalid","field":"phone","value":"x"}]')),
+       (28, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"conflict","field":"req","rule":"format","value":"x"}]')),
+       (29, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"invalid","field":"phone","rule":"format","value":5}]')),
+       (30, pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"invalid","field":"phone","rule":"format","value":" x"}]')),
+       (31, jsonb_set(pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"missing","field":"req"}]'),
+              '{event,attendee_emails}', jsonb_build_array('a' || chr(8238) || '@x.y'))),
+       (32, jsonb_set(pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"missing","field":"req"}]'),
+              '{recognised,customer_name}', to_jsonb(repeat('ש', 2999) || chr(8238)))),
+       (33, jsonb_set(pg_temp.tm_unparsed('sim-340-s2', 'k1', '2026-01-10T15:00:00.000Z', '[{"kind":"missing","field":"req"}]'),
+              '{recognised,request_number}', '"R 1"')),
+       -- N1: the stale path (an older change of event e1), the after-deletion path and a deletion.
+       (34, pg_temp.tm_cmd('sim-340-e1', 'k-s1', '2026-01-10T07:30:00.000Z', jsonb_build_object('customer_number', 'C-3401' || chr(8203)))),
+       (35, pg_temp.tm_cmd('sim-340-e1', 'k-s2', '2026-01-10T13:00:00.000Z', jsonb_build_object('customer_name', 'לקוח' || chr(8238)))),
+       (36, pg_temp.tm_cmd('sim-340-e1', 'k-s3', '2026-01-10T13:00:00.000Z', '{}', '{"extra": 1}')),
+       (37, pg_temp.tm_cmd('sim-340-e1', 'k-s4', '2026-01-10T13:00:00.000Z') || '{"recognised": {}}'),
+       (38, pg_temp.tm_del('sim-340-e1', 'k-s5', '2026-01-10T13:00:00.000Z') || '{"problems": []}'),
+       (39, pg_temp.tm_del('sim-340-e1', 'k-s6', '2026-01-10T13:00:00.000Z') || '{"recognised": {}}')
+     ) x (n, cmd)
+     order by x.n $$,
+  $$ select n, '22023 invalid input' from generate_series(1, 39) n $$,
+  'S1, N1: a value that breaks its column''s text rule (bidi and zero-width marks, length, edge space variant, CR, NFC, ASCII-ID, phone, warranty), a non-conforming e-mail address, a problem with another member, rule or value, and a malformed command on the stale or after-deletion path are refused (22023)');
+
+select results_eq(
+  $$ select pg_temp.tm_call('authenticated', '00000000-0000-4000-8000-0000000034a1',
+       pg_temp.tm_cmd('sim-340-s3', 'k1', '2026-01-10T15:00:00.000Z',
+         jsonb_build_object('request_number', 'R-3430', 'customer_number', 'C-3430', 'sku', 'KT-3430', 'customer_name', repeat('ש', 120),
+                            'tech_notes', 'שורה' || chr(10) || 'שנייה', 'arrival_notes', repeat('ק', 1000), 'building', repeat('ב', 20),
+                            'warranty_status', 'yes', 'warranty_raw', 'כן · עד 03/2027', 'warranty_until', '2027-03-01'),
+         jsonb_build_object('attendee_emails', jsonb_build_array('tech-a-340@example.test', 'אורח@example.test'))))::jsonb ->> 'outcome' $$,
+  $$ values ('applied') $$,
+  'positive control: values at their limits (120, 1000 and 20 characters, a line feed in a multi-line note, a warranty month, a non-ASCII attendee) are accepted');
+
+-- ---------------------------------------------------------------------------------------------
 -- 10. Rate limit (OQ-8), test marking (D47) and visibility
 -- ---------------------------------------------------------------------------------------------
 -- Set-up: 30 changes received from Customer Service in the last minute (written as postgres).
@@ -631,11 +845,49 @@ select results_eq(
        select 'manager calls' who, pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034a1', 'service_calls') n
        union all select 'manager errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034a1', 'calendar_ingestion_errors')
        union all select 'technician A visits', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034d1', 'visits')
-       union all select 'creator errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034c1', 'calendar_ingestion_errors')) x $$,
-  $$ values ('manager calls', (select count(*) from public.service_calls)), ('manager errors', 0::bigint),
+       union all select 'creator errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034c1', 'calendar_ingestion_errors')
+       union all select 'customer service errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034b1', 'calendar_ingestion_errors')
+       union all select 'technician A errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034d1', 'calendar_ingestion_errors')
+       union all select 'inactive manager errors', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034a9', 'calendar_ingestion_errors')
+       union all select 'manager changes', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034a1', 'calendar_event_changes')
+       union all select 'customer service events', pg_temp.tm_count_as('00000000-0000-4000-8000-0000000034b1', 'external_calendar_events')) x $$,
+  $$ values ('manager calls', (select count(*) from public.service_calls)), ('manager errors', (select count(*) from public.calendar_ingestion_errors)),
             ('technician A visits', (select count(*) from public.visits where technician_id = '00000000-0000-4000-8000-0000000034e1')),
-            ('creator errors', (select count(*) from public.calendar_ingestion_errors)) $$,
-  'ingested calls and visits follow the existing RLS (the Manager reads every call, a Technician his own visits); the unparsed list is the Creator''s (OQ-1)');
+            ('creator errors', (select count(*) from public.calendar_ingestion_errors)),
+            ('customer service errors', (select count(*) from public.calendar_ingestion_errors)), ('technician A errors', 0::bigint),
+            ('inactive manager errors', 0::bigint), ('manager changes', 0::bigint), ('customer service events', 0::bigint) $$,
+  'ingested calls and visits follow the existing RLS (the Manager reads every call, a Technician his own visits); the unparsed list is the active office users'' (OQ-1), the change log and the events the Creator''s');
+
+-- The read surface of "זימונים שלא נקלטו" (OQ-1): the open rows, newest first, one bounded page, as
+-- each office role reads them through RLS.
+create function pg_temp.tm_open_page(p_sub uuid)
+returns text
+language plpgsql
+as $f$
+declare
+  v_result text;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', p_sub, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  select count(*)::text || ' ' || coalesce(bool_and(q.status = 'open'), true)::text into v_result
+  from (select x.status from public.calendar_ingestion_errors x where x.status = 'open'
+        order by x.created_at desc, x.id desc limit 50) q;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  return v_result;
+end
+$f$;
+select results_eq(
+  $$ select x.who, pg_temp.tm_open_page(x.sub::uuid)
+     from (values (1, 'creator', '00000000-0000-4000-8000-0000000034c1'), (2, 'manager', '00000000-0000-4000-8000-0000000034a1'),
+                  (3, 'customer service', '00000000-0000-4000-8000-0000000034b1'),
+                  (4, 'technician', '00000000-0000-4000-8000-0000000034d1')) x (n, who, sub)
+     order by x.n $$,
+  $$ select x.who, case when x.n < 4 then (select count(*) from public.calendar_ingestion_errors e where e.status = 'open')::text || ' true'
+                          else '0 true' end
+     from (values (1, 'creator'), (2, 'manager'), (3, 'customer service'), (4, 'technician')) x (n, who)
+     order by x.n $$,
+  'the unparsed list: each active office role reads the same open rows, newest first, one bounded page; a Technician reads none');
 
 select * from finish();
 rollback;

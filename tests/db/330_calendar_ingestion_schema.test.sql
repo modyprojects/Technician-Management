@@ -87,11 +87,13 @@ as $f$ select pg_temp.tm_run_as(null, null, 'postgres', p_sql, p_probe) $f$;
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
 select ('00000000-0000-4000-8000-0000000033' || k)::uuid, '00000000-0000-0000-0000-000000000000'::uuid,
        'authenticated', 'authenticated', 'user-33' || k || '@example.test', now(), now()
-from unnest(array['c1', 'a1', 'b1', 'd1']) as k;
+from unnest(array['c1', 'a1', 'a9', 'b1', 'b9', 'd1']) as k;
 select private.bootstrap_first_creator('00000000-0000-4000-8000-0000000033c1', 'יוצר');
 insert into public.profiles (id, role, full_name, is_active) values
   ('00000000-0000-4000-8000-0000000033a1', 'manager', 'מנהל', true),
   ('00000000-0000-4000-8000-0000000033b1', 'customer_service', 'נציגה', true),
+  ('00000000-0000-4000-8000-0000000033a9', 'manager', 'מנהל לא פעיל', false),
+  ('00000000-0000-4000-8000-0000000033b9', 'customer_service', 'נציגה לא פעילה', false),
   ('00000000-0000-4000-8000-0000000033d1', 'technician', 'טכנאי', true);
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email) values
   ('00000000-0000-4000-8000-0000000033e1', '00000000-0000-4000-8000-0000000033d1', true, 'טכנאי', 't-y', 'tech-33@example.test');
@@ -313,15 +315,29 @@ select results_eq(
                   ('18', $v$'x', null, '[]', null, null, '48 213', null, '[{"kind":"missing","field":"req"}]'$v$),
                   ('19', $v$' x', null, '[]', null, null, null, null, '[{"kind":"missing","field":"req"}]'$v$),
                   ('20', $v$'x' || chr(8207), null, '[]', null, null, null, null, '[{"kind":"missing","field":"req"}]'$v$),
-                  ('21', $v$'x', null, '[]', null, null, null, 'לוי' || chr(160), '[{"kind":"missing","field":"req"}]'$v$)) x (n, v)
+                  ('21', $v$'x', null, '[]', null, null, null, 'לוי' || chr(160), '[{"kind":"missing","field":"req"}]'$v$),
+                  ('22', $v$'x', null, jsonb_build_array('a' || chr(8238) || '@x.y'), null, null, null, null, '[{"kind":"missing","field":"req"}]'$v$),
+                  ('23', $v$'x', 'rep' || chr(8238) || '@example.test', '[]', null, null, null, null, '[{"kind":"missing","field":"req"}]'$v$),
+                  ('24', $v$'x', null, '[]', null, null, null, null, '[{"kind":"missing","field":"req","extra":1}]'$v$),
+                  ('25', $v$'x', null, '[]', null, null, null, null, '[{"kind":"invalid","field":"phone","rule":"anything","value":"x"}]'$v$),
+                  ('26', $v$'x', null, '[]', null, null, null, null,
+                         jsonb_build_array(jsonb_build_object('kind', 'invalid', 'field', 'phone', 'rule', 'format', 'value', repeat('x', 121)))$v$),
+                  ('27', $v$'x', null, '[]', null, null, null, null,
+                         jsonb_build_array(jsonb_build_object('kind', 'invalid', 'field', 'phone', 'rule', 'format', 'value', 'x' || chr(8238)))$v$),
+                  ('28', $v$'x', null, '[]', null, null, null, null, '[{"kind":"invalid","field":"phone","rule":"format","value":" x"}]'$v$),
+                  ('29', $v$'x', null, '[]', null, null, null, null, '[{"kind":"invalid","field":"phone","rule":"format","value":5}]'$v$)) x (n, v)
      order by x.n $$,
   $$ values ('23514 calendar_ingestion_errors_problems_check'::text), ('23514 calendar_ingestion_errors_problems_check'),
             ('23514 calendar_ingestion_errors_problems_check'), ('23514 calendar_ingestion_errors_problems_check'),
             ('23514 calendar_ingestion_errors_problems_check'), ('23514 calendar_ingestion_errors_attendee_emails_check'),
             ('23514 calendar_ingestion_errors_organizer_email_check'), ('23514 calendar_ingestion_errors_schedule_check'),
             ('23514 calendar_ingestion_errors_request_number_check'), ('23514 calendar_ingestion_errors_subject_check'),
-            ('23514 calendar_ingestion_errors_subject_check'), ('23514 calendar_ingestion_errors_customer_name_check') $$,
-  'error rows: at least one problem, closed kinds and fields, typed members; normalized addresses; a readable schedule; a valid request number; TEXT-SAFE subject and name (no edge space, bidi mark or space variant)');
+            ('23514 calendar_ingestion_errors_subject_check'), ('23514 calendar_ingestion_errors_customer_name_check'),
+            ('23514 calendar_ingestion_errors_attendee_emails_check'), ('23514 calendar_ingestion_errors_organizer_email_check'),
+            ('23514 calendar_ingestion_errors_problems_check'), ('23514 calendar_ingestion_errors_problems_check'),
+            ('23514 calendar_ingestion_errors_problems_check'), ('23514 calendar_ingestion_errors_problems_check'),
+            ('23514 calendar_ingestion_errors_problems_check'), ('23514 calendar_ingestion_errors_problems_check') $$,
+  'error rows: at least one problem, closed kinds and fields, typed members; normalized addresses without a bidi mark; a readable schedule; a valid request number; TEXT-SAFE subject and name (no edge space, bidi mark or space variant); problems only {kind, field, rule, value}, a rule from the closed lists, a value of at most 120 characters without a forbidden code point or edge space (independent review S1)');
 
 -- ---------------------------------------------------------------------------------------------
 -- State guards
@@ -428,9 +444,12 @@ select results_eq(
      ('ingest_calendar_event(jsonb)', false, true, false, false),
      ('private.ingest_answer(uuid,boolean)', false, false, false, false),
      ('private.ingest_apply_call(service_calls,customers,products,boolean,jsonb,jsonb,timestamp with time zone,uuid,uuid,text,text[],integer)', false, false, false, false),
-     ('private.ingest_apply_visit(visits,uuid,text,timestamp with time zone,timestamp with time zone,text,text,text,text,text,text,text,text,uuid,text,text[],integer)', false, false, false, false),
+     ('private.ingest_apply_visit(visits,jsonb,uuid,text,timestamp with time zone,timestamp with time zone,text,text,text,text,text,text,text,text,uuid,text,text[],integer)', false, false, false, false),
+     ('private.ingest_ascii_id(text,integer)', false, false, false, false),
      ('private.ingest_calendar_event(jsonb)', true, true, false, false),
+     ('private.ingest_email(text)', false, false, false, false),
      ('private.ingest_field_source_at(uuid,uuid,text)', false, false, false, false),
+     ('private.ingest_safe_text(text,integer,boolean)', false, false, false, false),
      ('private.ingest_text(jsonb,text)', false, false, false, false),
      ('private.ingest_timestamp(jsonb,text)', false, false, false, false),
      ('private.tg_calendar_child_marker()', false, false, false, false),
@@ -443,11 +462,13 @@ select results_eq(
      from (values (1, 'creator', '00000000-0000-4000-8000-0000000033c1'), (2, 'manager', '00000000-0000-4000-8000-0000000033a1'),
                   (3, 'customer service', '00000000-0000-4000-8000-0000000033b1'),
                   (4, 'technician', '00000000-0000-4000-8000-0000000033d1'),
-                  (5, 'no session', null)) x (n, who, sub)
+                  (5, 'inactive manager', '00000000-0000-4000-8000-0000000033a9'),
+                  (6, 'inactive customer service', '00000000-0000-4000-8000-0000000033b9'),
+                  (7, 'no session', null)) x (n, who, sub)
      order by x.n $$,
-  $$ values ('creator', '2 1 1'), ('manager', '0 0 0'), ('customer service', '0 0 0'), ('technician', '0 0 0'),
-            ('no session', '0 0 0') $$,
-  'RLS (TEMPORARY OQ-1): the Creator reads the events, changes and errors; Manager, Customer Service, a Technician and a session without a profile read none');
+  $$ values ('creator', '2 1 1'), ('manager', '0 0 1'), ('customer service', '0 0 1'), ('technician', '0 0 0'),
+            ('inactive manager', '0 0 0'), ('inactive customer service', '0 0 0'), ('no session', '0 0 0') $$,
+  'RLS (TEMPORARY OQ-1, D60 (4), (11)): every active office user (Creator, Manager, Customer Service) reads the unparsed list; only the Creator reads the events and the change log; a Technician, an inactive Manager or Customer Service user and a session without a profile read nothing (anon and service_role have no grant, above)');
 
 select results_eq(
   $$ select pg_temp.tm_run_as(null, '00000000-0000-4000-8000-0000000033c1', 'authenticated', x.stmt)
@@ -484,9 +505,9 @@ select results_eq(
                      'public.calendar_ingestion_errors'::regclass)
      order by c.relname::text collate "C" $$,
   $$ values ('calendar_event_changes', 'calendar_event_changes_select_creator', 'r', '( SELECT private.is_creator() AS is_creator)'),
-            ('calendar_ingestion_errors', 'calendar_ingestion_errors_select_creator', 'r', '( SELECT private.is_creator() AS is_creator)'),
+            ('calendar_ingestion_errors', 'calendar_ingestion_errors_select_office', 'r', '( SELECT private.is_office_user() AS is_office_user)'),
             ('external_calendar_events', 'external_calendar_events_select_creator', 'r', '( SELECT private.is_creator() AS is_creator)') $$,
-  'one SELECT policy per table, the Creator only (TEMPORARY OQ-1, open decision 15)');
+  'one SELECT policy per table: the unparsed list for active office users, the events and the change log for the Creator only (TEMPORARY OQ-1, open decision 15)');
 
 select results_eq(
   $$ select table_name, bucket, test_rows from public.test_data_census()

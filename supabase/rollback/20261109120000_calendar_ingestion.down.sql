@@ -168,10 +168,13 @@ $$;
   drop function private.ingest_calendar_event(jsonb);
   drop function private.ingest_apply_call(public.service_calls, public.customers, public.products, boolean, jsonb, jsonb,
     timestamptz, uuid, uuid, text, text[], integer);
-  drop function private.ingest_apply_visit(public.visits, uuid, text, timestamptz, timestamptz, text, text, text, text, text,
-    text, text, text, uuid, text, text[], integer);
+  drop function private.ingest_apply_visit(public.visits, jsonb, uuid, text, timestamptz, timestamptz, text, text, text, text,
+    text, text, text, text, uuid, text, text[], integer);
   drop function private.ingest_answer(uuid, boolean);
   drop function private.ingest_field_source_at(uuid, uuid, text);
+  drop function private.ingest_email(text);
+  drop function private.ingest_ascii_id(text, integer);
+  drop function private.ingest_safe_text(text, integer, boolean);
   drop function private.ingest_timestamp(jsonb, text);
   drop function private.ingest_text(jsonb, text);
 

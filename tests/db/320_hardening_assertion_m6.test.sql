@@ -240,7 +240,7 @@ select throws_like(
 -- of a writer helper to authenticated passes it. 010 asserts the exact EXECUTE list (the helpers
 -- excluded), and 330 the refusal for every caller.
 select throws_like(
-  $q$do $t$ begin grant execute on function private.ingest_apply_visit(public.visits, uuid, text, timestamptz, timestamptz, text, text, text, text, text, text, text, text, uuid, text, text[], integer) to authenticated; perform pg_temp.m6_hardening_check(); raise exception 'check passed'; end $t$$q$,
+  $q$do $t$ begin grant execute on function private.ingest_apply_visit(public.visits, jsonb, uuid, text, timestamptz, timestamptz, text, text, text, text, text, text, text, text, uuid, text, text[], integer) to authenticated; perform pg_temp.m6_hardening_check(); raise exception 'check passed'; end $t$$q$,
   '%check passed%',
   'known limit: EXECUTE for authenticated passes the check (010 and 330 guard the helpers)');
 
