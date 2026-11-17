@@ -1,18 +1,24 @@
--- PROPOSED canary fixture for supabase/migrations/20261109120000_calendar_ingestion.sql (Step 6).
--- NOT in tests/db-canary/: that folder holds the canary-rows check's own files, which are protected
--- (D54; CLAUDE.md). Copying this file to tests/db-canary/20261109120000.sql needs the owner's
--- approval. Without it, rule R6 (coverage) of scripts/db-canary.mjs fails after Migration 6: the
--- three new tables would have no row.
--- Verified only partly: inserted without error on a local database built from Migrations 1 to 6,
--- after stand-ins for the earlier fixtures' profile, customer, call and visit, every column of the
--- three tables then non-null in at least one row (docs/review/step6-ingestion/README.md section 8).
--- Not run through scripts/db-canary.mjs: the check needs the database container alone and resets
--- it, and the local stack is shared.
--- Rules (tests/db-canary/README.md): fictional and test-marked rows only, explicit ids and times,
--- no sequence (the three tables have uuid keys), no schema change. It changes only rows it adds
--- itself (an event is created unlinked and active, and an error open, by their guards; the link,
--- the deletion and the resolutions are later states of the same rows). It references the earlier
--- fixtures' Manager (...1001), customer (...6001), call (...a001) and visit (...b001).
+-- Canary rows for migration 20261109120000_calendar_ingestion.sql (Step 6), for
+-- scripts/db-canary.mjs (docs/testing.md "Canary rows check", tests/db-canary/README.md).
+--
+-- Written against the schema as of that migration; never edited after it is merged (add rows in a
+-- later fixture instead). Fictional, test-marked (D47: the two events are 'simulator' and
+-- 'automated_test' data, so is_test is true; the changes and errors copy it from their event in
+-- the triggers), example.test addresses, explicit ids and timestamps; the three tables have uuid
+-- keys, so no sequence is consumed. Inserted directly as postgres in one transaction, with every
+-- trigger and CHECK active (the writer needs a signed-in user). No earlier row is changed; the only
+-- UPDATEs move rows added here to their later states, as the guards require (an event is created
+-- active, unlinked and without a change, an error open): the simulator event's visit link and
+-- newest change, the automated event's deletion, and the two resolutions.
+--
+-- Server times are set by the triggers: calendar_event_changes.recorded_at,
+-- calendar_ingestion_errors.created_at and resolved_at.
+--
+-- The rows reference only canary rows of the earlier fixtures: the PR 1.3 Manager
+-- (c0000000-0000-4000-8000-000000001001), the PR 1.4 customer ...6001, and the PR 1.5 call a001
+-- with its visit b001. Two events, four changes (one applied with its parsed fields, two unparsed
+-- versions, a deletion) and two errors (one superseded, one resolved by the deletion): every
+-- column of the three tables is non-null in at least one row, so no coverage exception is needed.
 
 -- Two invitation events: one from the simulator, one automated test event.
 insert into public.external_calendar_events (id, data_source, calendar_id, event_id, created_at, created_by, updated_at, updated_by,
