@@ -14,6 +14,8 @@ import { onlyInProject } from "./helpers";
 // without the Supabase variables every technician route goes to /login (auth-real-routes.spec.ts).
 
 const read = (p: string) => readFileSync(path.resolve(p), "utf8");
+/** The source without its line comments (the checks read code, not the explanations). */
+const code = (p: string) => read(p).replace(/^\s*\/\/.*$/gm, "");
 
 test.describe("technician screens: pure rules", () => {
   onlyInProject("desktop");
@@ -80,7 +82,7 @@ test.describe("technician screens: guards and data access (source checks)", () =
     expect(wiring).toContain('import "server-only";');
     expect(wiring).toContain("createUserSupabaseClient()");
     for (const p of ["lib/data/supabase/tech-visits.ts", "features/visits/supabase/tech.ts"]) {
-      const source = read(p);
+      const source = code(p);
       expect(source, p).not.toMatch(/SECRET|service_role|admin/i);
     }
     const queries = read("features/visits/supabase/tech.ts");
