@@ -33,7 +33,7 @@ async function signedIn(browser: Browser, user: SeededUser): Promise<{ context: 
   const context = await browser.newContext({ locale: "he-IL", viewport: SIZES[2] });
   const page = await context.newPage();
   await submitSignIn(page, user.email, user.password);
-  await expect(page).toHaveURL(/\/office$/);
+  await expect(page).toHaveURL(/\/office(\/calls)?$/);
   return { context, page };
 }
 
