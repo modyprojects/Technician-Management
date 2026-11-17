@@ -1,7 +1,8 @@
 # Work Log (English only)
 
-## 2026-11-17 — D64: concurrent agents as the standard operating model
+## 2026-11-17 — D64: multi-agent development team as the standard operating model
 - **Owner (2026-11-17, two messages):** Claude Code owns routine development; up to 3 concurrent agents are the permanent default (replaces D58 (7)); one clear ask for actions that need the owner; screens first; D62 screen-by-screen approval, D31 and every approval rule unchanged. He explicitly approved updating the workflow instructions (`CLAUDE.md`, protected) to make this permanent.
+- **Owner (third message, 2026-11-17):** the team structure (Tech Lead / Orchestrator; Agent 1 and Agent 2 full-stack developers; Agent 3 QA / security / flexible developer, never a bottleneck); flexible roles; explicit file ownership; reports never overstate running agents; separate screens may be built concurrently, but none counts as approved without his visual review (D62).
 - **Changed:** `docs/decisions.md` D64; `CLAUDE.md` (the autonomous-development line); `docs/ROADMAP.md` (process paragraph).
 
 ## 2026-11-16 — Migration 5 applied to the remote project (PR 1.8)
