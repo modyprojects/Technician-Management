@@ -342,10 +342,18 @@ test.describe("sign-in layout (owner UI corrections, 2026-11-17)", () => {
     await expect(password).toHaveAttribute("type", "password");
     // The toggle does not join the input's name.
     await expect(page.getByLabel("סיסמה", { exact: true })).toHaveCount(1);
-    // After a submission the field is emptied and hidden again.
+    // A submission hides the field at once (before the call) and empties it afterwards.
     await toggle.click();
+    await expect(password).toHaveAttribute("type", "text");
     await page.getByLabel("אימייל", { exact: true }).fill("someone@example.test");
+    await page.evaluate(() => {
+      const input = document.querySelector<HTMLInputElement>("form.login-form input[autocomplete='current-password']");
+      // A bubbling listener on window runs after React's own submit handler (on the root), in the
+      // same dispatch: it sees the field's type as the submission leaves the form.
+      window.addEventListener("submit", () => ((window as unknown as { typeAtSubmit?: string }).typeAtSubmit = input?.type), { once: true });
+    });
     await page.getByRole("button", { name: "כניסה", exact: true }).click();
+    expect(await page.evaluate(() => (window as unknown as { typeAtSubmit?: string }).typeAtSubmit)).toBe("password");
     await expect(password).toHaveValue("");
     await expect(password).toHaveAttribute("type", "password");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");

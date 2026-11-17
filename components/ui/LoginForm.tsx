@@ -16,6 +16,7 @@
 // Checks before the call are the shared validators (no new rule): emailError, then passwordError.
 // The first invalid field gets focus, aria-invalid and the message (role="alert").
 import { useId, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { EMAIL_MAX, emailError, passwordError } from "@/features/accounts/data/validate";
 import { EyeIcon, EyeOffIcon } from "./Icons";
 
@@ -41,7 +42,8 @@ export function LoginForm({
   const [busy, setBusy] = useState(false);
   // Show/hide password (owner UI correction, 2026-11-17). Only the input's type changes: the input
   // stays uncontrolled, so the password never enters React state or a `value` attribute either way.
-  // Hidden again after every submission.
+  // Hidden again before every submission (review NIT: the field is a password field when the
+  // browser sees the submission) and after it.
   const [passwordShown, setPasswordShown] = useState(false);
   const [error, setError] = useState<{ field: Field; text: string } | null>(null);
 
@@ -59,6 +61,9 @@ export function LoginForm({
     const passwordProblem = passwordError(password);
     if (passwordProblem) return fail("password", passwordProblem);
     setError(null);
+    // Hide the password before the call, synchronously, so the field is type="password" while the
+    // submission is in flight (no plain text on screen, nothing for a browser's autofill history).
+    flushSync(() => setPasswordShown(false));
     setBusy(true);
     try {
       await onSubmit({ email: email.trim(), password });
