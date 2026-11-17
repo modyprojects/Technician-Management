@@ -1,5 +1,6 @@
-// Input checks for account commands, shared by every implementation (simulated now, the server
-// later; the server always re-validates and checks the caller's role in the database, D34).
+// Input checks for account commands, shared by every implementation (the /dev/demo simulation and
+// the real server actions; the server always re-validates, and the database checks the caller's
+// role under his own session, D34, D60 (7)). The D60 (7) rules of the real actions are at the end.
 // Each returns a Hebrew error, or null when valid. They never throw on untyped input, and no
 // message ever repeats an input password. Refusals the database also makes about WHO may act or
 // WHICH record (42501: an unknown or out-of-scope target too), a request's state (55000: not
@@ -15,6 +16,7 @@ import { isTechnicianId } from "@/features/reference/data/validate";
 import {
   isAccountRole,
   isNewAccountRole,
+  MANAGER_CREATABLE_ROLES,
   MANAGER_REQUESTABLE_ROLES,
   type AccountDecision,
   type AccountDecisionInput,
@@ -25,10 +27,13 @@ import {
   type AccountRole,
   type AccountStateInput,
   type CancelAccountRequestInput,
+  type CancelCreationInput,
   type CompleteCreationInput,
   type CompleteTechnicianProfileInput,
+  type DeleteAccountInput,
   type NewAccountInput,
   type NewTechnicianInput,
+  type RoleChangeInput,
   type UpdateProfileInput,
   type UpdateTechnicianInput,
 } from "./types";
@@ -474,7 +479,7 @@ export function routineUpdateCallerError(
   if (viewer.role === "creator") return null;
   if (viewer.role !== "mgr") return ACTION_MESSAGES.forbidden;
   if (typeof target.id !== "string" && target.id !== null) return ACTION_MESSAGES.forbidden;
-  if (!MANAGER_SCOPE.includes(target.role) || (target.id !== null && target.id === viewer.id)) return ACTION_MESSAGES.forbidden;
+  if (!MANAGER_SCOPE.includes(target.role) || (target.id !== null && isOwnAccount(target.id, viewer))) return ACTION_MESSAGES.forbidden;
   // Read as a technician update: a profile update has neither field (untyped input is checked too).
   const fields: Partial<UpdateTechnicianInput> = input && typeof input === "object" ? (input as Partial<UpdateTechnicianInput>) : {};
   return fields.outlookEmail !== undefined || fields.active !== undefined ? MANAGER_TECHNICIAN_FIELDS_PENDING : null;
@@ -608,4 +613,127 @@ export function aliasTakenError(
     ([id, a]) => id !== accountId && typeof a?.invitationAlias === "string" && a.invitationAlias.trim() === wanted,
   );
   return taken ? ACTION_MESSAGES.duplicate : null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// D60 (7) (owner, 2026-11-12; supersedes D34 a and c; Migration 5). The rules of the real server
+// actions (lib/actions/accounts.ts through features/accounts/supabase/commands.ts). Each mirrors a
+// database refusal, so the app refuses early with the same message; the database decides in any
+// case, under the caller's own session, before any Auth Admin call. The D34 request validators
+// above (accountRequestError, accountRequestTargetError, decideRequestError, pendingRequestError,
+// managerOnlyError, managerActivationError, cancelRequestError and the Variant B branch of
+// completeCreationError) are the retired request path: the /dev/demo prototype only (D61 (1)).
+
+/** The Creator acts on another account only: never on his own (passwords and emails: Step 2 plan Q22). */
+export const OWN_ACCOUNT_REFUSED = "לא ניתן לבצע את הפעולה הזו על החשבון שלך.";
+
+/** A deletion without the explicit confirmation (D60 (7): "after explicit confirmation"). */
+export const DELETE_CONFIRMATION_REQUIRED = "יש לאשר את המחיקה במפורש.";
+
+/** A reason stored with a role change, a deactivation or a deletion: the database's 300 characters. */
+export const ACTION_REASON_MAX = 300;
+
+/** An optional reason: absent, or a string of at most ACTION_REASON_MAX characters after trimming. */
+export function actionReasonError(reason: unknown): string | null {
+  if (reason === undefined) return null;
+  if (typeof reason !== "string") return "סיבה לא תקינה";
+  return reason.trim().length > ACTION_REASON_MAX ? `הסיבה ארוכה מ-${ACTION_REASON_MAX} תווים` : null;
+}
+
+/**
+ * Who may create an account of `role` (D60 (7); Migration 5 `authorize_account_creation`): the
+ * Creator a Manager, Customer Service or Technician account; the Manager a Customer Service or
+ * Technician account; everyone else nothing (42501). A Creator account is never created here
+ * (newAccountError: pending the owner, D49). `viewerRole` comes from the session.
+ */
+export function creationCallerError(viewerRole: unknown, role: unknown): string | null {
+  if (viewerRole === "creator") return null;
+  if (viewerRole === "mgr") return MANAGER_CREATABLE_ROLES.includes(role as AccountRole) ? null : ACTION_MESSAGES.forbidden;
+  return ACTION_MESSAGES.forbidden;
+}
+
+/**
+ * Whether `accountId` names the viewer's own account. Case-blind: a UUID in upper case names the
+ * same row in the database and in Auth, so a plain `===` would let the Creator's own account
+ * through the app-only rules (Q22) in another spelling.
+ */
+export function isOwnAccount(accountId: unknown, viewer: AccountViewer): boolean {
+  return typeof accountId === "string" && typeof viewer.id === "string" && accountId.toLowerCase() === viewer.id.toLowerCase();
+}
+
+const ROLE_CHANGE_KEYS: ReadonlySet<string> = new Set(["accountId", "expectedVersion", "newRole", "reason"]);
+const DELETE_KEYS: ReadonlySet<string> = new Set(["accountId", "expectedVersion", "confirm", "reason"]);
+const CANCEL_CREATION_KEYS: ReadonlySet<string> = new Set(["intentId", "expectedVersion"]);
+
+/**
+ * The Creator's role change, in the order of Migration 1 `admin_set_user_role`: the caller (the
+ * Creator only; Managers never change roles, D60 (7)), the input (only these keys; a new role of
+ * NEW_ACCOUNT_ROLES: nothing makes a Creator, D49), never his own account (42501). The database also
+ * refuses a Technician with a field profile, the last active Creator and a deleted account (55000).
+ */
+export function roleChangeError(input: RoleChangeInput, viewer: AccountViewer | null | undefined): string | null {
+  const caller = creatorOnlyError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object" || !onlyKeys(input, ROLE_CHANGE_KEYS)) return "קלט לא תקין";
+  const shape = accountIdError(input.accountId) ?? expectedVersionError(input.expectedVersion);
+  if (shape) return shape;
+  const role: unknown = input.newRole;
+  if (!isNewAccountRole(role)) return role === "creator" ? ACTION_MESSAGES.forbidden : "תפקיד לא תקין";
+  const reason = actionReasonError(input.reason);
+  if (reason) return reason;
+  return isOwnAccount(input.accountId, viewer) ? ACTION_MESSAGES.forbidden : null;
+}
+
+/**
+ * The Creator's deletion, in the order of Migration 5 `admin_delete_user`: the caller (the Creator
+ * only; the Manager never deletes, D60 (7)), the input (only these keys; the explicit confirmation
+ * `confirm: true`; a reason of at most 300 characters), never his own account (42501). The database
+ * also refuses a Creator account (OQ-1), an unknown one, an account already deleted (55000) and a
+ * stale version (PT409).
+ */
+export function deleteAccountError(input: DeleteAccountInput, viewer: AccountViewer | null | undefined): string | null {
+  const caller = creatorOnlyError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object" || !onlyKeys(input, DELETE_KEYS)) return "קלט לא תקין";
+  const shape = accountIdError(input.accountId) ?? expectedVersionError(input.expectedVersion);
+  if (shape) return shape;
+  if (input.confirm !== true) return DELETE_CONFIRMATION_REQUIRED;
+  const reason = actionReasonError(input.reason);
+  if (reason) return reason;
+  return isOwnAccount(input.accountId, viewer) ? ACTION_MESSAGES.forbidden : null;
+}
+
+/**
+ * The Creator's password and email changes (D34 e, kept by D60 (7)): the Creator only, never on
+ * his own account (TEMPORARY, Step 2 plan Q22: no self-service credential screen). The database
+ * check (`assert_can_change_credentials`) runs after this, before the Auth Admin call.
+ */
+export function credentialTargetError(viewer: AccountViewer | null | undefined, accountId: unknown): string | null {
+  const caller = credentialsCallerError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  const shape = accountIdError(accountId as AccountId);
+  if (shape) return shape;
+  return isOwnAccount(accountId, viewer) ? OWN_ACCOUNT_REFUSED : null;
+}
+
+/** "ביטול" of an incomplete creation: the caller (Creator or Manager) and the input's shape. */
+export function cancelCreationError(input: CancelCreationInput, viewer: AccountViewer | null | undefined): string | null {
+  const caller = accountAdminCallerError(viewer?.role);
+  if (caller || !viewer) return caller ?? ACTION_MESSAGES.forbidden;
+  if (!input || typeof input !== "object" || !onlyKeys(input, CANCEL_CREATION_KEYS)) return "קלט לא תקין";
+  return requestIdError(input.intentId) ?? expectedVersionError(input.expectedVersion);
+}
+
+/**
+ * The stored creation intent a completion acts on (D60 (7); Migration 5 `admin_create_profile`,
+ * OQ-4): only the caller's own `direct_create` (anyone else's, an unknown row and a legacy request
+ * get "no permission", 42501), and only while it is approved with no account bound (55000 "the
+ * request no longer applies").
+ */
+export function ownCreationIntentError(
+  stored: AccountRequestStored | undefined,
+  viewer: AccountViewer | null | undefined,
+): string | null {
+  if (!viewer || !stored || !stored.intent || stored.requestedBy !== viewer.id) return ACTION_MESSAGES.forbidden;
+  return stored.status === "approved" && stored.creation && !stored.fulfilled ? null : REQUEST_MESSAGES.noLongerApplies;
 }

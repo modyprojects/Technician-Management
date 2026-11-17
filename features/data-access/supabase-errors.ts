@@ -4,8 +4,8 @@
 //
 // Database errors are read by `error.code` (SQLSTATE or PostgREST `PGRST…`), never by HTTP status:
 // a `55000` business refusal arrives as HTTP 500. Auth errors are read by the Supabase Auth error
-// code. The codes and the `55000` texts are those Migration 1 raises (PR #12, not merged yet); an
-// unknown code or text gets the generic message (R14: unit tests pin the known texts).
+// code. The codes and the `55000` texts are those Migrations 1 and 5 raise (applied); an unknown
+// code or text gets the generic message (R14: unit tests pin the known texts).
 
 /** Messages shared by every action. Wording is shown to the owner for feedback (plan §4). */
 export const ACTION_MESSAGES = {
@@ -47,6 +47,35 @@ export const SIGN_IN_MESSAGES = {
   credentials: "האימייל או הסיסמה שגויים, או שאין לחשבון גישה.",
   service: "הכניסה אינה זמינה כרגע. נסו שוב מאוחר יותר.",
   noAccess: "אין לחשבון הזה גישה למסך הזה.",
+} as const;
+
+/**
+ * Account-administration outcomes of the real server actions (D60 (7); Migration 5): the
+ * deletion's permanence, the retired request path, and the multi-step creation and deletion
+ * (Step 2 plan §3.8) whose later step failed after an earlier one took effect. No message names a
+ * value the user typed.
+ */
+export const ACCOUNT_MESSAGES = {
+  /** Migration 5: a deleted account never changes again (no reactivation, edit, role or credential change). */
+  deleted: "החשבון נמחק ולא ניתן לשנות אותו.",
+  /** Migration 5 (C-02): the Manager's requests and the Creator's decisions are retired. */
+  requestsRetired: "בקשות לאישור אינן בשימוש עוד.",
+  /** An open creation intent exists for that address (Migration 1 `authorize_account_creation`, 55000). */
+  openCreationExists: "קיימת כבר יצירה פתוחה לכתובת המייל הזו.",
+  /** Phase 2 failed in a way that may have taken effect: the intent stays open for "השלמת יצירה". */
+  creationIncomplete: "יצירת המשתמש לא הושלמה. היא מופיעה ב„יצירה שלא הושלמה” ואפשר להשלים אותה משם.",
+  /** Phase 3 refused the binding for good (42501): the intent is cancelled (Step 2 plan §3.8, Q16). */
+  creationCancelled: "לא ניתן היה להשלים את יצירת המשתמש, והיא בוטלה.",
+  /** Phase 4 failed: the account exists without its field profile ("פרופיל טכנאי חסר", plan §3.8). */
+  technicianProfileMissing: "המשתמש נוצר, אבל פרופיל הטכנאי לא נשמר. השלימו אותו ברשימה („פרופיל טכנאי חסר”).",
+  /** The deletion committed in the database, but the Auth step failed: a repeated deletion completes it. */
+  revokeIncomplete: "המשתמש נמחק במערכת, אבל חסימת ההתחברות לא הושלמה. נסו למחוק שוב כדי להשלים.",
+  created: "המשתמש נוצר.",
+  saved: "השינוי נשמר.",
+  passwordSet: "הסיסמה נשמרה.",
+  emailChanged: "כתובת המייל עודכנה.",
+  deletedOk: "המשתמש נמחק. ההיסטוריה שלו נשמרת.",
+  cancelled: "היצירה בוטלה.",
 } as const;
 
 /** Auth Admin messages (account creation and the Creator's credential changes, PRs 2.6–2.7). */
@@ -105,12 +134,13 @@ const DATABASE_KINDS: ReadonlyMap<string, DatabaseErrorKind> = new Map([
 ]);
 
 /**
- * `55000` ("wrong state") texts that Migration 1 raises from the account and matrix functions,
- * matched exactly. Trigger texts that the functions never let through (immutable fields,
+ * `55000` ("wrong state") texts that Migrations 1 and 5 raise from the account and matrix functions
+ * and triggers, matched exactly. Trigger texts that the functions never let through (immutable fields,
  * append-only tables) and the one-time bootstrap's texts get the generic message.
  */
 const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
-  ["an open request exists", "קיימת כבר בקשה פתוחה."],
+  // D60 (7): only a creation intent raises it now (the request path is retired).
+  ["an open request exists", ACCOUNT_MESSAGES.openCreationExists],
   ["a pending request exists", "קיימת כבר בקשה פתוחה."],
   ["the request is not pending", REQUEST_MESSAGES.notPending],
   ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
@@ -123,6 +153,12 @@ const STATE_MESSAGES: ReadonlyMap<string, string> = new Map([
   ["profiles: the last active Creator cannot be demoted or deactivated", "לא ניתן להשבית את היוצר הפעיל האחרון או לשנות את תפקידו."],
   ["value locked until an open owner decision", "הערך נעול עד להחלטת הבעלים."],
   ["value already approved", "הערך כבר אושר."],
+  // Migration 5 (D60 (7)): the deletion and the retired request path.
+  ["the account is deleted", ACCOUNT_MESSAGES.deleted],
+  ["profiles: a deleted account never changes (D60 (7))", ACCOUNT_MESSAGES.deleted],
+  ["technicians: the account is deleted (D60 (7))", ACCOUNT_MESSAGES.deleted],
+  ["account_requests: account requests are retired (D60 (7))", ACCOUNT_MESSAGES.requestsRetired],
+  ["profiles: no user is promoted to Creator (D49)", "לא ניתן להפוך משתמש ליוצר."],
 ]);
 
 /** The kind of a database (PostgREST) error; anything unrecognised, including a network failure, is "unknown". */

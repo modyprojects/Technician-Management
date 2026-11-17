@@ -483,7 +483,7 @@ test.describe("Supabase errors to Hebrew messages (no raw database or Auth text)
 
   test("55000 business refusals by their exact Migration 1 text; any other text is generic", () => {
     const known: [string, string][] = [
-      ["an open request exists", "קיימת כבר בקשה פתוחה."],
+      ["an open request exists", "קיימת כבר יצירה פתוחה לכתובת המייל הזו."],
       ["a pending request exists", "קיימת כבר בקשה פתוחה."],
       ["the request is not pending", "הבקשה כבר טופלה."],
       ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
