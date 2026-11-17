@@ -28,7 +28,7 @@ import { onlyInProject } from "./helpers";
 
 // Step 6: the pure core of the single calendar ingestion service (parser, plan, idempotency rule)
 // and the simulator adapter. Fictional data only (D47). The database side is tested in
-// tests/db/330_calendar_ingestion_writer.test.sql.
+// tests/db/340_calendar_ingestion_writer.test.sql.
 
 const RLM = String.fromCodePoint(0x200f);
 const NBSP = String.fromCodePoint(0x00a0);
