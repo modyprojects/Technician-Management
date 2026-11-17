@@ -57,19 +57,28 @@ export function isPhone(value: string): boolean {
   return value.length <= 20 && /^\+?[0-9]([ -]?[0-9]){2,}$/.test(value);
 }
 
-/** An email address as `technicians.outlook_email` stores it: lower case, trimmed, at most 254 characters. */
+/** A space variant other than U+0020 anywhere (an address holds none). */
+const SPACE_VARIANT = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]/u;
+
+/**
+ * An email address as the ingestion writer stores it (`private.ingest_email`, Migration 6; the form
+ * of `technicians.outlook_email`): lower case, trimmed, NFC, at most 254 characters, no code point
+ * TEXT-SAFE refuses and no space variant.
+ */
 export function isNormalizedEmail(value: string): boolean {
   return (
     value.length <= 254 &&
     value === value.trim().toLowerCase() &&
+    value === value.normalize("NFC") &&
     /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value) &&
-    !FORBIDDEN_SINGLE_LINE.test(value)
+    !FORBIDDEN_SINGLE_LINE.test(value) &&
+    !SPACE_VARIANT.test(value)
   );
 }
 
-/** Lower case and trimmed (the matching form of an attendee or organizer address). */
+/** NFC, trimmed and lower case (the matching form of an attendee or organizer address). */
 export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
+  return value.normalize("NFC").trim().toLowerCase();
 }
 
 /** An opaque identifier from a calendar source (event id, change key, calendar id): printable ASCII. */

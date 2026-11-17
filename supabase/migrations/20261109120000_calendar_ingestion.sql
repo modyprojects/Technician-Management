@@ -10,10 +10,10 @@
 -- Content: three tables (external_calendar_events: the identity of every invitation event;
 -- calendar_event_changes: the append-only log of every change received, the idempotency and
 -- ordering record; calendar_ingestion_errors: the invitations that were not ingested, which feed
--- "זימונים שלא נקלטו", S-05), three trigger functions, four read helpers and two apply helpers
--- of the writer, the ingestion writer private.ingest_calendar_event (SECURITY DEFINER) with its
--- SECURITY INVOKER wrapper, three SELECT policies, per-object grants, the census extension and the
--- fail-closed hardening check.
+-- "זימונים שלא נקלטו", S-05), three trigger functions, four read helpers, three text-rule helpers
+-- and two apply helpers of the writer, the ingestion writer private.ingest_calendar_event
+-- (SECURITY DEFINER) with its SECURITY INVOKER wrapper, three SELECT policies, per-object grants,
+-- the census extension and the fail-closed hardening check.
 --
 -- The writer is the database side of the single ingestion service (features/calendar/ingestion):
 -- the TypeScript core parses and validates one invitation event and sends one command; this
@@ -30,9 +30,15 @@
 --
 -- TEMPORARY deny-by-default behaviour until the owner answers (docs/review/step6-ingestion section
 -- 9; each question is "Step 6 OQ-n"):
---   OQ-1  the three new tables are readable by the Creator only (open decision 15: the key of
---         "זימונים שלא נקלטו" is open); a simulator user sees the outcome of his own change in the
---         function's answer.
+--   OQ-1  "זימונים שלא נקלטו" (D60 (4) and (11); Version 1 office scope): calendar_ingestion_errors
+--         is readable by every active Creator, Manager and Customer Service user (a fixed
+--         capability, private.is_office_user(), until open decision 15 names the matrix key); its
+--         rows carry everything the list shows (the sanitized subject, organizer, attendees and
+--         times, the request number and customer name read, the problems, the test marker). The
+--         event identity and the change log (external_calendar_events, calendar_event_changes:
+--         snapshots with customer contact data, OQ-12) stay readable by the Creator only. A
+--         Technician, an inactive user, anon and service_role read nothing. A simulator user also
+--         sees the outcome of his own change in the function's answer.
 --   OQ-2  a deleted invitation (open decision 5, SIM-04) never cancels a visit: an open visit gets
 --         a 'cancellation' review item, a closed or cancelled one is not changed (D39), an
 --         unparsed invitation's open error is resolved as 'deleted'; later changes of a deleted
@@ -62,6 +68,20 @@
 --   OQ-12 the parsed fields of every processed version are kept (calendar_event_changes.snapshot,
 --         customer contact data included) as the base of D39 comparisons; retention follows open
 --         decision 12.
+--   OQ-13 (open decision 21) the simulator's environment switch (CALENDAR_SIMULATOR, always off when
+--         VERCEL_ENV is production) exists only in the server action (lib/actions/calendar-
+--         simulator.ts). The database cannot see it, and Preview and Production share this one
+--         Supabase project, so public.ingest_calendar_event is callable through the Data API by
+--         any active Manager, Creator or Customer Service session whatever the switch says.
+--         docs/security.md section 9 ("disabled simulator endpoints return 404", "no public
+--         simulator API") and SIM-10 therefore hold at the server action only, not in the database.
+--         Accepted only for the testing period: fictional data only (D23, D47), owner-only Preview
+--         and Production (D29, D31), every row the writer creates is 'simulator' test data, and the
+--         caller check below still applies. Go-live hand-off (before any real use, D23): a reviewed
+--         migration revokes EXECUTE on public.ingest_calendar_event(jsonb) and
+--         private.ingest_calendar_event(jsonb) from authenticated, or makes the body refuse unless
+--         an owner-set database flag allows the simulator; the Microsoft Graph source gets its own
+--         session-less entry point (OQ-10, Step 11).
 --
 -- Applying it to the remote project needs the owner's separate approval (D52 rule 4, D53). It is
 -- prepared and tested locally only. Its writer needs the owner's acceptance in the migration guard
@@ -77,7 +97,8 @@
 --
 -- Error codes:
 --   42501 "not authorized" (the caller is not an active Manager, Creator or Customer Service user)
---   22023 "invalid input" (a malformed command; no detail)
+--   22023 "invalid input" (a malformed command, or a value that breaks its column's text rule; no
+--         detail)
 --   23505 a change key received before with other content
 --   PT429 too many changes in a minute (PostgREST answers HTTP 429)
 --   55000 wrong state (a call without a free visit number; triggers)
@@ -244,17 +265,23 @@ create table public.calendar_ingestion_errors (
       subject = btrim(subject) and char_length(subject) between 1 and 255 and subject is nfc normalized
       and subject !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and subject !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
+  -- Lower case, trimmed, NFC; no code point TEXT-SAFE refuses and no space variant anywhere (the
+  -- writer's private.ingest_email rule; independent review S1).
   organizer_email text
     constraint calendar_ingestion_errors_organizer_email_check check (
       organizer_email = lower(btrim(organizer_email)) and char_length(organizer_email) <= 254
-      and organizer_email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
-  -- A JSON array of at most 20 addresses in the same form.
+      and organizer_email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' and organizer_email is nfc normalized
+      and organizer_email !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
+      and organizer_email !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]'),
+  -- A JSON array of at most 20 addresses in the same form (the code points as jsonpath escapes; NFC
+  -- is the writer's rule only: jsonpath cannot test it).
   attendee_emails jsonb not null default '[]'::jsonb
     constraint calendar_ingestion_errors_attendee_emails_check check (
       jsonb_typeof(attendee_emails) = 'array' and jsonb_array_length(attendee_emails) <= 20
       and pg_column_size(attendee_emails) <= 8192
       and not jsonb_path_exists(attendee_emails,
-        '$[*] ? (@.type() != "string" || !(@ like_regex "^[^@ A-Z]+@[^@ A-Z]+[.][^@ A-Z]+$"))')),
+        '$[*] ? (@.type() != "string" || !(@ like_regex "^[^@ A-Z]+@[^@ A-Z]+[.][^@ A-Z]+$")
+                 || @ like_regex "[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u{110bd}\u{110cd}\u{13430}-\u{1343f}\u{1bca0}-\u{1bca3}\u{1d159}\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}\u{f0000}-\u{10ffff}\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]")')),
   -- The invitation's own date and times, when they were readable.
   event_start timestamptz,
   event_end timestamptz,
@@ -266,7 +293,10 @@ create table public.calendar_ingestion_errors (
       customer_name = btrim(customer_name) and char_length(customer_name) between 1 and 120 and customer_name is nfc normalized
       and customer_name !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
       and customer_name !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'),
-  -- At least one problem: {kind, field[, rule][, value]} (features/calendar/ingestion/types.ts).
+  -- At least one problem: {kind, field[, rule][, value]} (features/calendar/ingestion/types.ts), no
+  -- other member; a rule from the closed lists INVALID_RULES and CONFLICT_RULES; a value null or a
+  -- string of 1 to 120 characters without a code point TEXT-SAFE refuses and without an edge space
+  -- (the writer also checks NFC and which rule belongs to which kind; independent review S1).
   problems jsonb not null
     constraint calendar_ingestion_errors_problems_check check (
       jsonb_typeof(problems) = 'array' and jsonb_array_length(problems) between 1 and 30
@@ -275,7 +305,17 @@ create table public.calendar_ingestion_errors (
         '$[*] ? (@.type() != "object" || !exists(@.kind) || !exists(@.field)
                  || @.kind.type() != "string" || @.field.type() != "string"
                  || !(@.kind like_regex "^(missing|invalid|unknown_place|unknown_technician|inactive_technician|ambiguous_technician|conflict)$")
-                 || !(@.field like_regex "^(req|task|rep|customerNo|customer|phone|phone2|city|street|building|floor|apt|arrival|type|product|sku|desc|warranty|collect|collectFrom|techNote|subject|attendee|organizer|schedule|body)$"))')),
+                 || !(@.field like_regex "^(req|task|rep|customerNo|customer|phone|phone2|city|street|building|floor|apt|arrival|type|product|sku|desc|warranty|collect|collectFrom|techNote|subject|attendee|organizer|schedule|body)$"))')
+      and not jsonb_path_exists(problems,
+        '$[*] ? (@.type() == "object").keyvalue() ? (!(@.key like_regex "^(kind|field|rule|value)$"))')
+      and not jsonb_path_exists(problems,
+        '$[*] ? ((exists(@.rule)
+                  && (@.rule.type() != "string"
+                      || !(@.rule like_regex "^(format|length|duplicate_label|warranty_format|unknown_call_type|end_before_start|too_many_attendees|request_number_changed|real_service_call|real_customer|real_product)$")))
+                 || (exists(@.value) && @.value.type() != "null"
+                     && (@.value.type() != "string" || !(@.value like_regex "^.{1,120}$" flag "s")
+                         || @.value like_regex "^[ \u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[ \u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$"
+                         || @.value like_regex "[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\u{110bd}\u{110cd}\u{13430}-\u{1343f}\u{1bca0}-\u{1bca3}\u{1d159}\u{1d173}-\u{1d17a}\u{e0000}-\u{e0fff}\u{f0000}-\u{10ffff}]")))')),
   status text not null default 'open'
     constraint calendar_ingestion_errors_status_check check (status in ('open', 'resolved')),
   -- Server receipt time (t12).
@@ -497,6 +537,58 @@ begin
 end
 $$;
 
+-- The text rules of the columns the writer fills (independent review S1), as predicates: false for
+-- NULL. Migrations 2 and 3 write each rule out in the CHECKs; these are the same expressions, so
+-- the writer can apply them to every value it stores where no CHECK reads it (a review item, a
+-- snapshot, a problem). features/calendar/ingestion/text.ts states the same rules in TypeScript.
+-- TEXT-SAFE (p_multiline false) or TEXT-SAFE-ML (true; U+000A inside the text, never first or
+-- last), 1 to p_max characters (Migration 2 section 1, Migration 3 section 1).
+create function private.ingest_safe_text(p_value text, p_max integer, p_multiline boolean)
+returns boolean
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select coalesce(
+    p_value = btrim(p_value) and char_length(p_value) between 1 and p_max and p_value is nfc normalized
+    and case when p_multiline then
+          p_value !~ '[\u0001-\u0009\u000b-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
+          and p_value !~ '^[\u000a\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u000a\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
+        else
+          p_value !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
+          and p_value !~ '^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]$'
+        end,
+    false)
+$$;
+
+-- ASCII-ID (task number, customer number, SKU): printable ASCII with single internal spaces, 1 to
+-- p_max characters (Migration 2 section 1).
+create function private.ingest_ascii_id(p_value text, p_max integer)
+returns boolean
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select coalesce(char_length(p_value) between 1 and p_max and p_value ~ '^[!-~]+( [!-~]+)*$', false)
+$$;
+
+-- An e-mail address as the writer stores it (attendees, organizer; technicians.outlook_email's
+-- form, Migration 1): lower case, trimmed, NFC, at most 254 characters, one "@" and a dot after it,
+-- no code point TEXT-SAFE refuses and no space variant anywhere.
+create function private.ingest_email(p_value text)
+returns boolean
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select coalesce(
+    p_value = lower(btrim(p_value)) and char_length(p_value) <= 254 and p_value is nfc normalized
+    and p_value ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+    and p_value !~ '[\u0001-\u001f\u007f-\u009f\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028-\u202e\u2060-\u206f\u3164\ue000-\uf8ff\ufdd0-\ufdef\ufe00-\ufe0f\ufeff\uffa0\ufff0-\uffff\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d159\U0001d173-\U0001d17a\U000e0000-\U000e0fff\U000f0000-\U0010ffff]'
+    and p_value !~ '[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2800\u3000]',
+    false)
+$$;
+
 -- The D39 source time of a field: the change time of the newest change that applied it to this
 -- customer or call (NULL when none did).
 create function private.ingest_field_source_at(p_customer_id uuid, p_service_call_id uuid, p_field text)
@@ -531,7 +623,10 @@ as $$
     'visit_number', v.visit_number,
     'service_call_id', c.service_call_id,
     'visit_id', c.visit_id,
-    'review_items', (select count(*) from public.review_items r where r.source_ref = 'cal-change:' || c.id::text),
+    -- The items this change opened on its own call (independent review N3: the reference and the
+    -- call both match).
+    'review_items', (select count(*) from public.review_items r
+                     where r.source_ref = 'cal-change:' || c.id::text and r.service_call_id = c.service_call_id),
     'applied_fields', to_jsonb(c.applied_fields),
     'problems', coalesce((select x.problems from public.calendar_ingestion_errors x where x.change_id = c.id), '[]'::jsonb))
   from public.calendar_event_changes c
@@ -552,10 +647,16 @@ $$;
 -- every change applies; for a visit en route or in progress a re-assignment and an address change
 -- open review items ('reassignment', 'address_change') and the rest applies. For every optional
 -- field an empty value means no change (OQ-3). Each applied field gets its history row.
+-- p_base is the event's previous processed version (calendar_event_changes.snapshot, as for
+-- ingest_apply_call; NULL when there is none). D39 routes a change "made in that invitation": for a
+-- visit en route or in progress a re-assignment or an address change opens its review item only
+-- when this version's technician or address differs from the base, so a later version that keeps
+-- them (notes, time) does not open the same item again, also after a keep_current decision
+-- (independent review M1). With a NULL base every difference from the visit counts.
 create function private.ingest_apply_visit(
-  p_visit public.visits, p_technician_id uuid, p_task text, p_start timestamptz, p_end timestamptz, p_city text,
-  p_street text, p_building text, p_floor text, p_apartment text, p_arrival text, p_tech_notes text, p_pickup_item text,
-  p_location_id uuid, p_ref text, inout p_applied text[], inout p_reviews integer)
+  p_visit public.visits, p_base jsonb, p_technician_id uuid, p_task text, p_start timestamptz, p_end timestamptz,
+  p_city text, p_street text, p_building text, p_floor text, p_apartment text, p_arrival text, p_tech_notes text,
+  p_pickup_item text, p_location_id uuid, p_ref text, inout p_applied text[], inout p_reviews integer)
 language plpgsql
 set search_path = pg_catalog, pg_temp
 as $$
@@ -568,6 +669,15 @@ declare
                                             'building', coalesce(p_building, p_visit.building),
                                             'floor', coalesce(p_floor, p_visit.floor),
                                             'apartment', coalesce(p_apartment, p_visit.apartment));
+  v_base_fields jsonb := p_base -> 'fields';
+  -- Changed in this invitation (D39): the technician, and the address (an empty optional part is
+  -- no change, OQ-3).
+  v_technician_changed boolean := p_base is null or (p_base ->> 'technician_id') is distinct from p_technician_id::text;
+  v_address_changed boolean := p_base is null
+    or (v_base_fields ->> 'city') is distinct from p_city or (v_base_fields ->> 'street') is distinct from p_street
+    or (p_building is not null and (v_base_fields ->> 'building') is distinct from p_building)
+    or (p_floor is not null and (v_base_fields ->> 'floor') is distinct from p_floor)
+    or (p_apartment is not null and (v_base_fields ->> 'apartment') is distinct from p_apartment);
 begin
   if p_visit.status not in ('scheduled', 'en_route', 'in_progress') then
     raise exception using errcode = '55000', message = 'visits: a closed or cancelled visit is never changed by an invitation';
@@ -581,19 +691,23 @@ begin
   v_new.pickup_location_id := coalesce(p_location_id, p_visit.pickup_location_id);
   if p_technician_id is distinct from p_visit.technician_id then
     if v_started then
-      perform private.create_review_item('reassignment', p_ref || ':reassignment', p_visit.service_call_id, p_visit.id,
-        'invitation', p_ref, null, jsonb_build_object('technician_id', p_technician_id),
-        jsonb_build_object('technician_id', p_visit.technician_id, 'status', p_visit.status), null);
-      p_reviews := p_reviews + 1;
+      if v_technician_changed then
+        perform private.create_review_item('reassignment', p_ref || ':reassignment', p_visit.service_call_id, p_visit.id,
+          'invitation', p_ref, null, jsonb_build_object('technician_id', p_technician_id),
+          jsonb_build_object('technician_id', p_visit.technician_id, 'status', p_visit.status), null);
+        p_reviews := p_reviews + 1;
+      end if;
     else
       v_new.technician_id := p_technician_id;
     end if;
   end if;
   if v_new_address is distinct from v_old_address then
     if v_started then
-      perform private.create_review_item('address_change', p_ref || ':address_change', p_visit.service_call_id, p_visit.id,
-        'invitation', p_ref, null, jsonb_strip_nulls(v_new_address), jsonb_strip_nulls(v_old_address), null);
-      p_reviews := p_reviews + 1;
+      if v_address_changed then
+        perform private.create_review_item('address_change', p_ref || ':address_change', p_visit.service_call_id, p_visit.id,
+          'invitation', p_ref, null, jsonb_strip_nulls(v_new_address), jsonb_strip_nulls(v_old_address), null);
+        p_reviews := p_reviews + 1;
+      end if;
     else
       v_new.city := p_city;
       v_new.street := p_street;
@@ -836,12 +950,14 @@ $$;
 -- 5. The ingestion writer (D08, D17, D19, D24, D38, D39, D44, D47; X-01, X-03, S-05). SECURITY
 --    DEFINER plpgsql in private, every reference schema-qualified, no dynamic SQL. Order: the
 --    caller (an active Manager, Creator or Customer Service user, profile locked FOR SHARE; D24,
---    SIM-10, a fixed capability), the command's shape (22023), the rate limit (OQ-8), the event
---    identity (serialized per event), replay or conflict, stale or after deletion, then deletion,
---    unparsed or upsert. Every row it creates carries data_source 'simulator' (D47, OQ-10); the
---    simulator's environment switch is on the server (CALENDAR_SIMULATOR, never on Vercel
---    Production). It never sends anything: simulated visits never send email (D24, SIM-09).
---    Returns private.ingest_answer of the stored change.
+--    SIM-10, a fixed capability), the command's shape and every value's rule (22023), the rate
+--    limit (OQ-8), the event identity (serialized per event), replay or conflict, stale or after
+--    deletion, then deletion, unparsed or upsert. Every row it creates carries data_source
+--    'simulator' (D47, OQ-10). The database does not see the simulator's environment switch
+--    (CALENDAR_SIMULATOR is checked by the server action only; TEMPORARY OQ-13: until the go-live
+--    hand-off any active Manager, Creator or Customer Service session can call this through the
+--    Data API on Preview and Production alike). It never sends anything: simulated visits never
+--    send email (D24, SIM-09). Returns private.ingest_answer of the stored change.
 -- ---------------------------------------------------------------------------------------------
 create function private.ingest_calendar_event(p_command jsonb)
 returns jsonb
@@ -869,10 +985,16 @@ declare
   v_subject text;
   v_organizer text;
   v_attendees text[];
+  v_attendee_list text;
   v_start timestamptz;
   v_end timestamptz;
   v_problems jsonb := '[]'::jsonb;
   v_recognised jsonb;
+  v_item jsonb;
+  v_item_kind text;
+  v_item_field text;
+  v_item_rule text;
+  v_item_value text;
   v_req text;
   v_task text;
   v_rep text;
@@ -938,13 +1060,168 @@ begin
     raise exception using errcode = '22023', message = 'invalid input';
   end if;
 
-  -- 2. Rate limit (OQ-8).
+  -- 2. The content of the command, by kind, before anything is read or written (independent
+  --    review S1, N1): the members a kind does not use are JSON null, and every text value meets
+  --    its column's rule (private.ingest_safe_text, ingest_ascii_id, ingest_email, the request-
+  --    number and phone formats), also where no CHECK reads it (a review item, a snapshot, a
+  --    problem), and also when the change turns out to be a replay, stale or after a deletion.
+  if v_kind = 'delete' then
+    if p_command -> 'event' is distinct from 'null'::jsonb or p_command -> 'fields' is distinct from 'null'::jsonb
+       or p_command -> 'problems' is distinct from 'null'::jsonb or p_command -> 'recognised' is distinct from 'null'::jsonb then
+      raise exception using errcode = '22023', message = 'invalid input';
+    end if;
+  else
+    -- 2a. The event part of an upsert or an unparsed change.
+    v_ev := p_command -> 'event';
+    if v_ev is null or jsonb_typeof(v_ev) <> 'object'
+       or exists (select 1 from jsonb_object_keys(v_ev) k where k not in ('subject', 'organizer_email', 'attendee_emails', 'start', 'end'))
+       or jsonb_typeof(v_ev -> 'attendee_emails') is distinct from 'array'
+       or jsonb_array_length(v_ev -> 'attendee_emails') > 20
+       or exists (select 1 from jsonb_array_elements(v_ev -> 'attendee_emails') a where jsonb_typeof(a) <> 'string') then
+      raise exception using errcode = '22023', message = 'invalid input';
+    end if;
+    v_subject := private.ingest_text(v_ev, 'subject');
+    v_organizer := private.ingest_text(v_ev, 'organizer_email');
+    v_attendees := array(select jsonb_array_elements_text(v_ev -> 'attendee_emails'));
+    v_start := private.ingest_timestamp(v_ev, 'start');
+    v_end := private.ingest_timestamp(v_ev, 'end');
+    if (v_subject is not null and not private.ingest_safe_text(v_subject, 255, false))
+       or (v_organizer is not null and not private.ingest_email(v_organizer))
+       or exists (select 1 from unnest(v_attendees) a where not private.ingest_email(a)) then
+      raise exception using errcode = '22023', message = 'invalid input';
+    end if;
+
+    if v_kind = 'unparsed' then
+      -- 2b. An unparsed change: its problems (S-05; features/calendar/ingestion/types.ts) and the
+      --     values that recognise it.
+      v_problems := p_command -> 'problems';
+      v_recognised := p_command -> 'recognised';
+      if jsonb_typeof(v_problems) is distinct from 'array' or jsonb_array_length(v_problems) not between 1 and 30
+         or p_command -> 'fields' is distinct from 'null'::jsonb
+         or jsonb_typeof(v_recognised) is distinct from 'object'
+         or exists (select 1 from jsonb_object_keys(v_recognised) k where k not in ('request_number', 'customer_name')) then
+        raise exception using errcode = '22023', message = 'invalid input';
+      end if;
+      v_req := private.ingest_text(v_recognised, 'request_number');
+      v_customer_name := private.ingest_text(v_recognised, 'customer_name');
+      if (v_req is not null and v_req !~ '^[A-Za-z0-9-]{1,32}$')
+         or (v_customer_name is not null and not private.ingest_safe_text(v_customer_name, 120, false)) then
+        raise exception using errcode = '22023', message = 'invalid input';
+      end if;
+      -- Each problem: kind and field from their closed lists, a rule only for 'invalid'
+      -- (INVALID_RULES) and 'conflict' (CONFLICT_RULES), a value null or TEXT-SAFE of at most 120
+      -- characters, and no other member.
+      for v_item in select x.value from jsonb_array_elements(v_problems) x loop
+        if jsonb_typeof(v_item) <> 'object' then
+          raise exception using errcode = '22023', message = 'invalid input';
+        end if;
+        if exists (select 1 from jsonb_object_keys(v_item) k where k not in ('kind', 'field', 'rule', 'value')) then
+          raise exception using errcode = '22023', message = 'invalid input';
+        end if;
+        v_item_kind := private.ingest_text(v_item, 'kind');
+        v_item_field := private.ingest_text(v_item, 'field');
+        v_item_rule := private.ingest_text(v_item, 'rule');
+        v_item_value := private.ingest_text(v_item, 'value');
+        if v_item_kind is null or v_item_field is null
+           or v_item_kind not in ('missing', 'invalid', 'unknown_place', 'unknown_technician', 'inactive_technician',
+                                  'ambiguous_technician', 'conflict')
+           or v_item_field not in ('req', 'task', 'rep', 'customerNo', 'customer', 'phone', 'phone2', 'city', 'street', 'building',
+                                   'floor', 'apt', 'arrival', 'type', 'product', 'sku', 'desc', 'warranty', 'collect',
+                                   'collectFrom', 'techNote', 'subject', 'attendee', 'organizer', 'schedule', 'body')
+           -- (CASE in parentheses: PL/pgSQL ends an IF condition at the first THEN outside them.)
+           or (case v_item_kind
+                 when 'invalid' then v_item_rule is null
+                   or v_item_rule not in ('format', 'length', 'duplicate_label', 'warranty_format', 'unknown_call_type',
+                                          'end_before_start', 'too_many_attendees')
+                 when 'conflict' then v_item_rule is null
+                   or v_item_rule not in ('request_number_changed', 'real_service_call', 'real_customer', 'real_product')
+                 else v_item_rule is not null
+               end)
+           or (v_item_value is not null and not private.ingest_safe_text(v_item_value, 120, false)) then
+          raise exception using errcode = '22023', message = 'invalid input';
+        end if;
+      end loop;
+    else
+      -- 2c. Upsert: every field present (null when absent), required ones set, each with its
+      --     column's rule (features/calendar/ingestion/parse.ts FIELD_RULES; Migrations 2 and 3).
+      v_f := p_command -> 'fields';
+      if v_f is null or jsonb_typeof(v_f) <> 'object'
+         or (select count(*) from jsonb_object_keys(v_f) k
+             where k in ('request_number', 'task_number', 'handling_rep_name', 'customer_number', 'customer_name', 'phone',
+                         'phone_alt', 'city', 'street', 'building', 'floor', 'apartment', 'arrival_notes', 'call_type',
+                         'product_name', 'sku', 'fault_description', 'warranty_status', 'warranty_until', 'warranty_raw',
+                         'pickup_item', 'pickup_location', 'tech_notes')) <> 23
+         or (select count(*) from jsonb_object_keys(v_f)) <> 23
+         or p_command -> 'problems' is distinct from 'null'::jsonb
+         or p_command -> 'recognised' is distinct from 'null'::jsonb
+         or v_start is null or v_end is null or v_end < v_start or cardinality(v_attendees) = 0 then
+        raise exception using errcode = '22023', message = 'invalid input';
+      end if;
+      v_req := private.ingest_text(v_f, 'request_number');
+      v_task := private.ingest_text(v_f, 'task_number');
+      v_rep := private.ingest_text(v_f, 'handling_rep_name');
+      v_customer_number := private.ingest_text(v_f, 'customer_number');
+      v_customer_name := private.ingest_text(v_f, 'customer_name');
+      v_phone := private.ingest_text(v_f, 'phone');
+      v_phone_alt := private.ingest_text(v_f, 'phone_alt');
+      v_city := private.ingest_text(v_f, 'city');
+      v_street := private.ingest_text(v_f, 'street');
+      v_building := private.ingest_text(v_f, 'building');
+      v_floor := private.ingest_text(v_f, 'floor');
+      v_apartment := private.ingest_text(v_f, 'apartment');
+      v_arrival := private.ingest_text(v_f, 'arrival_notes');
+      v_call_type := private.ingest_text(v_f, 'call_type');
+      v_product_name := private.ingest_text(v_f, 'product_name');
+      v_sku := private.ingest_text(v_f, 'sku');
+      v_fault := private.ingest_text(v_f, 'fault_description');
+      v_w_status := private.ingest_text(v_f, 'warranty_status');
+      v_w_raw := private.ingest_text(v_f, 'warranty_raw');
+      v_pickup_item := private.ingest_text(v_f, 'pickup_item');
+      v_pickup_location := private.ingest_text(v_f, 'pickup_location');
+      v_tech_notes := private.ingest_text(v_f, 'tech_notes');
+      if private.ingest_text(v_f, 'warranty_until') is not null then
+        if private.ingest_text(v_f, 'warranty_until') !~ '^[0-9]{4}-(0[1-9]|1[0-2])-01$' then
+          raise exception using errcode = '22023', message = 'invalid input';
+        end if;
+        v_w_until := private.ingest_text(v_f, 'warranty_until')::date;
+      end if;
+      if v_req is null or v_req !~ '^[A-Za-z0-9-]{1,32}$'
+         or not private.ingest_ascii_id(v_task, 40)
+         or not private.ingest_safe_text(v_rep, 60, false)
+         or not private.ingest_ascii_id(v_customer_number, 40)
+         or not private.ingest_safe_text(v_customer_name, 120, false)
+         or v_phone is null or char_length(v_phone) > 20 or v_phone !~ '^\+?[0-9]([ -]?[0-9]){2,}$'
+         or (v_phone_alt is not null and (char_length(v_phone_alt) > 20 or v_phone_alt !~ '^\+?[0-9]([ -]?[0-9]){2,}$'))
+         or not private.ingest_safe_text(v_city, 60, false)
+         or not private.ingest_safe_text(v_street, 120, false)
+         or (v_building is not null and not private.ingest_safe_text(v_building, 20, false))
+         or (v_floor is not null and not private.ingest_safe_text(v_floor, 20, false))
+         or (v_apartment is not null and not private.ingest_safe_text(v_apartment, 20, false))
+         or (v_arrival is not null and not private.ingest_safe_text(v_arrival, 1000, true))
+         or not private.ingest_safe_text(v_call_type, 60, false)
+         or not private.ingest_safe_text(v_product_name, 120, false)
+         or not private.ingest_ascii_id(v_sku, 40)
+         or not private.ingest_safe_text(v_fault, 1000, true)
+         or (v_w_status is null) <> (v_w_raw is null)
+         or (v_w_status is not null and v_w_status not in ('yes', 'no'))
+         or (v_w_raw is not null and not private.ingest_safe_text(v_w_raw, 60, false))
+         or (v_w_until is not null and v_w_status is distinct from 'yes')
+         or (v_pickup_item is not null and not private.ingest_safe_text(v_pickup_item, 120, false))
+         or (v_pickup_location is not null and not private.ingest_safe_text(v_pickup_location, 60, false))
+         or (v_tech_notes is not null and not private.ingest_safe_text(v_tech_notes, 1000, true)) then
+        raise exception using errcode = '22023', message = 'invalid input';
+      end if;
+    end if;
+  end if;
+
+  -- 3. Rate limit (OQ-8). A count of the caller's recent changes, not a lock: two of his calls
+  --    side by side may both pass at the limit (accepted for the TEMPORARY value; README N2).
   if (select count(*) from public.calendar_event_changes c
       where c.received_by = v_caller.id and c.recorded_at > now() - interval '1 minute') >= 30 then
     raise exception using errcode = 'PT429', message = 'too many invitation changes; try again in a minute';
   end if;
 
-  -- 3. The event's identity, serialized for the rest of the transaction (two deliveries of one
+  -- 4. The event's identity, serialized for the rest of the transaction (two deliveries of one
   --    event never run side by side).
   perform pg_advisory_xact_lock(hashtextextended('tm.calendar_event:' || v_source || ':' || v_calendar_id || ':' || v_event_key, 0));
   insert into public.external_calendar_events as e (data_source, calendar_id, event_id, created_by, updated_by)
@@ -956,7 +1233,7 @@ begin
   v_ref := 'cal-change:' || v_change_id::text;
   v_event_ref := 'cal-event:' || v_event.id::text;
 
-  -- 4. Replay or conflict: the same change key again (database-schema.md §10).
+  -- 5. Replay or conflict: the same change key again (database-schema.md §10).
   v_sha := encode(sha256(convert_to(p_command::text, 'UTF8')), 'hex');
   select c.* into v_prior from public.calendar_event_changes c
   where c.calendar_event_id = v_event.id and c.change_key = v_change_key;
@@ -967,8 +1244,8 @@ begin
     return private.ingest_answer(v_prior.id, true);
   end if;
 
-  -- 5. An older change (out of order, OQ-9) is recorded and never applied; after a deletion
-  --    nothing applies (OQ-2).
+  -- 6. An older change (out of order, OQ-9) is recorded and never applied; after a deletion
+  --    nothing applies (OQ-2). Its content was checked in step 2 like any other.
   if (v_event.last_changed_at is not null and v_changed_at <= v_event.last_changed_at) or v_event.status = 'deleted' then
     insert into public.calendar_event_changes (id, calendar_event_id, change_key, changed_at, received_by, change_type,
                                                payload_sha256, outcome, service_call_id, visit_id)
@@ -985,11 +1262,8 @@ begin
     return private.ingest_answer(v_change_id, false);
   end if;
 
-  -- 6. Deletion (OQ-2): never an automatic cancellation.
+  -- 7. Deletion (OQ-2): never an automatic cancellation.
   if v_kind = 'delete' then
-    if p_command -> 'event' is distinct from 'null'::jsonb or p_command -> 'fields' is distinct from 'null'::jsonb then
-      raise exception using errcode = '22023', message = 'invalid input';
-    end if;
     v_outcome := 'no_effect';
     if v_event.visit_id is not null then
       select c.* into v_call from public.service_calls c where c.id = v_event.service_call_id for update;
@@ -1014,102 +1288,28 @@ begin
     return private.ingest_answer(v_change_id, false);
   end if;
 
-  -- 7. The event part of an upsert or an unparsed change.
-  v_ev := p_command -> 'event';
-  if v_ev is null or jsonb_typeof(v_ev) <> 'object'
-     or exists (select 1 from jsonb_object_keys(v_ev) k where k not in ('subject', 'organizer_email', 'attendee_emails', 'start', 'end'))
-     or jsonb_typeof(v_ev -> 'attendee_emails') is distinct from 'array'
-     or jsonb_array_length(v_ev -> 'attendee_emails') > 20
-     or exists (select 1 from jsonb_array_elements(v_ev -> 'attendee_emails') a where jsonb_typeof(a) <> 'string') then
-    raise exception using errcode = '22023', message = 'invalid input';
-  end if;
-  v_subject := private.ingest_text(v_ev, 'subject');
-  v_organizer := private.ingest_text(v_ev, 'organizer_email');
-  v_attendees := array(select jsonb_array_elements_text(v_ev -> 'attendee_emails'));
-  v_start := private.ingest_timestamp(v_ev, 'start');
-  v_end := private.ingest_timestamp(v_ev, 'end');
-
-  if v_kind = 'unparsed' then
-    v_problems := p_command -> 'problems';
-    v_recognised := p_command -> 'recognised';
-    if jsonb_typeof(v_problems) is distinct from 'array' or jsonb_array_length(v_problems) = 0
-       or p_command -> 'fields' is distinct from 'null'::jsonb
-       or jsonb_typeof(v_recognised) is distinct from 'object'
-       or exists (select 1 from jsonb_object_keys(v_recognised) k where k not in ('request_number', 'customer_name')) then
-      raise exception using errcode = '22023', message = 'invalid input';
-    end if;
-    v_req := private.ingest_text(v_recognised, 'request_number');
-    v_customer_name := private.ingest_text(v_recognised, 'customer_name');
-  else
-    -- 8. Upsert: every field present (null when absent), required ones set.
-    v_f := p_command -> 'fields';
-    if v_f is null or jsonb_typeof(v_f) <> 'object'
-       or (select count(*) from jsonb_object_keys(v_f) k
-           where k in ('request_number', 'task_number', 'handling_rep_name', 'customer_number', 'customer_name', 'phone',
-                       'phone_alt', 'city', 'street', 'building', 'floor', 'apartment', 'arrival_notes', 'call_type',
-                       'product_name', 'sku', 'fault_description', 'warranty_status', 'warranty_until', 'warranty_raw',
-                       'pickup_item', 'pickup_location', 'tech_notes')) <> 23
-       or (select count(*) from jsonb_object_keys(v_f)) <> 23
-       or p_command -> 'problems' is distinct from 'null'::jsonb
-       or v_start is null or v_end is null or v_end < v_start or cardinality(v_attendees) = 0 then
-      raise exception using errcode = '22023', message = 'invalid input';
-    end if;
-    v_req := private.ingest_text(v_f, 'request_number');
-    v_task := private.ingest_text(v_f, 'task_number');
-    v_rep := private.ingest_text(v_f, 'handling_rep_name');
-    v_customer_number := private.ingest_text(v_f, 'customer_number');
-    v_customer_name := private.ingest_text(v_f, 'customer_name');
-    v_phone := private.ingest_text(v_f, 'phone');
-    v_phone_alt := private.ingest_text(v_f, 'phone_alt');
-    v_city := private.ingest_text(v_f, 'city');
-    v_street := private.ingest_text(v_f, 'street');
-    v_building := private.ingest_text(v_f, 'building');
-    v_floor := private.ingest_text(v_f, 'floor');
-    v_apartment := private.ingest_text(v_f, 'apartment');
-    v_arrival := private.ingest_text(v_f, 'arrival_notes');
-    v_call_type := private.ingest_text(v_f, 'call_type');
-    v_product_name := private.ingest_text(v_f, 'product_name');
-    v_sku := private.ingest_text(v_f, 'sku');
-    v_fault := private.ingest_text(v_f, 'fault_description');
-    v_w_status := private.ingest_text(v_f, 'warranty_status');
-    v_w_raw := private.ingest_text(v_f, 'warranty_raw');
-    v_pickup_item := private.ingest_text(v_f, 'pickup_item');
-    v_pickup_location := private.ingest_text(v_f, 'pickup_location');
-    v_tech_notes := private.ingest_text(v_f, 'tech_notes');
-    if private.ingest_text(v_f, 'warranty_until') is not null then
-      if private.ingest_text(v_f, 'warranty_until') !~ '^[0-9]{4}-(0[1-9]|1[0-2])-01$' then
-        raise exception using errcode = '22023', message = 'invalid input';
-      end if;
-      v_w_until := private.ingest_text(v_f, 'warranty_until')::date;
-    end if;
-    if v_req is null or v_task is null or v_rep is null or v_customer_number is null or v_customer_name is null
-       or v_phone is null or v_city is null or v_street is null or v_call_type is null or v_product_name is null
-       or v_sku is null or v_fault is null or (v_w_status is null) <> (v_w_raw is null)
-       or exists (select 1 from unnest(v_attendees) a where a !~ '^[^@[:space:]A-Z]+@[^@[:space:]A-Z]+\.[^@[:space:]A-Z]+$') then
-      raise exception using errcode = '22023', message = 'invalid input';
-    end if;
-
-    -- 9. Lookups in Settings and in what is stored (S-05: each failure is a readable reason).
-    --    Technician = the attendee whose Outlook email matches (D18, SE-05).
+  -- 8. Upsert: lookups in Settings and in what is stored (S-05: each failure is a readable reason;
+  --    its value is the text read, at most 120 characters, already checked in step 2).
+  if v_kind = 'upsert' then
+    -- Technician = the attendee whose Outlook email matches (D18, SE-05).
+    v_attendee_list := btrim(left(array_to_string(v_attendees, ', '), 120));
     v_tech_ids := array(select t.id from public.technicians t where t.outlook_email = any (v_attendees) order by t.id);
     if cardinality(v_tech_ids) = 0 then
-      v_problems := v_problems || jsonb_build_object('kind', 'unknown_technician', 'field', 'attendee',
-        'value', left(array_to_string(v_attendees, ', '), 120));
+      v_problems := v_problems || jsonb_build_object('kind', 'unknown_technician', 'field', 'attendee', 'value', v_attendee_list);
     elsif cardinality(v_tech_ids) > 1 then
-      v_problems := v_problems || jsonb_build_object('kind', 'ambiguous_technician', 'field', 'attendee',
-        'value', left(array_to_string(v_attendees, ', '), 120));
+      v_problems := v_problems || jsonb_build_object('kind', 'ambiguous_technician', 'field', 'attendee', 'value', v_attendee_list);
     else
       v_technician_id := v_tech_ids[1];
     end if;
     select t.id into v_call_type_id from public.call_types t where t.label_he = v_call_type and t.is_active;
     if v_call_type_id is null then
       v_problems := v_problems || jsonb_build_object('kind', 'invalid', 'field', 'type', 'rule', 'unknown_call_type',
-        'value', left(v_call_type, 120));
+        'value', v_call_type);
     end if;
     if v_pickup_location is not null then
       select l.id into v_location_id from public.collection_locations l where l.name = v_pickup_location and l.is_active;
       if v_location_id is null then
-        v_problems := v_problems || jsonb_build_object('kind', 'unknown_place', 'field', 'collectFrom', 'value', left(v_pickup_location, 120));
+        v_problems := v_problems || jsonb_build_object('kind', 'unknown_place', 'field', 'collectFrom', 'value', v_pickup_location);
       end if;
     end if;
     -- A visit never moves to another call (OQ-7); test data never joins real data (D47).
@@ -1134,13 +1334,12 @@ begin
        and not exists (select 1 from public.technicians t join public.profiles p on p.id = t.profile_id
                        where t.id = v_technician_id and t.accepts_invitations and p.is_active and p.role = 'technician'
                          and p.deleted_at is null) then
-      v_problems := v_problems || jsonb_build_object('kind', 'inactive_technician', 'field', 'attendee',
-        'value', left(array_to_string(v_attendees, ', '), 120));
+      v_problems := v_problems || jsonb_build_object('kind', 'inactive_technician', 'field', 'attendee', 'value', v_attendee_list);
     end if;
   end if;
 
-  -- 10. Not ingested: one open row per event lists the reasons (S-05); the visit, if any, keeps
-  --     its earlier version.
+  -- 9. Not ingested: one open row per event lists the reasons (S-05); the visit, if any, keeps
+  --    its earlier version.
   if jsonb_array_length(v_problems) > 0 then
     insert into public.calendar_event_changes (id, calendar_event_id, change_key, changed_at, received_by, change_type,
                                                payload_sha256, outcome, service_call_id, visit_id)
@@ -1154,14 +1353,14 @@ begin
     values (v_event.id, v_change_id, v_subject, v_organizer, to_jsonb(v_attendees),
             case when v_start is not null and v_end is not null then v_start end,
             case when v_start is not null and v_end is not null then v_end end,
-            case when v_req ~ '^[A-Za-z0-9-]{1,32}$' then v_req end, v_customer_name, v_problems);
+            v_req, v_customer_name, v_problems);
     update public.external_calendar_events e
     set last_change_key = v_change_key, last_changed_at = v_changed_at, updated_by = v_caller.id
     where e.id = v_event.id;
     return private.ingest_answer(v_change_id, false);
   end if;
 
-  -- 11. Ingest. The base is the event's previous processed version (D39 "changed in that
+  -- 10. Ingest. The base is the event's previous processed version (D39 "changed in that
   --     invitation"); for a new event every value counts as changed.
   v_snapshot := jsonb_build_object('fields', v_f, 'attendee_emails', to_jsonb(v_attendees), 'start', v_start, 'end', v_end,
                                    'technician_id', v_technician_id);
@@ -1173,7 +1372,7 @@ begin
     and p.role in ('creator', 'manager', 'customer_service');
 
   if v_event.visit_id is null then
-    -- 11a. The event's first valid version: a new visit. The request number is the call's key
+    -- 10a. The event's first valid version: a new visit. The request number is the call's key
     --      (X-01); serialized, so two events with a new number never create two calls.
     perform pg_advisory_xact_lock(hashtextextended('tm.request_number:' || v_req, 0));
     select c.* into v_call from public.service_calls c where c.request_number = v_req for update;
@@ -1240,19 +1439,20 @@ begin
     where e.id = v_event.id;
     v_open := true;
   else
-    -- 11b. A new version of an ingested invitation (update, reschedule, re-assignment).
+    -- 10b. A new version of an ingested invitation (update, reschedule, re-assignment), compared
+    --      with the base for what changed in it (D39; independent review M1).
     select c.* into v_call from public.service_calls c where c.id = v_event.service_call_id for update;
     select v.* into v_visit from public.visits v where v.id = v_event.visit_id for update;
     select x.* into v_customer from public.customers x where x.id = v_call.customer_id for update;
     v_open := v_visit.status in ('scheduled', 'en_route', 'in_progress');
     if v_open then
       select a.p_applied, a.p_reviews into v_applied, v_reviews
-      from private.ingest_apply_visit(v_visit, v_technician_id, v_task, v_start, v_end, v_city, v_street, v_building, v_floor,
-        v_apartment, v_arrival, v_tech_notes, v_pickup_item, v_location_id, v_ref, v_applied, v_reviews) a;
+      from private.ingest_apply_visit(v_visit, v_base, v_technician_id, v_task, v_start, v_end, v_city, v_street, v_building,
+        v_floor, v_apartment, v_arrival, v_tech_notes, v_pickup_item, v_location_id, v_ref, v_applied, v_reviews) a;
     end if;
   end if;
 
-  -- 12. Call level, for an open visit with an existing customer (a follow-up invitation, a new
+  -- 11. Call level, for an open visit with an existing customer (a follow-up invitation, a new
   --     call of a known customer, a new version): identity changes go to review (D39, OQ-4);
   --     contact details and, for an existing call, the call fields follow the newest invitation
   --     field by field (D39, OQ-3). A closed or cancelled visit is never changed (D39).
@@ -1276,8 +1476,12 @@ begin
                                              snapshot)
   values (v_change_id, v_event.id, v_change_key, v_changed_at, v_caller.id, 'upsert', v_sha, v_outcome, v_call.id, v_visit.id,
           v_customer.id, v_applied, v_snapshot);
+  -- An open unparsed row of the event is resolved: 'ingested' when this version reached an open
+  -- visit, 'superseded' when its visit is closed or cancelled and nothing of it applies (D39;
+  -- independent review N5).
   update public.calendar_ingestion_errors x
-  set status = 'resolved', resolution = 'ingested', resolved_by_change_id = v_change_id
+  set status = 'resolved', resolution = case when v_open then 'ingested' else 'superseded' end,
+      resolved_by_change_id = v_change_id
   where x.calendar_event_id = v_event.id and x.status = 'open';
   update public.external_calendar_events e
   set last_change_key = v_change_key, last_changed_at = v_changed_at, updated_by = v_caller.id
@@ -1288,8 +1492,10 @@ $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- 6. Public API: the thin SECURITY INVOKER wrapper of the writer (same name and argument). The
---    body checks its caller (an active Manager, Creator or Customer Service user); the server
---    action that calls it checks the simulator's environment switch first (D24, SIM-11).
+--    body checks its caller (an active Manager, Creator or Customer Service user). The simulator's
+--    environment switch (D24, SIM-11) is checked by the server action only, before it calls this:
+--    the database cannot see it, so the switch does not hold for this RPC (TEMPORARY OQ-13; the
+--    go-live hand-off in the header revokes it or gates it on an owner-set flag).
 -- ---------------------------------------------------------------------------------------------
 create function public.ingest_calendar_event(p_command jsonb)
 returns jsonb
@@ -1429,15 +1635,18 @@ $$;
 
 -- ---------------------------------------------------------------------------------------------
 -- 8. RLS policies: SELECT only, TO authenticated only, every one requires an active profile
---    (through the helpers). TEMPORARY (OQ-1, open decision 15): the Creator only. No write or
---    anon policies.
+--    (through the helpers). No write or anon policies. TEMPORARY (OQ-1, open decision 15): the
+--    unparsed list (calendar_ingestion_errors) for the office roles that use the simulator
+--    (active Creator, Manager, Customer Service; D24, D60 (4), (11)); the event identity and the
+--    change log for the Creator only. The list reads the open rows newest first through the
+--    (status, created_at) index, bounded by the request (and PostgREST's max_rows).
 -- ---------------------------------------------------------------------------------------------
 create policy external_calendar_events_select_creator on public.external_calendar_events for select to authenticated
   using ((select private.is_creator()));
 create policy calendar_event_changes_select_creator on public.calendar_event_changes for select to authenticated
   using ((select private.is_creator()));
-create policy calendar_ingestion_errors_select_creator on public.calendar_ingestion_errors for select to authenticated
-  using ((select private.is_creator()));
+create policy calendar_ingestion_errors_select_office on public.calendar_ingestion_errors for select to authenticated
+  using ((select private.is_office_user()));
 
 -- ---------------------------------------------------------------------------------------------
 -- 9. Grants, per object (never PR 1.3's blanket revokes, which would strip its grants). Tables:
@@ -1457,10 +1666,13 @@ revoke all on function private.tg_calendar_event_guard() from public, anon, auth
 revoke all on function private.tg_ingestion_error_state() from public, anon, authenticated, service_role;
 revoke all on function private.ingest_text(jsonb, text) from public, anon, authenticated, service_role;
 revoke all on function private.ingest_timestamp(jsonb, text) from public, anon, authenticated, service_role;
+revoke all on function private.ingest_safe_text(text, integer, boolean) from public, anon, authenticated, service_role;
+revoke all on function private.ingest_ascii_id(text, integer) from public, anon, authenticated, service_role;
+revoke all on function private.ingest_email(text) from public, anon, authenticated, service_role;
 revoke all on function private.ingest_field_source_at(uuid, uuid, text) from public, anon, authenticated, service_role;
 revoke all on function private.ingest_answer(uuid, boolean) from public, anon, authenticated, service_role;
-revoke all on function private.ingest_apply_visit(public.visits, uuid, text, timestamptz, timestamptz, text, text, text, text, text,
-  text, text, text, uuid, text, text[], integer) from public, anon, authenticated, service_role;
+revoke all on function private.ingest_apply_visit(public.visits, jsonb, uuid, text, timestamptz, timestamptz, text, text, text, text,
+  text, text, text, text, uuid, text, text[], integer) from public, anon, authenticated, service_role;
 revoke all on function private.ingest_apply_call(public.service_calls, public.customers, public.products, boolean, jsonb, jsonb,
   timestamptz, uuid, uuid, text, text[], integer) from public, anon, authenticated, service_role;
 revoke all on function private.ingest_calendar_event(jsonb) from public, anon, authenticated, service_role;
@@ -1474,12 +1686,15 @@ to authenticated;
 comment on function private.ingest_calendar_event(jsonb) is
   'Step 6: the database side of the single calendar ingestion service (D08, D19, D24, D38, D39, D47). One change of one invitation per call, in one transaction; idempotent per (event, change key). Never called by a migration.';
 comment on function public.ingest_calendar_event(jsonb) is
-  'Step 6: the ingestion RPC (SECURITY INVOKER wrapper). Called by the simulator server action under the caller''s session.';
+  'Step 6: the ingestion RPC (SECURITY INVOKER wrapper). Called by the simulator server action under the caller''s session. TEMPORARY OQ-13: the simulator switch is not checked here; revoked or flag-gated before real use.';
 
 -- ---------------------------------------------------------------------------------------------
 -- 10. Hand-offs (no statement).
 --     Step 5 ("זימונים שלא נקלטו", S-05; open decision 15): the list reads the open rows of
---     calendar_ingestion_errors through a policy for the key the owner chooses; the mapping of the
+--     calendar_ingestion_errors (status 'open', newest created_at first, a bounded page) through
+--     calendar_ingestion_errors_select_office; once the owner names the matrix key, a migration
+--     replaces that policy's fixed capability with the key (OQ-1); the source label comes from
+--     is_test (every source before Step 11 is test data); the mapping of the
 --     problem kinds to Hebrew (features/calendar/data/types.ts UnparsedProblem gains the
 --     technician and conflict kinds). The simulator button inside that screen (D60 (11)).
 --     Step 3 / Step 7: the D39 notification of an applied change to a visit en route or in
@@ -1488,7 +1703,14 @@ comment on function public.ingest_calendar_event(jsonb) is
 --     apply_incoming for reassignment, address_change, cancellation (after open decision 5),
 --     customer_change and sku_change (with the field_version step of Migration 4 OQ-14).
 --     Step 11: the Microsoft Graph source ('microsoft_graph' in the data_source CHECKs) and its
---     session-less entry point; received_by then admits the service (OQ-10).
+--     session-less entry point; received_by then admits the service (OQ-10). The Graph adapter
+--     filters by the subject prefix before the database for new and changed events, but a
+--     deletion carries no subject: today every deletion of an unknown event is recorded (an
+--     event row 'deleted', a 'no_effect' change); the Graph adapter must deliver deletions only
+--     for events this table already knows (README N7).
+--     Before real use (D23; OQ-13, open decision 21): a reviewed migration revokes EXECUTE on
+--     public.ingest_calendar_event(jsonb) and private.ingest_calendar_event(jsonb) from
+--     authenticated, or makes the body refuse unless an owner-set flag allows the simulator.
 -- ---------------------------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------------------------
