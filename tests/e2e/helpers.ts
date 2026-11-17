@@ -140,6 +140,8 @@ export const REAL_PAGES = [
   // The unified user management (D60 (7)): Settings › "משתמשים" / "משתמשים והרשאות".
   "/office/settings",
   "/office/settings/users",
+  // "זימונים שלא נקלטו" and the invitation simulator (QA S-05; D60 (11)).
+  "/office/unparsed",
 ] as const;
 
 export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
