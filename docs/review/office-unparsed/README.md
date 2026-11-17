@@ -31,8 +31,10 @@ Not in this screen: no action on a row (the fix is in the invitation itself, D08
 | Command | Result |
 |---|---|
 | `npm run lint`, `npm run typecheck` | pass |
-| Default e2e `tests/e2e/office-unparsed.spec.ts` (+ the route in `REAL_PAGES` and the real-route lists) | 11 passed (desktop-only units; the route fails closed at every width) |
-| Local stack `node tests/auth/run-local.mjs tests/auth/office-unparsed.spec.ts` | 9 passed, 1 skipped without `--with-creator`; 10 with it (see the branch report) |
+| `npm run test:ci` | 219: 217 pass, 2 fail (the Step 6 guard tests, waiting for the owner's protected guard change; unchanged by this screen) |
+| `npm run build` (no values), `npm run scan:bundle` | pass (7,959 browser-delivered files) |
+| Default e2e, the whole suite (`npx playwright test`) | 2,888 passed, 0 failed (3,166 skipped by project rules); `tests/e2e/office-unparsed.spec.ts` 11 of them |
+| Local stack, the whole suite `node tests/auth/run-local.mjs --with-creator` | 47 passed, 0 failed (18 on-demand screenshot tests skipped); `tests/auth/office-unparsed.spec.ts` 10 of them |
 | Screenshots `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/office-unparsed-screenshots.spec.ts` (after `supabase db reset`) | 36 images in this folder |
 
 Run against another local stack: `SUPABASE_BIN=<wrapper adding --workdir> AUTH_TEST_DB_CONTAINER=supabase_db_<project_id> node tests/auth/run-local.mjs …`. The suite starts two more servers of the same build (ports 3121 and 3122) to prove the simulator is absent with the switch off and on Vercel Production.
