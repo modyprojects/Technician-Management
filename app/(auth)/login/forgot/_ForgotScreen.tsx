@@ -6,7 +6,9 @@
 //   only, before any Auth call): contact the Creator.
 // A request that did not complete (offline, server error) keeps the form with the service message;
 // a malformed submission (the browser's own check normally stops it) shows the email rule's message.
-import { useState } from "react";
+// When an answer replaces the form, focus moves to the card's heading (the form and its button are
+// gone), so a screen reader announces the new view.
+import { useEffect, useRef, useState } from "react";
 import { AuthCardLink, AuthScreen } from "@/components/ui/AuthScreen";
 import { ForgotPasswordForm } from "@/components/ui/ForgotPasswordForm";
 import type { ResetRequestResult } from "@/features/auth/password-reset/input";
@@ -18,6 +20,12 @@ type ScreenState = "form" | "retry" | "invalid" | "sent" | "delivery-off";
 export function ForgotScreen({ action }: { action: (input: unknown) => Promise<ResetRequestResult> }) {
   const [state, setState] = useState<ScreenState>("form");
   const [email, setEmail] = useState("");
+  const title = useRef<HTMLHeadingElement>(null);
+  const answered = state === "sent" || state === "delivery-off";
+
+  useEffect(() => {
+    if (answered) title.current?.focus();
+  }, [answered]);
 
   async function submit(values: { email: string }) {
     setEmail(values.email);
@@ -31,7 +39,7 @@ export function ForgotScreen({ action }: { action: (input: unknown) => Promise<R
 
   if (state === "sent") {
     return (
-      <AuthScreen title={M.sentTitle}>
+      <AuthScreen title={M.sentTitle} titleRef={title}>
         <p role="status" className="login-p login-p-center">
           {M.sent}
         </p>
@@ -41,7 +49,7 @@ export function ForgotScreen({ action }: { action: (input: unknown) => Promise<R
   }
   if (state === "delivery-off") {
     return (
-      <AuthScreen title={M.forgotTitle}>
+      <AuthScreen title={M.forgotTitle} titleRef={title}>
         <div role="alert" className="login-alert">
           {M.deliveryOff}
         </div>

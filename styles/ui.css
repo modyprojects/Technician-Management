@@ -986,6 +986,9 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 /* Self-service password reset (D65): the centred text links of the sign-in, request and new-password
    screens ("שכחתי סיסמה", "חזרה לכניסה", "בקשת קישור חדש") get a taller tap area; nothing else changes. */
 .login-link { display: inline-block; padding-block: 4px; }
+/* The request screen's heading takes focus when the answer replaces the form (a screen reader
+   announces it); it is no control, so no focus ring (as .set-head h2). */
+.login-card h1[tabindex="-1"]:focus { outline: none; }
 .login-states { align-self: start; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; padding-top: 16px; }
 .login-states a { color: var(--on-dark2); padding-block: 4px; }
 .login-states a[aria-current="page"] { color: var(--on-dark); font-weight: 700; }

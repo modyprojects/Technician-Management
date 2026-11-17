@@ -11,13 +11,19 @@
 // - after a refusal in the browser (nothing was sent) they keep their values, so the user can fix one.
 // Checks before the call: the shared password rule (passwordError: non-empty, at most 72 UTF-8
 // bytes) on each, then equality. The server checks the same again, before it uses the link.
-import { useId, useRef, useState, type FormEvent, type RefObject } from "react";
+// A server answer shown by the screen (`serverError`, the alert above the form) is tied to
+// "סיסמה חדשה" (aria-describedby; aria-invalid when it concerns the password, not for a service
+// failure), and focus returns to that field after every such answer (`seq` changes each time).
+import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { passwordError } from "@/features/accounts/data/validate";
 import { PASSWORD_RESET_MESSAGES } from "@/features/data-access/supabase-errors";
 import { EyeIcon, EyeOffIcon } from "./Icons";
 
 type Field = "password" | "confirm";
+
+/** The screen's alert after a server answer: its element id, whether it concerns the password, a counter. */
+export type ResetServerError = { id: string; invalid: boolean; seq: number };
 
 function PasswordField({
   id,
@@ -28,7 +34,7 @@ function PasswordField({
   onToggle,
   onInput,
   invalid,
-  errorId,
+  describedBy,
 }: {
   id: string;
   label: string;
@@ -38,7 +44,7 @@ function PasswordField({
   onToggle: () => void;
   onInput: () => void;
   invalid: boolean;
-  errorId: string;
+  describedBy: string | undefined;
 }) {
   return (
     <div className="login-field">
@@ -55,7 +61,8 @@ function PasswordField({
           spellCheck={false}
           aria-required="true"
           onInput={onInput}
-          {...(invalid ? { "aria-invalid": true as const, "aria-describedby": errorId } : {})}
+          {...(invalid ? { "aria-invalid": true as const } : {})}
+          {...(describedBy ? { "aria-describedby": describedBy } : {})}
         />
         <button
           type="button"
@@ -72,7 +79,13 @@ function PasswordField({
   );
 }
 
-export function ResetPasswordForm({ onSubmit }: { onSubmit: (values: { password: string; confirm: string }) => void | Promise<void> }) {
+export function ResetPasswordForm({
+  onSubmit,
+  serverError = null,
+}: {
+  onSubmit: (values: { password: string; confirm: string }) => void | Promise<void>;
+  serverError?: ResetServerError | null;
+}) {
   const id = useId();
   const errorId = `${id}-error`;
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -80,6 +93,12 @@ export function ResetPasswordForm({ onSubmit }: { onSubmit: (values: { password:
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState<Record<Field, boolean>>({ password: false, confirm: false });
   const [error, setError] = useState<{ field: Field; text: string } | null>(null);
+  const serverSeq = serverError?.seq ?? 0;
+
+  // After every server answer the user starts again at "סיסמה חדשה" (both fields are emptied).
+  useEffect(() => {
+    if (serverSeq > 0) passwordRef.current?.focus();
+  }, [serverSeq]);
 
   function fail(field: Field, text: string) {
     setError({ field, text });
@@ -124,8 +143,8 @@ export function ResetPasswordForm({ onSubmit }: { onSubmit: (values: { password:
         shown={shown.password}
         onToggle={toggle("password")}
         onInput={clear("password")}
-        invalid={error?.field === "password"}
-        errorId={errorId}
+        invalid={error?.field === "password" || serverError?.invalid === true}
+        describedBy={error?.field === "password" ? errorId : serverError?.id}
       />
       <PasswordField
         id={`${id}-confirm`}
@@ -136,7 +155,7 @@ export function ResetPasswordForm({ onSubmit }: { onSubmit: (values: { password:
         onToggle={toggle("confirm")}
         onInput={clear("confirm")}
         invalid={error?.field === "confirm"}
-        errorId={errorId}
+        describedBy={error?.field === "confirm" ? errorId : undefined}
       />
       {error && (
         <span id={errorId} role="alert" className="set-err">
