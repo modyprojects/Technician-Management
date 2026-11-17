@@ -14,6 +14,21 @@ No external product source. Products are created from invitations (D19). No impo
 - Server-side provider selected with owner approval, verified domain, rate limits. No live email in development or Preview; simulated visits never send real email.
 - Outbox written atomically with server-finalized completion; retries with backoff; delivery results audited.
 
+### Mail port and the password-reset email (D65, Step 2)
+- **Port:** `lib/mail/` (server-only) with the pure parts in `features/mail/`. `EMAIL_DELIVERY` selects the delivery:
+  - `disabled` (default when unset or unknown): nothing is sent. The request screen "איפוס סיסמה" then answers that email delivery is not active in this environment, decided by the environment alone (also when `SUPABASE_SECRET_KEY` or a usable link origin is missing).
+  - `mock`: local and test environments only (refused in Vercel Production). One JSON line per message is appended to the file named by `MAIL_MOCK_FILE` (the local auth tests), else kept in a short in-memory list. Never sent, never logged.
+  - `resend` (**dormant**): the Resend HTTP API (`POST https://api.resend.com/emails`, Bearer key, JSON `{from, to, subject, html, text}`, 10-second timeout, failures mapped to codes). Needs `EMAIL_PROVIDER_API_KEY` and `EMAIL_FROM_ADDRESS`, else it falls back to `disabled`. Unit-tested with a fake `fetch` only; it has never sent an email.
+- **Today:** every environment is `disabled` (Vercel Preview and Production have no `EMAIL_DELIVERY`) or the local `mock`. A Resend account exists, but no sending domain is verified (D65; open decision 9 stays open). Nothing in the app claims that Resend works.
+- **Reset links:** the app builds them itself, `<origin>/login/reset?token_hash=…`, from a recovery token's hash created by the server-only Auth Admin `generateLink` (`lib/auth/password-reset-admin.ts`, `SUPABASE_SECRET_KEY` at call time). Supabase's own mailer, email templates, Site URL and redirect list are not used, so no remote Auth or email setting changes. The origin comes from `APP_ORIGIN` or Vercel's system variables (`VERCEL_PROJECT_PRODUCTION_URL` in Production, `VERCEL_BRANCH_URL` in Preview), never from the request's Host header.
+- **Interim throttle (go-live blocker):** at most one reset email per address per minute and 20 per minute per server instance, in memory (`features/auth/password-reset/throttle.ts`). Vercel runs several instances and restarts them, so this is no durable limit. **Before `resend` is enabled anywhere, a durable throttle is required:** a database-backed counter (a migration, with the owner's approval) or Supabase's Send Email Hook. Today nothing is delivered, and Preview and Production sit behind Vercel Authentication (D29, D31).
+- **Future Resend activation (each step needs the owner's approval; nothing here is done yet):**
+  1. In Resend, add and verify a sending domain (DNS records at the domain's registrar). No domain is bought without the owner's approval (D30, D65).
+  2. Build the durable throttle above and its tests, and replace the interim one.
+  3. The owner sets, for the chosen Vercel environment only, `EMAIL_DELIVERY=resend`, `EMAIL_PROVIDER_API_KEY` (a sending-only Resend key) and `EMAIL_FROM_ADDRESS` (an address on the verified domain, for example `MODY <no-reply@…>`), and `SUPABASE_SECRET_KEY` if it is not set there yet. Claude Code never reads, asks for or prints these values.
+  4. A read-only check (approved per operation) that the remote Auth "Email OTP expiration" is at most 3600 seconds, since it bounds the link's lifetime; consider a longer email OTP length (the token's hash is derived from the address and that code).
+  5. One test reset to the owner's own address in Preview, then the owner's approval for Production.
+
 ## Hebrew speech-to-text — planned, not connected
 - Recording can be captured offline. On reconnect, upload securely; transcription runs only after vendor, privacy terms, region, consent and budget are approved (decisions.md open #11).
 - Technician reviews, corrects and approves the transcript as the summary. Never send an unreviewed transcript.
