@@ -9,11 +9,13 @@
 // 1. requestPasswordReset: the same answer ("sent") for every well-formed address, whether or not an
 //    account exists, also when throttled or refused. When this environment cannot deliver (email
 //    delivery disabled, no Auth Admin key, no usable app origin) the answer is "delivery-off",
-//    decided by the environment alone before any Auth call. Otherwise: the interim throttle, a
-//    recovery token from the Auth Admin API (lib/auth/password-reset-admin.ts), the app's own link
-//    (origin from configuration, never from the request) and the email through the mail port. The
-//    email is sent after the response (`after`), so the answer takes about as long for an unknown
-//    address as for a known one.
+//    decided by the environment alone before any Auth call. Otherwise the request does only the
+//    interim throttle and answers "sent"; everything whose duration depends on the account runs
+//    after the response (`after`; independent review fix 1: the Auth Admin call is measurably
+//    slower for an existing account): the recovery token from the Auth Admin API
+//    (lib/auth/password-reset-admin.ts), the app's own link (origin from configuration, never from
+//    the request) and the email through the mail port, to the account's own address as the Auth
+//    server returns it (review fix 4), never the typed spelling.
 // 2. completePasswordReset: the password rules first (so a typo never uses up the link), then the
 //    link's token once (verifyOtp, on submission only: a link scanner's GET never consumes it), then
 //    the session must be a recent reset-link session (never an ordinary signed-in one), then the new
@@ -58,6 +60,26 @@ function deliveryOrigin(): string | null {
   return appOrigin();
 }
 
+/**
+ * Runs after the response: the recovery token, the link and the email. One log line: the refusal
+ * code (an unknown address is "user_not_found"), or the delivery's outcome.
+ */
+async function deliverResetLink(email: string, origin: string): Promise<void> {
+  try {
+    const token = await createRecoveryTokenHash(email);
+    if (!token.ok) {
+      logAuthEvent(REQUEST_EVENT, token.code);
+      return;
+    }
+    const link = `${origin}${RESET_PASSWORD_PATH}?token_hash=${token.tokenHash}`;
+    const message = passwordResetEmail({ link, expiresMinutes: RESET_LINK_MINUTES });
+    const result = await sendMail({ to: token.email, ...message });
+    logAuthEvent(REQUEST_EVENT, result.ok ? "sent" : `mail_${result.code}`);
+  } catch {
+    logAuthEvent(REQUEST_EVENT, "exception");
+  }
+}
+
 /** Asks for a reset link. Always "sent" for a well-formed address (see the header). */
 export async function requestPasswordReset(input: unknown): Promise<ResetRequestResult> {
   const parsed = parseResetRequestInput(input);
@@ -74,23 +96,9 @@ export async function requestPasswordReset(input: unknown): Promise<ResetRequest
     logAuthEvent(REQUEST_EVENT, "throttled");
     return SENT;
   }
-  const token = await createRecoveryTokenHash(parsed.email);
-  if (!token.ok) {
-    // An unknown address ("user_not_found") and every other refusal look the same to the user.
-    logAuthEvent(REQUEST_EVENT, token.code);
-    return SENT;
-  }
-  const link = `${origin}${RESET_PASSWORD_PATH}?token_hash=${token.tokenHash}`;
-  const to = parsed.email;
-  after(async () => {
-    try {
-      const message = passwordResetEmail({ link, expiresMinutes: RESET_LINK_MINUTES });
-      const result = await sendMail({ to, ...message });
-      logAuthEvent(REQUEST_EVENT, result.ok ? "sent" : `mail_${result.code}`);
-    } catch {
-      logAuthEvent(REQUEST_EVENT, "mail_exception");
-    }
-  });
+  // Nothing that depends on the account runs before the answer (review fix 1).
+  const email = parsed.email;
+  after(() => deliverResetLink(email, origin));
   return SENT;
 }
 
