@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 // Two servers from one production build: /dev open (local flag) and /dev closed (no flag).
 export const OPEN_URL = "http://127.0.0.1:3100";
@@ -120,10 +120,16 @@ export const DEV_PAGES = [
   "/dev/showcase/office",
   "/dev/showcase/sizes",
   ...DEMO_PAGES,
+  // D65: the password-reset email's preview (fictional link), for the owner's review.
+  "/dev/email-preview/password-reset",
 ] as const;
 
-/** The real routes (Step 2 PR 2.5). Without the Supabase variables each one shows /login's unavailable state. */
-export const REAL_PAGES = ["/", "/login", "/office", "/tech", "/tech/profile"] as const;
+/**
+ * The real routes (Step 2 PR 2.5). Without the Supabase variables each one shows /login's unavailable
+ * state, except the password-reset screens (D65): /login/forgot shows its form and /login/reset its
+ * invalid-link state.
+ */
+export const REAL_PAGES = ["/", "/login", "/office", "/tech", "/tech/profile", "/login/forgot", "/login/reset"] as const;
 
 export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
 
@@ -202,4 +208,41 @@ export async function box(page: Page, selector: string) {
   const b = await page.locator(selector).first().boundingBox();
   if (!b) throw new Error(`No box for ${selector}`);
   return b;
+}
+
+const centreX = (b: { x: number; width: number }) => b.x + b.width / 2;
+
+/**
+ * The sign-in page's layout (owner UI corrections of 2026-11-17, AU-01), shared by the sign-in and
+ * the password-reset screens (D65): the logo group sits at the top of the page (.login), 48px down
+ * and horizontally centred, and the card is centred in it (vertically when it fits under the logo,
+ * otherwise below the logo, never overlapping it); no horizontal overflow. On a real route the page
+ * is the whole viewport (`fullViewport`); the prototype keeps the demo's strip above it (dev chrome),
+ * so there the page is the area under the strip.
+ */
+export async function expectLoginLayout(page: Page, fullViewport = false) {
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("no viewport");
+  const area = await page.locator("main.login").boundingBox();
+  const brand = await page.locator(".login-brand").boundingBox();
+  const logo = await page.locator(".brand-logo-login").boundingBox();
+  const card = await page.locator(".login-card").boundingBox();
+  if (!area || !brand || !logo || !card) throw new Error("no sign-in page");
+  if (fullViewport) {
+    expect(area.y).toBeLessThanOrEqual(0.5);
+    expect(area.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+  }
+  // Logo and subtitle at the top (48px down, as before), horizontally centred.
+  expect(Math.abs(logo.y - (area.y + 48))).toBeLessThanOrEqual(1);
+  expect(Math.abs(centreX(logo) - viewport.width / 2)).toBeLessThanOrEqual(2);
+  expect(Math.abs(centreX(brand) - viewport.width / 2)).toBeLessThanOrEqual(2);
+  // The card: horizontally centred; vertically centred in the page when it fits under the logo,
+  // otherwise below the logo (never overlapping it).
+  expect(Math.abs(centreX(card) - viewport.width / 2)).toBeLessThanOrEqual(2);
+  expect(card.y).toBeGreaterThanOrEqual(brand.y + brand.height - 0.5);
+  const centredTop = area.y + (area.height - card.height) / 2;
+  if (centredTop >= brand.y + brand.height) {
+    expect(Math.abs(card.y + card.height / 2 - (area.y + area.height / 2))).toBeLessThanOrEqual(2);
+  }
+  expect(await horizontalOverflow(page)).toEqual([]);
 }

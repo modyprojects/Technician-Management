@@ -777,3 +777,44 @@ test.describe("step2-pr25 review screenshots", () => {
     });
   }
 });
+
+// D65, the self-service password reset WITHOUT the Supabase values and with email delivery disabled
+// (the default server): the request form and its delivery-off answer, the new-password form (a
+// fictional token; nothing is verified on opening), the browser's mismatch message, the invalid-link
+// state and the email's preview (fictional link). The sign-in screen with the link and the notice,
+// and the "sent" answer, come from the local stack (tests/auth/screenshots.spec.ts). No password is
+// visible in any image (the fields stay masked).
+//   SCREENSHOTS=1 npx playwright test tests/e2e/screenshots.spec.ts --project=desktop -g "step2-password-reset"
+const OUT_RESET = path.resolve("docs/review/step2-password-reset");
+
+test.describe("step2-password-reset review screenshots", () => {
+  onlyInProject("desktop");
+
+  for (const size of SIZES) {
+    test(`step2-password-reset screens at ${size.width}px`, async ({ page }) => {
+      await page.setViewportSize(size);
+      const file = (name: string) => path.join(OUT_RESET, `${size.width}-${name}.png`);
+      await openPage(page, "/login/forgot");
+      await page.screenshot({ path: file("forgot-form") });
+      await page.getByLabel("אימייל", { exact: true }).fill("someone@example.test");
+      await page.getByRole("button", { name: "שליחת קישור" }).click();
+      await expect(page.locator(".login-alert")).toBeVisible();
+      await page.screenshot({ path: file("forgot-delivery-off") });
+
+      await openPage(page, `/login/reset?token_hash=${"0f1e2d3c".repeat(7)}`);
+      await page.screenshot({ path: file("reset-form") });
+      await page.getByLabel("סיסמה חדשה", { exact: true }).fill(["fictional", "screen", "1"].join("-"));
+      await page.getByLabel("אימות סיסמה", { exact: true }).fill(["fictional", "screen", "2"].join("-"));
+      await page.getByRole("button", { name: "שמירת הסיסמה" }).click();
+      await expect(page.locator(".set-err")).toBeVisible();
+      await page.screenshot({ path: file("reset-mismatch") });
+
+      await openPage(page, "/login/reset");
+      await page.screenshot({ path: file("reset-invalid-link") });
+
+      await openPage(page, "/dev/email-preview/password-reset");
+      await page.addStyleTag({ content: UNCLIP_STAGE });
+      await page.screenshot({ path: file("email-preview"), fullPage: true });
+    });
+  }
+});

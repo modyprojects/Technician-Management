@@ -12,6 +12,8 @@ const MARKERS: Record<(typeof DEV_PAGES)[number], string> = {
   "/dev/showcase/office": "FIXTURE-SENTINEL",
   "/dev/showcase/sizes": "השוואת גדלים",
   ...(Object.fromEntries(DEMO_PAGES.map((p) => [p, "FIXTURE-SENTINEL"])) as Record<(typeof DEMO_PAGES)[number], string>),
+  // D65: the email preview carries the sentinel and its own marker.
+  "/dev/email-preview/password-reset": "data-email-preview",
 };
 
 // Document, RSC navigation, prefetch and prerendered segment requests.
