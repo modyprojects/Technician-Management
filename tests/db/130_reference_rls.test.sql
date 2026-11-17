@@ -509,6 +509,13 @@ select is(pg_temp.tm_visible(),
 -- allowed matches and these checks are updated with them. PR 1.5: private.my_visit_details reads
 -- sku_display and customer_number for the Technician's own visit; it is the one listed reader (the
 -- write check above covers its body too, so it is a read only).
+-- Step 6 (Migration 6): the ingestion writer is built, so it and its call-level helper become the
+-- allowed matches (D19, D39): private.ingest_calendar_event inserts customers and products
+-- (INSERT ... ON CONFLICT DO NOTHING, never an UPDATE of a name, SKU or customer number) and
+-- private.ingest_apply_call updates only the customer's phones; both read the SKU and the customer
+-- number to compare them (a difference opens a review item). The immutability of the SKU and the
+-- customer number stays with the Migration 2 triggers (100_reference_schema) and is proven
+-- against the writer in 340_calendar_ingestion_writer.
 -- =================================================================================================
 -- tm_writes_ref: whether a body writes one of the four tables. Double quotes and the spaces around
 -- dots are removed first, so a quoted or spaced name ("public"."products", public . brands) is
@@ -546,18 +553,22 @@ select results_eq(
             ('upper case across lines', true), ('a read only (negative control)', false),
             ('another table with the same prefix (negative control)', false), ('a Settings table (negative control)', false) $$,
   'positive and negative controls: the structural write check finds quoted, spaced and commented forms (review SEC-4)');
-select is_empty(
-  $$ select p.oid::regprocedure::text from pg_proc p
+select results_eq(
+  $$ select p.oid::regprocedure::text collate "default" from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
-       and pg_temp.tm_writes_ref(p.prosrc) $$,
-  'no function inserts into, updates, deletes from, merges into or truncates products, customers, brands or suppliers');
+       and pg_temp.tm_writes_ref(p.prosrc)
+     order by p.oid::regprocedure::text collate "C" $$,
+  $$ values ('private.ingest_apply_call(service_calls,customers,products,boolean,jsonb,jsonb,timestamp with time zone,uuid,uuid,text,text[],integer)'),
+            ('private.ingest_calendar_event(jsonb)') $$,
+  'no function inserts into, updates, deletes from, merges into or truncates products, customers, brands or suppliers, except the Step 6 ingestion writer and its call-level helper');
 select results_eq(
   $$ select p.oid::regprocedure::text collate "default" from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
        and p.prosrc ~* '\m(sku_display|sku_normalized|customer_number)\M'
      order by p.oid::regprocedure::text collate "C" $$,
-  $$ values ('private.my_visit_details(uuid)') $$,
-  'no function touches the SKU or the customer number except the PR 1.5 read my_visit_details (D19: the SKU never changes; D39: the customer number never changes)');
+  $$ values ('private.ingest_apply_call(service_calls,customers,products,boolean,jsonb,jsonb,timestamp with time zone,uuid,uuid,text,text[],integer)'),
+            ('private.ingest_calendar_event(jsonb)'), ('private.my_visit_details(uuid)') $$,
+  'no function touches the SKU or the customer number except the PR 1.5 read my_visit_details and the Step 6 ingestion writer and helper, which only insert and compare them (D19: the SKU never changes; D39: the customer number never changes)');
 select results_eq(
   $$ select p.oid::regprocedure::text collate "default" from pg_proc p
      where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)

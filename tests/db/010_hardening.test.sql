@@ -17,6 +17,9 @@
 -- the four retired request functions (D60 (7), C-02: no grant for any role); three checks were
 -- added for the three new trigger functions, the retired request path and the SECURITY DEFINER
 -- classification of the deletion writer.
+-- Step 6 (Migration 6): the exact lists now include the three calendar ingestion tables, their
+-- three Creator-only policies (OQ-1) and the ingestion writer (wrapper and body); nothing was
+-- removed from any list.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(45);
@@ -32,14 +35,15 @@ select results_eq(
      where n.nspname in ('public', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'f')
        and a.grantee = 'authenticated'::regrole
      order by c.relname::text collate "C", a.privilege_type::text $$,
-  $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('brands', 'SELECT'), ('call_types', 'SELECT'),
-            ('collection_locations', 'SELECT'), ('customers', 'SELECT'), ('entity_changes', 'SELECT'),
+  $$ values ('account_requests', 'SELECT'), ('audit_logs', 'SELECT'), ('brands', 'SELECT'), ('calendar_event_changes', 'SELECT'),
+            ('calendar_ingestion_errors', 'SELECT'), ('call_types', 'SELECT'),
+            ('collection_locations', 'SELECT'), ('customers', 'SELECT'), ('entity_changes', 'SELECT'), ('external_calendar_events', 'SELECT'),
             ('followup_reasons', 'SELECT'), ('offline_operations', 'SELECT'), ('permissions', 'SELECT'), ('products', 'SELECT'),
             ('profiles', 'SELECT'), ('review_items', 'SELECT'), ('role_permissions', 'SELECT'), ('service_calls', 'SELECT'),
             ('suppliers', 'SELECT'), ('technicians', 'SELECT'), ('visit_corrections', 'SELECT'),
             ('visit_events', 'SELECT'), ('visit_reports', 'SELECT'), ('visit_signatures', 'SELECT'),
             ('visit_time_current', 'SELECT'), ('visit_time_reports', 'SELECT'), ('visits', 'SELECT') $$,
-  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables, the PR 1.5 view and the three PR 1.6 tables, and nothing else'
+  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables, the PR 1.5 view the three PR 1.6 tables and the three Step 6 tables, and nothing else'
 );
 
 select is(
@@ -132,6 +136,7 @@ select results_eq(
      ('delete_collection_location(uuid,integer)'),
      ('delete_followup_reason(uuid,integer)'),
      ('has_permission(text)'),
+     ('ingest_calendar_event(jsonb)'),
      ('is_creator()'),
      ('my_technician_id()'),
      ('my_visit_details(uuid)'),
@@ -156,6 +161,7 @@ select results_eq(
      ('private.delete_followup_reason(uuid,integer)'),
      ('private.has_permission(text)'),
      ('private.has_role(text)'),
+     ('private.ingest_calendar_event(jsonb)'),
      ('private.is_active_user()'),
      ('private.is_creator()'),
      ('private.is_office_user()'),
@@ -481,14 +487,16 @@ select results_eq(
      left join pg_policy pol on pol.polrelid = c.oid
      where n.nspname = 'public' and c.relkind = 'r'
      group by c.relname order by c.relname::text collate "C" $$,
-  $$ values ('account_requests', 2::bigint), ('audit_logs', 2::bigint), ('brands', 1::bigint), ('call_types', 2::bigint),
+  $$ values ('account_requests', 2::bigint), ('audit_logs', 2::bigint), ('brands', 1::bigint),
+            ('calendar_event_changes', 1::bigint), ('calendar_ingestion_errors', 1::bigint), ('call_types', 2::bigint),
             ('collection_locations', 2::bigint), ('customers', 1::bigint), ('entity_changes', 1::bigint),
+            ('external_calendar_events', 1::bigint),
             ('followup_reasons', 2::bigint), ('offline_operations', 2::bigint), ('permissions', 1::bigint),
             ('products', 1::bigint), ('profiles', 3::bigint), ('review_items', 1::bigint),
             ('role_permissions', 2::bigint), ('service_calls', 1::bigint), ('suppliers', 1::bigint), ('technicians', 2::bigint),
             ('visit_corrections', 1::bigint), ('visit_events', 1::bigint), ('visit_reports', 2::bigint),
             ('visit_signatures', 2::bigint), ('visit_time_reports', 1::bigint), ('visits', 2::bigint) $$,
-  'every PR 1.3 to PR 1.6 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls; PR 1.6: four, none for Technicians on review_items and visit_corrections)'
+  'every PR 1.3 to PR 1.6 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls; PR 1.6: four, none for Technicians on review_items and visit_corrections; Step 6: three, Creator only)'
 );
 
 -- PR 1.4, generated columns (plan V1): on products and customers is_test is a stored generated
