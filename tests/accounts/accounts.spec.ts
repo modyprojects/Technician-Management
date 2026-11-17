@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AccountCommands } from "@/features/accounts/data/ports";
 import type { AccountListEntry } from "@/features/accounts/data/types";
 import {
   DELETE_CONFIRMATION_REQUIRED,
@@ -8,6 +10,7 @@ import {
   testAccountEmailError,
 } from "@/features/accounts/data/validate";
 import { UNAVAILABLE_AUTH_ADMIN, type AuthAdminPort } from "@/features/accounts/supabase/auth-admin";
+import { isAppSessionClaims } from "@/features/auth/password-reset/recovery-session";
 import { userLookupFailure } from "@/features/auth/session-state";
 import type { CommandResult } from "@/features/data-access/common";
 import {
@@ -71,6 +74,26 @@ function data<T>(r: CommandResult<T>): T {
 async function rpcCode(who: Actor, name: string, args: Record<string, unknown>): Promise<string | null> {
   const { error } = await who.client.rpc(name, args);
   return error?.code ?? null;
+}
+
+/** Every account action once, aimed at `target` (an account the Manager may manage), for refusal checks. */
+async function everyAction(c: AccountCommands, target: { id: string; version: number }, tag: string): Promise<CommandResult<unknown>[]> {
+  const { id, version: v } = target;
+  return [
+    await keep(c.createAccount({ name: "x", email: testEmail(tag), phone: PHONE, role: "cs" })),
+    await keep(c.createTechnician({ name: "x", email: testEmail(tag), phone: PHONE, color: "t-y", device: "x" })),
+    await keep(c.completeCreation({ requestId: randomUUID(), phone: null })),
+    await keep(c.cancelCreation({ intentId: randomUUID(), expectedVersion: 1 })),
+    await keep(c.completeTechnicianProfile({ accountId: id, color: "t-y", device: "x" })),
+    await keep(c.deactivateAccount({ accountId: id, expectedVersion: v })),
+    await keep(c.activateAccount({ accountId: id, expectedVersion: v })),
+    await keep(c.updateProfile({ accountId: id, expectedVersion: v, name: "x" })),
+    await keep(c.updateTechnician({ technicianId: seeded().techRow, expectedVersion: 1, name: "x" })),
+    await keep(c.changeRole({ accountId: id, expectedVersion: v, newRole: "tech" })),
+    await keep(c.setPassword(id, newPassword())),
+    await keep(c.changeEmail(id, testEmail(tag))),
+    await keep(c.deleteAccount({ accountId: id, expectedVersion: v, confirm: true })),
+  ];
 }
 
 const newPassword = (): string => {
@@ -313,21 +336,7 @@ test.describe("Manager (D60 (7): Technician and Customer Service directly)", () 
       for (const viewer of [null, stale]) {
         const c = commandsOf(off, admin.port, viewer);
         const label = viewer ? "stale viewer" : "no viewer";
-        const answers = [
-          await keep(c.createAccount({ name: "x", email: testEmail("off"), phone: PHONE, role: "cs" })),
-          await keep(c.createTechnician({ name: "x", email: testEmail("off"), phone: PHONE, color: "t-y", device: "x" })),
-          await keep(c.completeCreation({ requestId: randomUUID(), phone: null })),
-          await keep(c.cancelCreation({ intentId: randomUUID(), expectedVersion: 1 })),
-          await keep(c.completeTechnicianProfile({ accountId: target.id, color: "t-y", device: "x" })),
-          await keep(c.deactivateAccount({ accountId: target.id, expectedVersion: v })),
-          await keep(c.activateAccount({ accountId: target.id, expectedVersion: v })),
-          await keep(c.updateProfile({ accountId: target.id, expectedVersion: v, name: "x" })),
-          await keep(c.updateTechnician({ technicianId: seeded().techRow, expectedVersion: 1, name: "x" })),
-          await keep(c.changeRole({ accountId: target.id, expectedVersion: v, newRole: "tech" })),
-          await keep(c.setPassword(target.id, newPassword())),
-          await keep(c.changeEmail(target.id, testEmail("off"))),
-          await keep(c.deleteAccount({ accountId: target.id, expectedVersion: v, confirm: true })),
-        ];
+        const answers = await everyAction(c, { id: target.id, version: v }, "off");
         for (const [i, r] of answers.entries()) expect(err(r), `${label} #${i}`).toBe(forbidden);
         const q = queriesOf(off, viewer);
         expect((await q.list()).total, label).toBe(0);
@@ -397,6 +406,69 @@ test.describe("Customer Service and Technician", () => {
       expect((await q.creatorNotices()).total, label).toBe(0);
     }
     expect(sql(`select role || '|' || is_active || '|' || (deleted_at is null) from public.profiles where id = ${sqlText(target.id)}`)).toBe("customer_service|true|true");
+  });
+});
+
+test.describe("a reset-link session is no app sign-in (review S6 a; D65 review fix 2)", () => {
+  /** A session made by the reset link alone (amr "otp", no password): generateLink with the local secret key, then verifyOtp. */
+  async function resetOnlySession(email: string): Promise<SupabaseClient> {
+    const { data, error } = await adminClient().auth.admin.generateLink({ type: "recovery", email });
+    const tokenHash = data?.properties?.hashed_token;
+    if (error || !tokenHash) throw new Error(`no recovery token: ${error?.code ?? "none"}`);
+    const client = anonClient();
+    const verified = await client.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
+    if (verified.error) throw new Error(`the recovery token was refused: ${verified.error.code ?? verified.error.status}`);
+    return client;
+  }
+
+  /** The viewer as lib/auth/session.ts derives it: the verified claims first (a reset-link session is anonymous), then the profile. */
+  async function serverViewerOf(client: SupabaseClient) {
+    const { data, error } = await client.auth.getClaims();
+    if (error || !data || !isAppSessionClaims(data.claims)) return null;
+    return viewerOf(client);
+  }
+
+  test("Manager and Creator: the server derives no viewer, and every account action is refused before any Admin call; nothing changes", async () => {
+    const target = byManager.cs;
+    if (!target) throw new Error("needs the Manager's Customer Service account");
+    const s = seeded();
+    const people = [{ label: "manager", user: s.mgr }, ...(s.creator ? [{ label: "creator", user: s.creator }] : [])];
+    const v = Number(sql(`select version from public.profiles where id = ${sqlText(target.id)}`));
+    const before = sql(
+      `select (select count(*) from public.account_requests) || '|' || (select count(*) from auth.users) || '|' || ` +
+        `(select count(*) from public.audit_logs where target_id = ${sqlText(target.id)}) || '|' || ` +
+        `(select version || ':' || is_active from public.profiles where id = ${sqlText(target.id)})`,
+    );
+    for (const { label, user } of people) {
+      const client = await resetOnlySession(user.email);
+      try {
+        const claims = (await client.auth.getClaims()).data?.claims as { amr?: { method: string }[] } | undefined;
+        expect(claims?.amr?.map((a) => a.method), label).toEqual(["otp"]);
+        expect(isAppSessionClaims(claims), label).toBe(false);
+        // Under the database alone the session is the user's own (the reset link proves the mailbox);
+        // the app's session rule is what makes it anonymous for every app area and action.
+        expect(await viewerOf(client), label).toMatchObject({ id: user.id });
+        expect(await serverViewerOf(client), label).toBeNull();
+        const admin = spy(realAdmin());
+        const c = commandsOf({ user, client, viewer: null as never }, admin.port, null);
+        const answers = await everyAction(c, { id: target.id, version: v }, "reset");
+        for (const [i, r] of answers.entries()) expect(err(r), `${label} #${i}`).toBe(forbidden);
+        expect(admin.calls, label).toEqual([]);
+        const q = queriesOf({ user, client, viewer: null as never }, null);
+        expect((await q.list()).total, label).toBe(0);
+        expect((await q.openCreations()).total, label).toBe(0);
+        expect((await q.creatorNotices()).total, label).toBe(0);
+      } finally {
+        await client.auth.signOut({ scope: "local" });
+      }
+    }
+    expect(
+      sql(
+        `select (select count(*) from public.account_requests) || '|' || (select count(*) from auth.users) || '|' || ` +
+          `(select count(*) from public.audit_logs where target_id = ${sqlText(target.id)}) || '|' || ` +
+          `(select version || ':' || is_active from public.profiles where id = ${sqlText(target.id)})`,
+      ),
+    ).toBe(before);
   });
 });
 
@@ -751,7 +823,7 @@ test.describe("Creator (D60 (7): every role, role changes, credentials, deletion
     expect(sql(`select (select count(*) from public.audit_logs) || '|' || (select version || '|' || (deleted_at is null) from public.profiles where id = ${sqlText(target.id)})`)).toBe(before);
   });
 
-  test("the Creator's notices: a Manager's deactivation and an Outlook-email change by someone else, never his own", async () => {
+  test("the Creator's notices: a Manager's deactivation, an Outlook-email change by someone else and a Manager's creation (D67 (b)), never his own", async () => {
     const target = byManager.tech;
     if (!target?.technician) throw new Error("needs the Manager's Technician");
     const fresh = await queriesOf(mgr).get(target.id);
@@ -781,6 +853,25 @@ test.describe("Creator (D60 (7): every role, role changes, credentials, deletion
     expect(changes.map((n) => n.actor.id)).toEqual([mgr.user.id]);
     expect(notices.some((n) => n.kind === "pending-request")).toBe(false);
     expect(JSON.stringify(notices)).not.toContain(byManagerEmail);
+
+    // D67 (b): every account a Manager creates is a notice; the Creator's own creations are not.
+    const created = notices.filter((n) => n.kind === "manager-creation");
+    for (const account of [byManager.cs, byManager.tech]) {
+      if (!account) throw new Error("needs the Manager's accounts");
+      expect(created.find((n) => n.target.accountId === account.id), account.role).toMatchObject({
+        actor: { id: mgr.user.id, name: mgr.user.name },
+        actorRole: "mgr",
+        target: { role: account.role },
+        isTest: true,
+      });
+    }
+    for (const account of [made.mgr, made.cs, made.csB]) {
+      if (!account) throw new Error("needs the Creator's accounts");
+      expect(created.some((n) => n.target.accountId === account.id), account.id).toBe(false);
+    }
+    expect(created.every((n) => n.actor.id !== creator.user.id)).toBe(true);
+    // The Manager reads no notices (RLS lets him read his own audit rows; the query refuses him).
+    expect((await queriesOf(mgr).creatorNotices({ limit: 100 })).total).toBe(0);
     const times = notices.map((n) => Date.parse(n.at));
     expect(times).toEqual([...times].sort((a, b) => b - a));
   });

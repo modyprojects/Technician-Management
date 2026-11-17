@@ -14,7 +14,18 @@ import { ensureLocalCreator } from "../accounts/global-setup";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
 export type SeededUsers = Record<
-  "mgr" | "cs" | "tech" | "techInactive" | "noProfile" | "resetMgr" | "resetInactive" | "resetHost" | "resetTwice",
+  | "mgr"
+  | "cs"
+  | "tech"
+  | "techInactive"
+  | "noProfile"
+  | "resetMgr"
+  | "resetInactive"
+  | "resetHost"
+  | "resetTwice"
+  | "resetDeleted"
+  | "resetNever"
+  | "resetFirst",
   SeededUser
 >;
 
@@ -57,6 +68,13 @@ export default async function globalSetup(): Promise<void> {
     // link replacing an earlier one (the second one's password changes).
     resetHost: "איפוס כתובת מזויפת בדיקה",
     resetTwice: "איפוס כפול בדיקה",
+    // User-management review N4: a deleted account (Option A: the profile marked deleted, the Auth
+    // user banned), which a reset request must skip silently.
+    resetDeleted: "נמחק איפוס בדיקה",
+    // D67 (a): two accounts that have never signed in; the reset skips the first, the second signs
+    // in for the first time in the test and then gets a link.
+    resetNever: "טרם נכנס איפוס בדיקה",
+    resetFirst: "כניסה ראשונה איפוס בדיקה",
   };
   const users = {} as SeededUsers;
   for (const key of Object.keys(names) as (keyof SeededUsers)[]) {
@@ -82,6 +100,24 @@ insert into public.profiles (id, role, full_name, is_active, is_test) values
   (${sqlText(users.techInactive.id)}, 'technician', ${sqlText(users.techInactive.name)}, false, true),
   (${sqlText(users.resetMgr.id)}, 'manager', ${sqlText(users.resetMgr.name)}, true, true),
   (${sqlText(users.resetInactive.id)}, 'technician', ${sqlText(users.resetInactive.name)}, false, true);
+insert into public.profiles (id, role, full_name, is_active, is_test) values
+  (${sqlText(users.resetNever.id)}, 'customer_service', ${sqlText(users.resetNever.name)}, true, true),
+  (${sqlText(users.resetFirst.id)}, 'customer_service', ${sqlText(users.resetFirst.name)}, true, true);
+insert into public.profiles (id, role, full_name, is_active, is_test, deleted_at, deleted_by) values
+  (${sqlText(users.resetDeleted.id)}, 'customer_service', ${sqlText(users.resetDeleted.name)}, false, true, now(), ${sqlText(users.mgr.id)});
+-- D67 (a): the self-service reset serves accounts that have signed in before. The reset tests'
+-- accounts are such accounts (a fixture: the last sign-in time is set here instead of spending the
+-- local Auth's sign-in budget); resetNever and resetFirst have never signed in.
+update auth.users set last_sign_in_at = now() - interval '1 day' where id in (${[
+    users.resetMgr,
+    users.resetInactive,
+    users.noProfile,
+    users.resetHost,
+    users.resetTwice,
+    users.resetDeleted,
+  ]
+    .map((u) => sqlText(u.id))
+    .join(", ")});
 insert into public.technicians (id, profile_id, is_test, display_name, color, outlook_email, accepts_invitations) values
   (${sqlText(techRow)}, ${sqlText(users.tech.id)}, true, ${sqlText(users.tech.name)}, 'teal', ${sqlText(`auth-e2e-cal-${run}@example.test`)}, true);
 commit;
@@ -90,6 +126,10 @@ commit;
     input: sql,
     stdio: ["pipe", "ignore", "inherit"],
   });
+
+  // The deletion's Auth side (D60 (7) Option A): the deleted account's Auth user is banned.
+  const banned = await admin.auth.admin.updateUserById(users.resetDeleted.id, { ban_duration: "876000h" });
+  if (banned.error) throw new Error(`could not ban the deleted test account: ${banned.error.code ?? "error"}`);
 
   // TEMPORARY (Step 2 plan Q6): the local Creator of the Creator's screen cases (--with-creator).
   const creator = process.env.AUTH_TEST_LOCAL_CREATOR === "1" ? await ensureLocalCreator(admin, run) : null;
