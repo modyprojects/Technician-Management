@@ -5,6 +5,8 @@
 -- customer-number rules, the D19 "ON CONFLICT DO NOTHING" statement shape that never overwrites a
 -- name, uniqueness, versions, immutability, and the delete and truncate guards. Runs as postgres,
 -- so the triggers are proven for the owner role where the design says "every role".
+-- Step 6 (Migration 6): the truncate statements also list the three calendar ingestion tables,
+-- which reference service_calls, visits and customers.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(67);
@@ -1108,24 +1110,24 @@ select lives_ok(
 -- lists the PR 1.5 tables that reference it (directly or through each other); the table named first
 -- is the one whose trigger rejects it.
 insert into tm_case (grp, label, stmt, expected) values
-  ('truncate', 'products', 'truncate public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'products', 'truncate public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 products cannot be truncated'),
-  ('truncate', 'customers', 'truncate public.customers, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'customers', 'truncate public.customers, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 customers cannot be truncated'),
-  ('truncate', 'brands (with products)', 'truncate public.brands, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'brands (with products)', 'truncate public.brands, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 brands cannot be truncated'),
-  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'suppliers (with products)', 'truncate public.suppliers, public.products, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 suppliers cannot be truncated'),
-  ('truncate', 'call_types', 'truncate public.call_types, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'call_types', 'truncate public.call_types, public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 call_types cannot be truncated'),
-  ('truncate', 'followup_reasons', 'truncate public.followup_reasons, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'followup_reasons', 'truncate public.followup_reasons, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 followup_reasons cannot be truncated'),
-  ('truncate', 'collection_locations', 'truncate public.collection_locations, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations',
+  ('truncate', 'collection_locations', 'truncate public.collection_locations, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 collection_locations cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'truncate' order by c.n $$,
   $$ select c.label, c.expected from tm_case c where c.grp = 'truncate' order by c.n $$,
-  'TRUNCATE is rejected on all seven tables, even as postgres (PR 1.5 and PR 1.6: with the tables that reference them)');
+  'TRUNCATE is rejected on all seven tables, even as postgres (PR 1.5, PR 1.6 and Step 6: with the tables that reference them)');
 
 select * from finish();
 rollback;
