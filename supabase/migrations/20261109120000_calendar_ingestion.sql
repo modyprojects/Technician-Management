@@ -10,9 +10,10 @@
 -- Content: three tables (external_calendar_events: the identity of every invitation event;
 -- calendar_event_changes: the append-only log of every change received, the idempotency and
 -- ordering record; calendar_ingestion_errors: the invitations that were not ingested, which feed
--- "זימונים שלא נקלטו", S-05), four trigger functions, three read helpers, the ingestion writer
--- private.ingest_calendar_event (SECURITY DEFINER) with its SECURITY INVOKER wrapper, three SELECT
--- policies, per-object grants, the census extension and the fail-closed hardening check.
+-- "זימונים שלא נקלטו", S-05), three trigger functions, four read helpers and two apply helpers
+-- of the writer, the ingestion writer private.ingest_calendar_event (SECURITY DEFINER) with its
+-- SECURITY INVOKER wrapper, three SELECT policies, per-object grants, the census extension and the
+-- fail-closed hardening check.
 --
 -- The writer is the database side of the single ingestion service (features/calendar/ingestion):
 -- the TypeScript core parses and validates one invitation event and sends one command; this
