@@ -15,7 +15,7 @@
 -- 340_calendar_ingestion_writer.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(30);
 
 -- Fresh database (migrations only): census 0 ------------------------------------------------------
 select is((select sum(test_rows) from public.test_data_census()), 0::numeric,
@@ -140,7 +140,11 @@ select is(
                        and a.attname = t.marker and not a.attisdropped)),
   0::bigint, 'every counted table has the marker column the census reads');
 select ok(exists (select 1 from public.test_data_census() where table_name = 'storage' and marker = 'none'),
-  'the census states that Step 1 has no Storage buckets');
+  'the census has its Storage row without a marker column (Step 4: the visit-media objects are counted as visit_media rows)');
+select results_eq(
+  $$ select table_name, bucket, test_rows from public.test_data_census() where table_name = 'visit_media' $$,
+  $$ values ('visit_media'::text, 'all sources'::text, 0::bigint) $$,
+  'Step 4 (Migration 7): the visit_media census row exists and is 0 on a fresh database');
 select results_eq(
   $$ select table_name, bucket from public.test_data_census() where table_name in ('customers', 'products')
      order by table_name collate "C", bucket collate "C" $$,

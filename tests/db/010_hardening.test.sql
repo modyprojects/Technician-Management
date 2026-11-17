@@ -41,9 +41,9 @@ select results_eq(
             ('followup_reasons', 'SELECT'), ('offline_operations', 'SELECT'), ('permissions', 'SELECT'), ('products', 'SELECT'),
             ('profiles', 'SELECT'), ('review_items', 'SELECT'), ('role_permissions', 'SELECT'), ('service_calls', 'SELECT'),
             ('suppliers', 'SELECT'), ('technicians', 'SELECT'), ('visit_corrections', 'SELECT'),
-            ('visit_events', 'SELECT'), ('visit_reports', 'SELECT'), ('visit_signatures', 'SELECT'),
+            ('visit_events', 'SELECT'), ('visit_media', 'SELECT'), ('visit_reports', 'SELECT'), ('visit_signatures', 'SELECT'),
             ('visit_time_current', 'SELECT'), ('visit_time_reports', 'SELECT'), ('visits', 'SELECT') $$,
-  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables, the PR 1.5 view the three PR 1.6 tables and the three Step 6 tables, and nothing else'
+  'authenticated has exactly SELECT on the six PR 1.3 tables, the seven PR 1.4 tables, the seven PR 1.5 tables, the PR 1.5 view the three PR 1.6 tables, the three Step 6 tables and the Step 4 table (Migration 7), and nothing else'
 );
 
 select is(
@@ -120,6 +120,7 @@ select results_eq(
      ('add_call_type(text)'),
      ('add_collection_location(text,text,text,text,text)'),
      ('add_followup_reason(text)'),
+     ('add_visit_media(uuid,uuid,text,text,text,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('admin_create_technician(uuid,text,text,text,text,boolean)'),
      ('admin_delete_user(uuid,integer,text)'),
@@ -128,13 +129,17 @@ select results_eq(
      ('admin_set_user_role(uuid,text,integer,text)'),
      ('admin_update_profile(uuid,integer,text,text,text)'),
      ('admin_update_technician(uuid,integer,text,text,text,text,boolean)'),
+     ('arrive_visit(uuid,uuid,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('assert_can_change_credentials(uuid,text)'),
      ('assert_can_manage(text)'),
      ('authorize_account_creation(text,text,text)'),
      ('cancel_account_request(uuid,integer)'),
+     ('close_visit(uuid,uuid,integer,text,text,text,text,uuid,uuid,text,timestamp with time zone,text,integer,timestamp with time zone)'),
+     ('confirm_visit_media(uuid)'),
      ('correct_visit(uuid,text,text,text,integer)'),
      ('delete_collection_location(uuid,integer)'),
      ('delete_followup_reason(uuid,integer)'),
+     ('depart_visit(uuid,uuid,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('has_permission(text)'),
      ('ingest_calendar_event(jsonb)'),
      ('is_creator()'),
@@ -144,6 +149,7 @@ select results_eq(
      ('private.add_call_type(text)'),
      ('private.add_collection_location(text,text,text,text,text)'),
      ('private.add_followup_reason(text)'),
+     ('private.add_visit_media(uuid,uuid,text,text,text,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('private.admin_create_profile(uuid,text,text,text,text,uuid)'),
      ('private.admin_create_technician(uuid,text,text,text,text,boolean)'),
      ('private.admin_delete_user(uuid,integer,text)'),
@@ -152,13 +158,17 @@ select results_eq(
      ('private.admin_set_user_role(uuid,text,integer,text)'),
      ('private.admin_update_profile(uuid,integer,text,text,text)'),
      ('private.admin_update_technician(uuid,integer,text,text,text,text,boolean)'),
+     ('private.arrive_visit(uuid,uuid,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('private.assert_can_change_credentials(uuid,text)'),
      ('private.assert_can_manage(text)'),
      ('private.authorize_account_creation(text,text,text)'),
      ('private.cancel_account_request(uuid,integer)'),
+     ('private.close_visit(uuid,uuid,integer,text,text,text,text,uuid,uuid,text,timestamp with time zone,text,integer,timestamp with time zone)'),
+     ('private.confirm_visit_media(uuid)'),
      ('private.correct_visit(uuid,text,text,text,integer)'),
      ('private.delete_collection_location(uuid,integer)'),
      ('private.delete_followup_reason(uuid,integer)'),
+     ('private.depart_visit(uuid,uuid,integer,timestamp with time zone,text,integer,timestamp with time zone)'),
      ('private.has_permission(text)'),
      ('private.has_role(text)'),
      ('private.ingest_calendar_event(jsonb)'),
@@ -172,6 +182,8 @@ select results_eq(
      ('private.set_call_type_active(uuid,boolean,integer)'),
      ('private.set_collection_location_active(uuid,boolean,integer)'),
      ('private.set_followup_reason_active(uuid,boolean,integer)'),
+     ('private.visit_media_object_readable(text)'),
+     ('private.visit_media_object_writable(text)'),
      ('private.visit_rep_contact(uuid)'),
      ('resolve_review_item(uuid,integer,text,jsonb,text)'),
      ('set_call_type_active(uuid,boolean,integer)'),
@@ -494,9 +506,9 @@ select results_eq(
             ('followup_reasons', 2::bigint), ('offline_operations', 2::bigint), ('permissions', 1::bigint),
             ('products', 1::bigint), ('profiles', 3::bigint), ('review_items', 1::bigint),
             ('role_permissions', 2::bigint), ('service_calls', 1::bigint), ('suppliers', 1::bigint), ('technicians', 2::bigint),
-            ('visit_corrections', 1::bigint), ('visit_events', 1::bigint), ('visit_reports', 2::bigint),
+            ('visit_corrections', 1::bigint), ('visit_events', 1::bigint), ('visit_media', 2::bigint), ('visit_reports', 2::bigint),
             ('visit_signatures', 2::bigint), ('visit_time_reports', 1::bigint), ('visits', 2::bigint) $$,
-  'every PR 1.3 to PR 1.6 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls; PR 1.6: four, none for Technicians on review_items and visit_corrections; Step 6: three, Creator only)'
+  'every PR 1.3 to PR 1.6 table has its read policies (PR 1.4: ten; PR 1.5: ten, none for Technicians on service_calls; PR 1.6: four, none for Technicians on review_items and visit_corrections; Step 6: three, Creator only; Step 4: two on visit_media)'
 );
 
 -- PR 1.4, generated columns (plan V1): on products and customers is_test is a stored generated
