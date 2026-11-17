@@ -290,6 +290,19 @@ test.describe("calendar ingestion: the plan (one event in, one command out)", ()
     expect(badTime.kind === "command" && badTime.command.kind === "unparsed" && badTime.command.event.start).toBeNull();
   });
 
+  test("attendee addresses follow the writer's e-mail rule (independent review S1): NFC, no bidi mark or space variant", () => {
+    const RLO = String.fromCodePoint(0x202e);
+    const bidi = planIngestion(upsertEvent({}, { attendeeEmails: ["tech.a@example.test", `a${RLO}@example.test`] }));
+    if (bidi.kind !== "command" || bidi.command.kind !== "unparsed") throw new Error("expected unparsed");
+    expect(bidi.command.problems).toEqual([{ kind: "invalid", field: "attendee", rule: "format", value: "a?@example.test" }]);
+    expect(bidi.command.event.attendeeEmails).toEqual(["tech.a@example.test"]);
+    const decomposed = `tech.e${String.fromCodePoint(0x0301)}@example.test`;
+    const nfc = planIngestion(upsertEvent({}, { attendeeEmails: [decomposed] }));
+    expect(nfc.kind === "command" && nfc.command.kind === "upsert" && nfc.command.event.attendeeEmails).toEqual([decomposed.normalize("NFC")]);
+    const braille = planIngestion(upsertEvent({}, { attendeeEmails: [`a${String.fromCodePoint(0x2800)}b@example.test`] }));
+    expect(braille.kind === "command" && braille.command.kind).toBe("unparsed");
+  });
+
   test("a malformed envelope is rejected before anything is stored (ids, change time, source)", () => {
     expect(planIngestion(upsertEvent({ eventId: "" })).kind).toBe("rejected");
     expect(planIngestion(upsertEvent({ changeKey: "with space" })).kind).toBe("rejected");

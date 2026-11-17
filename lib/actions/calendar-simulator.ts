@@ -7,12 +7,15 @@
 // Order of checks (fail closed):
 //   1. the environment switch (CALENDAR_SIMULATOR=1, never on Vercel Production): when off, the
 //      action answers "not-found" and does nothing (docs/security.md §9: disabled simulator
-//      endpoints are unreachable);
+//      endpoints are unreachable). This is the ONLY place the switch holds: the database cannot
+//      see it, and the RPC public.ingest_calendar_event stays callable through the Data API by any
+//      active office session (TEMPORARY Step 6 OQ-13, open decision 21; revoked or flag-gated
+//      before real use, docs/review/step6-ingestion/README.md section 9);
 //   2. the request, validated with the shared Zod schemas (no value is echoed when it fails);
 //   3. the session: an active Manager, Creator or Customer Service user (D24, SIM-10); a
 //      Technician or an anonymous visitor is refused. This is a convenience: the database checks
-//      the caller again inside private.ingest_calendar_event (role, rate limit), which is the
-//      boundary;
+//      the caller again inside private.ingest_calendar_event (role, rate limit, every value's
+//      column rule), which is the boundary for who may write and what is stored;
 //   4. the single ingestion service with the Supabase store, under the caller's own session.
 // Simulated records are test data (the database marks them from the source, D47) and simulated
 // visits never send email: nothing here sends any, and the Step 7 outbox never delivers test data
