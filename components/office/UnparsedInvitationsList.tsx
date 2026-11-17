@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { pendingDecisionHint } from "@/components/ui/pending-hint";
-import { INVITATION_SOURCE_LABELS, TestBadge } from "@/components/ui/TestBadge";
+import { INVITATION_SOURCE_LABELS, TestPill } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
 import type {
   UnparsedInvitation,
@@ -118,8 +118,8 @@ function UnparsedRow({ item, receivedLabel }: { item: UnparsedInvitation; receiv
           <h3 id={headingId} className="ib-title">
             <bdi>{item.subject || "(ללא נושא)"}</bdi>
           </h3>
-          {/* The simulator source line already marks test invitations (SIM-14); other test records get the badge (D47). */}
-          {item.isTest && item.source !== "simulator" && <TestBadge />}
+          {/* The simulator source line already marks test invitations (SIM-14); other test records get the pill (D47; "🧪 בדיקה", QA T-06). */}
+          {item.isTest && item.source !== "simulator" && <TestPill />}
         </div>
         <div className="sub ib-meta">
           <span className="num">התקבל {receivedLabel(item.receivedAt)}</span>
