@@ -72,6 +72,22 @@ test.describe("sign-in and role landing", () => {
   });
 });
 
+test.describe("show/hide password on the real screen", () => {
+  test("signing in with the password shown works; the field is hidden and emptied afterwards", async ({ page }) => {
+    const { cs } = seeded();
+    await page.goto("/login");
+    await page.getByLabel("אימייל", { exact: true }).fill(cs.email);
+    const password = page.getByLabel("סיסמה", { exact: true });
+    await password.fill(cs.password);
+    await page.getByRole("button", { name: "הצגת הסיסמה" }).click();
+    await expect(password).toHaveAttribute("type", "text");
+    // Never in the page's HTML, also while shown.
+    expect(await page.content()).not.toContain(cs.password);
+    await page.getByRole("button", { name: "כניסה", exact: true }).click();
+    await expect(page).toHaveURL(/\/office$/);
+  });
+});
+
 test.describe("credential failures: one message, no session", () => {
   test("wrong password, unknown email, inactive account and no profile look the same", async ({ page, context }) => {
     const { mgr, techInactive, noProfile } = seeded();
@@ -87,8 +103,8 @@ test.describe("credential failures: one message, no session", () => {
       await expect(page.locator(".login-alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
       await expect(page).toHaveURL(/\/login$/);
       // The email is kept, the password is not.
-      await expect(page.getByLabel("אימייל")).toHaveValue(email);
-      await expect(page.getByLabel("סיסמה")).toHaveValue("");
+      await expect(page.getByLabel("אימייל", { exact: true })).toHaveValue(email);
+      await expect(page.getByLabel("סיסמה", { exact: true })).toHaveValue("");
       expect(await sessionCookies(context), email).toEqual([]);
     }
   });
@@ -99,11 +115,11 @@ test.describe("guards (per page, at the time of the request)", () => {
     for (const path of ["/", "/office", "/tech", "/tech/profile"]) {
       await page.goto(path);
       await expect(page, path).toHaveURL(/\/login$/);
-      await expect(page.getByLabel("אימייל")).toBeVisible();
+      await expect(page.getByLabel("אימייל", { exact: true })).toBeVisible();
     }
     // The no-access state needs a session: anonymous gets the form.
     await page.goto("/login?state=no-access");
-    await expect(page.getByLabel("אימייל")).toBeVisible();
+    await expect(page.getByLabel("אימייל", { exact: true })).toBeVisible();
   });
 
   test("wrong area: a Technician on /office and a Manager on /tech get the no-access state", async ({ browser }) => {

@@ -17,7 +17,7 @@ import {
 import { isSessionCookieName } from "@/features/auth/session-cookies";
 import { authLogLine, parseSignInInput } from "@/features/auth/sign-in-input";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
-import { onlyInProject, openPage } from "./helpers";
+import { horizontalOverflow, onlyInProject, openPage } from "./helpers";
 
 // Step 2 PR 2.5: the real sign-in and start screens. Unit tests of the pure session decisions
 // (no database, network or browser), and the real routes WITHOUT the Supabase variables (the
@@ -234,5 +234,120 @@ test.describe("real routes without the Supabase variables (fail closed)", () => 
       expect(html, p).not.toContain("FIXTURE-SENTINEL");
       expect(html, p).not.toContain("הדגמה");
     }
+  });
+});
+
+// Owner UI corrections of 2026-11-17 for the sign-in screens (final version): the MODY logo and the
+// "ניהול טכנאים" subtitle stay at the top of the page, horizontally centred, 48px down as before;
+// the white card is centred vertically and horizontally in the viewport; inside it only the
+// headings "כניסה" / "אין גישה", the sign-up note, the no-access message and the "יציאה" button
+// are centred (labels, inputs, the error message and the sign-in button keep their alignment); a
+// show/hide control inside the password field. Checked at every width (projects phone, tablet,
+// desktop) on the real /login (unavailable without Supabase values) and on the prototype, which
+// shares the same components (LoginScreen, LoginForm).
+test.describe("sign-in layout (owner UI corrections, 2026-11-17)", () => {
+  type Page = import("@playwright/test").Page;
+  const centreX = (b: { x: number; width: number }) => b.x + b.width / 2;
+
+  /**
+   * The logo group sits at the top of the sign-in page (.login) and the card is centred in it. On
+   * the real route the page is the whole viewport (`fullViewport`); the prototype keeps the demo's
+   * strip above it (dev chrome), so there the page is the area under the strip.
+   */
+  async function expectLayout(page: Page, fullViewport = false) {
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("no viewport");
+    const area = await page.locator("main.login").boundingBox();
+    const brand = await page.locator(".login-brand").boundingBox();
+    const logo = await page.locator(".brand-logo-login").boundingBox();
+    const card = await page.locator(".login-card").boundingBox();
+    if (!area || !brand || !logo || !card) throw new Error("no sign-in page");
+    if (fullViewport) {
+      expect(area.y).toBeLessThanOrEqual(0.5);
+      expect(area.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
+    }
+    // Logo and subtitle at the top (48px down, as before), horizontally centred.
+    expect(Math.abs(logo.y - (area.y + 48))).toBeLessThanOrEqual(1);
+    expect(Math.abs(centreX(logo) - viewport.width / 2)).toBeLessThanOrEqual(2);
+    expect(Math.abs(centreX(brand) - viewport.width / 2)).toBeLessThanOrEqual(2);
+    // The card: horizontally centred; vertically centred in the page when it fits under the logo,
+    // otherwise below the logo (never overlapping it).
+    expect(Math.abs(centreX(card) - viewport.width / 2)).toBeLessThanOrEqual(2);
+    expect(card.y).toBeGreaterThanOrEqual(brand.y + brand.height - 0.5);
+    const centredTop = area.y + (area.height - card.height) / 2;
+    if (centredTop >= brand.y + brand.height) {
+      expect(Math.abs(card.y + card.height / 2 - (area.y + area.height / 2))).toBeLessThanOrEqual(2);
+    }
+    expect(await horizontalOverflow(page)).toEqual([]);
+  }
+
+  test("real /login (unavailable): logo at the top, card centred; heading and note centred", async ({ page }) => {
+    await openPage(page, "/login");
+    await expectLayout(page, true);
+    await expect(page.getByRole("heading", { level: 1, name: "כניסה" })).toHaveCSS("text-align", "center");
+    await expect(page.getByText("אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת.")).toHaveCSS("text-align", "center");
+    await expect(page.locator(".login-alert")).not.toHaveCSS("text-align", "center");
+  });
+
+  test("the form (prototype, same components): heading and note centred, labels, inputs and button as before", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    await expectLayout(page);
+    await expect(page.getByRole("heading", { level: 1, name: "כניסה" })).toHaveCSS("text-align", "center");
+    await expect(page.getByText("אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת.")).toHaveCSS("text-align", "center");
+    for (const label of await page.locator(".login-form label").all()) {
+      await expect(label).not.toHaveCSS("text-align", "center");
+    }
+    await expect(page.getByLabel("אימייל", { exact: true })).not.toHaveCSS("text-align", "center");
+    // The sign-in button keeps its full width inside the card.
+    const card = await page.locator(".login-card").boundingBox();
+    const submit = await page.getByRole("button", { name: "כניסה", exact: true }).boundingBox();
+    expect(card && submit && Math.abs(card.width - 40 - submit.width)).toBeLessThanOrEqual(2);
+  });
+
+  test("no access (prototype, same components): heading, message and the button centred", async ({ page }) => {
+    await openPage(page, "/dev/demo/login?state=no-access");
+    await expectLayout(page);
+    await expect(page.getByRole("heading", { level: 1, name: "אין גישה" })).toHaveCSS("text-align", "center");
+    for (const p of await page.locator(".login-card .login-p").all()) {
+      await expect(p).toHaveCSS("text-align", "center");
+    }
+    // "יציאה" keeps its size and style, centred horizontally in the card.
+    const card = await page.locator(".login-card").boundingBox();
+    const button = await page.getByRole("button", { name: "יציאה מהחשבון" }).boundingBox();
+    expect(card && button && Math.abs(centreX(button) - centreX(card))).toBeLessThanOrEqual(1);
+    expect(button && button.width).toBeLessThan(160);
+  });
+
+  test("show/hide password: inside the field, toggles the type, never writes the value into the page", async ({ page }) => {
+    await openPage(page, "/dev/demo/login");
+    const password = page.getByLabel("סיסמה", { exact: true });
+    const toggle = page.getByRole("button", { name: "הצגת הסיסמה" });
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // Inside the input's box.
+    const field = await password.boundingBox();
+    const icon = await toggle.boundingBox();
+    expect(field && icon && icon.x >= field.x && icon.x + icon.width <= field.x + field.width).toBe(true);
+    expect(field && icon && icon.y >= field.y && icon.y + icon.height <= field.y + field.height).toBe(true);
+    const secret = ["fictional", "toggle", "value"].join("-");
+    await password.fill(secret);
+    await toggle.click();
+    await expect(password).toHaveAttribute("type", "text");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(password).toHaveValue(secret);
+    // Uncontrolled either way: no value attribute in the HTML.
+    await expect(password).not.toHaveAttribute("value", /.*/);
+    expect(await page.content()).not.toContain(secret);
+    await toggle.click();
+    await expect(password).toHaveAttribute("type", "password");
+    // The toggle does not join the input's name.
+    await expect(page.getByLabel("סיסמה", { exact: true })).toHaveCount(1);
+    // After a submission the field is emptied and hidden again.
+    await toggle.click();
+    await page.getByLabel("אימייל", { exact: true }).fill("someone@example.test");
+    await page.getByRole("button", { name: "כניסה", exact: true }).click();
+    await expect(password).toHaveValue("");
+    await expect(password).toHaveAttribute("type", "password");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 });

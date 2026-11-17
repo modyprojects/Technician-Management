@@ -16,8 +16,8 @@ export async function sessionCookies(context: BrowserContext) {
 /** Fills and submits the real sign-in form. */
 export async function submitSignIn(page: Page, email: string, password: string, path = "/login") {
   await page.goto(path);
-  await page.getByLabel("אימייל").fill(email);
-  await page.getByLabel("סיסמה").fill(password);
+  await page.getByLabel("אימייל", { exact: true }).fill(email);
+  await page.getByLabel("סיסמה", { exact: true }).fill(password);
   await page.getByRole("button", { name: "כניסה" }).click();
 }
 

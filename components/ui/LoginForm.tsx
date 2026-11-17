@@ -17,6 +17,7 @@
 // The first invalid field gets focus, aria-invalid and the message (role="alert").
 import { useId, useRef, useState, type FormEvent } from "react";
 import { EMAIL_MAX, emailError, passwordError } from "@/features/accounts/data/validate";
+import { EyeIcon, EyeOffIcon } from "./Icons";
 
 type Field = "email" | "password";
 
@@ -33,10 +34,15 @@ export function LoginForm({
 }) {
   const id = useId();
   const errorId = `${id}-error`;
+  const passwordId = `${id}-password`;
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState(initialEmail);
   const [busy, setBusy] = useState(false);
+  // Show/hide password (owner UI correction, 2026-11-17). Only the input's type changes: the input
+  // stays uncontrolled, so the password never enters React state or a `value` attribute either way.
+  // Hidden again after every submission.
+  const [passwordShown, setPasswordShown] = useState(false);
   const [error, setError] = useState<{ field: Field; text: string } | null>(null);
 
   function fail(field: Field, text: string) {
@@ -58,6 +64,7 @@ export function LoginForm({
       await onSubmit({ email: email.trim(), password });
     } finally {
       if (passwordRef.current) passwordRef.current.value = "";
+      setPasswordShown(false);
       setBusy(false);
     }
   }
@@ -84,20 +91,37 @@ export function LoginForm({
           {...invalid("email")}
         />
       </label>
-      <label>
-        סיסמה
-        <input
-          ref={passwordRef}
-          type="password"
-          dir="ltr"
-          autoComplete="current-password"
-          aria-required="true"
-          onInput={() => {
-            if (error?.field === "password") setError(null);
-          }}
-          {...invalid("password")}
-        />
-      </label>
+      {/* An explicit label, so the toggle button sits beside the input without joining its name. */}
+      <div className="login-field">
+        <label htmlFor={passwordId}>סיסמה</label>
+        <div className="pw-field">
+          <input
+            id={passwordId}
+            ref={passwordRef}
+            type={passwordShown ? "text" : "password"}
+            dir="ltr"
+            autoComplete="current-password"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-required="true"
+            onInput={() => {
+              if (error?.field === "password") setError(null);
+            }}
+            {...invalid("password")}
+          />
+          <button
+            type="button"
+            className="pw-toggle"
+            aria-label="הצגת הסיסמה"
+            aria-pressed={passwordShown}
+            aria-controls={passwordId}
+            onClick={() => setPasswordShown((shown) => !shown)}
+          >
+            {passwordShown ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        </div>
+      </div>
       {error && (
         <span id={errorId} role="alert" className="set-err">
           {error.text}

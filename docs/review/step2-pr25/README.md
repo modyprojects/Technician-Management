@@ -80,6 +80,16 @@ From local production builds of this branch, at 390 × 844, 820 × 1180 and 1440
 
 The Creator's start is not shown: there is no test Creator (Step 2 plan Q6 TEMPORARY); its landing is covered by unit tests.
 
+## 6a. Owner UI corrections (2026-11-17, final version)
+
+Strictly limited alignment corrections, not a redesign (the screen itself is not approved yet: the owner reviews it in a working Preview, D62). The first correction round centred the logo together with the card; the owner's final instruction replaced that:
+- **Logo:** the MODY logo and the "ניהול טכנאים" subtitle stay at the top of the page, 48px down as before, horizontally centred (`.login-brand`).
+- **Card:** the white card is centred vertically and horizontally in the viewport, for the sign-in and the "אין גישה" states (`.login-col` grid `1fr auto minmax(32px, 1fr)`; the rows never shrink below their content, so on a short screen the card moves down under the logo instead of overlapping it, and nothing overflows).
+- **Sign-in:** the heading "כניסה" and the note "אין הרשמה עצמית. חשבונות נפתחים רק על ידי הנהלת המערכת." are centred; labels, inputs, the error message and the "כניסה" button keep their alignment and size. A show/hide eye button inside the password field (`EyeIcon` / `EyeOffIcon`), at the field's left edge: `aria-label` "הצגת הסיסמה", `aria-pressed`, `aria-controls`; the password label is explicit (`htmlFor`), so the button does not join the input's name. The input stays uncontrolled: only its type changes, the password never enters React state or a `value` attribute, and after every submission the field is emptied and hidden again.
+- **"אין גישה":** the heading, the two message lines and the "יציאה" button are centred; the button keeps its size, style and vertical place.
+- **Not changed:** the logo, colours, fonts, card size, borders and radius, the other screens, validation, the error messages, the authentication, session, authorization and navigation logic.
+- **Tests:** `tests/e2e/auth-real-routes.spec.ts` "sign-in layout" at 390 / 820 / 1440 (logo 48px from the top and centred; card centred within 2 px when it fits under the logo, never overlapping it; only the listed texts centred; the "כניסה" button full width; "יציאה" centred; no horizontal overflow; the toggle inside the field, no `value` attribute or password in the HTML, hidden again after a submission); `tests/auth` signs in with the password shown. The sign-in screenshots of section 6 were retaken (the start screens did not change).
+
 ## 7. TEMPORARY behaviours (deny by default)
 
 - Q2: no "שכחתי סיסמה", no reset link (no email provider, D50).

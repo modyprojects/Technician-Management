@@ -44,7 +44,7 @@ for (const size of SIZES) {
       // A credential failure: the message above the form; the password field is empty again.
       await submitSignIn(page, users.mgr.email, `${users.mgr.password}x`);
       await expect(page.locator(".login-alert")).toHaveText(SIGN_IN_MESSAGES.credentials);
-      await expect(page.getByLabel("סיסמה")).toHaveValue("");
+      await expect(page.getByLabel("סיסמה", { exact: true })).toHaveValue("");
       await ready(page);
       await page.screenshot({ path: file("login-failed") });
       await context.close();

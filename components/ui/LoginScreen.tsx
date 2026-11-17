@@ -47,8 +47,11 @@ export function LoginScreen({
   return (
     <main className="login">
       <div className="login-col">
-        <BrandLogo className="brand-logo-login" />
-        <div className="login-product">ניהול טכנאים</div>
+        {/* The logo and the subtitle stay at the top of the page; the card is centred in the viewport. */}
+        <div className="login-brand">
+          <BrandLogo className="brand-logo-login" />
+          <div className="login-product">ניהול טכנאים</div>
+        </div>
         <section className="card login-card" aria-labelledby={TITLE_ID}>
           <h1 id={TITLE_ID}>{noAccess ? "אין גישה" : "כניסה"}</h1>
           {alert && (
@@ -59,12 +62,12 @@ export function LoginScreen({
           {withForm && <Fragment key={state}>{form}</Fragment>}
           {noAccess ? (
             <>
-              <p className="sub login-p">{SIGN_IN_MESSAGES.noAccess}</p>
-              <p className="sub login-p">אחרי היציאה אפשר להיכנס עם חשבון אחר.</p>
+              <p className="sub login-p login-p-center">{SIGN_IN_MESSAGES.noAccess}</p>
+              <p className="sub login-p login-p-center">אחרי היציאה אפשר להיכנס עם חשבון אחר.</p>
               {signOut && <div className="login-signout">{signOut}</div>}
             </>
           ) : (
-            <p className="sub login-p">{NO_SIGN_UP}</p>
+            <p className="sub login-p login-p-center">{NO_SIGN_UP}</p>
           )}
         </section>
         {extra}
