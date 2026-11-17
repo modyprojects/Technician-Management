@@ -3,7 +3,7 @@
 // by Supabase adapters that run on the server under the caller's session (RLS).
 import type { CommandResult, Page, PageRequest } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
-import type { BackFromFieldPage, BackFromFieldQuery, CallDetail, CallFilter, CallsPage, CallSummary } from "./types";
+import type { BackFromFieldPage, BackFromFieldQuery, CallDetail, CallFilter, CallsListPage, CallsPage, CallSummary } from "./types";
 
 export interface CallsQueries {
   /** Calls list, newest first (latest visit date and start), filtered and paged (OF-04). */
@@ -20,6 +20,15 @@ export interface CallsQueries {
    * rule (workQueueScreensOffered) is not a grant.
    */
   backFromField(query: BackFromFieldQuery): Promise<BackFromFieldPage>;
+}
+
+/**
+ * The real calls list ("קריאות", Supabase adapter lib/data/supabase/calls.ts): the same filter and
+ * page as `CallsQueries.list`, with rows that may have no shown visit (D60 (1)). Every CallsQueries
+ * implementation is also one of these.
+ */
+export interface CallsListQueries {
+  list(filter: CallFilter): Promise<CallsListPage>;
 }
 
 /**
