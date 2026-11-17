@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
+import { PASSWORD_RESET_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { seeded, signInAs, submitSignIn } from "./helpers";
 
 // On demand only (SCREENSHOTS=1): the Step 2 PR 2.5 review images of the REAL screens, from a local
@@ -69,6 +69,39 @@ for (const size of SIZES) {
         await ready(page);
         await page.screenshot({ path: file("login-no-access") });
       }
+      await context.close();
+    }
+  });
+}
+
+// D65, the self-service password reset on the LOCAL stack (mock email delivery): the sign-in screen
+// with "שכחתי סיסמה", the sign-in screen after a reset (the notice) and the request's "sent" answer
+// (for a fictional address that has no account, so nothing is delivered). The other reset screens
+// come from tests/e2e/screenshots.spec.ts ("step2-password-reset").
+//   SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build tests/auth/screenshots.spec.ts -g "password reset"
+const OUT_RESET = path.resolve("docs/review/step2-password-reset");
+
+for (const size of SIZES) {
+  test(`password reset screens (local stack) at ${size.width}px`, async ({ browser }) => {
+    const context = await browser.newContext({ viewport: size, locale: "he-IL" });
+    const page = await context.newPage();
+    const file = (name: string) => path.join(OUT_RESET, `${size.width}-${name}.png`);
+    try {
+      await page.goto("/login");
+      await expect(page.getByRole("link", { name: PASSWORD_RESET_MESSAGES.forgotLink })).toBeVisible();
+      await ready(page);
+      await page.screenshot({ path: file("login-link") });
+      await page.goto("/login?state=password-updated");
+      await expect(page.locator(".note")).toHaveText(PASSWORD_RESET_MESSAGES.updated);
+      await ready(page);
+      await page.screenshot({ path: file("login-updated") });
+      await page.goto("/login/forgot");
+      await page.getByLabel("אימייל", { exact: true }).fill(`screens-${size.width}@example.test`);
+      await page.getByRole("button", { name: PASSWORD_RESET_MESSAGES.send }).click();
+      await expect(page.getByRole("heading", { level: 1, name: PASSWORD_RESET_MESSAGES.sentTitle })).toBeVisible();
+      await ready(page);
+      await page.screenshot({ path: file("forgot-sent") });
+    } finally {
       await context.close();
     }
   });

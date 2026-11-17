@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import type { LoginState } from "@/features/auth/login-state";
-import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
+import { PASSWORD_RESET_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { BrandLogo } from "./BrandLogo";
 
 // The sign-in screen "כניסה" (Step 2 plan §3.4, §4 #1; AU-01 PROPOSED, Step 2 PR 2.3). No hooks:
@@ -17,8 +18,10 @@ import { BrandLogo } from "./BrandLogo";
 //   which is kept so the user can try again.
 // - "no-access": a signed-in account without access to the screen (SIGN_IN_MESSAGES.noAccess) and
 //   "יציאה", so another account can sign in.
-// No sign-up link or route and no "שכחתי סיסמה" (TEMPORARY, Step 2 plan Q2; D50: accounts are
-// opened by the system's administrators only). Messages come from features/data-access/supabase-errors.ts.
+// No sign-up link or route (D50: accounts are opened by the system's administrators only). The
+// real `/login` adds (D65, self-service password reset) the centred link "שכחתי סיסמה" under the
+// form and, after a reset, the notice "הסיסמה עודכנה…" above it; the UI demo's prototype passes
+// neither. Messages come from features/data-access/supabase-errors.ts.
 // The look is PROPOSED (owner question §9 Q-D): a dark page with the white logo, outside the
 // existing dark headers of G-08 / D57 (6), and a white card in the demo's language.
 
@@ -31,6 +34,8 @@ export function LoginScreen({
   form,
   signOut,
   extra,
+  notice,
+  forgotPasswordHref,
 }: {
   state: LoginState;
   /** The sign-in form ("form", "failed" and "retry"). */
@@ -39,6 +44,10 @@ export function LoginScreen({
   signOut?: ReactNode;
   /** Content under the card (the UI demo's state links). */
   extra?: ReactNode;
+  /** A notice above the form (D65: after a password reset); never in the no-access state. */
+  notice?: string;
+  /** The "שכחתי סיסמה" link under the form (D65); never in the no-access state. */
+  forgotPasswordHref?: string;
 }) {
   const noAccess = state === "no-access";
   const alert =
@@ -54,12 +63,24 @@ export function LoginScreen({
         </div>
         <section className="card login-card" aria-labelledby={TITLE_ID}>
           <h1 id={TITLE_ID}>{noAccess ? "אין גישה" : "כניסה"}</h1>
+          {notice && !noAccess && (
+            <p role="status" className="note login-p">
+              {notice}
+            </p>
+          )}
           {alert && (
             <div role="alert" className="login-alert">
               {alert}
             </div>
           )}
           {withForm && <Fragment key={state}>{form}</Fragment>}
+          {forgotPasswordHref && !noAccess && (
+            <p className="login-p login-p-center">
+              <Link className="lnk login-link" href={forgotPasswordHref}>
+                {PASSWORD_RESET_MESSAGES.forgotLink}
+              </Link>
+            </p>
+          )}
           {noAccess ? (
             <>
               <p className="sub login-p login-p-center">{SIGN_IN_MESSAGES.noAccess}</p>

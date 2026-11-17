@@ -5,13 +5,24 @@
 // action redirects and never returns; on failure this keeps the email the user typed (never the
 // password, which LoginForm empties after every call) and shows one of the two generic messages:
 // "failed" (every credential failure) or "retry" (every service failure, the form kept).
+// D65: the "שכחתי סיסמה" link under the form, and the notice after a reset until the first attempt.
 import { useState } from "react";
 import { LoginForm } from "@/components/ui/LoginForm";
 import { LoginScreen } from "@/components/ui/LoginScreen";
 import type { LoginState } from "@/features/auth/login-state";
 import type { SignInFailure } from "@/features/auth/sign-in-input";
 
-export function SignInScreen({ action, next }: { action: (input: unknown) => Promise<SignInFailure>; next: string | null }) {
+export function SignInScreen({
+  action,
+  next,
+  notice,
+  forgotPasswordHref,
+}: {
+  action: (input: unknown) => Promise<SignInFailure>;
+  next: string | null;
+  notice?: string;
+  forgotPasswordHref?: string;
+}) {
   const [state, setState] = useState<Extract<LoginState, "form" | "failed" | "retry">>("form");
   const [email, setEmail] = useState("");
 
@@ -29,5 +40,12 @@ export function SignInScreen({ action, next }: { action: (input: unknown) => Pro
     if (result && result.ok === false) setState(result.kind === "service" ? "retry" : "failed");
   }
 
-  return <LoginScreen state={state} form={<LoginForm initialEmail={email} onSubmit={submit} />} />;
+  return (
+    <LoginScreen
+      state={state}
+      form={<LoginForm initialEmail={email} onSubmit={submit} />}
+      notice={state === "form" ? notice : undefined}
+      forgotPasswordHref={forgotPasswordHref}
+    />
+  );
 }

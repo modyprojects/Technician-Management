@@ -1,14 +1,19 @@
 // The request's session (Step 2 plan §3.3; Step 2 PR 2.5). Server-only.
-// `auth.getUser()` (validated by the Auth server), then the user's own `profiles` row under the
-// same session (RLS: an active profile reads its own row only), then, for a Technician, his
-// technician record (`my_technician_id()`). The role comes only from `profiles` (docs/security.md
-// §5). It never signs anyone out and never writes cookies itself: a Server Component cannot.
+// `auth.getUser()` (validated by the Auth server), then the session's verified claims
+// (`auth.getClaims()`): a session the password-reset link created is for the reset screen only and
+// counts as anonymous here (D65, independent review fix 2;
+// features/auth/password-reset/recovery-session.ts isAppSessionClaims). Then the user's own
+// `profiles` row under the same session (RLS: an active profile reads its own row only), then, for
+// a Technician, his technician record (`my_technician_id()`). The role comes only from `profiles`
+// (docs/security.md §5). It never signs anyone out and never writes cookies itself: a Server
+// Component cannot.
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { connection } from "next/server";
 import { cache } from "react";
 import type { SessionQueries } from "@/features/auth/data/ports";
 import { sessionUserOf } from "@/features/auth/data/session";
+import { isAppSessionClaims } from "@/features/auth/password-reset/recovery-session";
 import { uiRoleOf } from "@/features/auth/roles";
 import { userLookupFailure, type SessionState } from "@/features/auth/session-state";
 import { databaseErrorKind } from "@/features/data-access/supabase-errors";
@@ -60,7 +65,8 @@ export async function sessionStateOf(client: SupabaseClient, userId: string): Pr
 
 /**
  * This request's session state, once per request (React cache). Fails closed: a missing or invalid
- * configuration, or any Auth or database failure, is "unavailable"; nothing is guessed.
+ * configuration, or any Auth or database failure, is "unavailable"; nothing is guessed. A reset-link
+ * session (no password sign-in) is "anonymous": it serves the reset screen only (see the header).
  */
 export const getSessionState = cache(async (): Promise<SessionState> => {
   // Always per request, never prerendered: also a build without the Supabase variables (which reads
@@ -79,6 +85,21 @@ export const getSessionState = cache(async (): Promise<SessionState> => {
     userId = data.user.id;
   } catch {
     logAuthEvent("auth.session.user_failed", "exception");
+    return UNAVAILABLE;
+  }
+  try {
+    const { data, error } = await client.auth.getClaims();
+    if (error || !data) {
+      const failure = error ? userLookupFailure(error) : "anonymous";
+      if (failure === "unavailable") logAuthEvent("auth.session.claims_failed", error?.code ?? error?.status);
+      return failure === "anonymous" ? ANONYMOUS : UNAVAILABLE;
+    }
+    if (!isAppSessionClaims(data.claims)) {
+      logAuthEvent("auth.session.not_app_session", "reset_session");
+      return ANONYMOUS;
+    }
+  } catch {
+    logAuthEvent("auth.session.claims_failed", "exception");
     return UNAVAILABLE;
   }
   try {
