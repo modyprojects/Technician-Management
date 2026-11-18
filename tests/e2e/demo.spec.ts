@@ -549,7 +549,7 @@ test.describe("office calendar test data and bounds", () => {
     await openPage(page, "/dev/demo/office/mgr/calendar");
     await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
     await expect(page.locator("a.ocal-ev").first()).toContainText("נתוני בדיקה");
-    await expect(page.locator("a.ocal-ev").first().locator(".pill")).toContainText("🧪");
+    await expect(page.locator("a.ocal-ev").first().locator('[title="נתוני בדיקה"]')).toBeAttached();
 
     await openPage(page, "/dev/demo/office/mgr/calendar?view=week");
     await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
@@ -587,7 +587,7 @@ test.describe("showcase: \"הושלמו היום\" with rows", () => {
     await expect(list.getByRole("link")).toHaveCount(3);
     await expect(list.getByRole("link").first()).toContainText("08:00");
     await expect(list.getByRole("link").first()).toContainText("טופל");
-    await expect(list.locator(".pill", { hasText: "🧪" })).toHaveCount(2);
+    await expect(list.locator('[title="נתוני בדיקה"]')).toHaveCount(2);
     await expect(page.getByRole("navigation", { name: "עמודי הביקורים שהושלמו" })).toBeVisible();
     expect(await horizontalOverflow(page)).toEqual([]);
     await page.waitForLoadState("networkidle");
@@ -905,7 +905,7 @@ test.describe("account administration (SE-01, D34)", () => {
     // Step 2 PR 2.3: 11 accounts (with גלעד, a Technician account without a field profile) and the
     // Creator's own open creation intent ("יצירה שלא הושלמה").
     await expect(users.locator("tbody tr")).toHaveCount(12);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(12);
+    await expect(users.locator("tbody tr").filter({ has: page.locator('[title="נתוני בדיקה"]') })).toHaveCount(12);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
     // The own row: only "עריכה" (no state change of himself; no credential dialogs, TEMPORARY Q22).
     await expect(own.getByRole("button")).toHaveCount(1);
@@ -1260,7 +1260,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await expect(toast(page).filter({ hasText: "יצירת חשבון מנהל" })).toContainText(SIMULATED);
     await expect(form).toHaveCount(0);
     const row = users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("מנהל");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     await expect(page.getByText(/בהדגמה: החשבון של מנהלת בדיקה היה נוצר מיד/)).toBeVisible();
@@ -1280,7 +1280,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await expect(form).toHaveCount(0);
     await expect(page.getByRole("button", { name: "+ הוספת טכנאי" })).toBeFocused();
     const row = page.locator("main table tbody tr").filter({ hasText: "טכנאי בדיקה" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     // The command returned a technician id (not the account id): the switch validates and runs.
     const active = row.getByRole("button", { name: "טכנאי בדיקה פעיל – מקבל זימונים חדשים" });
@@ -1300,7 +1300,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await form.getByRole("button", { name: "הוספה" }).click();
     await expect(toast(page)).toContainText("הוספת טכנאי");
     const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי מתלמד" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("טכנאי");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     await expect(page.getByText(/בהדגמה: הטכנאי טכנאי מתלמד היה נוסף מיד/)).toBeVisible();
@@ -2380,7 +2380,7 @@ test.describe("closed-visit corrections on the call card (OF-10, D14, D43, D45)"
     await expect(page.locator("#visit-1-corrections")).toHaveCount(1);
     const rows = history(page, 1).locator(".vc-row:not(.vc-orig)");
     await expect(rows).toHaveCount(3);
-    for (const row of await rows.all()) await expect(row.locator(".pill", { hasText: "🧪" })).toHaveCount(1);
+    for (const row of await rows.all()) await expect(row.locator('[title="נתוני בדיקה"]')).toHaveCount(1);
     // Customer service reads the history (with `card`): the mark is there too, without the action.
     await openPage(page, "/dev/demo/office/cs/calls/47969");
     await expect(page.locator("#visit-1").getByRole("link", { name: /תוקן במשרד/ })).toBeVisible();
@@ -3039,7 +3039,7 @@ test.describe("D57 dashboard: scope, no fabrication, colours", () => {
     await expect(page.locator(".ma-progress .ma-seg-pending")).toHaveCSS("background-color", "rgb(185, 193, 205)");
     await expect(page.locator(".ma-progress .ma-seg-missed")).toHaveCSS("background-color", "rgb(193, 79, 79)");
     // 🧪 on the General SKU bars (SIM-17); SKUs are LTR text.
-    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".pill").first()).toContainText("🧪");
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     for (const sku of await page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-name bdi").all()) {
       await expect(sku).toHaveAttribute("dir", "ltr");
     }
@@ -3112,7 +3112,7 @@ test.describe("D57 dashboard: scope, no fabrication, colours", () => {
     await expect(page.locator("main")).not.toContainText("טפטוף");
     await expect(table.locator("tbody td:first-child", { hasText: "MX-410" })).toHaveCount(1);
     await expect(table.locator("tbody td:first-child", { hasText: "TB-75" })).toHaveCount(1);
-    await expect(table.locator("tbody tr").first().locator("td").nth(1)).toContainText("🧪");
+    await expect(table.locator("tbody tr").first().locator("td").nth(1).locator('[title="נתוני בדיקה"]')).toBeAttached();
     for (const cell of await table.locator("tbody td:first-child").all()) await expect(cell).toHaveAttribute("dir", "ltr");
   });
 });
@@ -3779,7 +3779,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "בית" })).toBeVisible();
       const main = page.locator("main.work");
       await expect(main.getByRole("heading", { level: 2, name: `שלום, ${who}` })).toBeVisible();
-      await expect(main.locator(".start-hello")).toContainText("🧪");
+      await expect(main.locator(".start-hello").locator('[title="נתוני בדיקה"]')).toBeAttached();
       await expect(main.getByText(`הרשאה: ${roleLabel}`, { exact: true })).toBeVisible();
       await expect(main.getByText("מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.")).toBeVisible();
       await expect(main.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
@@ -3798,7 +3798,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
   test("/dev/demo/start/tech and the minimal profile: the session user, \"היום\" and \"פרופיל\" only, sign-out", async ({ page }) => {
     await openPage(page, "/dev/demo/start/tech");
     await expect(page.getByRole("heading", { level: 1, name: "שלום, יורם" })).toBeVisible();
-    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head").locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(page.getByText("הרשאה: טכנאי", { exact: true })).toBeVisible();
     await expect(page.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
     const nav = page.locator(".ph-nav");
@@ -3810,7 +3810,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
     await nav.getByRole("link", { name: "פרופיל" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/start\/tech\/profile$/);
     await expect(page.getByRole("heading", { level: 1, name: "יורם" })).toBeVisible();
-    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head").locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(page.locator(".ph-head")).toContainText("הרשאה: טכנאי");
     await expect(page.locator(".ph-nav").getByRole("link", { name: "פרופיל" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
@@ -4074,7 +4074,7 @@ test.describe("Step 2 notices (Creator)", () => {
       await expect(item.locator(".sub").first()).toHaveText(two);
       await expect(item.locator(".sub")).toHaveCount(three ? 2 : 1);
       if (three) await expect(item.locator(".sub").nth(1)).toHaveText(three);
-      await expect(item).toContainText("🧪");
+      await expect(item.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     }
     // Decided, cancelled and fulfilled requests are not notices.
     for (const name of ["שמואל", "נציג זמני", "נציגת ערב", "הדס"]) await expect(first).not.toContainText(name);

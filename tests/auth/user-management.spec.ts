@@ -38,7 +38,7 @@ const rowOf = (page: Page, name: string) => page.locator("[data-account-row]").f
 
 /** D76: opens the row's ⋮ menu and picks the item whose accessible name matches `item`. */
 async function rowAction(page: Page, name: string, item: RegExp | string) {
-  await rowAction(page, name, /^פעולות · /);
+  await rowOf(page, name).getByRole("button", { name: /^פעולות · / }).click();
   await page.getByRole("menuitem", { name: item }).click();
 }
 
@@ -137,7 +137,8 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     const techRow = rowOf(page, techName);
     await expect(techRow).toBeVisible();
     await expect(techRow.getByText("כחול")).toBeVisible();
-    await expect(techRow.getByText("🧪")).toBeVisible();
+    // D74: the quiet per-record marker ("בדיקה", named "נתוני בדיקה").
+    await expect(techRow.locator('[title="נתוני בדיקה"]')).toBeVisible();
     expect(localSqlValue(`select is_test || '|' || role || '|' || is_active from public.profiles where full_name = '${techName}'`)).toBe("true|technician|true");
     expect(localSqlValue(`select color || '|' || accepts_invitations from public.technicians t join public.profiles p on p.id = t.profile_id where p.full_name = '${techName}'`)).toBe("t-s|true");
 
@@ -312,7 +313,9 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await expect(page.getByText("בקשות לאישור")).toHaveCount(0);
     const own = rowOf(page, creator()?.name ?? "");
     await expect(own.getByText("החשבון שלך")).toBeVisible();
-    await expect(own.getByRole("button")).toHaveText(["עריכה"]);
+    await own.getByRole("button", { name: /^פעולות · / }).click();
+    await expect(page.getByRole("menuitem")).toHaveText(["עריכה"]);
+    await page.keyboard.press("Escape");
     // The Manager seeded by global-setup is listed for the Creator.
     await expect(rowOf(page, seeded().mgr.name).first()).toBeVisible();
   });
@@ -465,7 +468,9 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     // The wide layout's state cell (the narrow copy under the name is hidden at 1440 px).
     await expect(row.getByText("יצירה שלא הושלמה").last()).toBeVisible();
     await expect(row.getByText(`על ידי ${mgr.name}`).last()).toBeVisible();
-    await expect(row.getByRole("button")).toHaveText(["ביטול"]);
+    await row.getByRole("button", { name: /^פעולות · / }).click();
+    await expect(page.getByRole("menuitem")).toHaveText(["ביטול"]);
+    await page.keyboard.press("Escape");
     await rowAction(page, intentName, `ביטול · היצירה של ${intentName}`);
     await expect(page.getByText(`היצירה של ${intentName} בוטלה.`)).toBeVisible();
     await expect(rowOf(page, intentName)).toHaveCount(0);
@@ -600,7 +605,8 @@ test.describe("phone layout: nothing overflows at 390 px (owner review 2026-11-1
         await signInAs(page, who, /\/office/);
         await page.goto(USERS_PATH);
         for (const name of [users.tech.name, users.techInactive.name, intentName, missingName]) {
-          const row = rowOf(page, name);
+          // The shared local database can hold earlier runs' seeded accounts with the same name.
+          const row = rowOf(page, name).first();
           await expect(row, `${who.name}: ${name}`).toBeVisible();
           await row.scrollIntoViewIfNeeded();
           const box = await row.boundingBox();

@@ -62,7 +62,7 @@ const rowOf = (page: Page, name: string) => page.locator("[data-account-row]").f
 
 /** D76: opens the row's ⋮ menu and picks the item whose accessible name matches `item`. */
 async function rowAction(page: Page, name: string, item: RegExp | string) {
-  await rowAction(page, name, /^פעולות · /);
+  await rowOf(page, name).getByRole("button", { name: /^פעולות · / }).click();
   await page.getByRole("menuitem", { name: item }).click();
 }
 

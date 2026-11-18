@@ -4,9 +4,9 @@
 // portal with a fixed position under its button, so a scrolling table never clips it and nothing
 // overflows the row at 390 px. Keyboard: Enter/Space/ArrowDown on ⋮ opens it on the first item;
 // ArrowUp/ArrowDown/Home/End move; Escape closes and returns focus to ⋮; Tab or a click outside
-// closes it. Items keep the row buttons' accessible names ("השבתה · החשבון של …").
+// closes it; on scroll it follows its button. Items keep the row buttons' accessible names ("השבתה · החשבון של …").
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type RowMenuItem = {
@@ -38,33 +38,52 @@ export function RowMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
+  const show = () => {
+    place();
+    setOpen(true);
+  };
+
   const place = () => {
     const r = buttonRef.current?.getBoundingClientRect();
     if (!r) return;
     const left = Math.max(8, Math.min(r.left, window.innerWidth - MENU_WIDTH - 8));
-    setPos({ top: r.bottom + 4, left });
+    // Opens upward when the items would not fit below the button (each item 40 px, 4 px padding).
+    const height = items.length * 40 + 10;
+    const below = r.bottom + 4;
+    const top = below + height <= window.innerHeight - 8 ? below : Math.max(8, r.top - height - 4);
+    setPos({ top, left });
   };
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    place();
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [open]);
+  /** On scroll the open menu follows its button. */
+  const onScroll = useEffectEvent(() => place());
+
+  // Focus the first item once the menu is placed (it renders only with a position).
+  useEffect(() => {
+    if (open && pos) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open, pos]);
 
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
     const outside = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!menuRef.current?.contains(t) && !buttonRef.current?.contains(t)) close();
     };
     document.addEventListener("pointerdown", outside);
     window.addEventListener("resize", close);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", close);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
@@ -90,11 +109,11 @@ export function RowMenu({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
+          if (e.key === "ArrowDown" && !open) {
             e.preventDefault();
-            setOpen(true);
+            show();
           }
         }}
       >
