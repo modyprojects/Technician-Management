@@ -1,6 +1,6 @@
 # CLAUDE.md — Technician Management (v4, lean)
 
-Hebrew RTL PWA for MODY field technicians and office staff. Next.js + TypeScript strict + Tailwind, Supabase (Postgres, RLS, Auth, Storage), Vercel. One responsive app: office roles at 390 / 820 / 1440 px; technician screens at 390 / 820 only (D70).
+Hebrew RTL PWA for MODY field technicians and office staff. Next.js + TypeScript strict + Tailwind, Supabase (Postgres, RLS, Auth, Storage), Vercel. One responsive app: office roles at 390 / 1440 px (D72); technician screens at 390 / 820 (D70).
 
 ## What to read (never everything at startup)
 - Always, at session start: docs/STATUS.md; for a decision, grep docs/decisions.md — never read it in full. Do not read old conversations, the WORKLOG or the codebase to rebuild context; STATUS.md is the source.
@@ -57,7 +57,7 @@ English for code, comments, docs, commits, PRs, tests. Hebrew to the owner. UI a
 - Limit shell output (`| tail -50`, `--reporter=line`). Never paste full logs.
 
 ## Screens
-Build with fake data → check in the browser → screenshots of changed screens only at 390 / 820 / 1440 (technician screens: 390 / 820 only, D70) → access-controlled Preview link → 3–5 Hebrew "what to check" points → wait for "מאשר". Store screenshots under `docs/review/<step>/`; keep only the latest set per screen (WebP). Do not re-open screenshots to check them.
+Build with fake data → check in the browser → screenshots of changed screens only (office: 390 / 1440, D72; technician: 390 / 820, D70) → access-controlled Preview link → 3–5 Hebrew "what to check" points → wait for "מאשר". Store screenshots under `docs/review/<step>/`; keep only the latest set per screen (WebP). Do not re-open screenshots to check them.
 
 ## Done
 Checks green; update `docs/STATUS.md` (keep it ≤40 lines: where we are, done, in progress, next, open issues/approvals); one WORKLOG entry (≤5 bullets); `docs/decisions.md` only if the owner decided something.
