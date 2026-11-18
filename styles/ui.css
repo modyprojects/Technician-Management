@@ -1034,3 +1034,6 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
 .acct-check input { margin-top: 4px; flex: none; width: 18px; height: 18px; }
 /* end step2-screens */
 
+/* D74 (owner, 2026-11-18): the quiet per-record test-data marker and the screen banner. */
+.test-mark { display: inline-block; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: baseline; }
+.test-banner { background: var(--line2); color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; padding: 6px 12px; border-radius: 10px; margin: 0 0 10px; }
