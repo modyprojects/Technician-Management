@@ -15,13 +15,13 @@ Updated 2026-11-18 (#39 and #40 merged). Keep ≤40 lines; update at the end of 
 - PR #38 Migration 7 (technician writers, visit media), draft, NOT applied. Review: APPROVE WITH FIXES — medium: the idempotency hash includes device_sent_at and time-zone-dependent text, so a retry raises 23505; low: confirm_visit_media ignores visit status, replay skips the ownership check, no real-row tests, stale text. Fixes NOT started.
 - Fixing M7 changes its SHA: the owner's approval of e4a92876… no longer covers it; ask again. Guard diff, canary fixture and bucket SQL are approved and unchanged.
 - PR A (branch `claude/efficiency-pr-a`, WIP 4b8d72e, no PR): WORKING-EFFICIENTLY.md, settings + 2 hooks + tests, supabase-postgres-best-practices skill. Hook review FIX: 7 high + 3 medium bypasses, not fixed. Do not merge.
-- Technician: `claude/tech-today` awaits visual approval; `claude/tech-visit-flow` (23a6b08) works on the local stack (spec 7/7, 51 WebP shots) — send for approval after M7 is applied. Bug: a tiny photo shows "הקובץ גדול מדי".
-- Office: `claude/office-unparsed` (simulator) and `claude/office-calls-list` (74df887) await visual approval.
-- PR #36 user management: draft, CI green on 0c59bbc; unfinished screenshot/test work on `claude/step2-user-management-wip`.
+- Technician: `claude/tech-today` not yet sent for approval; `claude/tech-visit-flow` (23a6b08) works on the local stack (spec 7/7, 51 WebP shots) — send for approval after M7 is applied. Bug: a tiny photo shows "הקובץ גדול מדי".
+- Office: `claude/office-unparsed` (simulator) and `claude/office-calls-list` (74df887) not yet sent for approval.
+- PR #36 user management: draft, not yet sent for approval, CI green on 0c59bbc; unfinished screenshot/test work on `claude/step2-user-management-wip`.
 
 ## Waiting for the owner
 - M7: approval of the new SHA after the fixes.
-- Visual approvals: tech-today, calls list, unparsed + simulator, user management (final).
+- Visual approvals (not yet sent): tech-today, calls list, unparsed + simulator, user management (final).
 
 ## Next, in order
 1. Sync open branches with main.

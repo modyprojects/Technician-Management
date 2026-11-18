@@ -1,6 +1,6 @@
 # CLAUDE.md — Technician Management (v4, lean)
 
-Hebrew RTL PWA for MODY field technicians and office staff. Next.js + TypeScript strict + Tailwind, Supabase (Postgres, RLS, Auth, Storage), Vercel. One responsive app: every screen for every role works at 390 / 820 / 1440 px.
+Hebrew RTL PWA for MODY field technicians and office staff. Next.js + TypeScript strict + Tailwind, Supabase (Postgres, RLS, Auth, Storage), Vercel. One responsive app: office roles at 390 / 820 / 1440 px; technician screens at 390 / 820 only (D69).
 
 ## What to read (never everything at startup)
 - Always, at session start: docs/STATUS.md; for a decision, grep docs/decisions.md — never read it in full. Do not read old conversations, the WORKLOG or the codebase to rebuild context; STATUS.md is the source.
