@@ -73,8 +73,8 @@ jobs:
       - name: End-to-end tests (390 / 820 / 1440)
         run: npm run test:e2e
 
-      - name: Dependency audit (high and critical)
-        run: npm audit --audit-level=high
+      - name: Dependency audit (high and critical; listed dev-only exceptions with an expiry)
+        run: node scripts/audit-gate.mjs
 
       - name: Upload test report on failure
         if: failure()

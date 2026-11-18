@@ -1,0 +1,12 @@
+{
+  "exceptions": [
+    {
+      "advisory": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "devOnly": true,
+      "expires": "2026-12-15",
+      "reason": "ReDoS through single-branch repeated extglobs; no fixed picomatch is published (latest 4.0.7 is affected). Both installed copies are development-only (ESLint tooling: @next/eslint-plugin-next, typescript-eslint, fast-glob, micromatch, tinyglobby); nothing ships to the browser or the server. Remove this exception once a fixed version is available.",
+      "approvedBy": "owner (pending)"
+    }
+  ]
+}
