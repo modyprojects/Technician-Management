@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
@@ -34,7 +34,13 @@ async function signedIn(browser: Browser, user: SeededUser): Promise<{ context: 
 }
 
 /** The row of the account named `name` in the users table. */
-const rowOf = (page: Page, name: string) => page.getByRole("row").filter({ has: page.getByText(name, { exact: true }) });
+const rowOf = (page: Page, name: string) => page.locator("[data-account-row]").filter({ has: page.getByText(name, { exact: true }) });
+
+/** D76: opens the row's ⋮ menu and picks the item whose accessible name matches `item`. */
+async function rowAction(page: Page, name: string, item: RegExp | string) {
+  await rowAction(page, name, /^פעולות · /);
+  await page.getByRole("menuitem", { name: item }).click();
+}
 
 /** A wide-layout cell of that row: "contact" (email and phone), "role" or "state". */
 const cell = (page: Page, name: string, which: "contact" | "role" | "state") =>
@@ -149,7 +155,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
   });
 
   test("edits a user's phone; deactivates with the confirmation, then activates again", async () => {
-    await rowOf(page, csName).getByRole("button", { name: /^עריכה/ }).click();
+    await rowAction(page, csName, /^עריכה/);
     const edit = page.getByRole("dialog", { name: `עריכת פרטים · ${csName}` });
     await edit.getByLabel("טלפון עבודה").fill("03-5550000");
     await edit.getByRole("button", { name: "שמירה" }).click();
@@ -157,7 +163,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     await expect(page.getByText(`הפרטים של ${csName} עודכנו ונרשמו ביומן הביקורת.`)).toBeVisible();
     await expect(cell(page, csName, "contact")).toContainText("03-5550000");
 
-    await rowOf(page, techName).getByRole("button", { name: /^השבתה/ }).click();
+    await rowAction(page, techName, /^השבתה/);
     const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${techName}` });
     await expect(confirm).toContainText("משתמש לא פעיל לא יכול להיכנס לאפליקציה");
     await expect(confirm).toContainText("ההיסטוריה שלו (ביקורים ופעולות) נשמרת");
@@ -167,7 +173,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
     await expect(cell(page, techName, "state")).toHaveText("לא פעיל");
     expect(localSqlValue(`select is_active from public.profiles where full_name = '${techName}'`)).toBe("f");
     // The history row stays (no deletion): the profile is still there, inactive.
-    await rowOf(page, techName).getByRole("button", { name: /^הפעלה/ }).click();
+    await rowAction(page, techName, /^הפעלה/);
     await expect(page.getByText(`החשבון של ${techName} הופעל.`)).toBeVisible();
     expect(localSqlValue(`select is_active from public.profiles where full_name = '${techName}'`)).toBe("t");
   });
@@ -203,7 +209,7 @@ test.describe.serial("Manager: Settings › משתמשים (Technician and Custo
         await route.continue();
       }
     });
-    await rowOf(page, csName).getByRole("button", { name: /^השבתה/ }).click();
+    await rowAction(page, csName, /^השבתה/);
     const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${csName}` });
     await confirm.getByRole("button", { name: "השבתה" }).click();
     await expect(confirm.getByRole("alert")).toHaveText(ACTION_MESSAGES.forbidden);
@@ -325,7 +331,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
   });
 
   test("changes the role (Manager → Customer Service), sets a password and changes the sign-in email", async () => {
-    await rowOf(page, name).getByRole("button", { name: /^תפקיד/ }).click();
+    await rowAction(page, name, /^תפקיד/);
     const role = page.getByRole("dialog", { name: `שינוי תפקיד · ${name}` });
     await expect(role.getByRole("radio", { name: "מנהל", exact: true })).toHaveCount(0);
     await expect(role.getByRole("radio", { name: /יוצר/ })).toHaveCount(0);
@@ -335,7 +341,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await expect(page.getByText(`התפקיד של ${name} שונה לשירות לקוחות.`)).toBeVisible();
     expect(localSqlValue(`select role from public.profiles where full_name = '${name}'`)).toBe("customer_service");
 
-    await rowOf(page, name).getByRole("button", { name: /^סיסמה/ }).click();
+    await rowAction(page, name, /^סיסמה/);
     const pw = page.getByRole("dialog", { name: `הגדרת סיסמה · ${name}` });
     const field = pw.getByLabel("סיסמה חדשה");
     await expect(field).toHaveAttribute("autocomplete", "new-password");
@@ -345,7 +351,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await expect(page.getByText(`הסיסמה של ${name} נקבעה. היא לא תוצג שוב.`)).toBeVisible();
     expect(await page.content()).not.toContain(password);
 
-    await rowOf(page, name).getByRole("button", { name: /^מייל/ }).click();
+    await rowAction(page, name, /^מייל/);
     const mail = page.getByRole("dialog", { name: `שינוי כתובת מייל · ${name}` });
     await mail.getByLabel("מייל חדש").fill(second);
     await mail.getByRole("button", { name: "שמירת המייל" }).click();
@@ -359,7 +365,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
   });
 
   test("deactivated: sign-in refused; reactivated: sign-in works again", async ({ browser }) => {
-    await rowOf(page, name).getByRole("button", { name: /^השבתה/ }).click();
+    await rowAction(page, name, /^השבתה/);
     const confirm = page.getByRole("dialog", { name: `השבתת החשבון · ${name}` });
     await expect(confirm).not.toContainText("היוצר מקבל התראה");
     await confirm.getByRole("button", { name: "השבתה" }).click();
@@ -369,14 +375,14 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     expect(refused.url).toMatch(/\/login$/);
     expect(refused.alert).toBe(SIGN_IN_MESSAGES.credentials);
 
-    await rowOf(page, name).getByRole("button", { name: /^הפעלה/ }).click();
+    await rowAction(page, name, /^הפעלה/);
     await expect(page.getByText(`החשבון של ${name} הופעל.`)).toBeVisible();
     const back = await trySignIn(browser, second);
     expect(back.url).toMatch(/\/office$/);
   });
 
   test("deletes after the explicit confirmation: the row is gone, sign-in refused, history kept", async ({ browser }) => {
-    await rowOf(page, name).getByRole("button", { name: /^מחיקה/ }).click();
+    await rowAction(page, name, /^מחיקה/);
     const confirm = page.getByRole("dialog", { name: `מחיקת החשבון · ${name}` });
     const button = confirm.getByRole("button", { name: "מחיקה סופית" });
     await expect(button).toBeDisabled();
@@ -418,7 +424,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
       rewritten = body !== original;
       await route.fulfill({ response, body });
     });
-    await rowOf(page, retryName).getByRole("button", { name: /^מחיקה/ }).click();
+    await rowAction(page, retryName, /^מחיקה/);
     const confirm = page.getByRole("dialog", { name: `מחיקת החשבון · ${retryName}` });
     await confirm.getByRole("checkbox").check();
     await confirm.getByRole("button", { name: "מחיקה סופית" }).click();
@@ -460,7 +466,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await expect(row.getByText("יצירה שלא הושלמה").last()).toBeVisible();
     await expect(row.getByText(`על ידי ${mgr.name}`).last()).toBeVisible();
     await expect(row.getByRole("button")).toHaveText(["ביטול"]);
-    await row.getByRole("button", { name: `ביטול · היצירה של ${intentName}` }).click();
+    await rowAction(page, intentName, `ביטול · היצירה של ${intentName}`);
     await expect(page.getByText(`היצירה של ${intentName} בוטלה.`)).toBeVisible();
     await expect(rowOf(page, intentName)).toHaveCount(0);
     expect(localSqlValue(`select status from public.account_requests where email = '${address}'`)).toBe("cancelled");
@@ -511,7 +517,8 @@ test.describe("a reset-link session is no app sign-in for the account actions (r
       await cap.keyboard.press("Escape");
       await expect(add).toHaveCount(0);
       next = "deactivateAccount";
-      await cap.getByRole("button", { name: `השבתה · החשבון של ${users.cs.name}` }).first().click();
+      await rowOf(cap, users.cs.name).first().getByRole("button", { name: /^פעולות · / }).click();
+      await cap.getByRole("menuitem", { name: `השבתה · החשבון של ${users.cs.name}` }).click();
       await cap.getByRole("dialog", { name: `השבתת החשבון · ${users.cs.name}` }).getByRole("button", { name: "השבתה" }).click();
       await expect.poll(() => captured.length).toBe(2);
     } finally {
@@ -561,5 +568,63 @@ test.describe("a reset-link session is no app sign-in for the account actions (r
     }
     expect(localSqlValue(`select count(*) from public.account_requests where email = '${address}'`)).toBe("0");
     expect(localSqlValue(`select is_active from public.profiles where id = '${target}'`)).toBe("t");
+  });
+});
+
+test.describe("phone layout: nothing overflows at 390 px (owner review 2026-11-18)", () => {
+  test("Manager and Creator: rows in every state (active, inactive, incomplete creation, missing technician profile) fit; the ⋮ menu stays on screen", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const users = seeded();
+    // An incomplete creation of the Manager (phase 1 only, under his session) and a Technician
+    // profile without its field profile (inserted in the local database, test-marked, D47).
+    const intentName = `יצירה פתוחה רוחב ${run}`;
+    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "", {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    expect((await client.auth.signInWithPassword({ email: users.mgr.email, password: users.mgr.password })).error).toBeNull();
+    expect((await client.rpc("authorize_account_creation", { p_role: "customer_service", p_email: email("wide-intent"), p_full_name: intentName })).error).toBeNull();
+    const missingId = randomUUID();
+    const missingName = `טכנאי בלי פרופיל רוחב ${run}`;
+    localSql(`
+      insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+      values ('${missingId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', '${email("wide-missing")}', now(), now());
+      insert into public.profiles (id, role, full_name, is_active, is_test) values ('${missingId}', 'technician', '${missingName}', true, true);
+    `);
+    const c = creator();
+    const viewers = [users.mgr, ...(c ? [c] : [])];
+    expect(viewers.length, "run with --with-creator so the Creator is checked too").toBe(2);
+    for (const who of viewers) {
+      const context = await browser.newContext({ locale: "he-IL", viewport: { width: 390, height: 844 } });
+      const page = await context.newPage();
+      try {
+        await signInAs(page, who, /\/office/);
+        await page.goto(USERS_PATH);
+        for (const name of [users.tech.name, users.techInactive.name, intentName, missingName]) {
+          const row = rowOf(page, name);
+          await expect(row, `${who.name}: ${name}`).toBeVisible();
+          await row.scrollIntoViewIfNeeded();
+          const box = await row.boundingBox();
+          expect(box && box.x >= 0 && box.x + box.width <= 390 + 0.5, `${who.name}: the row of ${name} stays inside 390 px`).toBe(true);
+          const menu = row.getByRole("button", { name: /^פעולות · / });
+          const mb = await menu.boundingBox();
+          expect(mb && mb.x >= 0 && mb.x + mb.width <= 390 + 0.5, `${who.name}: ⋮ of ${name} on screen`).toBe(true);
+          await menu.click();
+          const list = page.getByRole("menu");
+          await expect(list).toBeVisible();
+          const lb = await list.boundingBox();
+          expect(lb && lb.x >= 0 && lb.x + lb.width <= 390 + 0.5, `${who.name}: the menu of ${name} on screen`).toBe(true);
+          await page.keyboard.press("Escape");
+          await expect(list).toHaveCount(0);
+        }
+        const overflow = await page.evaluate(() =>
+          [document.documentElement, document.body, ...document.querySelectorAll<HTMLElement>(".stage, .work, .card")]
+            .filter((el) => el.scrollWidth > el.clientWidth + 1)
+            .map((el) => `${el.tagName.toLowerCase()}.${el.className}`),
+        );
+        expect(overflow, `${who.name}: no horizontal scroll at 390 px`).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
   });
 });

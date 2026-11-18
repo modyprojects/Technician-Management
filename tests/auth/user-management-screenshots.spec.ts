@@ -6,7 +6,7 @@ import type { SeededUser } from "./global-setup";
 import { localSqlValue, seeded, signInAs } from "./helpers";
 
 // On demand only (SCREENSHOTS=1): the review images of the real unified user management (D60 (7);
-// D62 (6): every new screen and state at 390, 820 and 1440 px), from a local production build signed
+// D62 (6) as amended by D72: every new screen and state at 390 and 1440 px), from a local production build signed
 // in to the LOCAL stack (tests/auth/run-local.mjs --with-creator). Every account is fictional and
 // test-marked (D47, `@example.test`); the fixed fictional names start with "א" so they head their
 // role in the list. No password is typed into any image: the password dialog is shot empty.
@@ -21,7 +21,6 @@ const OUT = path.resolve("docs/review/step2-user-management-ui");
 const USERS_PATH = "/office/settings/users";
 const SIZES = [
   { width: 390, height: 844 },
-  { width: 820, height: 1180 },
   { width: 1440, height: 900 },
 ] as const;
 const run = randomBytes(3).toString("hex");
@@ -53,13 +52,19 @@ async function ready(page: Page) {
 }
 
 async function signedIn(browser: Browser, user: SeededUser, home: RegExp): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ locale: "he-IL", viewport: SIZES[2] });
+  const context = await browser.newContext({ locale: "he-IL", viewport: SIZES[1] });
   const page = await context.newPage();
   await signInAs(page, user, home);
   return { context, page };
 }
 
-const rowOf = (page: Page, name: string) => page.getByRole("row").filter({ has: page.getByText(name, { exact: true }) }).first();
+const rowOf = (page: Page, name: string) => page.locator("[data-account-row]").filter({ has: page.getByText(name, { exact: true }) }).first();
+
+/** D76: opens the row's ⋮ menu and picks the item whose accessible name matches `item`. */
+async function rowAction(page: Page, name: string, item: RegExp | string) {
+  await rowAction(page, name, /^פעולות · /);
+  await page.getByRole("menuitem", { name: item }).click();
+}
 
 /** Whether a listed (not deleted) account of that name exists: later runs reuse the data. */
 const exists = (name: string) => localSqlValue(`select count(*) from public.profiles where full_name = '${name}' and deleted_at is null`) !== "0";
@@ -101,7 +106,7 @@ test.describe.serial("user management review images", () => {
     await add(c, { role: "מנהל", name: PEOPLE.mgrByCreator, email: mail("avital"), phone: "053-5556677" });
     // Her first password, set by the Creator (TEMPORARY Q1); typed here, never in an image.
     const password = `${randomBytes(12).toString("base64url")}Aa1!`;
-    await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^סיסמה/ }).click();
+    await rowAction(c, PEOPLE.mgrByCreator, /^סיסמה/);
     await c.getByLabel("סיסמה חדשה").fill(password);
     await c.getByRole("button", { name: "שמירת הסיסמה" }).click();
     await expect(c.getByRole("dialog")).toHaveCount(0);
@@ -112,7 +117,7 @@ test.describe.serial("user management review images", () => {
     await add(c, { role: "שירות לקוחות", name: PEOPLE.csToTech, email: mail("asaf"), phone: "058-6667788" });
     // A role change to Technician leaves "פרופיל טכנאי חסר" until "השלמה".
     if (localSqlValue(`select role from public.profiles where full_name = '${PEOPLE.csToTech}' and deleted_at is null`) !== "technician") {
-      await rowOf(c, PEOPLE.csToTech).getByRole("button", { name: /^תפקיד/ }).click();
+      await rowAction(c, PEOPLE.csToTech, /^תפקיד/);
       const role = c.getByRole("dialog", { name: `שינוי תפקיד · ${PEOPLE.csToTech}` });
       await role.getByRole("radio", { name: "טכנאי", exact: true }).check();
       await role.getByRole("button", { name: "שינוי התפקיד" }).click();
@@ -133,10 +138,13 @@ test.describe.serial("user management review images", () => {
     await add(m, { role: "טכנאי", name: PEOPLE.techBlue, email: mail("avi"), phone: "052-3334455", color: "כחול" });
     await add(m, { role: "טכנאי", name: PEOPLE.techGreen, email: mail("alon"), phone: "054-4445566", color: "ירוק" });
     // Her deactivation: a notice for the Creator (D34 b).
-    if ((await rowOf(m, PEOPLE.techGreen).getByRole("button", { name: /^השבתה/ }).count()) > 0) {
-      await rowOf(m, PEOPLE.techGreen).getByRole("button", { name: /^השבתה/ }).click();
+    await rowOf(m, PEOPLE.techGreen).getByRole("button", { name: /^פעולות · / }).click();
+    if ((await m.getByRole("menuitem", { name: /^השבתה/ }).count()) > 0) {
+      await m.getByRole("menuitem", { name: /^השבתה/ }).click();
       await m.getByRole("dialog").getByRole("button", { name: "השבתה" }).click();
       await expect(m.getByRole("dialog")).toHaveCount(0);
+    } else {
+      await m.keyboard.press("Escape");
     }
     const open = localSqlValue(
       `select count(*) from public.account_requests where full_name = '${PEOPLE.intent}' and requested_by = '${avital.id}' and status = 'approved' and target_profile_id is null`,
@@ -194,10 +202,10 @@ test.describe.serial("user management review images", () => {
       await expect(dialog).toHaveCount(0);
 
       // The Manager's edit of a Technician (no Outlook email or "פעיל": Q14) and the deactivation.
-      await rowOf(m, PEOPLE.techBlue).getByRole("button", { name: /^עריכה/ }).click();
+      await rowAction(m, PEOPLE.techBlue, /^עריכה/);
       await shot(m, "edit-mgr");
       await m.keyboard.press("Escape");
-      await rowOf(m, PEOPLE.csByMgr).getByRole("button", { name: /^השבתה/ }).click();
+      await rowAction(m, PEOPLE.csByMgr, /^השבתה/);
       await shot(m, "deactivate-confirm");
       await m.keyboard.press("Escape");
 
@@ -223,24 +231,24 @@ test.describe.serial("user management review images", () => {
       }
       // The Creator's edit of a Technician (Outlook email and "פעיל").
       if ((await rowOf(c, PEOPLE.techBlue).count()) > 0) {
-        await rowOf(c, PEOPLE.techBlue).getByRole("button", { name: /^עריכה/ }).click();
+        await rowAction(c, PEOPLE.techBlue, /^עריכה/);
         await shot(c, "edit-creator");
         await c.keyboard.press("Escape");
       } else {
         notOnPage("edit-creator");
       }
       // Role change, password (empty), email and deletion dialogs on the Creator's Manager.
-      await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^תפקיד/ }).click();
+      await rowAction(c, PEOPLE.mgrByCreator, /^תפקיד/);
       await shot(c, "role-change");
       await c.keyboard.press("Escape");
-      await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^סיסמה/ }).click();
+      await rowAction(c, PEOPLE.mgrByCreator, /^סיסמה/);
       await expect(c.getByLabel("סיסמה חדשה")).toHaveValue("");
       await shot(c, "password-empty");
       await c.keyboard.press("Escape");
-      await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^מייל/ }).click();
+      await rowAction(c, PEOPLE.mgrByCreator, /^מייל/);
       await shot(c, "email-change");
       await c.keyboard.press("Escape");
-      await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^מחיקה/ }).click();
+      await rowAction(c, PEOPLE.mgrByCreator, /^מחיקה/);
       await shot(c, "delete-confirm");
       await c.keyboard.press("Escape");
       await expect(c.getByRole("dialog")).toHaveCount(0);
@@ -263,7 +271,7 @@ test.describe.serial("user management review images", () => {
         rewritten = body !== original;
         await route.fulfill({ response, body });
       });
-      await rowOf(c, doomed).getByRole("button", { name: /^מחיקה/ }).click();
+      await rowAction(c, doomed, /^מחיקה/);
       const confirm = c.getByRole("dialog", { name: `מחיקת החשבון · ${doomed}` });
       await confirm.getByRole("checkbox").check();
       await confirm.getByRole("button", { name: "מחיקה סופית" }).click();

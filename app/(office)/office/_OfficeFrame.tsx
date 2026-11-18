@@ -19,6 +19,7 @@ export function OfficeFrame({ me, active, children }: { me: SessionUser; active:
       activeKey={active}
       user={{ name: me.name, roleLabel, avatarColor: isOfficeRole(me.role) ? officeAvatarColor(me.role) : "var(--ink)" }}
       signOut={<SignOutForm action={signOut} variant="side" />}
+      phoneSignOut={<SignOutForm action={signOut} variant="light" />}
     >
       {children}
     </OfficeShell>
