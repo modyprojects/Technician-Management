@@ -57,7 +57,7 @@ English for code, comments, docs, commits, PRs, tests. Hebrew to the owner. UI a
 - Limit shell output (`| tail -50`, `--reporter=line`). Never paste full logs.
 
 ## Screens
-Build with fake data → check in the browser → screenshots of changed screens only at 390 / 820 / 1440 → access-controlled Preview link → 3–5 Hebrew "what to check" points → wait for "מאשר". Store screenshots under `docs/review/<step>/`; keep only the latest set per screen (WebP). Do not re-open screenshots to check them.
+Build with fake data → check in the browser → screenshots of changed screens only at 390 / 820 / 1440 (technician screens: 390 / 820 only, D69) → access-controlled Preview link → 3–5 Hebrew "what to check" points → wait for "מאשר". Store screenshots under `docs/review/<step>/`; keep only the latest set per screen (WebP). Do not re-open screenshots to check them.
 
 ## Done
 Checks green; update `docs/STATUS.md` (keep it ≤40 lines: where we are, done, in progress, next, open issues/approvals); one WORKLOG entry (≤5 bullets); `docs/decisions.md` only if the owner decided something.
