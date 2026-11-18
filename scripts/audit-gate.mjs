@@ -4,9 +4,11 @@
 // Fails on every high or critical advisory, exactly like `npm audit --audit-level=high`, except an
 // advisory listed in config/audit-exceptions.json that:
 //   - names the advisory id (GHSA-…) and the package it is reported on,
-//   - has not expired (the exception stops working on its "expires" date, so it is re-checked), and
+//   - has not expired (valid through its "expires" date, failing from the next day, so it is
+//     re-checked), and
 //   - reaches only development dependencies (every installed copy is "dev": true in
-//     package-lock.json), when the exception says "devOnly": true.
+//     package-lock.json). Every exception must say "devOnly": true; a production exception is
+//     not possible without changing this gate.
 // Fails closed: an unreadable audit report, a missing lockfile entry or a malformed exception
 // fails the gate. An exception that no longer matches anything is reported so it can be removed.
 //
@@ -14,7 +16,7 @@
 //                                    [--exceptions config/audit-exceptions.json] [--today YYYY-MM-DD]
 // Without --report it runs `npm audit --json` itself.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,7 +57,16 @@ function advisoryId(via) {
 export function evaluate({ report, lock, exceptions, today }) {
   const errors = [];
   const allowed = [];
-  if (!report || typeof report.vulnerabilities !== "object" || report.vulnerabilities === null) {
+  if (!DATE.test(String(today))) {
+    return { ok: false, errors: [`invalid date for today: ${today}`], allowed, unused: [] };
+  }
+  if (!report || report.error) {
+    return { ok: false, errors: [`npm audit reported an error: ${JSON.stringify(report?.error ?? null).slice(0, 300)}`], allowed, unused: [] };
+  }
+  if (report.auditReportVersion !== 2) {
+    return { ok: false, errors: [`unsupported audit report version: ${report.auditReportVersion}`], allowed, unused: [] };
+  }
+  if (typeof report.vulnerabilities !== "object" || report.vulnerabilities === null) {
     return { ok: false, errors: ["audit report has no vulnerabilities object"], allowed, unused: [] };
   }
   if (!lock || typeof lock.packages !== "object") {
@@ -64,15 +75,28 @@ export function evaluate({ report, lock, exceptions, today }) {
   const list = Array.isArray(exceptions?.exceptions) ? exceptions.exceptions : null;
   if (!list) return { ok: false, errors: ["audit exceptions file has no exceptions array"], allowed, unused: [] };
   for (const e of list) {
-    if (!GHSA.test(String(e.advisory)) || !e.package || !DATE.test(String(e.expires)) || !e.reason || typeof e.devOnly !== "boolean") {
-      errors.push(`malformed exception ${JSON.stringify(e)} (needs advisory GHSA id, package, expires YYYY-MM-DD, reason, devOnly)`);
+    if (!GHSA.test(String(e.advisory)) || !e.package || !DATE.test(String(e.expires)) || !e.reason || e.devOnly !== true) {
+      errors.push(`malformed exception ${JSON.stringify(e)} (needs advisory GHSA id, package, expires YYYY-MM-DD, reason, devOnly: true)`);
     }
   }
   if (errors.length) return { ok: false, errors, allowed, unused: [] };
 
   const used = new Set();
-  for (const [name, vuln] of Object.entries(report.vulnerabilities)) {
-    for (const via of vuln.via || []) {
+  const vulns = report.vulnerabilities;
+  for (const [name, vuln] of Object.entries(vulns)) {
+    if (!Array.isArray(vuln?.via) || vuln.via.length === 0) {
+      errors.push(`${name}: malformed report entry (no via list)`);
+      continue;
+    }
+    if (BLOCKING.has(vuln.severity)) {
+      // A high or critical package must be explained by a high or critical advisory: its own, or one
+      // reached through another listed high or critical package (checked where it is reported).
+      const explained = vuln.via.some((v) =>
+        typeof v === "object" && v !== null ? BLOCKING.has(v.severity) : BLOCKING.has(vulns[v]?.severity),
+      );
+      if (!explained) errors.push(`${vuln.severity} ${name}: no high or critical advisory explains it (fail closed)`);
+    }
+    for (const via of vuln.via) {
       if (typeof via !== "object" || via === null) continue; // propagated from another package; checked there
       if (!BLOCKING.has(via.severity)) continue;
       const id = advisoryId(via);
@@ -86,7 +110,7 @@ export function evaluate({ report, lock, exceptions, today }) {
         errors.push(`${label}: exception expired on ${e.expires}; re-check the advisory`);
         continue;
       }
-      if (e.devOnly) {
+      {
         const nodes = Array.isArray(vuln.nodes) ? vuln.nodes : [];
         if (nodes.length === 0) {
           errors.push(`${label}: the report lists no installed copies, cannot prove dev-only`);
@@ -99,14 +123,21 @@ export function evaluate({ report, lock, exceptions, today }) {
         }
       }
       used.add(list.indexOf(e));
-      allowed.push(`${label}: excepted until ${e.expires}${e.devOnly ? ", dev-only" : ""}`);
+      allowed.push(`${label}: excepted through ${e.expires}, dev-only`);
     }
   }
   const unused = list.filter((_, i) => !used.has(i)).map((e) => `${e.advisory} in ${e.package}`);
   return { ok: errors.length === 0, errors, allowed, unused };
 }
 
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+function isMainModule() {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+const isMain = isMainModule();
 if (isMain) {
   try {
     const result = evaluate({

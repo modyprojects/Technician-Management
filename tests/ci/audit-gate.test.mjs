@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,9 +15,10 @@ const advisory = (severity = "high", url = `https://github.com/advisories/${ID}`
   source: 1, name: "picomatch", title: "ReDoS", url, severity, range: "<=4.0.7",
 });
 const report = (via, nodes = ["node_modules/picomatch"], extra = {}) => ({
+  auditReportVersion: 2,
   vulnerabilities: {
     picomatch: { name: "picomatch", severity: via.severity ?? "high", via: [via], nodes, isDirect: false },
-    micromatch: { name: "micromatch", severity: "high", via: ["picomatch"], nodes: ["node_modules/micromatch"] },
+    micromatch: { name: "micromatch", severity: via.severity ?? "high", via: ["picomatch"], nodes: ["node_modules/micromatch"] },
     ...extra,
   },
 });
@@ -98,13 +99,13 @@ test("moderate and low advisories never block", () => {
 });
 
 test("a clean report passes and lists the exception as unused", () => {
-  const r = run({ report: { vulnerabilities: {} } });
+  const r = run({ report: { auditReportVersion: 2, vulnerabilities: {} } });
   assert.equal(r.ok, true);
   assert.deepEqual(r.unused, [`${ID} in picomatch`]);
 });
 
 test("malformed exceptions fail closed", () => {
-  for (const bad of [{ advisory: "CVE-2026-1" }, { expires: "15/12/2026" }, { reason: "" }, { devOnly: "yes" }, { package: "" }]) {
+  for (const bad of [{ advisory: "CVE-2026-1" }, { expires: "15/12/2026" }, { reason: "" }, { devOnly: "yes" }, { devOnly: false }, { package: "" }]) {
     assert.equal(run({ exceptions: exception(bad) }).ok, false, JSON.stringify(bad));
   }
   assert.equal(run({ exceptions: {} }).ok, false);
@@ -131,7 +132,38 @@ test("the CLI fails closed on an unreadable report and passes a clean one", () =
   const fail = spawnSync(process.execPath, [join(root, "scripts", "audit-gate.mjs"), "--report", bad], { encoding: "utf8" });
   assert.equal(fail.status, 1);
   const good = join(dir, "good.json");
-  writeFileSync(good, JSON.stringify({ vulnerabilities: {} }));
+  writeFileSync(good, JSON.stringify({ auditReportVersion: 2, vulnerabilities: {} }));
   const pass = spawnSync(process.execPath, [join(root, "scripts", "audit-gate.mjs"), "--report", good], { encoding: "utf8" });
   assert.equal(pass.status, 0, pass.stderr);
+  // Run through a symlinked path: the CLI must still run (no silent pass).
+  const crit = join(dir, "crit.json");
+  writeFileSync(crit, JSON.stringify({ auditReportVersion: 2, vulnerabilities: { next: { name: "next", severity: "critical", via: [{ source: 9, name: "next", title: "x", url: "https://github.com/advisories/GHSA-2222-3333-4444", severity: "critical" }], nodes: ["node_modules/next"] } } }));
+  const link = join(dir, "gate-link.mjs");
+  symlinkSync(join(root, "scripts", "audit-gate.mjs"), link);
+  const viaLink = spawnSync(process.execPath, [link, "--report", crit], { encoding: "utf8" });
+  assert.equal(viaLink.status, 1, "a symlinked invocation must not pass silently");
+  // A bare --today must not disable expiry.
+  const bare = spawnSync(process.execPath, [join(root, "scripts", "audit-gate.mjs"), "--report", good, "--today"], { encoding: "utf8" });
+  assert.equal(bare.status, 1);
+});
+
+test("invalid today values fail closed", () => {
+  for (const today of [undefined, "0", "2026-1-1", ""]) assert.equal(run({ today }).ok, false, String(today));
+});
+
+test("npm error reports and unknown report versions fail closed", () => {
+  assert.equal(run({ report: { auditReportVersion: 2, error: { code: "ENOAUDIT" }, vulnerabilities: {} } }).ok, false);
+  assert.equal(run({ report: { vulnerabilities: {} } }).ok, false);
+  assert.equal(run({ report: { auditReportVersion: 1, advisories: {} } }).ok, false);
+});
+
+test("a high or critical entry without an explaining advisory fails closed", () => {
+  const shapes = [
+    { x: { name: "x", severity: "critical", via: [], nodes: ["node_modules/x"] } },
+    { x: { name: "x", severity: "critical", via: "picomatch", nodes: ["node_modules/x"] } },
+    { x: { name: "x", severity: "critical", via: ["missing-package"], nodes: ["node_modules/x"] } },
+  ];
+  for (const extra of shapes) {
+    assert.equal(run({ report: report(advisory(), ["node_modules/picomatch"], extra) }).ok, false, JSON.stringify(extra));
+  }
 });
