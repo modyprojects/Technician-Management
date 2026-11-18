@@ -1,37 +1,36 @@
 # STATUS — Technician Management
-Updated 2026-11-18 (#39 and #40 merged). Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-18, end of day. Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
-- Version 1 target Tue 2026-11-24, online only: sign-in + user management, simulator, technician screens, office screens, manager dashboard on real data.
-- `main` = 1cdf5a7. Supabase: Migrations 1–6 applied (M6 = remote version 20261118082250, fingerprint verified). M7 not applied.
+- Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
+- `main` = 1cdf5a7. Supabase: Migrations 1–6 applied (M6 = remote 20261118082250). M7 not applied.
+- **CI blocked:** every GitHub Actions job fails in ~3 s without a runner (billing). Do not re-trigger Actions; no merges until CI is green. Vercel Previews build independently.
 
 ## Done on main
-- Sign-in, session guards, role landing, password reset with mock mail (#33, #35).
-- Step 6: ingestion + simulator server side + Migration 6 (#37); D31 post-deploy checks passed.
-- CI dependency audit gate with a listed, expiring, dev-only picomatch exception (#39).
-- Rules reset: lean CLAUDE.md and docs/STATUS.md (#40).
+- Sign-in, guards, role landing, password reset with mock mail (#33, #35); Step 6 ingestion + simulator + M6 (#37); CI audit gate (#39); rules reset (#40).
 
-## In progress
-- PR #38 Migration 7 (technician writers, visit media), draft, NOT applied. Review: APPROVE WITH FIXES — medium: the idempotency hash includes device_sent_at and time-zone-dependent text, so a retry raises 23505; low: confirm_visit_media ignores visit status, replay skips the ownership check, no real-row tests, stale text. Fixes NOT started.
-- M7 (#38): review fixes done, re-review APPROVE; owner approved the file SHA 489901e5…8d974 (file only; applying needs a separate approval).
-- PR A (branch `claude/efficiency-pr-a`, WIP 4b8d72e, no PR): WORKING-EFFICIENTLY.md, settings + 2 hooks + tests, supabase-postgres-best-practices skill. Hook review FIX: 7 high + 3 medium bypasses, not fixed. Do not merge.
-- Technician: `claude/tech-today` not yet sent for approval; `claude/tech-visit-flow` (23a6b08) works on the local stack (spec 7/7, 51 WebP shots) — send for approval after M7 is applied. Bug: a tiny photo shows "הקובץ גדול מדי".
-- Office: `claude/office-unparsed` (simulator) and `claude/office-calls-list` (74df887) not yet sent for approval.
-- PR #36 user management: draft, not yet sent for approval, CI green on 0c59bbc; unfinished screenshot/test work on `claude/step2-user-management-wip`.
+## Open PRs (all unmerged)
+- #41 docs: STATUS, decisions D68–D78 (D67 is #36's), TE-08/11/25, CLAUDE.md widths (office 390/1440, technician 390/820). Docs-only; merge when CI is green.
+- #42 tech-today (85e09be): technician home, visit card, "הושלמו היום"; D69 (no warranty), centred building/floor/apt, D74 test marker + banner, demo tests ported. Awaits the owner's "מאשר" on 85e09be.
+- #36 user management (9fd7595): owner review of 18.11 done (cards, ⋮, search/filters, centred modals, add dialog, phone header D73, 390 overflow test); screenshots 390/1440 sent; re-review of review fixes CONFIRMED. Awaits "מאשר". Not in this pass: notices tabs (D78), 10 colours (D77). Same TestBadge.tsx change as #42 (drops out on rebase after #42 merges).
+- #38 M7: review fixes (c80828f), re-review APPROVE recorded; owner approved file SHA 489901e51b4bd6150364e255be440f92509bb623af5523902d4cc2a830a8d974 (file only). Next: CI green → ask the owner for apply approval with that SHA.
 
 ## Waiting for the owner
-- M7: approval to apply (after CI is back).
-- Visual approvals (not yet sent): tech-today, calls list, unparsed + simulator, user management (final).
+- GitHub budget (unblocks CI); then record the "free plans only" exception as a decision.
+- V1 date; "מאשר" on #42 and #36; the parallel-work plan; M7 apply approval (after CI).
 
 ## Next, in order
-1. Sync open branches with main.
-2. M7: CI → owner approval to apply → apply → `visit-media` bucket → merge #38. apply_migration decodes literal `\uXXXX` text: encode those escapes in the wrapper (as for M6).
-3. Fix the PR A hook bypasses → re-review → PR A; then decisions-current.md (PR B), CI docs-only/@responsive (PR D), test cleanup E1.
-4. Remaining V1 screens: office call card, office technician calendar, technician calendar, manager dashboard on real data.
-5. Follow-up PR: next 16.4.3 → 16.4.6 (two moderate advisories).
+1. Owner sets the budget → decision for the "free plans only" exception → CI green → merge #41, then #42 (after "מאשר").
+2. M7 flow: CI on #38 → apply approval → apply → `visit-media` bucket → merge #38 (encode `\uXXXX` in the wrapper, as for M6).
+3. PR D early (CI docs-only / @responsive); PR A hook bypasses (branch `claude/efficiency-pr-a`, do not merge).
+4. Screens queue: office-unparsed (stacked on #36) → office-calls-list (stacked on unparsed) → tech-visit-flow (after M7; rebase on tech-today; DepartLink save-first-then-Waze, D71) → office call card, office technician calendar, technician calendar, manager dashboard.
+5. Customer Service nav must become "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)), each with its screen.
+6. Follow-up: next 16.4.3 → 16.4.6 (`next build` shows a security notice; first build attempt stops, retry passes).
 
 ## Must fix before real users (hardening gate)
-- Post-M7 backlog, one migration: (a) a deleted-but-not-banned account shows a persistent "השלמת מחיקה" for the Creator, from database state; (b) the password reset never sends a link to a deleted account (also deleted-but-not-banned); plus the "נקרא" state of account notices (D78). #36 re-review lows L1/L2.
+- One post-M7 migration: (a) a deleted-but-not-banned account shows a persistent "השלמת מחיקה" for the Creator, from database state; (b) the password reset never sends a link to a deleted account (also deleted-but-not-banned); (c) the "נקרא" state of account notices (D78). #36 re-review lows L1/L2.
+- MFA for Creator and Manager before production.
 
 ## Notes
-- New sessions start in a fresh container: local worktrees and the scratchpad may be gone; everything above is pushed to GitHub.
+- Backups of rebased branches: `claude/step4-migration7-backup`, `claude/tech-today-backup`, `claude/step2-user-management-backup`.
+- Local stack: install the CLI with `scripts/install-supabase-cli.sh`; Docker must be started by hand in the container. New sessions start fresh; everything above is pushed.
