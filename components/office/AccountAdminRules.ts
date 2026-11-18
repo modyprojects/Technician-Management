@@ -13,6 +13,7 @@ import type {
   AccountRequest,
   AccountStateInput,
   CancelAccountRequestInput,
+  CancelCreationInput,
   CreationIntent,
   UpdateProfileInput,
   UpdateTechnicianInput,
@@ -65,6 +66,15 @@ export const cancelInput = (entry: AccountRequestEntry): CancelAccountRequestInp
 /** Cancelling one's own open creation intent ("ביטול" on "יצירה שלא הושלמה") at the version read. */
 export const intentCancelInput = (intent: Pick<CreationIntent, "id" | "version">): CancelAccountRequestInput => ({
   requestId: intent.id,
+  expectedVersion: intent.version,
+});
+
+/**
+ * "ביטול" of one's own incomplete creation on the real screen (D60 (7); the real action's
+ * CancelCreationInput) at the version read.
+ */
+export const cancelCreationInput = (intent: Pick<CreationIntent, "id" | "version">): CancelCreationInput => ({
+  intentId: intent.id,
   expectedVersion: intent.version,
 });
 

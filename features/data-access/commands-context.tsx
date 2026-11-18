@@ -11,6 +11,14 @@ export function CommandsProvider({ commands, children }: { commands: Commands; c
   return <CommandsContext value={commands}>{children}</CommandsContext>;
 }
 
+/**
+ * The active Commands, or null when no CommandsProvider wraps the component (a real screen that
+ * supplies its own narrower commands, e.g. features/accounts/commands-context.tsx).
+ */
+export function useOptionalCommands(): Commands | null {
+  return use(CommandsContext);
+}
+
 /** The active Commands. Throws when no CommandsProvider wraps the component. */
 export function useCommands(): Commands {
   const commands = use(CommandsContext);

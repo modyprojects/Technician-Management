@@ -125,11 +125,22 @@ export const DEV_PAGES = [
 ] as const;
 
 /**
- * The real routes (Step 2 PR 2.5). Without the Supabase variables each one shows /login's unavailable
- * state, except the password-reset screens (D65): /login/forgot shows its form and /login/reset its
- * invalid-link state.
+ * The real routes (Step 2 PR 2.5; the user management, D60 (7)). Without the Supabase variables each
+ * one shows /login's unavailable state, except the password-reset screens (D65): /login/forgot shows
+ * its form and /login/reset its invalid-link state.
  */
-export const REAL_PAGES = ["/", "/login", "/office", "/tech", "/tech/profile", "/login/forgot", "/login/reset"] as const;
+export const REAL_PAGES = [
+  "/",
+  "/login",
+  "/office",
+  "/tech",
+  "/tech/profile",
+  "/login/forgot",
+  "/login/reset",
+  // The unified user management (D60 (7)): Settings › "משתמשים" / "משתמשים והרשאות".
+  "/office/settings",
+  "/office/settings/users",
+] as const;
 
 export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
 

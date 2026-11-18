@@ -1,5 +1,9 @@
-// Runs the auth tests against the LOCAL Supabase stack (Step 2 PR 2.5; D65 password reset):
-//   node tests/auth/run-local.mjs [--no-build] [playwright args…]
+// Runs the auth tests against the LOCAL Supabase stack (Step 2 PR 2.5; D65 password reset; the
+// unified user management's screens, D60 (7)):
+//   node tests/auth/run-local.mjs [--no-build] [--with-creator] [playwright args…]
+// --with-creator (TEMPORARY, Step 2 plan Q6, open): also makes or reuses the fictional, real-marked
+// local Creator of tests/accounts (ensureLocalCreator) for the Creator's screen cases, which are
+// skipped without it.
 // It reads the local stack's API URL and keys from `supabase status -o json` (SUPABASE_BIN, default
 // "supabase"), builds the app with only the two public values (NEXT_PUBLIC_* are inlined at build
 // time), and gives the secret key only to the Playwright process: its global setup removes it from
@@ -19,8 +23,9 @@ import { join } from "node:path";
 
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/;
 const args = process.argv.slice(2);
-const noBuild = args[0] === "--no-build";
-const playwrightArgs = noBuild ? args.slice(1) : args;
+const noBuild = args.includes("--no-build");
+const withCreator = args.includes("--with-creator");
+const playwrightArgs = args.filter((a) => a !== "--no-build" && a !== "--with-creator");
 
 let status;
 try {
@@ -65,7 +70,13 @@ writeFileSync(serverLog, "", { mode: 0o600 });
 let exitCode = 1;
 try {
   const run = spawnSync("npx", ["playwright", "test", "-c", "playwright.auth.config.ts", ...playwrightArgs], {
-    env: { ...env, AUTH_TEST_SUPABASE_SECRET_KEY: secretKey, AUTH_TEST_MAIL_FILE: mailFile, AUTH_TEST_SERVER_LOG: serverLog },
+    env: {
+      ...env,
+      AUTH_TEST_SUPABASE_SECRET_KEY: secretKey,
+      AUTH_TEST_MAIL_FILE: mailFile,
+      AUTH_TEST_SERVER_LOG: serverLog,
+      AUTH_TEST_LOCAL_CREATOR: withCreator ? "1" : "",
+    },
     stdio: "inherit",
   });
   exitCode = run.status ?? 1;

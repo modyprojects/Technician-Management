@@ -24,17 +24,21 @@ import {
   accountRequestTargetError,
   accountStateCommandError,
   aliasTakenError,
+  cancelCreationError,
   cancelRequestError,
   completeCreationError,
   creatorOnlyError,
   credentialEmailError,
   credentialsCallerError,
   decideRequestError,
+  deleteAccountError,
   managerOnlyError,
   newAccountError,
   newTechnicianError,
   passwordError,
   profileUpdateCommandError,
+  roleChangeError,
+  staleVersionError,
   technicianProfileCompletionError,
   technicianUpdateCommandError,
   testAccountEmailError,
@@ -44,7 +48,7 @@ import {
 } from "@/features/accounts/data/validate";
 import { cancelReasonError } from "@/features/calls/data/validate";
 import { ownValue, type CommandResult, type VersionedResult } from "@/features/data-access/common";
-import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
+import { ACTION_MESSAGES, REQUEST_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { Commands } from "@/features/data-access/types";
 import { notificationIdsError, notificationPreferencesError } from "@/features/notifications/data/validate";
 import { productEditError } from "@/features/products/data/validate";
@@ -660,6 +664,51 @@ export function buildSimulatedCommands(
             };
             return { account: { ...account, technicianMissing: technicianProfileMissing(account) }, technician };
           },
+        ),
+      // D60 (7) commands of the real unified screen. The /dev/demo prototype shows the pre-D60
+      // screens (D61 (1)) and offers none of them; they are simulated with the shared D60 rules so
+      // the aggregate stays complete. Nothing is stored or deleted.
+      cancelCreation: (input) =>
+        run(
+          () => {
+            const stored = ownValue(state.requests, input?.intentId);
+            const mayCancel = stored?.intent === true && (stored.requestedBy === viewer?.id || viewer?.role === "creator");
+            return [
+              cancelCreationError(input, viewer),
+              mayCancel ? null : ACTION_MESSAGES.forbidden,
+              stored?.status === "approved" && !stored.fulfilled ? null : REQUEST_MESSAGES.cannotCancel,
+              stored ? staleVersionError(input.expectedVersion, stored.version) : null,
+            ];
+          },
+          () => "ביטול יצירה שלא הושלמה",
+          (): VersionedResult => ({ version: ownValue(state.requests, input.intentId)?.version ?? input.expectedVersion }),
+        ),
+      changeRole: (input) =>
+        run(
+          () => {
+            const stored = ownValue(state.accounts, input?.accountId);
+            return [
+              roleChangeError(input, viewer),
+              stored ? null : ACTION_MESSAGES.forbidden,
+              stored && stored.technicianId !== null && input.newRole !== stored.role ? "לא ניתן לשנות את התפקיד של חשבון טכנאי." : null,
+              stored ? staleVersionError(input.expectedVersion, stored.version) : null,
+            ];
+          },
+          () => `שינוי תפקיד · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · ${ACCOUNT_ROLE_LABELS[input.newRole]}`,
+          (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
+        ),
+      deleteAccount: (input) =>
+        run(
+          () => {
+            const stored = ownValue(state.accounts, input?.accountId);
+            return [
+              deleteAccountError(input, viewer),
+              stored && stored.role !== "creator" ? null : ACTION_MESSAGES.forbidden,
+              stored ? staleVersionError(input.expectedVersion, stored.version) : null,
+            ];
+          },
+          () => `מחיקת משתמש · ${excerpt(ownValue(state.accounts, input.accountId)?.name ?? "", 40)} · ההיסטוריה נשמרת · לא נמחק`,
+          (): VersionedResult => ({ version: ownValue(state.accounts, input.accountId)?.version ?? input.expectedVersion }),
         ),
       // "השלמה" of "פרופיל טכנאי חסר" (Step 2 plan §3.8 phase 4): the Outlook email is the account's
       // stored sign-in email (Q14), never an input. Nothing is created.

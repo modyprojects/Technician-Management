@@ -3,7 +3,7 @@
 // The Creator's credential dialogs on an account row (Step 2 plan §4 #7, §3.9; D34 e, D50; SE-17
 // PROPOSED): "הגדרת סיסמה" and "שינוי כתובת מייל". Offered by credentialActionsOffered (the Creator,
 // never on his own row: TEMPORARY Q22, P-6 not built); the server checks the caller in the database
-// before any Auth admin call (D34). Each runs one command from useCommands().accounts and returns
+// before any Auth admin call (D34). Each runs one command from useAccountCommands() and returns
 // whether it was simulated; the caller shows the result.
 // "הגדרת סיסמה": the password is never shown back, kept or sent by the app.
 // - The field is UNCONTROLLED (read through its ref; no `name`, `value` or `defaultValue`), so no
@@ -24,12 +24,13 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import type { UserAccount } from "@/features/accounts/data/types";
 import { credentialEmailError, EMAIL_MAX, NO_CHANGE, passwordError } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import { AccountDialog, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 
 const PASSWORD_NOTES = [
   { text: "רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה." },
-  // TEMPORARY (Step 2 plan Q1): no reset link or forced change until the owner decides.
+  // TEMPORARY (Step 2 plan Q1): the Creator hands the password over himself and no change is forced
+  // at the first sign-in; the self-service reset (D65) needs email delivery, which is not enabled.
   { text: "עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.", pending: true },
   // TEMPORARY (Q12).
   { text: "חוזק הסיסמה נבדק במערכת ההתחברות." },
@@ -46,7 +47,7 @@ export function PasswordForm({
   onDone: (simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -148,7 +149,7 @@ export function EmailForm({
   onDone: (email: string, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const emailRef = useRef<HTMLInputElement>(null);

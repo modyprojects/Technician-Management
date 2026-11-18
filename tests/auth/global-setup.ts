@@ -2,13 +2,15 @@
 // Supabase URL that is not a loopback address, so it can never write to the remote project.
 // Fictional, test-marked accounts only (D47): `@example.test` addresses, Auth users with
 // app_metadata { is_test: true, data_source: "automated_test" } and profiles with is_test = true.
-// No Creator and no real-marked row (Step 2 plan Q6 TEMPORARY). Passwords are random per run, kept
+// No Creator and no real-marked row (Step 2 plan Q6 TEMPORARY), unless --with-creator asks for the
+// local Creator of tests/accounts (ensureLocalCreator; the database refuses a test-marked Creator). Passwords are random per run, kept
 // in this process's environment for the test workers, never written to a file or printed.
 // Profiles are inserted as `postgres` inside the local database container (the RPCs need a signed-in
 // caller), as the canary fixtures do; every trigger, CHECK and the one-way rule still apply.
 import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { ensureLocalCreator } from "../accounts/global-setup";
 
 export type SeededUser = { id: string; email: string; password: string; name: string };
 export type SeededUsers = Record<
@@ -89,7 +91,11 @@ commit;
     stdio: ["pipe", "ignore", "inherit"],
   });
 
+  // TEMPORARY (Step 2 plan Q6): the local Creator of the Creator's screen cases (--with-creator).
+  const creator = process.env.AUTH_TEST_LOCAL_CREATOR === "1" ? await ensureLocalCreator(admin, run) : null;
+
   process.env.AUTH_E2E_USERS = JSON.stringify(users);
+  process.env.AUTH_E2E_CREATOR = creator ? JSON.stringify(creator) : "";
   process.env.AUTH_E2E_TECH_ROW = techRow;
   // Least privilege: no test worker needs the secret key.
   delete process.env.AUTH_TEST_SUPABASE_SECRET_KEY;
