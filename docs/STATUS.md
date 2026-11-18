@@ -12,7 +12,7 @@ Updated 2026-11-18, end of day. Keep ≤40 lines; update at the end of every tas
 ## Open PRs (all unmerged)
 - #41 docs: STATUS, decisions D68–D78 (D67 is #36's), TE-08/11/25, CLAUDE.md widths (office 390/1440, technician 390/820). Docs-only; merge when CI is green.
 - #42 tech-today (85e09be): technician home, visit card, "הושלמו היום"; D69 (no warranty), centred building/floor/apt, D74 test marker + banner, demo tests ported. Awaits the owner's "מאשר" on 85e09be.
-- #36 user management (9fd7595): owner review of 18.11 done (cards, ⋮, search/filters, centred modals, add dialog, phone header D73, 390 overflow test); screenshots 390/1440 sent; re-review of review fixes CONFIRMED. Awaits "מאשר". Not in this pass: notices tabs (D78), 10 colours (D77). Same TestBadge.tsx change as #42 (drops out on rebase after #42 merges).
+- #36 user management (c08262a; phone-header logo fix + 390 test and 390 shots after 9fd7595): owner review of 18.11 done (cards, ⋮, search/filters, centred modals, add dialog, phone header D73, 390 overflow test); screenshots 390/1440 sent; re-review of review fixes CONFIRMED. Awaits "מאשר". Not in this pass: notices tabs (D78), 10 colours (D77). Same TestBadge.tsx change as #42 (drops out on rebase after #42 merges).
 - #38 M7: review fixes (c80828f), re-review APPROVE recorded; owner approved file SHA 489901e51b4bd6150364e255be440f92509bb623af5523902d4cc2a830a8d974 (file only). Next: CI green → ask the owner for apply approval with that SHA.
 
 ## Waiting for the owner
