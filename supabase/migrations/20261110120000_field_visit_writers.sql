@@ -25,11 +25,12 @@
 --
 -- The writers (order in every body, as Migrations 4 and 6): the caller (require_caller, an active
 -- Technician, profile locked FOR SHARE; his technician record from my_technician_id()), the input
--- (22023), the operation (offline_operation_replay: a replay returns the stored outcome, the same id
--- with another payload or user is refused), the call locked FOR UPDATE and then the visit FOR UPDATE
--- (as recalc_call_status and the deferred checks lock the call first), the ownership (the visit's
--- current technician is the caller's record; anything else, also unknown, cancelled-and-gone or a
--- test caller on a real visit, is the generic 42501), the state (55000), the field version (PT409),
+-- (22023), the call locked FOR UPDATE and then the visit FOR UPDATE (as recalc_call_status and the
+-- deferred checks lock the call first), the ownership (the visit's current technician is the
+-- caller's record; anything else, also unknown, cancelled-and-gone or a test caller on a real
+-- visit, is the generic 42501), the operation (offline_operation_replay, only after the ownership
+-- check: a replay returns the stored outcome, the same id with another payload or user is refused),
+-- the state (55000), the field version (PT409),
 -- the write, the status event, the device time report (D45), the call status (D38,
 -- recalc_call_status), and the operation's stored outcome (record_offline_operation), all in the
 -- caller's transaction, so the deferred constraint triggers of Migration 3 (c10 to c40) pass at
@@ -238,7 +239,10 @@ create trigger t99_reject_truncate before truncate on public.visit_media
 --    authenticated); each reads only visit_media and visits and returns a boolean.
 -- ---------------------------------------------------------------------------------------------
 
--- The sha256 of an operation's canonical payload (jsonb text: keys sorted, D46 replay check).
+-- The sha256 of an operation's canonical payload (jsonb text: keys sorted, D46 replay check). The
+-- writers build the payload from the action's own values only: device_sent_at is left out (a retry
+-- of the same action is sent again later) and every time is its UTC epoch number, so the text does
+-- not depend on the session's TimeZone; a retry hashes the same and returns the stored outcome.
 create function private.field_payload_sha256(p_payload jsonb)
 returns text
 language sql
@@ -335,16 +339,8 @@ begin
   end if;
   v_sha := private.field_payload_sha256(jsonb_build_object(
     'action', 'depart', 'visit_id', p_visit_id, 'expected_field_version', p_expected_field_version,
-    'reported_at', p_reported_at, 'device_tz', p_device_tz, 'device_utc_offset_min', p_device_utc_offset_min,
-    'device_sent_at', p_device_sent_at));
-  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'time_report', v_sha);
-  if v_op.operation_id is not null then
-    out_status := (select v.status from public.visits v where v.id = p_visit_id);
-    out_field_version := v_op.resulting_field_version;
-    out_replay := true;
-    return next;
-    return;
-  end if;
+    'reported_at', extract(epoch from p_reported_at), 'device_tz', p_device_tz,
+    'device_utc_offset_min', p_device_utc_offset_min));
   select v.service_call_id into v_call_id from public.visits v where v.id = p_visit_id;
   if not found then
     raise exception using errcode = '42501', message = 'not authorized';
@@ -353,6 +349,14 @@ begin
   select v.* into v_visit from public.visits v where v.id = p_visit_id for update;
   if not found or v_visit.technician_id is distinct from v_tech or (v_caller.is_test and not v_visit.is_test) then
     raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'time_report', v_sha);
+  if v_op.operation_id is not null then
+    out_status := v_visit.status;
+    out_field_version := v_op.resulting_field_version;
+    out_replay := true;
+    return next;
+    return;
   end if;
   if v_visit.status <> 'scheduled' then
     raise exception using errcode = '55000', message = 'invalid status change';
@@ -408,16 +412,8 @@ begin
   end if;
   v_sha := private.field_payload_sha256(jsonb_build_object(
     'action', 'arrive', 'visit_id', p_visit_id, 'expected_field_version', p_expected_field_version,
-    'reported_at', p_reported_at, 'device_tz', p_device_tz, 'device_utc_offset_min', p_device_utc_offset_min,
-    'device_sent_at', p_device_sent_at));
-  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'time_report', v_sha);
-  if v_op.operation_id is not null then
-    out_status := (select v.status from public.visits v where v.id = p_visit_id);
-    out_field_version := v_op.resulting_field_version;
-    out_replay := true;
-    return next;
-    return;
-  end if;
+    'reported_at', extract(epoch from p_reported_at), 'device_tz', p_device_tz,
+    'device_utc_offset_min', p_device_utc_offset_min));
   select v.service_call_id into v_call_id from public.visits v where v.id = p_visit_id;
   if not found then
     raise exception using errcode = '42501', message = 'not authorized';
@@ -426,6 +422,14 @@ begin
   select v.* into v_visit from public.visits v where v.id = p_visit_id for update;
   if not found or v_visit.technician_id is distinct from v_tech or (v_caller.is_test and not v_visit.is_test) then
     raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'time_report', v_sha);
+  if v_op.operation_id is not null then
+    out_status := v_visit.status;
+    out_field_version := v_op.resulting_field_version;
+    out_replay := true;
+    return next;
+    return;
   end if;
   if v_visit.status <> 'en_route' then
     raise exception using errcode = '55000', message = 'invalid status change';
@@ -508,17 +512,8 @@ begin
     'action', 'close', 'visit_id', p_visit_id, 'expected_field_version', p_expected_field_version, 'outcome', p_outcome,
     'summary', p_summary, 'signer_name', p_signer_name, 'ack_text_sha256', p_ack_text_sha256,
     'signature_media_id', p_signature_media_id, 'followup_reason_id', p_followup_reason_id,
-    'next_visit_notes', p_next_visit_notes, 'reported_at', p_reported_at, 'device_tz', p_device_tz,
-    'device_utc_offset_min', p_device_utc_offset_min, 'device_sent_at', p_device_sent_at));
-  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'close', v_sha);
-  if v_op.operation_id is not null then
-    select v.status, c.status into out_status, out_call_status
-    from public.visits v join public.service_calls c on c.id = v.service_call_id where v.id = p_visit_id;
-    out_field_version := v_op.resulting_field_version;
-    out_replay := true;
-    return next;
-    return;
-  end if;
+    'next_visit_notes', p_next_visit_notes, 'reported_at', extract(epoch from p_reported_at), 'device_tz', p_device_tz,
+    'device_utc_offset_min', p_device_utc_offset_min));
   select v.service_call_id into v_call_id from public.visits v where v.id = p_visit_id;
   if not found then
     raise exception using errcode = '42501', message = 'not authorized';
@@ -527,6 +522,15 @@ begin
   select v.* into v_visit from public.visits v where v.id = p_visit_id for update;
   if not found or v_visit.technician_id is distinct from v_tech or (v_caller.is_test and not v_visit.is_test) then
     raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'close', v_sha);
+  if v_op.operation_id is not null then
+    out_status := v_visit.status;
+    out_call_status := (select c.status from public.service_calls c where c.id = v_call_id);
+    out_field_version := v_op.resulting_field_version;
+    out_replay := true;
+    return next;
+    return;
   end if;
   if v_visit.status <> 'in_progress' then
     raise exception using errcode = '55000', message = 'invalid status change';
@@ -621,16 +625,8 @@ begin
   end if;
   v_sha := private.field_payload_sha256(jsonb_build_object(
     'action', 'media', 'visit_id', p_visit_id, 'kind', p_kind, 'phase', p_phase, 'mime_type', p_mime_type,
-    'size_bytes', p_size_bytes, 'captured_at', p_captured_at, 'device_tz', p_device_tz,
-    'device_utc_offset_min', p_device_utc_offset_min, 'device_sent_at', p_device_sent_at));
-  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'media', v_sha);
-  if v_op.operation_id is not null then
-    select m.id, m.storage_path into out_media_id, out_storage_path
-    from public.visit_media m where m.operation_id = p_operation_id;
-    out_replay := true;
-    return next;
-    return;
-  end if;
+    'size_bytes', p_size_bytes, 'captured_at', extract(epoch from p_captured_at), 'device_tz', p_device_tz,
+    'device_utc_offset_min', p_device_utc_offset_min));
   select v.service_call_id into v_call_id from public.visits v where v.id = p_visit_id;
   if not found then
     raise exception using errcode = '42501', message = 'not authorized';
@@ -639,6 +635,14 @@ begin
   select v.* into v_visit from public.visits v where v.id = p_visit_id for update;
   if not found or v_visit.technician_id is distinct from v_tech or (v_caller.is_test and not v_visit.is_test) then
     raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  v_op := private.offline_operation_replay(p_operation_id, p_visit_id, 'media', v_sha);
+  if v_op.operation_id is not null then
+    select m.id, m.storage_path into out_media_id, out_storage_path
+    from public.visit_media m where m.operation_id = p_operation_id;
+    out_replay := true;
+    return next;
+    return;
   end if;
   if v_visit.status <> 'in_progress' then
     raise exception using errcode = '55000', message = 'invalid status change';
@@ -662,8 +666,9 @@ end
 $$;
 
 -- The caller's pending media row becomes 'stored' once its object is in the bucket with the
--- declared size and type (OQ-5). A stored row answers 'stored' again (idempotent). 55000 while the
--- object is missing or differs.
+-- declared size and type (OQ-5), only while its visit is in progress (OQ-4; the visit is locked FOR
+-- SHARE before the media row, so a closure cannot commit in between). A stored row answers 'stored'
+-- again (idempotent). 55000 when the visit is not in progress or the object is missing or differs.
 create function private.confirm_visit_media(p_media_id uuid)
 returns table (out_state text)
 language plpgsql
@@ -673,6 +678,8 @@ as $$
 declare
   v_caller public.profiles;
   v_tech uuid;
+  v_visit_id uuid;
+  v_visit public.visits;
   v_media public.visit_media;
 begin
   v_caller := private.require_caller(array['technician']);
@@ -683,15 +690,23 @@ begin
   if p_media_id is null then
     raise exception using errcode = '22023', message = 'invalid input';
   end if;
+  select m.visit_id into v_visit_id from public.visit_media m where m.id = p_media_id;
+  if not found then
+    raise exception using errcode = '42501', message = 'not authorized';
+  end if;
+  select v.* into v_visit from public.visits v where v.id = v_visit_id for share;
   select m.* into v_media from public.visit_media m where m.id = p_media_id for update;
-  if not found or v_media.created_by is distinct from v_caller.id
-     or not exists (select 1 from public.visits v where v.id = v_media.visit_id and v.technician_id = v_tech) then
+  if v_visit.id is null or v_media.id is null or v_media.created_by is distinct from v_caller.id
+     or v_visit.technician_id is distinct from v_tech or (v_caller.is_test and not v_visit.is_test) then
     raise exception using errcode = '42501', message = 'not authorized';
   end if;
   if v_media.state = 'stored' then
     out_state := 'stored';
     return next;
     return;
+  end if;
+  if v_visit.status <> 'in_progress' then
+    raise exception using errcode = '55000', message = 'invalid status change';
   end if;
   if not exists (select 1 from storage.objects o
                  where o.bucket_id = 'visit-media' and o.name = v_media.storage_path
@@ -981,7 +996,7 @@ comment on function private.close_visit(uuid, uuid, integer, text, text, text, t
 comment on function private.add_visit_media(uuid, uuid, text, text, text, integer, timestamptz, text, integer, timestamptz) is
   'Step 4: a pending photo or signature image of the caller''s visit in progress and its object path in the private bucket visit-media. Never called by a migration.';
 comment on function private.confirm_visit_media(uuid) is
-  'Step 4: a pending media row becomes stored once its object exists with the declared size and type. Never called by a migration.';
+  'Step 4: a pending media row of a visit in progress becomes stored once its object exists with the declared size and type. Never called by a migration.';
 
 -- ---------------------------------------------------------------------------------------------
 -- 10. Hand-offs (no statement).

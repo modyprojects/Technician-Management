@@ -17,7 +17,7 @@
 -- Fictional, test-marked fixtures only (example.test, automated_test; D47).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(30);
 
 -- ---------------------------------------------------------------------------------------------
 -- Helpers (pg_temp, rolled back)
@@ -446,6 +446,80 @@ select results_eq(
   $q$ values ('Technician A', '11'), ('Technician B', '0'), ('Manager (card, cal)', '11'), ('Customer Service (card, cal)', '11'),
              ('Customer Service without card', '0'), ('Creator', '11'), ('anon', '42501 permission denied for table visit_media') $q$,
   'OQ-6: the stored object and its row are readable by the visit''s technician and by office users with card and (cal or calls); not by another technician, without card, or anonymously');
+
+-- ---------------------------------------------------------------------------------------------
+-- 5. Review fixes on real rows: a retry hashes the same (no device_sent_at, no TimeZone text), a
+--    replay checks the ownership first, confirm_visit_media needs the visit in progress
+-- ---------------------------------------------------------------------------------------------
+select is(
+  pg_temp.tm_as('00000000-0000-4000-8000-0000000360d1',
+    $s$do $d$ declare r record; begin
+       perform set_config('TimeZone', 'Asia/Jerusalem', true);
+       perform * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036061', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 120, '2026-11-17 08:01+02');
+       perform set_config('TimeZone', 'America/New_York', true);
+       select * into r from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036061', 1, '2026-11-17 06:00+00', 'Asia/Jerusalem', 120, '2026-11-17 08:20+02');
+       if not r.out_replay or r.out_status <> 'en_route' or r.out_field_version <> 2 then raise exception 'bad replay %', r; end if;
+     end $d$$s$,
+    $p$select (select count(*) from public.visit_events e where e.visit_id = '00000000-0000-4000-8000-0000000360f1' and e.event_type = 'status_changed')
+       || ' ' || (select count(*) from public.visit_time_reports r where r.visit_id = '00000000-0000-4000-8000-0000000360f1')
+       || ' ' || (select o.device_sent_at = '2026-11-17 08:01+02' from public.offline_operations o where o.operation_id = '00000000-0000-4000-8000-000000036061')$p$),
+  '1 1 true',
+  'D46 (review fix): a retry of the same departure with a later device_sent_at, in another session TimeZone, is a replay (not 23505); the first delivery is kept');
+
+select is(
+  pg_temp.tm_as('00000000-0000-4000-8000-0000000360d1', pg_temp.tm_done('00000000-0000-4000-8000-000000036062',
+    $x$if not (select r.out_replay from public.close_visit('00000000-0000-4000-8000-0000000360f3', '00000000-0000-4000-8000-000000036062', 3, 'done', 'הוחלפה משאבה', 'ישראל ישראלי', 'ea91ad47a9f7df58d3077dc13bc979251392605aac92d729bbc31d1fe4ebf439', m, null, null, now(), 'Asia/Jerusalem', 120, now() + interval '3 minutes') r) then raise exception 'no replay'; end if;
+       perform set_config('TimeZone', 'UTC', true);
+       select out_media_id into m from public.add_visit_media('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036063', 'photo', 'before', 'image/jpeg', 50, '2026-11-17 09:00+02', 'Asia/Jerusalem', 120, '2026-11-17 09:01+02');
+       perform set_config('TimeZone', 'Asia/Tokyo', true);
+       if (select r.out_media_id from public.add_visit_media('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036063', 'photo', 'before', 'image/jpeg', 50, '2026-11-17 07:00+00', 'Asia/Jerusalem', 120, '2026-11-17 09:30+02') r) <> m then raise exception 'no media replay'; end if;$x$),
+    $p$select (select count(*) from public.visit_signatures s where s.visit_id = '00000000-0000-4000-8000-0000000360f3')
+       || ' ' || (select count(*) from public.visit_reports r where r.visit_id = '00000000-0000-4000-8000-0000000360f3')
+       || ' ' || (select count(*) from public.visit_time_reports t where t.visit_id = '00000000-0000-4000-8000-0000000360f3' and t.kind in ('ended', 'signed'))
+       || ' ' || (select count(*) from public.visit_media m where m.visit_id = '00000000-0000-4000-8000-0000000360f4')$p$),
+  '1 1 2 1',
+  'D46 (review fix): a retried closure and a retried media operation with a later device_sent_at (and another TimeZone) are replays: one signature, one summary, one media row');
+
+select results_eq(
+  $q$ select x.label, pg_temp.tm_run_as(
+        $u$select set_config('request.jwt.claims', json_build_object('sub', '00000000-0000-4000-8000-0000000360d1', 'role', 'authenticated')::text, true);
+           set local role authenticated;
+           select * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036064', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 120, '2026-11-17 08:01+02');
+           select * from public.add_visit_media('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036065', 'photo', 'before', 'image/jpeg', 10, '2026-11-17 09:00+02', 'Asia/Jerusalem', 120, '2026-11-17 09:01+02');
+           reset role;
+           update public.visits set technician_id = '00000000-0000-4000-8000-0000000360e2' where id in ('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-0000000360f4');$u$,
+        x.sub::uuid, 'authenticated', x.sql)
+      from (values
+        ('A replays his departure', '00000000-0000-4000-8000-0000000360d1', $s$select * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036064', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 120, '2026-11-17 08:01+02')$s$),
+        ('A replays his media row', '00000000-0000-4000-8000-0000000360d1', $s$select * from public.add_visit_media('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036065', 'photo', 'before', 'image/jpeg', 10, '2026-11-17 09:00+02', 'Asia/Jerusalem', 120, '2026-11-17 09:01+02')$s$),
+        ('B sends A''s departure', '00000000-0000-4000-8000-0000000360d2', $s$select * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036064', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 120, '2026-11-17 08:01+02')$s$)
+      ) as x (label, sub, sql) $q$,
+  $q$ values ('A replays his departure', '42501 not authorized'), ('A replays his media row', '42501 not authorized'),
+             ('B sends A''s departure', '42501 not authorized') $q$,
+  'D36 (review fix): after re-assignment a replay of the former technician''s operation is refused (generic 42501), and the new technician cannot reuse it');
+
+select results_eq(
+  $q$ select x.label, pg_temp.tm_as('00000000-0000-4000-8000-0000000360d1', format($b$do $d$ declare m uuid; p text; begin
+         select out_media_id, out_storage_path into m, p from public.add_visit_media('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036066', 'photo', 'after', 'image/jpeg', 300, now(), 'Asia/Jerusalem', 120, now());
+         insert into storage.objects (bucket_id, name, metadata) values ('visit-media', p, jsonb_build_object('size', 300, 'mimetype', 'image/jpeg'));
+         %s
+         perform * from public.close_visit('00000000-0000-4000-8000-0000000360f4', '00000000-0000-4000-8000-000000036067', 1, 'followup', 'סיכום', null, null, null, (select r.id from public.followup_reasons r where r.sort_order = 1), 'הערה', now(), 'Asia/Jerusalem', 120, now());
+         perform * from public.confirm_visit_media(m);
+       end $d$; set constraints all immediate$b$, x.step),
+       $p$select string_agg(m.state, ',') from public.visit_media m where m.visit_id = '00000000-0000-4000-8000-0000000360f4'$p$)
+      from (values
+        ('confirm after the closure', ''),
+        ('confirmed before the closure, again after it', 'perform * from public.confirm_visit_media(m);')
+      ) as x (label, step) $q$,
+  $q$ values ('confirm after the closure', '55000 invalid status change'), ('confirmed before the closure, again after it', 'stored') $q$,
+  'OQ-4 (review fix): a pending media row of a closed visit cannot become stored; a stored row still answers stored');
+
+select is(
+  pg_temp.tm_as('00000000-0000-4000-8000-0000000360d1',
+    $s$select * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036068', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 120, '2026-11-17 08:01+02');
+       select * from public.depart_visit('00000000-0000-4000-8000-0000000360f1', '00000000-0000-4000-8000-000000036068', 1, '2026-11-17 08:00+02', 'Asia/Jerusalem', 60, '2026-11-17 08:01+02')$s$),
+  '23505 offline_operations: the operation id was already used for another payload',
+  'D46: the reported device values (here the UTC offset) stay in the hash: another value under the same id is still 23505');
 
 select lives_ok('set constraints all immediate', 'nothing above left a pending deferred check');
 

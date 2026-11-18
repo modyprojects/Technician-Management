@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-18 — Migration 7: review fixes (PR #38), not applied
+- Rebased `claude/step4-migration7-pr` on main by cherry-picking the 4 M7 commits (no conflicts); old head kept as `claude/step4-migration7-backup`.
+- Fixed: payload hash without `device_sent_at` and with UTC epoch times (a retry is a replay, not 23505); replay after the ownership check in all four writers; `confirm_visit_media` needs the visit in progress; stale text.
+- Tests: 5 new `360` cases on real rows (each fails on the old migration); pgTAP 41 files 1674 PASS; guard PASS; `test:ci` 250/250.
+- Guard diff, canary fixture, bucket SQL and rollback unchanged. New migration sha256 `489901e51b4bd6150364e255be440f92509bb623af5523902d4cc2a830a8d974`, awaiting the owner's approval.
+
 ## 2026-11-17 — Step 6: independent review fixes (APPROVE WITH FIXES), local only
 - Branch `claude/step6-calendar-ingestion`, still not pushed; Migration 6 still **local only, not applied** (changed in place). Record: `docs/review/step6-ingestion/README.md` section 13.
 - **Fixed:** M1 (a visit en route opens a `reassignment` / `address_change` item only when that version changed the technician or address, compared with the event's previous processed version; no repeat after later versions or after `keep_current`); S1 (three text-rule predicates with the code-point classes of Migrations 2 and 3; the writer checks every value, the event part, the recognised values and each problem before anything is written; organizer, attendee and problems CHECKs tightened; the TypeScript address rule aligned); N1 (content checked before the stale and after-deletion paths); N3 (the answer counts only items on its own call); N5 (a version for a closed visit resolves the open unparsed row as `superseded`). S2: `tests/auth/calendar-ingestion-concurrency.spec.ts` (simultaneous RPC calls), and `AUTH_TEST_DB_CONTAINER` lets the local-stack specs run against an isolated stack.

@@ -1,7 +1,7 @@
 # Step 4 (Version 1) — Migration 7: the technician's field writers and visit media
 
-Branch `claude/step4-migration7`, stacked on `claude/tech-today`. **Local only: not applied to the
-remote project** (that needs the owner's separate approval, D52 rule 4). Nothing pushed, no PR.
+Branch `claude/step4-migration7-pr` (PR #38, on `main`). **Not applied to the remote project**
+(that needs the owner's separate approval, D52 rule 4).
 Fictional data only (D47). Written because Migrations 1–6 have no technician write path: Migration 3
 says "the writers arrive with Step 4 (field closure, times, summary, signature)", and Migration 4's
 `offline_operation_replay` / `record_offline_operation` are "called by the Step 4 writers".
@@ -10,7 +10,7 @@ says "the writers arrive with Step 4 (field closure, times, summary, signature)"
 
 | File | sha256 |
 |---|---|
-| `supabase/migrations/20261110120000_field_visit_writers.sql` | `e4a92876201579a3cd765bb1fc6e03df9bc4b1075c3e7ba96ef46b3c6608e1ac` |
+| `supabase/migrations/20261110120000_field_visit_writers.sql` | `489901e51b4bd6150364e255be440f92509bb623af5523902d4cc2a830a8d974` (after the review fixes, section 7; was `e4a92876…08e1ac`) |
 | `supabase/rollback/20261110120000_field_visit_writers.down.sql` | `84e72085dc6531fb606f1a7515c5d1ea3f074a71c3403b4108a8e25c222f9c53` |
 | `docs/review/step4-migration7/proposed-guard-change.diff` (protected `scripts/check-migrations.mjs` + its CI test; **stacked on** `docs/review/step6-ingestion/proposed-guard-change.diff`, sha256 `aa7546e9…3fceba`) | `2ee2b4080b75f1b0ce55b1c4febe538ea8b31baa0c19e437b1cb8579e03c97a4` |
 | `docs/review/step4-migration7/proposed-canary-fixture-20261110120000.sql` (protected `tests/db-canary/`; copy unchanged to `tests/db-canary/20261110120000.sql`) | `6d85f6a71a176765cbf547f7679881fdf31331407eb0526680c8c915fd725415` |
@@ -66,7 +66,7 @@ reports for the technician).
 
 | Check | Result |
 |---|---|
-| pgTAP, all files (`supabase test db tests/db`) | **PASS: 41 files, 1669 tests** (new `350_hardening_assertion_m7` 19, `360_field_visit_writers` 25; `010`, `060`, `070`, `100`, `140`, `150`, `280`, `990` extended for the new table and column, nothing removed) |
+| pgTAP, all files (`supabase test db tests/db`) | **PASS: 41 files, 1669 tests** (new `350_hardening_assertion_m7` 19, `360_field_visit_writers` 25, 30 after section 7; `010`, `060`, `070`, `100`, `140`, `150`, `280`, `990` extended for the new table and column, nothing removed) |
 | `360`: ownership per caller (Technician B, Manager, CS, Creator, deactivated, no JWT, anon, service_role), re-assignment, transitions, PT409, 22023 inputs, replay, 23505, double submission (55000), closed visit read-only, "טופל" effects + D38 resolved, "המשך טיפול" + awaiting_followup, media rules and cap, Storage INSERT/UPDATE/DELETE/SELECT per role, deferred checks | PASS |
 | `990`: the down script refuses on Step 4 data, a later migration, a missing history row; runs on empty tables; restores the Step 6 census byte for byte | PASS |
 | `tests/ci` on this branch | 227/229 (the two guard tests, as on the Step 6 branch, until the protected guard change is applied) |
@@ -86,3 +86,16 @@ reports for the technician).
 4. Creating the private bucket `visit-media` (`storage-bucket.sql`), a remote write outside the
    migration.
 5. The TEMPORARY behaviours OQ-1 to OQ-9 (especially OQ-2, the fixed V1 text, and OQ-4, the caps).
+
+## 7. Review fixes (review: APPROVE WITH FIXES)
+
+| Finding | Fix | Test (`360`, real rows; each fails on `e4a92876…`) |
+|---|---|---|
+| Medium: the payload hash held `device_sent_at` and `timestamptz` text in the session TimeZone, so a client retry raised 23505 | The hash leaves `device_sent_at` out and takes every time as its UTC epoch number; the reported device values stay in it | 25 (departure retry, later `device_sent_at`, another TimeZone), 26 (closure and media retry), 29 (another UTC offset is still 23505) |
+| Replay skipped the ownership check | `offline_operation_replay` runs after the call/visit locks and the ownership check (generic 42501) in all four writers | 27 (after re-assignment: A's replay of departure and media 42501; B with A's id 42501) |
+| `confirm_visit_media` ignored the visit status | It locks the visit FOR SHARE before the media row; a pending row needs the visit in progress (55000); a stored row still answers `stored` | 28 |
+| Stale text | Header order, hash and confirm comments, this README's branch line | — |
+
+Results: pgTAP 41 files, 1674 tests PASS; `node scripts/check-migrations.mjs` PASS; `npm run test:ci`
+250/250. Guard diff, canary fixture and bucket SQL unchanged (sha256 above). The rollback script is
+unchanged (no signature changed; `990` PASS).
