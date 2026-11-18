@@ -190,7 +190,7 @@ Every Playwright run and every `next start` ran under the shared port lock (othe
 
 
 ### 9.5 Screenshots (D62 (6))
-`docs/review/step2-user-management-ui/<width>-<name>.webp`, each at 390, 820 and 1440 px (57 images; retaken on the rebased head, 2026-11-18, and converted to WebP), from a local production build signed in to the local stack with fictional, test-marked accounts made through the real screens (`SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts`). The shared local database also holds the other suites' seeded test accounts, so the lists show them too. No password appears in any image.
+`docs/review/step2-user-management-ui/<width>-<name>.webp`, each at 390 and 1440 px (D72; 38 images, retaken after the owner's review of 2026-11-18, section 11), from a local production build signed in to the local stack with fictional, test-marked accounts made through the real screens (`SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts`). The shared local database also holds the other suites' seeded test accounts, so the lists show them too. No password appears in any image.
 
 | Image | State |
 |---|---|
@@ -297,3 +297,21 @@ Rebased on `main` (1cdf5a7) on 2026-11-18; local runs on that head:
 - **התראות חשבונות (D67 ב):** כל משתמש שמנהל יוצר מופיע אצל היוצר כ"משתמש חדש שהמנהל יצר" (`creator-notices`).
 - **איפוס סיסמה (D67 א):** חשבון שעוד לא נכנס אף פעם, או חשבון שנמחק, לא מקבל קישור איפוס (התשובה במסך זהה). את הסיסמה הראשונה קובע היוצר.
 - **הודעת הכתובת:** "נתוני בדיקה: רק כתובות @example.test" נקראת נכון משמאל לימין בתוך השורה (`add-validation`).
+
+## 11. Owner review of 2026-11-18 (D72–D78)
+
+| Item | Done |
+|---|---|
+| Phone list (D72) | One card per user: name, email, phone; role and state chips on one line; ⋮ |
+| Desktop list | The table; the actions column is ⋮ only |
+| Row actions (D76) | `components/office/RowMenu.tsx`: one ⋮ menu (a portal, so no row overflows; it opens upward near the bottom and follows on scroll; Escape returns focus to ⋮). Manager: עריכה, השבתה/הפעלה; Creator: עריכה, סיסמה, מייל, תפקיד, השבתה/הפעלה, מחיקה (red, last); "השלמה" for a missing technician profile; intents: "השלמת יצירה" / "ביטול". The offers are unchanged (offers.ts mirrors the server) |
+| Search and filters | Name, phone, email; role; state (פעיל / לא פעיל / יצירה שלא הושלמה); client side; no count cards, no pagination |
+| Dialogs (D75) | Centred modal on desktop, full screen at 600 px and below (`AccountDialog`, shared with the demo) |
+| Add dialog | "הוספה" and "ביטול" at the bottom left; one note ("את הסיסמה הראשונה קובע היוצר ומוסר אותה למשתמש."); the email help text under the field; the test-data and other notes removed; the disabled Creator option no longer says "ממתין להחלטת בעלים" |
+| Test data (D74) | One banner "🧪 מוצגים נתוני בדיקה" above the card; the quiet grey "בדיקה" per record (`TestBadge.tsx`, identical to PR #42) |
+| Phone header (D73) | `OfficePhoneBar` in the shared `OfficeShell`, switched on by the real office frame only (the /dev/demo layout is unchanged): at 600 px and below the logo on the left, ☰ on the right, a drawer from the right with the role's items and "יציאה" |
+| Overflow bug | Fixed by the ⋮ menu; new browser test: at 390 px, for the Manager and the Creator, rows in every state (active, inactive, incomplete creation, missing technician profile) and their menus stay inside the screen; no horizontal scroll |
+| Customer Service navigation | Today "קריאות" only (the start screen). Missing: "יומן טכנאים" (no screen yet) and "זימונים שלא נקלטו" (in `claude/office-unparsed`); each is added with its screen |
+| Deferred (owner) | Re-review lows L1/L2 → the post-M7 migration with the notices' "נקרא" (D78); notices tabs (D78) and the ten technician colours (D77) are not part of this pass |
+
+Local results on this head: lint, tsc, build clean; default e2e (`demo`, `user-management-ui`, `auth-real-routes`, `accounts-server`) 1040 passed; `tests/accounts` 27/27; `tests/auth/user-management.spec.ts` 19/19 (`--with-creator`); screenshots 38 (390 / 1440). The demo specs pinned the old "🧪" marker: 13 assertions now look for the D74 marker (title "נתוני בדיקה").

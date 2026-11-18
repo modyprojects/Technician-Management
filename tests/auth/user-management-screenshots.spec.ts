@@ -215,7 +215,9 @@ test.describe.serial("user management review images", () => {
       await shot(c, "creator-list");
       await shot(c, "creator-notices", c.locator("section.card").filter({ has: c.getByRole("heading", { name: "התראות חשבונות" }) }));
       // Another's open creation (her "יצירה שלא הושלמה"): who started it, "ביטול" only (review S3).
-      await expect(rowOf(c, PEOPLE.intent).getByRole("button")).toHaveText(["ביטול"]);
+      await rowOf(c, PEOPLE.intent).getByRole("button", { name: /^פעולות · / }).click();
+      await expect(c.getByRole("menuitem")).toHaveText(["ביטול"]);
+      await c.keyboard.press("Escape");
       await shot(c, "creator-other-intent", rowOf(c, PEOPLE.intent));
       // Technician rows come after every Manager and Customer Service row in the Creator's list,
       // which shows the first 100: when the shared local database holds more, these two states are
