@@ -6,7 +6,7 @@ import { seeded, signInAs } from "./helpers";
 import { attendeeOf, ensurePickupPlace, ingestVisit, signedInClient, type FictionalVisit } from "./tech-fixtures";
 
 // On demand only (SCREENSHOTS=1): the review images of the real technician home and visit card
-// (Step 3; D62 (6): every state at 390, 820 and 1440 px), from a local production build signed in to
+// (Step 3; D62 (6) as amended by D69: every state at 390 and 820 px), from a local production build signed in to
 // the LOCAL stack (tests/auth/run-local.mjs). Every record is fictional and test-marked (D47): the
 // visits are made through the invitation simulator's ingestion service under the Manager's session.
 //   SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screenshots.spec.ts
@@ -15,7 +15,6 @@ const OUT = path.resolve(process.env.SHOTS_DIR || "docs/review/tech-today");
 const SIZES = [
   { width: 390, height: 844 },
   { width: 820, height: 1180 },
-  { width: 1440, height: 900 },
 ] as const;
 
 test.skip(!process.env.SCREENSHOTS, "screenshots are taken on demand only");
@@ -90,7 +89,7 @@ test("technician home and visit card: review screenshots", async ({ page }) => {
   await shoot(page, "visit-card");
   await page.goto(`/tech/visit/${ids[1]}`);
   await expect(page.getByRole("heading", { level: 1, name: "משפחת כהן" })).toBeVisible();
-  await shoot(page, "visit-card-warranty");
+  await shoot(page, "visit-card-install");
 
   await page.goto("/tech/done");
   await expect(page.getByRole("heading", { level: 1, name: "הושלמו היום" })).toBeVisible();

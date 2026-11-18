@@ -106,7 +106,7 @@ test.describe.serial("technician home and visit card (Step 3, local stack)", () 
     await expect(page.locator(".ph-head")).toContainText(`מס׳ פנייה ${mine.first.req} · משימה 1 · ביקור 1`);
     await expect(page.locator(".ph-head")).toContainText("שובצה");
     const info = page.getByRole("region", { name: "פרטי הלקוח והמוצר" });
-    for (const value of [`${mine.first.street}, ${mine.first.city}`, mine.first.arrival, mine.first.phone, mine.first.customerNo, "תיקון", mine.first.product, mine.first.sku, "₪ ביקור בתשלום", "שירה נציגה"]) {
+    for (const value of [`${mine.first.street}, ${mine.first.city}`, mine.first.arrival, mine.first.phone, mine.first.customerNo, "תיקון", mine.first.product, mine.first.sku, "שירה נציגה"]) {
       await expect(info).toContainText(value);
     }
     await expect(page.getByRole("region", { name: "תיאור התקלה" })).toContainText(mine.first.desc);
@@ -123,15 +123,22 @@ test.describe.serial("technician home and visit card (Step 3, local stack)", () 
     await expect(page.getByRole("button")).toHaveCount(0);
   });
 
-  test("warranty with a date, call type and no paid marker", async ({ page }) => {
+  test("no warranty and no paid marker on the technician's card (D68), call type shown", async ({ page }) => {
     const { tech } = seeded();
     await signInAs(page, tech, /\/tech$/);
     await page.goto(`/tech/visit/${ids.second}`);
     const info = page.getByRole("region", { name: "פרטי הלקוח והמוצר" });
-    await expect(info).toContainText("כן · עד 03/2028");
     await expect(info).toContainText("התקנה");
+    await expect(info).not.toContainText("באחריות");
+    await expect(info).not.toContainText("כן · עד 03/2028");
     await expect(info).not.toContainText("ביקור בתשלום");
     await expect(page.getByRole("region", { name: "לאסוף לפני הביקור" })).toHaveCount(0);
+    // The paid-visit case (warranty "לא") shows no marker either.
+    await page.goto(`/tech/visit/${ids.first}`);
+    const first = page.getByRole("region", { name: "פרטי הלקוח והמוצר" });
+    await expect(first).toContainText(mine.first.product);
+    await expect(first).not.toContainText("באחריות");
+    await expect(first).not.toContainText("ביקור בתשלום");
   });
 
   test("another technician's visit, a cancelled visit and a malformed id are not found (nothing rendered)", async ({ page }) => {

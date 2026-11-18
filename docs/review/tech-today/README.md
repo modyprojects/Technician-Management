@@ -78,14 +78,19 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 
 ## Screenshots (local production build against the isolated stack; fictional, test-marked data)
 
-`390-`, `820-`, `1440-` × `home-empty-day`, `home-day`, `home-pickup-ticked`, `visit-card`,
-`visit-card-warranty`, `done-empty`, `visit-not-found`. Taken with
-`SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screenshots.spec.ts`.
+`390-`, `820-` (D69: technician screens at 390 / 820 only) × `home-empty-day`, `home-day`,
+`home-pickup-ticked`, `visit-card`, `visit-card-install`, `done-empty`, `visit-not-found` (WebP).
+Taken with `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screenshots.spec.ts`.
+
+## Owner corrections (2026-11-18)
+
+- Building / floor / apartment: three equal columns, label and value centred (building right, floor middle, apartment left).
+- No "באחריות" row and no "ביקור בתשלום" marker on technician screens (D68).
 
 ## מה לבדוק
 
 1. מסך "היום": המונים "ביקורים היום" ו"הושלמו", כרטיס "הביקור הבא" וההודעה כשאין ביקורים.
-2. "מה לאסוף לפני יציאה": מקובץ לפי מקום איסוף, עם Waze לכל מקום; מוסתר כשאין מה לאסוף; השורה "הסימון נשמר במכשיר הזה בלבד, להיום".
-3. כרטיס הביקור: מס׳ פנייה בכותרת, מספר לקוח, סוג קריאה, מוצר ומק"ט, אחריות ו"₪ ביקור בתשלום", הערות לטכנאי, וכפתורי Waze / לקוח / וואטסאפ / נציגה.
-4. סימון 🧪 על כל נתוני הבדיקה ושורת המקור "🧪 זימון בדיקה".
-5. בשלב הזה "ניווט · Waze" רק פותח את Waze (בלי שינוי סטטוס); היציאה, ההגעה והסיום מגיעים במסך הבא.
+2. "מה לאסוף לפני יציאה": מקובץ לפי מקום איסוף, עם Waze לכל מקום; השורה "הסימון נשמר במכשיר הזה בלבד, להיום".
+3. כרטיס הביקור: בניין / קומה / דירה בשלוש עמודות שוות וממורכזות (בניין מימין, קומה באמצע, דירה משמאל).
+4. כרטיס הביקור: אין שורת "באחריות" ואין "ביקור בתשלום" (גם בביקור שאינו באחריות).
+5. סימון 🧪 על נתוני הבדיקה; "ניווט · Waze" רק פותח את Waze (היציאה, ההגעה והסיום במסך הבא).

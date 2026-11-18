@@ -33,7 +33,7 @@ function metaOf(v: Pick<VisitDetail, "task" | "n"> & { call: { req: string } }):
 // action tiles as real links (Waze deep link, `tel:` and WhatsApp to the customer, `tel:` to the
 // handling representative's work phone, TE-07, D40), the details card (address, building / floor /
 // apartment, arrival notes, phone, customer number TE-09, call type, product, SKU, warranty with
-// "לא צוין" TE-08 and "₪ ביקור בתשלום" TE-11, handling rep), the fault, "הערות לטכנאי" (TE-10), the
+// handling rep; no warranty or paid-visit marker, D68), the fault, "הערות לטכנאי" (TE-10), the
 // pickup with "Waze ›", and the visit source (TE-12, SIM-14); 🧪 badges on test records (D47).
 // Closed visit ("טופל" / "המשך טיפול"): read-only (D14, TE-26) with the summary, the follow-up reason
 // and next-visit note, and the approval text preserved at signing with the signer (D43). No field
