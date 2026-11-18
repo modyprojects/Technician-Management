@@ -506,6 +506,8 @@ test.describe("a reset-link session is no app sign-in for the account actions (r
       const add = await fillAdd(cap, { role: "שירות לקוחות", name: `תאיפוס ${run}`, email: address, phone: "050-2223334" });
       await add.getByRole("button", { name: "הוספה" }).click();
       await expect.poll(() => captured.length).toBe(1);
+      // The dialog ignores Escape while its command runs: wait for the aborted request to settle.
+      await expect(add.getByRole("button", { name: "הוספה" })).toBeEnabled();
       await cap.keyboard.press("Escape");
       await expect(add).toHaveCount(0);
       next = "deactivateAccount";

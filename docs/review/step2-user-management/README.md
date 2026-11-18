@@ -190,7 +190,7 @@ Every Playwright run and every `next start` ran under the shared port lock (othe
 
 
 ### 9.5 Screenshots (D62 (6))
-`docs/review/step2-user-management-ui/<width>-<name>.png`, each at 390, 820 and 1440 px (57 images; all retaken in the review-fix pass, section 10), from a local production build signed in to the local stack with fictional, test-marked accounts made through the real screens (`SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts`). The shared local database also holds the other suites' seeded test accounts, so the lists show them too. No password appears in any image.
+`docs/review/step2-user-management-ui/<width>-<name>.webp`, each at 390, 820 and 1440 px (57 images; retaken on the rebased head, 2026-11-18, and converted to WebP), from a local production build signed in to the local stack with fictional, test-marked accounts made through the real screens (`SCREENSHOTS=1 node tests/auth/run-local.mjs --no-build --with-creator tests/auth/user-management-screenshots.spec.ts`). The shared local database also holds the other suites' seeded test accounts, so the lists show them too. No password appears in any image.
 
 | Image | State |
 |---|---|
@@ -281,7 +281,15 @@ Every Playwright run and every `next start` ran under the shared port lock (othe
 
 ### 10.3 Tests and results (the review-fix pass, final head)
 
-_(Filled in below, after the final runs.)_
+Rebased on `main` (1cdf5a7) on 2026-11-18; local runs on that head:
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `npm run lint`, `npm run build` | clean / clean / OK |
+| Default e2e: `user-management-ui`, `accounts-server`, `auth-real-routes` | 78 passed, 108 skipped (other projects) |
+| `node tests/accounts/run-local.mjs --with-creator` | 27 / 27 |
+| `tests/auth`: `user-management`, `password-reset`, `sign-in` (`--with-creator`) | 41 / 41 after one test fix: the S6 a case pressed Escape while the add dialog was still busy with the aborted request (the dialog ignores Escape while a command runs, by design); it now waits for "הוספה" to be enabled again |
+| Screenshots (`user-management-screenshots`, `--with-creator`) | 57 images, WebP |
 
 ### 10.4 מה לבדוק (לבעלים)
 - **מחיקה שלא הושלמה:** אם חסימת ההתחברות נכשלה, ההודעה בכרטיס כוללת כפתור "נסו שוב" שמשלים את המחיקה (`delete-retry`).
