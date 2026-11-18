@@ -8,7 +8,7 @@
 // `onClosed` lets the caller record the new status (the home and the visit card follow it).
 import Link from "next/link";
 import { useId } from "react";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useVisitCommands } from "@/features/visits/commands-context";
 import type { CloseVisitInput, VisitRef } from "@/features/visits/data/types";
 import { closeHint, closeReady } from "./CloseRules";
 import { useVisitDraft, withClose, type CloseOutcome, type WorkSeed } from "./WorkDraft";
@@ -29,7 +29,7 @@ export function CloseFooter({
   /** Called once the close command succeeded. */
   onClosed?: (outcome: CloseOutcome) => void;
 }) {
-  const { visits } = useCommands();
+  const visits = useVisitCommands();
   const [draft, update] = useVisitDraft(visit, seed);
   const hintId = useId();
   const k = draft.close;
@@ -69,8 +69,8 @@ export function CloseFooter({
 
     const input: CloseVisitInput =
       outcome === "done"
-        ? { outcome, signerName: k.signer.trim(), signatureDataUrl: k.signature ?? "", approvalTextVersionId }
-        : { outcome, reason: k.reason ?? "", nextNote: k.nextNote.trim() };
+        ? { outcome, signerName: k.signer.trim(), signatureDataUrl: k.signature ?? "", approvalTextVersionId, summary: draft.summary.trim() }
+        : { outcome, reason: k.reason ?? "", nextNote: k.nextNote.trim(), summary: draft.summary.trim() };
     const r = await visits.close(visit, input);
     if (!r.ok) return fail(r.error);
     update((d) => withClose(d, { submit: { state: "sent", outcome, simulated: r.simulated, message: r.message ?? "" } }));

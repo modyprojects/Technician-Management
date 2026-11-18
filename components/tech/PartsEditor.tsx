@@ -6,7 +6,7 @@
 // adds that item. Optional. Every change goes through useCommands().visits.saveParts with the
 // whole list; the draft changes only when the command accepts it.
 import { useId, useRef, useState, type FormEvent } from "react";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useVisitCommands } from "@/features/visits/commands-context";
 import type { VisitRef } from "@/features/visits/data/types";
 import { PART_MAX, PARTS_MAX } from "@/features/visits/data/validate";
 import type { UpdateDraft } from "./WorkDraft";
@@ -25,7 +25,7 @@ export function PartsEditor({
   pickupItem: string | null;
   onChange: UpdateDraft;
 }) {
-  const { visits } = useCommands();
+  const visits = useVisitCommands();
   const [text, setText] = useState("");
   // After a removal the removed chip's button is gone: focus moves to the part field.
   const fieldRef = useRef<HTMLInputElement>(null);

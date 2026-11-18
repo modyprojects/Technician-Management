@@ -9,10 +9,14 @@ import { PlaceWazeLink, VisitContactTiles } from "@/components/tech/VisitLinks";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TestPill, VisitSourceLine } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
-import { TECH_HOME_PATH } from "@/features/visits/data/paths";
+import Link from "next/link";
+import { ArriveButton, DepartLink } from "@/components/tech/VisitFieldActions";
+import { wazeHref } from "@/features/visits/data/links";
+import { TECH_HOME_PATH, techWorkPath } from "@/features/visits/data/paths";
 import type { VisitDetail } from "@/features/visits/data/types";
 import { requireArea } from "@/lib/auth/guards";
 import { techVisitsQueries } from "@/lib/data/supabase/tech-visits";
+import { FIELD_ACTIONS } from "../../_field";
 import { TECH_START_HREFS, TECH_START_TABS } from "../../_tabs";
 
 export const metadata: Metadata = { title: "כרטיס ביקור · ניהול טכנאים" };
@@ -38,7 +42,9 @@ function metaOf(v: Pick<VisitDetail, "task" | "n"> & { call: { req: string } }):
 // Closed visit ("טופל" / "המשך טיפול"): read-only (D14, TE-26) with the summary, the follow-up reason
 // and next-visit note, and the approval text preserved at signing with the signer (D43). No field
 // times for the technician (TE-25, open decision 2).
-// TEMPORARY (Step 3; the visit flow follows in the next screen): no "הגעתי · התחלת טיפול" footer.
+// The footer (Step 4, Version 1; TE-02, TE-13): a scheduled visit offers "יוצא · Waze" (Waze opens
+// at once; the departure is recorded on the server), a visit en route "הגעתי · התחלת טיפול", a visit
+// in progress "המשך לטיפול ›" (the work screen). Each action runs once and the page is read again.
 export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[id]">) {
   const me = await requireArea("tech");
   const { id } = await params;
@@ -70,8 +76,19 @@ export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[
 
   const { customer: cu, call } = view.detail;
   const address = `${cu.address.street}, ${cu.address.city}`;
+  const field = { visitId: view.id, fieldVersion: view.fieldVersion, isTest: visit.isTest };
+  const foot =
+    visit.status === "new" ? (
+      <DepartLink actions={FIELD_ACTIONS} visit={field} wazeHref={wazeHref(address)} address={address} />
+    ) : visit.status === "go" ? (
+      <ArriveButton actions={FIELD_ACTIONS} visit={field} workHref={techWorkPath(view.id)} />
+    ) : (
+      <Link className="bigbtn" href={techWorkPath(view.id)} style={{ background: "var(--ink)" }}>
+        המשך לטיפול ›
+      </Link>
+    );
   return (
-    <TechShell head={<VisitHeader {...BACK} meta={metaOf(visit)} title={title} trailing={trailing} />}>
+    <TechShell head={<VisitHeader {...BACK} meta={metaOf(visit)} title={title} trailing={trailing} />} foot={foot}>
       <VisitHistory items={view.history} />
       <VisitContactTiles address={address} customerPhone={cu.phone} rep={call.representative} />
       <VisitInfoCard visit={view.detail} />

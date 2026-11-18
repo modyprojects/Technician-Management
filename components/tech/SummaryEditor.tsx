@@ -7,7 +7,7 @@
 // TE-16 is pending (WorkDraft VOICE_ONLY_CLOSE): until the owner decides, the written summary is
 // what makes the card complete, and the subtitle says so.
 import { useId, useState } from "react";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useVisitCommands } from "@/features/visits/commands-context";
 import type { VisitRef } from "@/features/visits/data/types";
 import { SUMMARY_MAX } from "@/features/visits/data/validate";
 import { RecordingPanel } from "./RecordingPanel";
@@ -18,8 +18,19 @@ const MODES: readonly [SummaryMode, string][] = [
   ["rec", "🎙 הקלטה"],
 ];
 
-export function SummaryEditor({ visit, draft, onChange }: { visit: VisitRef; draft: VisitDraft; onChange: UpdateDraft }) {
-  const { visits } = useCommands();
+export function SummaryEditor({
+  visit,
+  draft,
+  onChange,
+  recording = true,
+}: {
+  visit: VisitRef;
+  draft: VisitDraft;
+  onChange: UpdateDraft;
+  /** Offer "🎙 הקלטה" (Version 2 in the real app: without it the card is the written summary only). */
+  recording?: boolean;
+}) {
+  const visits = useVisitCommands();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
@@ -44,8 +55,9 @@ export function SummaryEditor({ visit, draft, onChange }: { visit: VisitRef; dra
             *
           </span>
         </h2>
-        <span className="sub">{VOICE_ONLY_CLOSE ? "חובה: כתיבה או הקלטה" : "חובה: סיכום כתוב · הקלטה לא חובה"}</span>
+        <span className="sub">{!recording ? "חובה: סיכום כתוב" : VOICE_ONLY_CLOSE ? "חובה: כתיבה או הקלטה" : "חובה: סיכום כתוב · הקלטה לא חובה"}</span>
       </div>
+      {recording && (
       <div className="seg" role="group" aria-label="אופן הסיכום" style={{ marginBottom: 10 }}>
         {MODES.map(([mode, label]) => (
           <button
@@ -59,7 +71,8 @@ export function SummaryEditor({ visit, draft, onChange }: { visit: VisitRef; dra
           </button>
         ))}
       </div>
-      {draft.mode === "text" ? (
+      )}
+      {!recording || draft.mode === "text" ? (
         <>
           <textarea
             aria-label="סיכום הטיפול"

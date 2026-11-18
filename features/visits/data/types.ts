@@ -33,7 +33,16 @@ export type MediaKind = "img" | "vid";
 export type MediaPhase = "before" | "after";
 
 /** A photo or video. Production shows it through a short-lived signed URL only (OF-06). */
-export type MediaItem = TestMarker & { id: string; kind: MediaKind; when: MediaPhase };
+export type MediaItem = TestMarker & {
+  id: string;
+  kind: MediaKind;
+  when: MediaPhase;
+  /**
+   * A short-lived signed link (OF-06) or a local object URL of the file just taken, for the
+   * thumbnail; absent in the demo (the tile draws a placeholder).
+   */
+  previewUrl?: string;
+};
 
 /** Item to pick up before the visit (TE-03). */
 export type Pickup = {
@@ -173,7 +182,11 @@ export type PickupGroup = {
  * uuid) for its links. The real routes address a visit by id (the technician reads his own visits
  * rows under RLS, never the calls table, Migration 3 OQ-12); the demo addresses it by `VisitRef`.
  */
-export type TechDayVisitWithId = TechDayVisit & { id: string };
+export type TechDayVisitWithId = TechDayVisit & {
+  id: string;
+  /** `visits.field_version` as read: a field action sends it, so a changed visit is refused (PT409). */
+  fieldVersion: number;
+};
 
 /** A technician's schedule for one date plus the home-header counters (TE-01). */
 export type TechDay<V extends TechDayVisit = TechDayVisit> = {
@@ -211,12 +224,19 @@ export type CloseVisitInput = {
   approvalTextVersionId?: string;
   /** "מה צריך בביקור הבא"; required for "cont" (TE-21). */
   nextNote?: string;
+  /**
+   * The written treatment summary, sent with the closure (the real writer stores it at closure,
+   * Migration 3 c40; the demo saves it before, through saveSummary).
+   */
+  summary?: string;
 };
 
 /** A new photo or video (the file itself goes through the upload path, never in the DTO). */
 export type AddMediaInput = {
   kind: MediaKind;
   when: MediaPhase;
+  /** The photo itself, in the browser only (the real commands upload it; never in a DTO). */
+  file?: Blob;
   fileName?: string;
   mimeType?: string;
   sizeBytes?: number;

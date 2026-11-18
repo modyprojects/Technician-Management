@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { PinIcon } from "@/components/ui/Icons";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TestPill } from "@/components/ui/TestBadge";
@@ -24,6 +25,7 @@ export function NextVisitCard({
   detailsHref,
   onDepart,
   navigate,
+  departAction,
   error,
 }: {
   visit: TechDayVisit;
@@ -38,10 +40,12 @@ export function NextVisitCard({
    * open, when no depart action is given.
    */
   navigate?: { href: string };
+  /** The real "יוצא · Waze" control (a client component that records the departure), for a scheduled visit. */
+  departAction?: ReactNode;
   /** Hebrew error of the last action, if it failed. */
   error?: string | null;
 }) {
-  const canDepart = status === "new" && onDepart !== undefined;
+  const canDepart = status === "new" && (onDepart !== undefined || departAction !== undefined);
   const canNavigate = !canDepart && navigate !== undefined && (status === "new" || status === "go" || status === "work");
   const twoActions = canDepart || canNavigate;
   return (
@@ -73,7 +77,8 @@ export function NextVisitCard({
         {visit.address} · {visit.productName}
       </div>
       <div className="next-actions">
-        {canDepart && (
+        {canDepart && departAction}
+        {canDepart && !departAction && (
           <button
             type="button"
             className="bigbtn"

@@ -50,7 +50,7 @@ const OUTCOME_STYLE: Record<CloseOutcome, CSSProperties> = {
 const edit = (d: VisitDraft, patch: Partial<CloseDraft>): VisitDraft =>
   withClose(d, d.close.submit.state === "error" ? { ...patch, submit: { state: "idle" } } : patch);
 
-function CloseDone({ outcome, simulated, message }: { outcome: CloseOutcome; simulated: boolean; message: string }) {
+function CloseDone({ outcome, simulated, message, serverConfirmed }: { outcome: CloseOutcome; simulated: boolean; message: string; serverConfirmed: boolean }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     titleRef.current?.focus();
@@ -79,7 +79,7 @@ function CloseDone({ outcome, simulated, message }: { outcome: CloseOutcome; sim
           {message && <div style={{ fontSize: 14 }}>{message}</div>}
           {/* The close command stored the closure on the device (its first step). Step 4: follow the
               offline module's live state of this visit (sync.visit) instead of this first step. */}
-          <SyncProgression reached="saved-on-device" />
+          <SyncProgression reached={serverConfirmed ? "sent" : "saved-on-device"} />
         </>
       )}
     </section>
@@ -92,6 +92,7 @@ export function CloseScreen({
   reasons,
   approvalText,
   workHref,
+  serverConfirmed = false,
 }: {
   visit: VisitRef;
   /** The visit's saved work, so the draft starts the same as on the work screen. */
@@ -101,6 +102,8 @@ export function CloseScreen({
   /** The "טופל" text shown above the signature (reference.approvalText(), D43). */
   approvalText: Pick<ApprovalText, "versionId" | "text">;
   workHref: string;
+  /** Online closure (the real app's Version 1): a success means the server stored it. */
+  serverConfirmed?: boolean;
 }) {
   const [draft, update] = useVisitDraft(visit, seed);
   const k = draft.close;
@@ -115,7 +118,7 @@ export function CloseScreen({
   }, [visit]);
 
   if (k.submit.state === "sent") {
-    return <CloseDone outcome={k.submit.outcome} simulated={k.submit.simulated} message={k.submit.message} />;
+    return <CloseDone outcome={k.submit.outcome} simulated={k.submit.simulated} message={k.submit.message} serverConfirmed={serverConfirmed} />;
   }
 
   return (

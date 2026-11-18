@@ -22,7 +22,12 @@ function logged(queries: TechVisitsQueries): TechVisitsQueries {
         throw error;
       }
     };
-  return { day: wrap("day", queries.day), visit: wrap("visit", queries.visit) };
+  return {
+    day: wrap("day", queries.day),
+    visit: wrap("visit", queries.visit),
+    photos: wrap("photos", queries.photos),
+    reasons: wrap("reasons", queries.reasons),
+  };
 }
 
 /**

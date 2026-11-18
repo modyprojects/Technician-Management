@@ -6,3 +6,9 @@ export const TECH_DONE_PATH = "/tech/done";
 
 /** "/tech/visit/<id>". */
 export const techVisitPath = (id: string): string => `/tech/visit/${encodeURIComponent(id)}`;
+
+/** "/tech/visit/<id>/work": the work screen of a visit in progress (Step 4). */
+export const techWorkPath = (id: string): string => `${techVisitPath(id)}/work`;
+
+/** "/tech/visit/<id>/close": the closure of a visit in progress (Step 4). */
+export const techClosePath = (id: string): string => `${techVisitPath(id)}/close`;

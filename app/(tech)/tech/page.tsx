@@ -12,6 +12,8 @@ import { greetingAt, jerusalemToday } from "@/features/visits/data/today";
 import type { TechDayVisitWithId } from "@/features/visits/data/types";
 import { requireArea } from "@/lib/auth/guards";
 import { techVisitsQueries } from "@/lib/data/supabase/tech-visits";
+import { DepartLink } from "@/components/tech/VisitFieldActions";
+import { FIELD_ACTIONS } from "./_field";
 import { TECH_START_HREFS, TECH_START_TABS } from "./_tabs";
 
 export const metadata: Metadata = { title: "היום · ניהול טכנאים" };
@@ -25,10 +27,11 @@ export const metadata: Metadata = { title: "היום · ניהול טכנאים"
 // route, else the first scheduled), the empty-day message, "מה לאסוף לפני יציאה" (hidden when there
 // is nothing to collect, T-07) and "לו"ז היום". Five statuses only (D60 (1)): a cancelled visit is
 // never listed or counted.
-// TEMPORARY (Step 3; the visit flow follows in the next screen): the next-visit card offers "ניווט ·
-// Waze" (a plain Waze link, no status change) instead of "יוצא · Waze"; "נאסף" is kept on this
-// device (DevicePickups, labelled); no bell (no notifications until Step 7, TE-28); no "יומן ›"
-// until the calendar is built.
+// The next-visit card (Step 4, Version 1; TE-02): a scheduled visit offers "יוצא · Waze" (Waze opens
+// at once; the departure is recorded on the server under the technician's session, then the screen
+// is read again); a visit en route or in progress offers "ניווט · Waze" (navigation only).
+// TEMPORARY: "נאסף" is kept on this device (DevicePickups, labelled); no bell (no notifications until
+// Step 7, TE-28); no "יומן ›" until the calendar is built.
 // The guard runs here (requireArea("tech")): anonymous visitors go to /login, other roles to the
 // no-access state. A failed read throws (a code only, logged): the page fails closed.
 export default async function TechHomePage() {
@@ -62,7 +65,22 @@ export default async function TechHomePage() {
       navHrefs={TECH_START_HREFS}
     >
       {next ? (
-        <NextVisitCard visit={next} detailsHref={techVisitPath(next.id)} navigate={nextWaze ? { href: nextWaze } : undefined} />
+        <NextVisitCard
+          visit={next}
+          detailsHref={techVisitPath(next.id)}
+          navigate={nextWaze ? { href: nextWaze } : undefined}
+          departAction={
+            next.status === "new" ? (
+              <DepartLink
+                actions={FIELD_ACTIONS}
+                visit={{ visitId: next.id, fieldVersion: next.fieldVersion, isTest: next.isTest }}
+                wazeHref={nextWaze}
+                address={next.address}
+                compact
+              />
+            ) : undefined
+          }
+        />
       ) : (
         <NextVisitEmpty completed={day.stats.completed} />
       )}

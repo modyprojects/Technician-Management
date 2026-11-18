@@ -6,7 +6,7 @@
 // screen never opens the microphone: the recording is simulated in the UI demo and says so.
 // At most 180 seconds (D13 provisional, TE-15): the timer stops by itself at the limit.
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useVisitCommands } from "@/features/visits/commands-context";
 import type { VisitRef } from "@/features/visits/data/types";
 import { RECORDING_LIMIT_SECONDS, recordingLabel, type UpdateDraft } from "./WorkDraft";
 
@@ -36,7 +36,7 @@ export function RecordingPanel({
   simulated: boolean;
   onChange: UpdateDraft;
 }) {
-  const { visits } = useCommands();
+  const visits = useVisitCommands();
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);

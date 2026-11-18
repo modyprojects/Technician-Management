@@ -25,6 +25,7 @@ import { atJerusalem, jerusalemDate, jerusalemTime } from "@/features/dashboards
 import { isTechnicianColorToken, technicianColorCss, type TechnicianRef } from "@/features/reference/data/types";
 import type {
   ClosedVisitDetail,
+  MediaItem,
   PickupGroup,
   TechDay,
   TechDayVisitWithId,
@@ -71,7 +72,7 @@ export function visitStatusOfDb(code: unknown): VisitStatus | null {
 /** Visit columns the technician screens read (Migration 3 `visits`). */
 export const TECH_VISIT_COLUMNS =
   "id, visit_number, task_number, scheduled_start, scheduled_end, status, city, street, building, floor, apartment, " +
-  "arrival_notes, tech_notes, pickup_item, next_visit_notes, closed_at, is_test";
+  "arrival_notes, tech_notes, pickup_item, next_visit_notes, closed_at, is_test, field_version";
 
 const text = z.string();
 const optText = z.string().nullable();
@@ -95,6 +96,7 @@ const VisitRowSchema = z.object({
   next_visit_notes: optText,
   closed_at: z.string().nullable(),
   is_test: z.boolean(),
+  field_version: z.number().int().min(1),
 });
 export type TechVisitRow = z.infer<typeof VisitRowSchema>;
 
@@ -176,7 +178,14 @@ const addressOf = (row: TechVisitRow): string => `${row.street}, ${row.city}`;
 
 /** Everything a page of the technician screens reads about one visit. */
 export type TechVisitView =
-  | { kind: "open"; id: string; detail: VisitDetail; history: VisitHistoryItem[] }
+  | {
+      kind: "open";
+      id: string;
+      detail: VisitDetail;
+      history: VisitHistoryItem[];
+      /** `visits.field_version` as read (a field action sends it; PT409 when it changed). */
+      fieldVersion: number;
+    }
   | {
       kind: "closed";
       id: string;
@@ -194,7 +203,28 @@ export type TechVisitsQueries = {
   day(date: IsoDate): Promise<TechDay<TechDayVisitWithId>>;
   /** One of his visits by id; null when not found, not his, cancelled or not a uuid. */
   visit(id: string): Promise<TechVisitView | null>;
+  /**
+   * The stored photos of his visit (Migration 7 visit_media), oldest first, each with a short-lived
+   * signed link (OF-06; Storage SELECT policy) for its thumbnail; [] when there are none.
+   */
+  photos(visitId: string): Promise<MediaItem[]>;
+  /** Active continuation reasons ("המשך טיפול", SE-07), in Settings order. */
+  reasons(): Promise<{ id: string; label: string }[]>;
 };
+
+/** Lifetime of a thumbnail's signed link (OF-06: short-lived). */
+export const PHOTO_LINK_SECONDS = 300;
+
+/** The private bucket of visit media (Migration 7 OQ-5). */
+export const VISIT_MEDIA_BUCKET = "visit-media";
+
+const MediaRowSchema = z.object({
+  id: z.string().refine(isUuid),
+  phase: z.enum(["before", "after"]),
+  storage_path: text,
+  is_test: z.boolean(),
+});
+const ReasonRowSchema = z.object({ id: z.string().refine(isUuid), label_he: text });
 
 type Rpc = <T>(fn: string, visitId: string, schema: z.ZodType<T>) => Promise<T[] | null>;
 
@@ -231,6 +261,7 @@ export function techVisitsQueriesOf(db: SupabaseClient, viewer: TechViewer): Tec
   function dayVisit(row: TechVisitRow, d: TechVisitDetailsRow | null, status: VisitStatus): TechDayVisitWithId {
     return {
       id: row.id,
+      fieldVersion: row.field_version,
       isTest: row.is_test,
       req: d?.request_number ?? "",
       n: row.visit_number,
@@ -398,7 +429,7 @@ export function techVisitsQueriesOf(db: SupabaseClient, viewer: TechViewer): Tec
         });
         // No field times for the technician (TE-25, open decision 2).
         const detail: VisitDetail = { ...base, departAt: null, arriveAt: null, endAt: null, editable: true };
-        return { kind: "open", id: row.id, detail, history };
+        return { kind: "open", id: row.id, detail, history, fieldVersion: row.field_version };
       }
       const [report, signature] = await Promise.all([
         db.from("visit_reports").select("summary_text").eq("visit_id", row.id).maybeSingle(),
@@ -416,6 +447,36 @@ export function techVisitsQueriesOf(db: SupabaseClient, viewer: TechViewer): Tec
         editable: false,
       };
       return { kind: "closed", id: row.id, detail, detailsAvailable: d !== null };
+    },
+
+    async photos(visitId) {
+      if (!isUuid(visitId)) return [];
+      const { data, error } = await db
+        .from("visit_media")
+        .select("id, phase, storage_path, is_test")
+        .eq("visit_id", visitId)
+        .eq("kind", "photo")
+        .eq("state", "stored")
+        .order("received_at", { ascending: true })
+        .limit(60);
+      if (error) throw new TechVisitsQueryError(error.code);
+      const rows = (data ?? []).map((r) => parsed(MediaRowSchema, r));
+      if (!rows.length) return [];
+      const signed = await db.storage.from(VISIT_MEDIA_BUCKET).createSignedUrls(rows.map((r) => r.storage_path), PHOTO_LINK_SECONDS);
+      const urls = new Map<string, string>();
+      if (!signed.error) for (const s of signed.data ?? []) if (s.path && s.signedUrl) urls.set(s.path, s.signedUrl);
+      return rows.map((r) => ({ id: r.id, kind: "img" as const, when: r.phase, isTest: r.is_test, previewUrl: urls.get(r.storage_path) }));
+    },
+
+    async reasons() {
+      const { data, error } = await db
+        .from("followup_reasons")
+        .select("id, label_he")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .limit(50);
+      if (error) throw new TechVisitsQueryError(error.code);
+      return (data ?? []).map((r) => parsed(ReasonRowSchema, r)).map((r) => ({ id: r.id, label: r.label_he }));
     },
   };
 }

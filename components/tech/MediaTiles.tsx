@@ -6,9 +6,13 @@
 // commands are simulated: no camera, no file picker and no upload; the tile shows a locally drawn
 // placeholder. The demo's "+ דוגמה" tile is not part of the app (X-08). Test media carry the 🧪
 // badge (SIM-19).
+// Real app (Step 4, Version 1): `capture` makes "תמונה" open the camera or the file picker (a
+// real photo, compressed and stored by the commands); `videos` off hides "סרטון" (videos are Version
+// 2); `removable` off hides the remove control (a stored photo is never deleted). A photo with a
+// `previewUrl` (a short-lived signed link, or the local file just taken) shows as an image.
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { TestPill } from "@/components/ui/TestBadge";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useVisitCommands } from "@/features/visits/commands-context";
 import type { MediaItem, MediaKind, MediaPhase, VisitRef } from "@/features/visits/data/types";
 import { MEDIA_PER_PHASE_MAX, type UpdateDraft } from "./WorkDraft";
 
@@ -56,7 +60,8 @@ function Thumb({
   index: number;
   phase: MediaPhase;
   busy: boolean;
-  onRemove: () => void;
+  /** Omitted: no remove control. */
+  onRemove?: () => void;
 }) {
   const [from, to] = TINTS[index % TINTS.length] as [string, string];
   const name = `${KIND_LABEL[item.kind]} ${index + 1} ${PHASE_LABEL[phase]}`;
@@ -64,7 +69,11 @@ function Thumb({
   return (
     <div className={item.kind === "vid" ? "thumb vid" : "thumb"} style={style}>
       <span role="img" aria-label={item.isTest ? `${name} · נתוני בדיקה` : name} style={{ position: "absolute", inset: 0 }}>
-        {item.kind === "img" && (
+        {item.previewUrl ? (
+          // A signed link or a local object URL: a plain <img> (next/image would proxy it).
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        ) : item.kind === "img" && (
           <svg aria-hidden="true" viewBox="0 0 40 40" width="100%" height="100%" style={{ display: "block" }}>
             <circle cx="28" cy="12" r="4" fill="var(--on-dark)" opacity=".85" />
             <path d="M4 34 L15 19 L22 27 L27 22 L36 34 Z" fill="var(--on-dark)" opacity=".7" />
@@ -76,6 +85,7 @@ function Thumb({
           <TestPill />
         </span>
       )}
+      {onRemove && (
       <button
         type="button"
         onClick={onRemove}
@@ -99,6 +109,7 @@ function Thumb({
       >
         <span aria-hidden="true">✕</span>
       </button>
+      )}
     </div>
   );
 }
@@ -108,19 +119,29 @@ export function MediaTiles({
   phase,
   media,
   onChange,
+  capture = false,
+  videos = true,
+  removable = true,
 }: {
   visit: VisitRef;
   phase: MediaPhase;
   /** The draft's media of every phase; this card shows its own phase. */
   media: readonly MediaItem[];
   onChange: UpdateDraft;
+  /** "תמונה" takes a real photo (camera or file) and hands the file to addMedia. */
+  capture?: boolean;
+  /** Offer "סרטון". */
+  videos?: boolean;
+  /** Offer removing a tile. */
+  removable?: boolean;
 }) {
-  const { visits } = useCommands();
+  const visits = useVisitCommands();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
   // After a removal the removed tile's button is gone: focus moves to "add photo" instead of <body>.
   const addRef = useRef<HTMLButtonElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [removed, setRemoved] = useState(0);
   useEffect(() => {
     if (removed) addRef.current?.focus();
@@ -129,10 +150,10 @@ export function MediaTiles({
   const required = phase === "after";
   const full = items.length >= MEDIA_PER_PHASE_MAX;
 
-  async function add(kind: MediaKind) {
+  async function add(kind: MediaKind, file?: File) {
     setBusy(true);
     setError(null);
-    const r = await visits.addMedia(visit, { kind, when: phase });
+    const r = await visits.addMedia(visit, file ? { kind, when: phase, file } : { kind, when: phase });
     setBusy(false);
     const added = r.ok ? r.data?.media : undefined;
     if (!r.ok) setError(r.error);
@@ -165,11 +186,19 @@ export function MediaTiles({
             </>
           )}
         </h2>
-        <span className="sub">{required ? "חובה: לפחות תמונה או סרטון" : "תמונות או סרטונים · לא חובה"}</span>
+        <span className="sub">
+          {videos
+            ? required
+              ? "חובה: לפחות תמונה או סרטון"
+              : "תמונות או סרטונים · לא חובה"
+            : required
+              ? "חובה: לפחות תמונה אחת"
+              : "תמונות · לא חובה"}
+        </span>
       </div>
       <div className="media">
         {items.map((m, i) => (
-          <Thumb key={m.id} item={m} index={i} phase={phase} busy={busy} onRemove={() => void remove(m.id)} />
+          <Thumb key={m.id} item={m} index={i} phase={phase} busy={busy} onRemove={removable ? () => void remove(m.id) : undefined} />
         ))}
         {!full && (
           <>
@@ -177,17 +206,34 @@ export function MediaTiles({
               ref={addRef}
               type="button"
               className="addm"
-              onClick={() => void add("img")}
+              onClick={() => (capture ? fileRef.current?.click() : void add("img"))}
               disabled={busy}
               aria-label={`הוספת תמונה ${PHASE_LABEL[phase]}`}
             >
               <CameraIcon />
               תמונה
             </button>
-            <button type="button" className="addm" onClick={() => void add("vid")} disabled={busy} aria-label={`הוספת סרטון ${PHASE_LABEL[phase]}`}>
-              <VideoIcon />
-              סרטון
-            </button>
+            {videos && (
+              <button type="button" className="addm" onClick={() => void add("vid")} disabled={busy} aria-label={`הוספת סרטון ${PHASE_LABEL[phase]}`}>
+                <VideoIcon />
+                סרטון
+              </button>
+            )}
+            {capture && (
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                hidden
+                aria-label={`צילום ${PHASE_LABEL[phase]}`}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void add("img", file);
+                }}
+              />
+            )}
           </>
         )}
       </div>
