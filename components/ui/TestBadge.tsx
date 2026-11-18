@@ -7,29 +7,29 @@ export type { VisitSource };
 
 export const TEST_DATA_LABEL = "נתוני בדיקה";
 
-/** The 🧪 badge. Screen readers hear "נתוני בדיקה" (visually hidden text when `label` is off). */
-export function TestBadge({ label = false }: { label?: boolean }) {
+/**
+ * The per-record test-data marker (D47; presentation D74, owner 2026-11-18): small, quiet grey text
+ * "בדיקה", no colour, no background, no border, no icon (the icon-only 🧪 read as a pencil, QA
+ * T-06). Screen readers and the tooltip say "נתוני בדיקה". Real records show nothing. One look for
+ * every screen; `TestBadge` is kept as an alias for the existing call sites (`label` is ignored).
+ */
+export function TestPill() {
   return (
-    <span className="pill" title={TEST_DATA_LABEL} style={{ background: "var(--warn-bg)", color: "var(--warn-fg)", padding: "1px 7px" }}>
-      <span aria-hidden="true">🧪</span>
-      {label ? ` ${TEST_DATA_LABEL}` : <span className="sr-only">{TEST_DATA_LABEL}</span>}
+    <span className="test-mark" title={TEST_DATA_LABEL}>
+      <span className="sr-only">נתוני </span>
+      בדיקה
     </span>
   );
 }
 
-/**
- * The test-data pill (D47, SIM-15 to SIM-19; owner feedback 2026-11-17 on the technician home): at a
- * small size the icon-only 🧪 badge read as a pencil (QA T-06), so the marker carries the word
- * "בדיקה" after the 🧪. Screen readers hear "נתוני בדיקה" (the visible "בדיקה" plus a visually
- * hidden "נתוני "), the tooltip says the same. Same muted look as TestBadge; any screen may use it.
- */
-export function TestPill() {
+export const TestBadge: (props: { label?: boolean }) => React.JSX.Element = () => <TestPill />;
+
+/** D74: one banner at the top of a screen that shows test data. Render it only when the screen does. */
+export function TestDataBanner() {
   return (
-    <span className="pill" title={TEST_DATA_LABEL} style={{ background: "var(--warn-bg)", color: "var(--warn-fg)", padding: "1px 7px", whiteSpace: "nowrap" }}>
-      <span aria-hidden="true">🧪 </span>
-      <span className="sr-only">נתוני </span>
-      בדיקה
-    </span>
+    <div className="test-banner" role="note">
+      <span aria-hidden="true">🧪 </span>מוצגים נתוני בדיקה
+    </div>
   );
 }
 

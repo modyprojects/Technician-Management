@@ -7,7 +7,7 @@ import { VisitHistory } from "@/components/tech/VisitHistory";
 import { VisitInfoCard, VisitPickup, VisitProblem } from "@/components/tech/VisitInfo";
 import { PlaceWazeLink, VisitContactTiles } from "@/components/tech/VisitLinks";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TestPill, VisitSourceLine } from "@/components/ui/TestBadge";
+import { TestDataBanner, TestPill, VisitSourceLine } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
 import { TECH_HOME_PATH } from "@/features/visits/data/paths";
 import type { VisitDetail } from "@/features/visits/data/types";
@@ -46,6 +46,7 @@ export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[
   const view = await queries.visit(id);
   if (!view) notFound();
   const visit = view.detail;
+  const showsTestData = visit.call.isTest || visit.customer.isTest || visit.product.isTest;
   const title = visit.customer.name || `ביקור ${visit.n} · ${ddmm(visit.date)}`;
   const trailing = (
     <>
@@ -63,6 +64,7 @@ export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[
         navTabs={TECH_START_TABS}
         navHrefs={TECH_START_HREFS}
       >
+        {showsTestData && <TestDataBanner />}
         <DoneVisitView visit={view.detail} />
       </TechShell>
     );
@@ -72,6 +74,7 @@ export default async function TechVisitPage({ params }: PageProps<"/tech/visit/[
   const address = `${cu.address.street}, ${cu.address.city}`;
   return (
     <TechShell head={<VisitHeader {...BACK} meta={metaOf(visit)} title={title} trailing={trailing} />}>
+      {showsTestData && <TestDataBanner />}
       <VisitHistory items={view.history} />
       <VisitContactTiles address={address} customerPhone={cu.phone} rep={call.representative} />
       <VisitInfoCard visit={view.detail} />

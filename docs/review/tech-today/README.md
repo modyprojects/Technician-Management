@@ -12,7 +12,7 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 | Route | Screen |
 |---|---|
 | `/tech` | "היום": date, greeting, 🧪 for a test user, counters "ביקורים היום" / "הושלמו ›", the next-visit card or the empty-day message, "מה לאסוף לפני יציאה" (hidden when empty), "לו"ז היום" with "הושלמו היום: …" |
-| `/tech/visit/[id]` | Visit card. Open visit: "↻ ביקור המשך" (D36), action tiles (Waze, customer `tel:`, WhatsApp, the rep's work phone), address / building / floor / apartment, arrival notes, phone, customer number, call type, product, SKU, warranty ("לא צוין" when empty) and "₪ ביקור בתשלום", handling rep, fault, "הערות לטכנאי", pickup with "Waze ›", the source line. Closed visit: the read-only view (D14, D43) |
+| `/tech/visit/[id]` | Visit card. Open visit: "↻ ביקור המשך" (D36), action tiles (Waze, customer `tel:`, WhatsApp, the rep's work phone), address / building / floor / apartment, arrival notes, phone, customer number, call type, product, SKU, handling rep (no warranty and no paid-visit marker, D69), fault, "הערות לטכנאי", pickup with "Waze ›", the source line. Closed visit: the read-only view (D14, D43) |
 | `/tech/done` | "הושלמו היום" (from the same read as the home counter) |
 
 - Code: `features/visits/supabase/tech.ts` (queries over a client, Zod-checked rows, no server-only or
@@ -51,7 +51,7 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 5. **"מס׳ פנייה"** in the card header (D60 (3)) instead of the demo's "פנייה".
 6. **"סוג קריאה"** row added to the card (the coordinator's list).
 7. **Empty next-visit card**: "אין ביקורים מתוכננים להיום" / "כל הביקורים של היום הושלמו" (QA T-02).
-8. **Test-data marker "🧪 בדיקה"** (owner feedback 2026-11-17, QA T-06: the icon-only 🧪 read as a pencil): `TestPill` in `components/ui/TestBadge.tsx`, accessible name "נתוני בדיקה", on every technician screen.
+8. **Test-data marker** (D74, owner 2026-11-18; earlier QA T-06: the icon-only 🧪 read as a pencil): `TestPill` in `components/ui/TestBadge.tsx` is a small quiet grey "בדיקה" (no colour, border or icon; accessible name "נתוני בדיקה") on each test record, and `TestDataBanner` ("🧪 מוצגים נתוני בדיקה") at the top of a screen that shows test data. Real records show nothing.
 9. The rep tile is disabled when the invitation's rep is not linked to an active office profile (D40, OQ-8).
 
 ## Open business questions (for the owner)
@@ -69,7 +69,7 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 - Local stack (isolated `tm-tech`, ports 557xx): `tests/auth/tech-today.spec.ts` 10/10 — empty day;
   data via the simulator's ingestion service; own visits only; counters and next visit; no cancelled
   or tomorrow's visit; pickups grouped with Waze, device tick kept and labelled; card fields and links;
-  warranty with a date; another technician's / cancelled / unknown / malformed id → 404 with nothing
+  no warranty or paid marker (D69); another technician's / cancelled / unknown / malformed id → 404 with nothing
   rendered; the second technician sees only his visit and no pickup card; Manager and Customer
   Service get the no-access state; "הושלמו היום" empty.
 - Default e2e: `tests/e2e/tech-screens.spec.ts` (links, warranty, status codes, Jerusalem today and
@@ -86,6 +86,7 @@ Taken with `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screensh
 
 - Building / floor / apartment: three equal columns, label and value centred (building right, floor middle, apartment left).
 - No "באחריות" row and no "ביקור בתשלום" marker on technician screens (D69).
+- Test data (D74): one banner "🧪 מוצגים נתוני בדיקה" at the top; a quiet grey "בדיקה" on each test record.
 
 ## מה לבדוק
 
@@ -93,4 +94,4 @@ Taken with `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screensh
 2. "מה לאסוף לפני יציאה": מקובץ לפי מקום איסוף, עם Waze לכל מקום; השורה "הסימון נשמר במכשיר הזה בלבד, להיום".
 3. כרטיס הביקור: בניין / קומה / דירה בשלוש עמודות שוות וממורכזות (בניין מימין, קומה באמצע, דירה משמאל).
 4. כרטיס הביקור: אין שורת "באחריות" ואין "ביקור בתשלום" (גם בביקור שאינו באחריות).
-5. סימון 🧪 על נתוני הבדיקה; "ניווט · Waze" רק פותח את Waze (היציאה, ההגעה והסיום במסך הבא).
+5. נתוני בדיקה: באנר אחד "🧪 מוצגים נתוני בדיקה" בראש המסך וסימון אפור שקט "בדיקה" על כל רשומת בדיקה; "ניווט · Waze" רק פותח את Waze (היציאה, ההגעה והסיום במסך הבא).

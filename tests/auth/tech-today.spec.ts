@@ -78,8 +78,9 @@ test.describe.serial("technician home and visit card (Step 3, local stack)", () 
     await expect(next.getByRole("button")).toHaveCount(0);
     const html = await page.content();
     for (const absent of [other.customer, mine.cancelled.customer, mine.tomorrow.customer, "בוטלה"]) expect(html).not.toContain(absent);
-    // 🧪 on test records (D47).
+    // Test records (D47, D74): the quiet per-record marker and one banner at the top.
     await expect(schedule.locator('[title="נתוני בדיקה"]').first()).toBeVisible();
+    await expect(page.getByRole("note").filter({ hasText: "מוצגים נתוני בדיקה" })).toHaveCount(1);
   });
 
   test("pickups: grouped by place with Waze; the tick is kept on this device and says so", async ({ page }) => {

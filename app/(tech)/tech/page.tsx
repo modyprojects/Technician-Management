@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DevicePickups } from "@/components/tech/DevicePickups";
+import { TestDataBanner } from "@/components/ui/TestBadge";
 import { NextVisitCard, NextVisitEmpty } from "@/components/tech/NextVisitCard";
 import { ScheduleList, type ScheduleEntry } from "@/components/tech/ScheduleList";
 import { TechHomeHeader } from "@/components/tech/TechHomeHeader";
@@ -42,6 +43,7 @@ export default async function TechHomePage() {
   const placeActions = Object.fromEntries(day.pickups.map((g) => [g.place, <PlaceWazeLink key={g.place} place={g.place} address={g.placeAddress} />]));
   const next = day.next;
   const nextWaze = next ? wazeHref(next.address) : null;
+  const showsTestData = me.isTest || [...day.open, ...day.closed].some((v) => v.isTest);
 
   return (
     <TechShell
@@ -61,6 +63,7 @@ export default async function TechHomePage() {
       navTabs={TECH_START_TABS}
       navHrefs={TECH_START_HREFS}
     >
+      {showsTestData && <TestDataBanner />}
       {next ? (
         <NextVisitCard visit={next} detailsHref={techVisitPath(next.id)} navigate={nextWaze ? { href: nextWaze } : undefined} />
       ) : (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DoneList, DoneListHeader } from "@/components/tech/DoneList";
+import { TestDataBanner } from "@/components/ui/TestBadge";
 import { TechShell } from "@/components/tech/TechShell";
 import { TECH_HOME_PATH, techVisitPath } from "@/features/visits/data/paths";
 import { jerusalemToday } from "@/features/visits/data/today";
@@ -26,6 +27,7 @@ export default async function TechDonePage() {
       navTabs={TECH_START_TABS}
       navHrefs={TECH_START_HREFS}
     >
+      {(me.isTest || day.closed.some((v) => v.isTest)) && <TestDataBanner />}
       <DoneList entries={day.closed.map((v) => ({ visit: v, href: techVisitPath(v.id) }))} />
     </TechShell>
   );
