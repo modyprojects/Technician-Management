@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-18 — Process change: efficiency rules, STATUS.md handoff, guard hooks (PR A)
+- **Owner approved (2026-11-18):** `docs/WORKING-EFFICIENTLY.md` (agent roles, brief template, on-demand reading, security scope while data is fictional), `docs/STATUS.md` as the single handoff file (read at session start, updated after every task), permanent rule: every agent commits and pushes at every checkpoint, at least every ~30 minutes; settings, two guard hooks (read-only Supabase SQL, no push to main) and the official `supabase-postgres-best-practices` skill.
+- **Stage 0:** all unpushed work pushed; 20 worktrees of merged branches removed (unmerged work kept).
+- **PR A:** the document, `STATUS.md`, `.claude/settings.json`, hooks and skill; hooks get one independent review.
+- **Next:** PR B (decisions-current/archive, WORKLOG rotation), then C and D (protected, owner approval).
+
 ## 2026-11-17 — D59 rewritten: screen approval, merges and Version 1 focus
 - **Owner (2026-11-17):** each screen is one PR; when checks are green the owner gets screenshots (390/820/1440), the Preview link and 3–5 Hebrew review points; after his "מאשר" Claude Code merges the exact approved head itself with the D31 checks; visible changes after approval need a new approval. Non-UI PRs without protected files, migrations or remote writes merge when checks are green. The automatic Production deployment after a merge is part of the merge; other Production or infrastructure actions, protected files, migrations and remote Supabase writes are asked for, batched. No idle waiting; up to 3 agents (D64); questions to the owner only about business behaviour, data or security; one short daily Hebrew report.
 - **Version 1 target (24.11.2026, online only, no external integrations):** real sign-in for all four roles and D60 user management; the invitation simulator inside "זימונים שלא נקלטו"; real technician screens; real office screens; the Manager dashboard on real data; QA corrections inside each screen. Deferred to Version 2 (ROADMAP): offline, recording and transcription, Excel, usage analytics, MFA, the versioned "טופל" text.
