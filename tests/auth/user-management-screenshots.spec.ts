@@ -118,7 +118,13 @@ test.describe.serial("user management review images", () => {
       await role.getByRole("button", { name: "שינוי התפקיד" }).click();
       await expect(role).toHaveCount(0);
     }
-    await expect(rowOf(c, PEOPLE.csToTech).getByText("פרופיל טכנאי חסר").last()).toBeVisible();
+    // A Technician without a field profile (read from the database: the Creator's list shows the
+    // first 100 rows, role then name, and the shared local database may hold more accounts).
+    expect(
+      localSqlValue(
+        `select p.role || '|' || (t.id is null) from public.profiles p left join public.technicians t on t.profile_id = p.id where p.full_name = '${PEOPLE.csToTech}' and p.deleted_at is null`,
+      ),
+    ).toBe("technician|true");
 
     mgr = await signedIn(browser, avital, /\/office$/);
     const m = mgr.page;
@@ -200,13 +206,29 @@ test.describe.serial("user management review images", () => {
       await c.goto(USERS_PATH);
       await shot(c, "creator-list");
       await shot(c, "creator-notices", c.locator("section.card").filter({ has: c.getByRole("heading", { name: "התראות חשבונות" }) }));
+      // Another's open creation (her "יצירה שלא הושלמה"): who started it, "ביטול" only (review S3).
+      await expect(rowOf(c, PEOPLE.intent).getByRole("button")).toHaveText(["ביטול"]);
+      await shot(c, "creator-other-intent", rowOf(c, PEOPLE.intent));
+      // Technician rows come after every Manager and Customer Service row in the Creator's list,
+      // which shows the first 100: when the shared local database holds more, these two states are
+      // not on the page and their earlier images are kept (recorded as an annotation).
+      const notOnPage = (name: string) =>
+        test.info().annotations.push({ type: "not retaken", description: `${size.width}-${name}: the row is beyond the list's first 100` });
       // "פרופיל טכנאי חסר" with "השלמה".
-      await rowOf(c, PEOPLE.csToTech).scrollIntoViewIfNeeded();
-      await shot(c, "creator-tech-missing");
+      if ((await rowOf(c, PEOPLE.csToTech).count()) > 0) {
+        await rowOf(c, PEOPLE.csToTech).scrollIntoViewIfNeeded();
+        await shot(c, "creator-tech-missing");
+      } else {
+        notOnPage("creator-tech-missing");
+      }
       // The Creator's edit of a Technician (Outlook email and "פעיל").
-      await rowOf(c, PEOPLE.techBlue).getByRole("button", { name: /^עריכה/ }).click();
-      await shot(c, "edit-creator");
-      await c.keyboard.press("Escape");
+      if ((await rowOf(c, PEOPLE.techBlue).count()) > 0) {
+        await rowOf(c, PEOPLE.techBlue).getByRole("button", { name: /^עריכה/ }).click();
+        await shot(c, "edit-creator");
+        await c.keyboard.press("Escape");
+      } else {
+        notOnPage("edit-creator");
+      }
       // Role change, password (empty), email and deletion dialogs on the Creator's Manager.
       await rowOf(c, PEOPLE.mgrByCreator).getByRole("button", { name: /^תפקיד/ }).click();
       await shot(c, "role-change");
@@ -222,6 +244,38 @@ test.describe.serial("user management review images", () => {
       await shot(c, "delete-confirm");
       await c.keyboard.press("Escape");
       await expect(c.getByRole("dialog")).toHaveCount(0);
+
+      // A deletion whose Auth ban did not complete (review S1): the message and "נסו שוב". A fresh
+      // fictional account per width is deleted for real; the browser is told the ban failed (the
+      // answer to this one action is rewritten), so the image shows the state the server reports then.
+      const doomed = `אבנר זמני ${size.width}-${run}`;
+      await add(c, { role: "שירות לקוחות", name: doomed, email: mail(`doomed-${size.width}`), phone: "050-9990000" });
+      let rewritten = false;
+      await c.route(`**${USERS_PATH}`, async (route) => {
+        const r = route.request();
+        if (rewritten || r.method() !== "POST" || !r.headers()["next-action"]) return route.continue();
+        const response = await route.fetch();
+        const original = await response.text();
+        const body = original.replace(
+          /\{"ok":true,"simulated":false,"message":"[^"]*","data":\{"version":\d+\}\}/,
+          JSON.stringify({ ok: false, simulated: false, error: "המשתמש נמחק במערכת, אבל חסימת ההתחברות לא הושלמה. נסו שוב כדי להשלים אותה." }),
+        );
+        rewritten = body !== original;
+        await route.fulfill({ response, body });
+      });
+      await rowOf(c, doomed).getByRole("button", { name: /^מחיקה/ }).click();
+      const confirm = c.getByRole("dialog", { name: `מחיקת החשבון · ${doomed}` });
+      await confirm.getByRole("checkbox").check();
+      await confirm.getByRole("button", { name: "מחיקה סופית" }).click();
+      await expect(confirm).toHaveCount(0);
+      await c.unroute(`**${USERS_PATH}`);
+      expect(rewritten).toBe(true);
+      const retry = c.getByRole("button", { name: `נסו שוב · השלמת המחיקה של ${doomed}` });
+      await expect(retry).toBeFocused();
+      await retry.scrollIntoViewIfNeeded();
+      await shot(c, "delete-retry");
+      await retry.click();
+      await expect(retry).toHaveCount(0);
 
       // Customer Service: no "הגדרות" item; the route shows "אין הרשאה".
       const s = cs.page;

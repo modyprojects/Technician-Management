@@ -176,17 +176,19 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
   const intentRowId = (intentId: string) => `${id}-intent-${intentId}`;
   const openerId = (kind: string, key: string) => `${id}-${kind}-${key}`;
 
-  // Focus: after each render, the wanted element if it exists; once the reload finished without it
-  // (a deleted or cancelled row), the fallback.
+  // Focus: after each render, the wanted element once it exists and can take focus (a button waits
+  // while the page reloads, e.g. "נסו שוב"); once the reload finished without it (a deleted or
+  // cancelled row), the fallback.
   useEffect(() => {
     const wanted = focusWanted.current;
     if (!wanted) return;
     const el = document.getElementById(wanted.id);
-    if (el) {
+    const waiting = el instanceof HTMLButtonElement && el.disabled;
+    if (el && !waiting) {
       el.focus();
       focusWanted.current = null;
     } else if (!reloading) {
-      document.getElementById(wanted.fallback)?.focus();
+      (el ?? document.getElementById(wanted.fallback))?.focus();
       focusWanted.current = null;
     }
   });
