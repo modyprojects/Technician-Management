@@ -1,15 +1,17 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { testAccountEmailError } from "@/features/accounts/data/validate";
-import { ACCOUNT_MESSAGES, ACTION_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
+import { ACCOUNT_MESSAGES, ACTION_MESSAGES, PASSWORD_RESET_MESSAGES, SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { SeededUser } from "./global-setup";
 import { localSql, localSqlValue, seeded, signInAs, submitSignIn } from "./helpers";
 
 // The real unified user management (D60 (7); QA M-06, M-10, C-01, C-02, C-09, S-01) in a browser,
 // against a local production build and the LOCAL Supabase stack (tests/auth/run-local.mjs). Every
-// account is fictional and test-marked (D47, `@example.test`); the names start with "ת" so they sort
-// after the review screenshots' accounts. Sign-ins are counted (the local Auth allows 30 per
+// account is fictional and test-marked (D47, `@example.test`); the names start with "ב" so they sort
+// after the review screenshots' accounts ("א") and before the accounts that earlier runs leave in the
+// shared local database (the list shows the first 100 rows, role then name). Sign-ins are counted (the local Auth allows 30 per
 // 5 minutes per IP): each actor signs in once per describe block and keeps his page.
 //   node tests/auth/run-local.mjs [--with-creator] tests/auth/user-management.spec.ts
 // The Creator's cases need --with-creator (TEMPORARY, Step 2 plan Q6) and are skipped without it.
@@ -59,8 +61,8 @@ function nextActionRequest(page: Page): Promise<Request> {
 test.describe.serial("Manager: Settings › משתמשים (Technician and Customer Service only)", () => {
   let context: BrowserContext;
   let page: Page;
-  const techName = `תומר טכנאי ${run}`;
-  const csName = `תהילה שירות ${run}`;
+  const techName = `בני טכנאי ${run}`;
+  const csName = `בתיה שירות ${run}`;
   let captured: { action: string; body: string } | null = null;
 
   test.beforeAll(async ({ browser }) => {
@@ -268,7 +270,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
   test.skip(!creator(), "needs the local Creator: node tests/auth/run-local.mjs --with-creator (Step 2 plan Q6)");
   let context: BrowserContext;
   let page: Page;
-  const name = `תמר מנהלת ${run}`;
+  const name = `ברכה מנהלת ${run}`;
   const first = email("mgr");
   const second = email("mgr-new");
   const password = `${randomBytes(12).toString("base64url")}Aa1!`;
@@ -392,7 +394,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
   });
 
   test("a deletion whose ban did not complete: the card keeps the account and \"נסו שוב\" completes it (review S1)", async () => {
-    const retryName = `תמיר מחיקה ${run}`;
+    const retryName = `בועז מחיקה ${run}`;
     const d = await fillAdd(page, { role: "שירות לקוחות", name: retryName, email: email("retry"), phone: "052-3334445" });
     await d.getByRole("button", { name: "הוספה" }).click();
     await expect(d).toHaveCount(0);
@@ -454,12 +456,108 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await page.goto(USERS_PATH);
     const row = rowOf(page, intentName);
     await expect(row).toBeVisible();
-    await expect(row.getByText("יצירה שלא הושלמה").first()).toBeVisible();
-    await expect(row.getByText(`על ידי ${mgr.name}`).first()).toBeVisible();
+    // The wide layout's state cell (the narrow copy under the name is hidden at 1440 px).
+    await expect(row.getByText("יצירה שלא הושלמה").last()).toBeVisible();
+    await expect(row.getByText(`על ידי ${mgr.name}`).last()).toBeVisible();
     await expect(row.getByRole("button")).toHaveText(["ביטול"]);
     await row.getByRole("button", { name: `ביטול · היצירה של ${intentName}` }).click();
     await expect(page.getByText(`היצירה של ${intentName} בוטלה.`)).toBeVisible();
     await expect(rowOf(page, intentName)).toHaveCount(0);
     expect(localSqlValue(`select status from public.account_requests where email = '${address}'`)).toBe("cancelled");
+  });
+});
+
+/** The reset links the mock delivery wrote for `address` (run-local.mjs's temporary file), oldest first. */
+function resetLinksTo(address: string): string[] {
+  const file = process.env.AUTH_TEST_MAIL_FILE;
+  if (!file) throw new Error("AUTH_TEST_MAIL_FILE is not set (run tests/auth/run-local.mjs)");
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as { to: string; text: string })
+    .filter((m) => m.to === address.toLowerCase())
+    .map((m) => m.text.match(/http:\/\/127\.0\.0\.1:\d+\/login\/reset\?token_hash=[0-9a-f]+/)?.[0] ?? "")
+    .filter((link) => link !== "");
+}
+
+test.describe("a reset-link session is no app sign-in for the account actions (review S6 a; D65 review fix 2)", () => {
+  test("Manager and Creator: account actions replayed with a reset-only session are refused; nothing changes", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const users = seeded();
+    const address = email("reset-replay");
+    const M = PASSWORD_RESET_MESSAGES;
+
+    // 1. Two action ids from the Manager's own screen: each POST is captured and aborted (nothing runs).
+    const captured: { name: string; action: string; body: string }[] = [];
+    let next = "";
+    const { context: capContext, page: cap } = await signedIn(browser, users.mgr);
+    try {
+      await cap.goto(USERS_PATH);
+      await cap.route(`**${USERS_PATH}`, async (route) => {
+        const r = route.request();
+        if (r.method() === "POST" && r.headers()["next-action"]) {
+          captured.push({ name: next, action: r.headers()["next-action"] ?? "", body: r.postData() ?? "" });
+          await route.abort();
+        } else {
+          await route.continue();
+        }
+      });
+      next = "createAccount";
+      const add = await fillAdd(cap, { role: "שירות לקוחות", name: `תאיפוס ${run}`, email: address, phone: "050-2223334" });
+      await add.getByRole("button", { name: "הוספה" }).click();
+      await expect.poll(() => captured.length).toBe(1);
+      await cap.keyboard.press("Escape");
+      await expect(add).toHaveCount(0);
+      next = "deactivateAccount";
+      await cap.getByRole("button", { name: `השבתה · החשבון של ${users.cs.name}` }).first().click();
+      await cap.getByRole("dialog", { name: `השבתת החשבון · ${users.cs.name}` }).getByRole("button", { name: "השבתה" }).click();
+      await expect.poll(() => captured.length).toBe(2);
+    } finally {
+      await capContext.close();
+    }
+    const target = (JSON.parse(captured[1]?.body ?? "[]") as { accountId?: string }[])[0]?.accountId ?? "";
+    expect(target).toMatch(/^[0-9a-f-]{36}$/);
+    expect(localSqlValue(`select is_active from public.profiles where id = '${target}'`)).toBe("t");
+
+    // 2. For the Manager and the Creator: a session made by the reset link alone (a weak password keeps it).
+    const c = creator();
+    for (const who of [users.mgr, ...(c ? [c] : [])]) {
+      if (who !== users.mgr) {
+        // D67 (a): the reset serves accounts that have signed in before.
+        const first = await signedIn(browser, who);
+        await first.context.close();
+      }
+      const context = await browser.newContext({ locale: "he-IL" });
+      const page = await context.newPage();
+      try {
+        const before = resetLinksTo(who.email).length;
+        await page.goto("/login/forgot");
+        await page.getByLabel("אימייל", { exact: true }).fill(who.email);
+        await page.getByRole("button", { name: M.send }).click();
+        await expect(page.getByRole("heading", { level: 1, name: M.sentTitle })).toBeVisible();
+        await expect.poll(() => resetLinksTo(who.email).length).toBe(before + 1);
+        await page.goto(resetLinksTo(who.email).at(-1) ?? "");
+        await page.getByLabel(M.newPassword, { exact: true }).fill("abc");
+        await page.getByLabel(M.confirmPassword, { exact: true }).fill("abc");
+        await page.getByRole("button", { name: M.save }).click();
+        await expect(page.locator(".login-alert")).toHaveText(M.weak);
+
+        const origin = new URL(page.url()).origin;
+        for (const call of captured) {
+          const res = await page.request.post(USERS_PATH, {
+            headers: { "next-action": call.action, "content-type": "text/plain;charset=UTF-8", accept: "text/x-component", origin },
+            data: call.body,
+          });
+          expect(await res.text(), `${who.name} ${call.name}`).toContain(ACTION_MESSAGES.forbidden);
+        }
+        // The app treats the session as anonymous: the settings page goes to the sign-in form.
+        await page.goto(USERS_PATH);
+        await expect(page).toHaveURL(/\/login$/);
+      } finally {
+        await context.close();
+      }
+    }
+    expect(localSqlValue(`select count(*) from public.account_requests where email = '${address}'`)).toBe("0");
+    expect(localSqlValue(`select is_active from public.profiles where id = '${target}'`)).toBe("t");
   });
 });
