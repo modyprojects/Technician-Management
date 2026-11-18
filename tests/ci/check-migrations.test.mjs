@@ -186,9 +186,11 @@ test("an unterminated dollar quote is reported", () => {
 // PR 1.8 (Migration 5) adds no entry: it replaces three listed writers with the same signatures
 // (authorize_account_creation, admin_create_profile, add_call_type, add_followup_reason) and its new
 // writer admin_delete_user only updates (see the PR 1.8 tests at the end of this file).
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1.6 writer functions, pinned to signature and tables (unchanged by PR 1.8)", () => {
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5, PR 1.6 and Step 6 writer functions, pinned to signature, tables and marker exceptions (unchanged by PR 1.8)", () => {
   assert.deepEqual(
-    [...ALLOWED_WRITERS].map(([signature, { tables }]) => `${signature} -> ${tables.join(",")}`).sort(),
+    [...ALLOWED_WRITERS]
+      .map(([signature, { tables, markers }]) => `${signature} -> ${tables.join(",")}${markers ? ` markers=${markers.join(",")}` : ""}`)
+      .sort(),
     [
       "private.add_call_type(text) -> public.call_types",
       "private.add_collection_location(text,text,text,text,text) -> public.collection_locations",
@@ -199,6 +201,7 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5 and PR 1
       "private.bootstrap_first_creator(uuid,text) -> public.profiles",
       "private.correct_visit(uuid,text,text,text,integer) -> public.visit_corrections,public.visit_time_reports",
       "private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb) -> public.review_items",
+      "private.ingest_calendar_event(jsonb) -> public.external_calendar_events,public.calendar_event_changes,public.calendar_ingestion_errors,public.customers,public.products,public.service_calls,public.visits,public.visit_events markers=simulator",
       "private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid) -> public.offline_operations",
       "private.request_account_change(text,uuid,text,text,text) -> public.account_requests",
       "private.resolve_review_item(uuid,integer,text,jsonb,text) -> public.visit_time_reports",
@@ -1666,4 +1669,24 @@ test("PR 1.8: the five Settings bodies differ from Migration 2 only in the key t
         .replace("private.has_permission('settings')", `private.has_permission('${key}')`),
       name);
   }
+});
+
+// Step 6 (Migration 6, proposed): the ingestion writer is the one reviewed writer that may hold the
+// data_source value 'simulator' as an exact string (ALLOWED_WRITERS markers); any other marker text
+// in its body, and the same string in any other writer, still fails.
+test("Step 6: only the exact 'simulator' string is exempt, only in the ingestion writer", () => {
+  const writer = (name, value) =>
+    `create function private.${name}(p_command jsonb) returns jsonb language plpgsql set search_path = pg_catalog, pg_temp as $$ declare v constant text := ${value}; begin insert into public.customers (data_source) values (v); return null; end $$;`;
+  assert.deepEqual(checkSql(writer("ingest_calendar_event", "'simulator'")), []);
+  for (const value of ["'simulator data'", "'automated_test'", "'x@example.test'"]) {
+    assert.ok(checkSql(writer("ingest_calendar_event", value)).some((p) => /test marker/.test(p)), value);
+  }
+  // Another allowed writer, with its exact pinned signature and its own table: the same string is a
+  // test marker there (and only the marker fails: without it the same body passes).
+  const audit = (value) =>
+    `create function private.write_audit(p_action text, p_target_table text, p_target_id uuid, p_details jsonb) returns bigint language plpgsql set search_path = pg_catalog, pg_temp as $$ declare v constant text := ${value}; begin insert into public.audit_logs (action) values (v); return null; end $$;`;
+  assert.deepEqual(checkSql(audit("'x'")), []);
+  const problems = checkSql(audit("'simulator'"));
+  assert.equal(problems.length, 1, JSON.stringify(problems));
+  assert.match(problems[0], /test marker/);
 });

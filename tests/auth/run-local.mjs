@@ -9,6 +9,9 @@
 // a private temporary file (AUTH_TEST_MAIL_FILE) and its output in a second one (AUTH_TEST_SERVER_LOG,
 // checked for leaked values); both are deleted afterwards. Nothing is printed.
 // Refuses a non-loopback URL. The default build (`npm run build`, no values) must be rebuilt after.
+// Another local stack (an isolated copy with its own project_id and ports): point SUPABASE_BIN at a
+// wrapper that runs the CLI with `--workdir <copy>`, and set AUTH_TEST_DB_CONTAINER to that stack's
+// database container (supabase_db_<project_id>) so the seeding writes into the same stack.
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

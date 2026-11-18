@@ -434,8 +434,9 @@ All of them carry `is_test` (section 2) and follow the same conventions.
 | `notifications` | 3 / 7 | In-app notifications created by events only (D10, D25) |
 | `email_outbox` | 7 | Unique `(visit_id, event_type)`; recipients resolved on the server; never delivered for test data; written in the same transaction as the visit completion |
 | `email_delivery_attempts` | 7 | Delivery attempts, provider status and errors per outbox row (`outbox_id`) |
-| `external_calendar_events` | 6 | Event identity, unique `(source, calendar_id, event_id)`; a snapshot per invitation and the source of each contact field (D39) |
-| `calendar_ingestion_errors` | 6 | Invitations not ingested: missing or invalid fields, sanitized details, resolved flag; feeds the "זימונים שלא נקלטו" screen |
+| `external_calendar_events` | 6 | Event identity, unique `(source, calendar_id, event_id)`; a snapshot per invitation and the source of each contact field (D39). *Built in Migration 6 (Step 6, local only, not applied):* unique `(data_source, calendar_id, event_id)`, the visit it created (set once, one event per visit), `status` and the newest processed change; the snapshot and the field sources live in `calendar_event_changes` (below) |
+| `calendar_event_changes` | 6 | *Added in Migration 6 (not in the Step 1 plan):* the append-only ingestion log, one row per `(event, change key)` (replays are idempotent), with the change time, the caller, the outcome, the fields applied (the D39 source of a field = the newest change that applied it) and the parsed fields of a processed version |
+| `calendar_ingestion_errors` | 6 | Invitations not ingested: missing or invalid fields, sanitized details, resolved flag; feeds the "זימונים שלא נקלטו" screen. *Built in Migration 6:* structured problems (S-05), one open row per event, resolved once (`ingested`, `superseded`, `deleted`); readable by every active Creator, Manager and Customer Service user (TEMPORARY OQ-1 until open decision 15), while the event identity and the change log stay Creator-only. Details: `docs/review/step6-ingestion/README.md` |
 
 ## 6. Service-call status (D38)
 One function, `recalc_call_status`, is the only writer of `service_calls.status`. It locks the call (`FOR UPDATE`) and runs in the same transaction as every path that changes a visit: closure, cancellation, ingestion, conflict resolution, correction and re-assignment.
@@ -589,6 +590,7 @@ No ONE-related table, column, status, flag, export or adapter.
 | 1.4 | `brands`, `suppliers`, `products` and RPC, `customers`, `call_types`, `followup_reasons` (initial values per D48), `collection_locations` |
 | 1.5 | `service_calls` and `recalc_call_status`, `visits`, `visit_reports`, `visit_signatures`, `visit_time_reports` and its view, `visit_events`, `entity_changes`, constraint triggers, D36 and D40 functions |
 | 1.6 | `offline_operations`, `review_items`, `visit_corrections`, `field_version` (prepared and tested locally, not applied: `docs/review/step1-pr16/README.md`) |
+| Step 6 | Migration 6 `20261109120000_calendar_ingestion.sql`: `external_calendar_events`, `calendar_event_changes`, `calendar_ingestion_errors`, the ingestion writer `ingest_calendar_event` (SECURITY DEFINER, with its wrapper) and its helpers, the census extension (prepared and tested locally, **not applied**; its writer needs the owner's migration-guard entry: `docs/review/step6-ingestion/README.md`) |
 
 **Before PR 1.3 is applied:** the owner sets the invitation-only Supabase Auth settings himself (D50: "Allow new users to sign up" off, "Allow anonymous sign-ins" off, Email provider on, exposed schemas `public` and `graphql_public` only) and gives a separate explicit approval to apply.
 
