@@ -634,3 +634,31 @@ test.describe("phone layout: nothing overflows at 390 px (owner review 2026-11-1
     }
   });
 });
+
+test.describe("phone office header (D73) at 390 px", () => {
+  test("every office role: the logo keeps its 976×234 proportions (≤ 32 px tall) and the header stays ≤ 60 px", async ({ browser }) => {
+    const users = seeded();
+    const c = creator();
+    const viewers = [users.mgr, users.cs, ...(c ? [c] : [])];
+    expect(viewers.length, "run with --with-creator so the Creator is checked too").toBe(3);
+    for (const who of viewers) {
+      const context = await browser.newContext({ locale: "he-IL", viewport: { width: 390, height: 844 } });
+      const page = await context.newPage();
+      try {
+        await signInAs(page, who, /\/office/);
+        const header = page.locator(".ophone");
+        await expect(header, who.name).toBeVisible();
+        await expect(page.locator(".side"), who.name).toBeHidden();
+        const logo = header.locator(".ophone-logo");
+        const lb = await logo.boundingBox();
+        const hb = await header.boundingBox();
+        expect(lb, who.name).not.toBeNull();
+        expect(lb!.height, `${who.name}: logo height`).toBeLessThanOrEqual(32);
+        expect(Math.abs(lb!.width / lb!.height - 976 / 234), `${who.name}: logo aspect ratio`).toBeLessThan(0.1);
+        expect(hb!.height, `${who.name}: header height`).toBeLessThanOrEqual(60);
+      } finally {
+        await context.close();
+      }
+    }
+  });
+});

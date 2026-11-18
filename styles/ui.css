@@ -1074,7 +1074,7 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
   .office-phonebar > .ophone { display: flex; align-items: center; justify-content: space-between; background: var(--ink); padding: 8px 12px; min-height: 52px; }
 }
 .ophone-menu { background: none; border: 1px solid var(--ink3); color: var(--on-dark); border-radius: 8px; min-width: 40px; min-height: 40px; font-size: 20px; line-height: 1; }
-.ophone-logo { width: 92px; }
+.ophone-logo { display: block; width: 92px; height: auto; max-width: 100%; }
 .ophone-bg { position: fixed; inset: 0; background: var(--scrim); z-index: 60; display: flex; justify-content: flex-start; }
 .ophone-drawer { width: min(300px, 86%); height: 100%; background: var(--card); display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0, 0, 0, .25); }
 .ophone-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px; border-bottom: 1px solid var(--line); }
