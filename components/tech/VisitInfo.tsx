@@ -6,7 +6,7 @@ import type { VisitDetail } from "@/features/visits/data/types";
 // Look as in the demo: a key-value card (address, building / floor / apartment, arrival notes,
 // phone, product, SKU, warranty, handling rep), the fault description, and the yellow
 // "לאסוף לפני הביקור" card with "Waze ›" to the pickup place. Changes (docs/demo-deviations.md):
-// - D68 (owner, 2026-11-18): no warranty row and no "ביקור בתשלום" marker on technician screens
+// - D69 (owner, 2026-11-18): no warranty row and no "ביקור בתשלום" marker on technician screens
 //   (supersedes TE-11; warranty removed from TE-08 here; the office call card keeps it).
 // - Owner, 2026-11-18: building / floor / apartment in three equal columns, label and value
 //   centred in each (building right, floor middle, apartment left).
@@ -33,7 +33,7 @@ const Cell = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-/** Customer, address and product rows (TE-08 to TE-10; no warranty, D68). */
+/** Customer, address and product rows (TE-08 to TE-10; no warranty, D69). */
 export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
   const { customer: cu, product: p, call } = visit;
   return (

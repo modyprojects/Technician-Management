@@ -78,14 +78,14 @@ Migration 3 `visits`, `my_visit_details`, `visit_rep_contact`, `previous_visits`
 
 ## Screenshots (local production build against the isolated stack; fictional, test-marked data)
 
-`390-`, `820-` (D69: technician screens at 390 / 820 only) × `home-empty-day`, `home-day`,
+`390-`, `820-` (D70: technician screens at 390 / 820 only) × `home-empty-day`, `home-day`,
 `home-pickup-ticked`, `visit-card`, `visit-card-install`, `done-empty`, `visit-not-found` (WebP).
 Taken with `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screenshots.spec.ts`.
 
 ## Owner corrections (2026-11-18)
 
 - Building / floor / apartment: three equal columns, label and value centred (building right, floor middle, apartment left).
-- No "באחריות" row and no "ביקור בתשלום" marker on technician screens (D68).
+- No "באחריות" row and no "ביקור בתשלום" marker on technician screens (D69).
 
 ## מה לבדוק
 

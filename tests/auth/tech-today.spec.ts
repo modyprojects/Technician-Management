@@ -123,7 +123,7 @@ test.describe.serial("technician home and visit card (Step 3, local stack)", () 
     await expect(page.getByRole("button")).toHaveCount(0);
   });
 
-  test("no warranty and no paid marker on the technician's card (D68), call type shown", async ({ page }) => {
+  test("no warranty and no paid marker on the technician's card (D69), call type shown", async ({ page }) => {
     const { tech } = seeded();
     await signInAs(page, tech, /\/tech$/);
     await page.goto(`/tech/visit/${ids.second}`);

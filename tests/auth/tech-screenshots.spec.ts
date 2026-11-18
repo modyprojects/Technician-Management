@@ -6,7 +6,7 @@ import { seeded, signInAs } from "./helpers";
 import { attendeeOf, ensurePickupPlace, ingestVisit, signedInClient, type FictionalVisit } from "./tech-fixtures";
 
 // On demand only (SCREENSHOTS=1): the review images of the real technician home and visit card
-// (Step 3; D62 (6) as amended by D69: every state at 390 and 820 px), from a local production build signed in to
+// (Step 3; D62 (6) as amended by D70: every state at 390 and 820 px), from a local production build signed in to
 // the LOCAL stack (tests/auth/run-local.mjs). Every record is fictional and test-marked (D47): the
 // visits are made through the invitation simulator's ingestion service under the Manager's session.
 //   SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/tech-screenshots.spec.ts
