@@ -1037,3 +1037,32 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
 /* D74 (owner, 2026-11-18): the quiet per-record test-data marker and the screen banner. */
 .test-mark { display: inline-block; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: baseline; }
 .test-banner { background: var(--line2); color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; padding: 6px 12px; border-radius: 10px; margin: 0 0 10px; }
+/* D75 (owner, 2026-11-18): user-management dialogs are a centred modal on desktop, full screen on phone. */
+@media (min-width: 601px) {
+  .drawer-bg.acct-modal-bg { justify-content: center; align-items: center; padding: 24px; }
+  .drawer.acct-modal { width: min(560px, 100%); height: auto; max-height: calc(100vh - 48px); border-radius: 14px; overflow: hidden; }
+}
+@media (max-width: 600px) {
+  .drawer.acct-modal { width: 100%; }
+}
+/* The add dialog (owner, 2026-11-18): actions at the bottom left, help text under a field. */
+.drawer .df.acct-df-end { justify-content: flex-end; }
+.vc-help { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+
+/* D76: the row ⋮ menu (a portal under its button). */
+.row-menu-btn { min-width: 36px; min-height: 32px; padding: 2px 10px; font-size: 18px; line-height: 1; }
+.row-menu { position: fixed; z-index: 70; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(20, 36, 58, .18); padding: 4px; display: flex; flex-direction: column; }
+.row-menu-item { text-align: start; background: transparent; border: 0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: var(--ink); min-height: 40px; }
+.row-menu-item:hover, .row-menu-item:focus { background: var(--line2); outline: none; }
+.row-menu-item.danger { color: var(--danger); }
+/* User management: search and filters (client side), and the phone cards (D72). */
+.acct-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
+.acct-filters .acct-search { flex: 1 1 220px; min-width: 0; }
+.acct-filters input, .acct-filters select { min-height: 38px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 14px; background: var(--card); color: var(--ink); }
+.acct-filters select { flex: 0 1 auto; max-width: 100%; }
+.acct-cards { list-style: none; margin: 0; padding: 0; }
+.acct-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line2); outline-offset: -3px; }
+.acct-card-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.acct-wrap { overflow-wrap: anywhere; }
+.acct-chips { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; min-width: 0; overflow: hidden; }
+.acct-chips .pill { white-space: nowrap; }

@@ -46,11 +46,12 @@ import {
   technicianProfileCompletionOffered,
   type AccountAdminScope,
 } from "@/features/accounts/data/offers";
-import type { AccountRef, UserAccount } from "@/features/accounts/data/types";
+import { ACCOUNT_ROLE_LABELS, type AccountRef, type UserAccount } from "@/features/accounts/data/types";
 import { ACCOUNT_MESSAGES } from "@/features/data-access/supabase-errors";
 import type { Bounded } from "@/features/data-access/common";
 import { TECHNICIAN_COLOR_NAMES, technicianColorTokenOf } from "@/features/reference/data/types";
-import { TEST_DATA_LABEL } from "@/components/ui/TestBadge";
+import { TestDataBanner } from "@/components/ui/TestBadge";
+import { RowMenu, type RowMenuItem } from "./RowMenu";
 import { AccountAddDialog } from "./AccountAddDialog";
 import { AccountName, AccountStatePill, ActionMessage, RolePill, type ActionMessageValue, type CreationIntentEntry } from "./AccountAdminParts";
 import { cancelCreationInput, stateInput } from "./AccountAdminRules";
@@ -143,6 +144,19 @@ function RowState({ a, narrow = false }: { a: UserAccount; narrow?: boolean }) {
   );
 }
 
+/** D72: phone layout at 600 px and below (cards); the table above. Before hydration: the table. */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia("(max-width: 600px)");
+    const update = () => setNarrow(m.matches);
+    update();
+    m.addEventListener("change", update);
+    return () => m.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}
+
 export function UserManagementScreen({ scope, self, rows, intents, actions }: UserManagementProps) {
   const commands = useMemo(() => accountCommandsOfActions(actions), [actions]);
   return (
@@ -160,6 +174,10 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<ActionMessageValue>(null);
   const [deleteRetry, setDeleteRetry] = useState<DeleteRetry | null>(null);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserAccount["role"]>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "incomplete">("all");
+  const narrow = useNarrow();
   const running = useRef(false);
   /** An element to focus once it exists (a row that a reload brings), with a fallback. */
   const focusWanted = useRef<{ id: string; fallback: string } | null>(null);
@@ -277,66 +295,52 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
     reload();
   }
 
-  function rowButton(kind: Exclude<Dialog["kind"], "add" | "complete-intent">, a: UserAccount, label: string, name: string, danger = false) {
-    const opener = openerId(kind, a.id);
-    return (
-      <button
-        key={kind}
-        type="button"
-        id={opener}
-        className="chip"
-        style={danger ? { ...ROW_BTN, color: "var(--danger)" } : ROW_BTN}
-        disabled={blocked}
-        aria-label={name}
-        onClick={() => open({ kind, accountId: a.id, opener })}
-      >
-        {label}
-      </button>
-    );
-  }
-
-  /**
-   * A row's actions, two per line: עריכה, השלמה, סיסמה, מייל, תפקיד, then the state control and
-   * מחיקה. When a row has both of the last two (the Creator), they share the last line, so "השבתה"
-   * and "מחיקה" sit in the same place on every row.
-   */
-  function rowActions(row: UserManagementRow): ReactNode {
+  /** D76: a row's actions as ⋮ menu items, in the owner's order; each offer mirrors the server's rule. */
+  function rowItems(row: UserManagementRow): RowMenuItem[] {
     const a = row.account;
-    const main: ReactNode[] = [];
-    const last: ReactNode[] = [];
-    if (profileEditOffered(scope, a, selfId)) main.push(rowButton("edit", a, "עריכה", `עריכה · הפרטים של ${a.name}`));
+    const items: RowMenuItem[] = [];
+    if (profileEditOffered(scope, a, selfId)) items.push({ key: "edit", label: "עריכה", name: `עריכה · הפרטים של ${a.name}` });
     if (technicianProfileCompletionOffered(scope, a, selfId)) {
-      main.push(rowButton("complete-tech", a, "השלמה", `השלמה · פרופיל הטכנאי של ${a.name}`));
+      items.push({ key: "complete-tech", label: "השלמה", name: `השלמה · פרופיל הטכנאי של ${a.name}` });
     }
     if (credentialActionsOffered(scope, a, selfId)) {
-      main.push(rowButton("password", a, "סיסמה", `סיסמה · הגדרת סיסמה לחשבון של ${a.name}`));
-      main.push(rowButton("email", a, "מייל", `מייל · שינוי כתובת המייל של ${a.name}`));
+      items.push({ key: "password", label: "סיסמה", name: `סיסמה · הגדרת סיסמה לחשבון של ${a.name}` });
+      items.push({ key: "email", label: "מייל", name: `מייל · שינוי כתובת המייל של ${a.name}` });
     }
-    if (roleChangeOffered(scope, a, selfId)) main.push(rowButton("role", a, "תפקיד", `תפקיד · שינוי התפקיד של ${a.name}`));
+    if (roleChangeOffered(scope, a, selfId)) items.push({ key: "role", label: "תפקיד", name: `תפקיד · שינוי התפקיד של ${a.name}` });
     if (stateChangeOffered(scope, a, selfId)) {
-      if (a.active) {
-        last.push(rowButton("deactivate", a, "השבתה", `השבתה · החשבון של ${a.name}`, true));
-      } else {
-        const key = `activate-${a.id}`;
-        last.push(
-          <button
-            key="activate"
-            type="button"
-            className="chip"
-            style={ROW_BTN}
-            disabled={blocked}
-            aria-label={`הפעלה · החשבון של ${a.name}`}
-            onClick={() => void act(key, () => commands.activateAccount(stateInput(a)), activatedLine(a.name), rowId(a.id))}
-          >
-            {busy === key ? "מפעיל…" : "הפעלה"}
-          </button>,
-        );
-      }
+      items.push(
+        a.active
+          ? { key: "deactivate", label: "השבתה", name: `השבתה · החשבון של ${a.name}` }
+          : { key: "activate", label: "הפעלה", name: `הפעלה · החשבון של ${a.name}` },
+      );
     }
-    if (deleteOffered(scope, a, selfId)) last.push(rowButton("delete", a, "מחיקה", `מחיקה · החשבון של ${a.name}`, true));
-    if (last.length === 2 && main.length % 2 === 1) main.push(<span key="spacer" aria-hidden="true" />);
-    const items = [...main, ...last];
-    return items.length > 0 ? <div className="acct-actions">{items.map((item, i) => <Fragment key={i}>{item}</Fragment>)}</div> : null;
+    if (deleteOffered(scope, a, selfId)) items.push({ key: "delete", label: "מחיקה", name: `מחיקה · החשבון של ${a.name}`, danger: true });
+    return items;
+  }
+
+  /** Runs a row's ⋮ choice (an event handler). */
+  function selectRowAction(a: UserAccount, key: string, opener: string) {
+    if (key === "activate") {
+      void act(`activate-${a.id}`, () => commands.activateAccount(stateInput(a)), activatedLine(a.name), opener);
+      return;
+    }
+    open({ kind: key as Exclude<Dialog["kind"], "add" | "complete-intent">, accountId: a.id, opener });
+  }
+
+  /** An open creation intent's ⋮ items: "השלמת יצירה" (the requester) and "ביטול". */
+  function intentItems(entry: CreationIntentEntry): RowMenuItem[] {
+    const intent = entry.intent;
+    const items: RowMenuItem[] = [];
+    if (intentCompletionOffered(scope, intent, selfId)) items.push({ key: "complete", label: "השלמת יצירה", name: `השלמת יצירה · ${intent.name}` });
+    if (intentCancelOffered(scope, intent, selfId)) items.push({ key: "cancel", label: "ביטול", name: `ביטול · היצירה של ${intent.name}` });
+    return items;
+  }
+
+  function selectIntentAction(entry: CreationIntentEntry, key: string, opener: string) {
+    const intent = entry.intent;
+    if (key === "complete") open({ kind: "complete-intent", intentId: intent.id, opener });
+    else void act(`cancel-${intent.id}`, () => commands.cancelCreation(cancelCreationInput(intent)), intentCancelledLine(intent.name), addId);
   }
 
   function renderDialog(): ReactNode {
@@ -449,11 +453,48 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
 
   const title = USER_MANAGEMENT_TITLES[scope];
   const tableName = scope === "all" ? "כל המשתמשים" : "משתמשים: טכנאים ושירות לקוחות";
-  const empty = accounts.length === 0 && intents.items.length === 0;
   const hasTest = accounts.some((r) => r.account.isTest) || intents.items.some((e) => e.intent.isTest);
+  const q = query.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, "");
+  const matches = (name: string, email: string, phone: string) =>
+    q === "" ||
+    name.toLowerCase().includes(q) ||
+    email.toLowerCase().includes(q) ||
+    (qDigits !== "" && phone.replace(/\D/g, "").includes(qDigits));
+  const shownIntents = intents.items.filter(
+    (e) =>
+      (roleFilter === "all" || e.intent.role === roleFilter) &&
+      (statusFilter === "all" || statusFilter === "incomplete") &&
+      matches(e.intent.name, e.intent.email, ""),
+  );
+  const shownRows = accounts.filter(
+    (r) =>
+      (roleFilter === "all" || r.account.role === roleFilter) &&
+      (statusFilter === "all" || (statusFilter === "active" ? r.account.active : statusFilter === "inactive" ? !r.account.active : false)) &&
+      matches(r.account.name, r.account.email, r.account.phone),
+  );
+  const filtered = q !== "" || roleFilter !== "all" || statusFilter !== "all";
+  const empty = shownRows.length === 0 && shownIntents.length === 0;
+  const roleOptions = [...new Set([...accounts.map((r) => r.account.role), ...intents.items.map((e) => e.intent.role)])];
+
+  const intentState = (entry: CreationIntentEntry) => {
+    const intent = entry.intent;
+    // The Creator also sees other people's open intents (review S3): who started it.
+    const byOther = intent.requestedBy.id !== selfId ? ` · על ידי ${intent.requestedBy.name || "משתמש אחר"}` : "";
+    return (
+      <>
+        <span className="pill acct-warn">יצירה שלא הושלמה</span>
+        <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
+          התחילה {entry.startedLabel}
+          {byOther}
+        </span>
+      </>
+    );
+  };
 
   return (
     <>
+      {hasTest && <TestDataBanner />}
       <section className="card" style={{ overflow: "hidden" }} aria-labelledby={`${id}-title`} aria-busy={reloading || undefined}>
         <SettingsCardHead
           id={`${id}-title`}
@@ -474,129 +515,133 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
             ) : undefined
           }
         />
+        <div className="acct-filters" role="search" aria-label="חיפוש וסינון משתמשים">
+          <input
+            type="search"
+            className="acct-search"
+            placeholder="חיפוש לפי שם, טלפון או מייל"
+            aria-label="חיפוש לפי שם, טלפון או מייל"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <select aria-label="סינון לפי תפקיד" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}>
+            <option value="all">כל התפקידים</option>
+            {roleOptions.map((r) => (
+              <option key={r} value={r}>
+                {ACCOUNT_ROLE_LABELS[r]}
+              </option>
+            ))}
+          </select>
+          <select aria-label="סינון לפי מצב" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+            <option value="all">כל המצבים</option>
+            <option value="active">פעיל</option>
+            <option value="inactive">לא פעיל</option>
+            {intents.items.length > 0 && <option value="incomplete">יצירה שלא הושלמה</option>}
+          </select>
+        </div>
         {empty ? (
-          <div className="empty">אין משתמשים להצגה</div>
+          <div className="empty">{filtered ? "אין משתמשים שמתאימים לחיפוש" : "אין משתמשים להצגה"}</div>
+        ) : narrow ? (
+          // Phone (D72): one card per user; role and state on one line; the ⋮ menu (D76).
+          <ul className="acct-cards" aria-label={tableName}>
+            {shownIntents.map((entry) => {
+              const intent = entry.intent;
+              const opener = openerId("menu-intent", intent.id);
+              return (
+                <li key={`intent-${intent.id}`} data-account-row="" id={intentRowId(intent.id)} tabIndex={-1} className="acct-card">
+                  <div className="acct-card-text">
+                    <AccountName name={intent.name} isTest={intent.isTest} />
+                    <span className="sub acct-ltr acct-wrap">{intent.email || "—"}</span>
+                    <span className="acct-chips">
+                      <RolePill role={intent.role} />
+                    </span>
+                    <span style={{ display: "block", marginTop: 6 }}>{intentState(entry)}</span>
+                  </div>
+                  <RowMenu id={opener} name={intent.name} items={intentItems(entry)} onSelect={(k) => selectIntentAction(entry, k, opener)} disabled={blocked} />
+                </li>
+              );
+            })}
+            {shownRows.map((row) => {
+              const a = row.account;
+              const opener = openerId("menu", a.id);
+              return (
+                <li key={a.id} data-account-row="" id={rowId(a.id)} tabIndex={-1} className="acct-card">
+                  <div className="acct-card-text">
+                    <AccountName name={a.name} isTest={a.isTest} note={a.id === selfId ? "החשבון שלך" : undefined} />
+                    <TechnicianLine row={row} />
+                    <span className="sub acct-ltr acct-wrap">{knownEmail(a.email) ?? "—"}</span>
+                    {a.phone && <span className="sub acct-ltr">{a.phone}</span>}
+                    <span className="acct-chips">
+                      <RolePill role={a.role} />
+                      <AccountStatePill active={a.active} />
+                      {a.technicianMissing && <span className="pill acct-warn">פרופיל טכנאי חסר</span>}
+                    </span>
+                  </div>
+                  <RowMenu id={opener} name={a.name} items={rowItems(row)} onSelect={(k) => selectRowAction(a, k, opener)} disabled={blocked} />
+                </li>
+              );
+            })}
+          </ul>
         ) : (
-          // position: relative keeps the 🧪 badge's screen-reader text inside the sideways scroller.
           <div className="scrollx" style={{ position: "relative" }}>
             <table aria-label={tableName}>
               <thead>
                 <tr>
                   <th scope="col">שם</th>
-                  <th scope="col" className="set-col-wide">
-                    מייל · טלפון
-                  </th>
-                  <th scope="col" className={`${SHORT} set-col-wide`}>
+                  <th scope="col">מייל · טלפון</th>
+                  <th scope="col" className={SHORT}>
                     תפקיד
                   </th>
-                  <th scope="col" className={`${SHORT} set-col-wide`}>
+                  <th scope="col" className={SHORT}>
                     מצב
                   </th>
                   <th scope="col" className="col-fit">
-                    פעולות
+                    <span className="sr-only">פעולות</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {intents.items.map((entry) => {
+                {shownIntents.map((entry) => {
                   const intent = entry.intent;
-                  const opener = openerId("complete-intent", intent.id);
-                  const cancelKey = `cancel-${intent.id}`;
-                  const canComplete = intentCompletionOffered(scope, intent, selfId);
-                  const canCancel = intentCancelOffered(scope, intent, selfId);
-                  // The Creator also sees other people's open intents (review S3): who started it.
-                  const byOther = intent.requestedBy.id !== selfId ? ` · על ידי ${intent.requestedBy.name || "משתמש אחר"}` : "";
-                  const state = (
-                    <>
-                      <span className="pill acct-warn">יצירה שלא הושלמה</span>
-                      <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 3 }}>
-                        התחילה {entry.startedLabel}
-                        {byOther}
-                      </span>
-                    </>
-                  );
+                  const opener = openerId("menu-intent", intent.id);
                   return (
-                    <tr key={`intent-${intent.id}`} id={intentRowId(intent.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
+                    <tr key={`intent-${intent.id}`} data-account-row="" id={intentRowId(intent.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
                       <td>
                         <AccountName name={intent.name} isTest={intent.isTest} />
-                        <span className="set-inline-narrow">
-                          <span className="sub acct-ltr">{intent.email || "—"}</span>
-                          <span style={{ display: "block", marginTop: 4 }}>
-                            <RolePill role={intent.role} />
-                          </span>
-                          <span style={{ display: "block", marginTop: 4 }}>{state}</span>
-                        </span>
                       </td>
-                      <td className="set-col-wide acct-ltr-cell">{intent.email || "—"}</td>
-                      <td className={`${SHORT} set-col-wide`}>
+                      <td className="acct-ltr-cell">{intent.email || "—"}</td>
+                      <td className={SHORT}>
                         <RolePill role={intent.role} />
                       </td>
-                      <td className={`${SHORT} set-col-wide`}>{state}</td>
+                      <td className={SHORT}>{intentState(entry)}</td>
                       <td className="col-fit">
-                        {(canComplete || canCancel) && (
-                          <div className="acct-actions">
-                            {canComplete && (
-                              <button
-                                type="button"
-                                id={opener}
-                                className="btn pri"
-                                style={ROW_BTN}
-                                disabled={blocked}
-                                aria-label={`השלמת יצירה · ${intent.name}`}
-                                onClick={() => open({ kind: "complete-intent", intentId: intent.id, opener })}
-                              >
-                                השלמת יצירה
-                              </button>
-                            )}
-                            {canCancel && (
-                              <button
-                                type="button"
-                                className="chip"
-                                style={ROW_BTN}
-                                disabled={blocked}
-                                aria-label={`ביטול · היצירה של ${intent.name}`}
-                                onClick={() =>
-                                  void act(cancelKey, () => commands.cancelCreation(cancelCreationInput(intent)), intentCancelledLine(intent.name), addId)
-                                }
-                              >
-                                {busy === cancelKey ? "מבטל…" : "ביטול"}
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <RowMenu id={opener} name={intent.name} items={intentItems(entry)} onSelect={(k) => selectIntentAction(entry, k, opener)} disabled={blocked} />
                       </td>
                     </tr>
                   );
                 })}
-                {accounts.map((row) => {
+                {shownRows.map((row) => {
                   const a = row.account;
-                  const own = a.id === selfId;
+                  const opener = openerId("menu", a.id);
                   return (
-                    <tr key={a.id} id={rowId(a.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
+                    <tr key={a.id} data-account-row="" id={rowId(a.id)} tabIndex={-1} style={{ outlineOffset: -3 }}>
                       <td>
-                        <AccountName name={a.name} isTest={a.isTest} note={own ? "החשבון שלך" : undefined} />
+                        <AccountName name={a.name} isTest={a.isTest} note={a.id === selfId ? "החשבון שלך" : undefined} />
                         <TechnicianLine row={row} />
-                        {/* Narrow widths: email, phone, role and state under the name (their columns are hidden). */}
-                        <span className="set-inline-narrow">
-                          <span className="sub acct-ltr">{knownEmail(a.email) ?? "—"}</span>
-                          {a.phone && <span className="sub acct-ltr">{a.phone}</span>}
-                          <span style={{ display: "block", marginTop: 4 }}>
-                            <RolePill role={a.role} />
-                          </span>
-                          <RowState a={a} narrow />
-                        </span>
                       </td>
-                      <td className="set-col-wide acct-ltr-cell">
+                      <td className="acct-ltr-cell">
                         {knownEmail(a.email) ?? "—"}
                         {a.phone && <span className="sub acct-ltr">{a.phone}</span>}
                       </td>
-                      <td className={`${SHORT} set-col-wide`}>
+                      <td className={SHORT}>
                         <RolePill role={a.role} />
                       </td>
-                      <td className={`${SHORT} set-col-wide`}>
+                      <td className={SHORT}>
                         <RowState a={a} />
                       </td>
-                      <td className="col-fit">{rowActions(row)}</td>
+                      <td className="col-fit">
+                        <RowMenu id={opener} name={a.name} items={rowItems(row)} onSelect={(k) => selectRowAction(a, k, opener)} disabled={blocked} />
+                      </td>
                     </tr>
                   );
                 })}
@@ -605,12 +650,6 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
           </div>
         )}
         <SettingsMore shown={accounts.length} total={rows.total} />
-        {hasTest && (
-          // D47: test-marked accounts are labelled; the legend names the badge.
-          <div className="sub acct-legend">
-            <span aria-hidden="true">🧪</span> {TEST_DATA_LABEL}: חשבונות שנוצרו לבדיקות ואינם חשבונות אמיתיים.
-          </div>
-        )}
         <ActionMessage message={message} style={{ padding: message ? `10px 18px ${deleteRetry ? 6 : 12}px` : 0 }} />
         {deleteRetry && (
           <div style={{ padding: message ? "0 18px 12px" : "10px 18px 12px" }}>

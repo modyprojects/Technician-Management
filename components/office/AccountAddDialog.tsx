@@ -163,16 +163,10 @@ export function AccountAddDialog({
 
   const invalidProps = (field: Field) => (error?.field === field ? { "aria-invalid": true as const, "aria-describedby": errorId } : {});
 
-  const notes = [
-    { text: "החשבון נוצר מיד ונרשם ביומן הביקורת. אין הרשמה עצמית ואין סיסמה בטופס." },
-    // TEMPORARY (Step 2 plan Q1): until an email provider is approved the Creator sets the first password.
-    { text: "עד החלטת הבעלים, את הסיסמה הראשונה קובע היוצר ב\"סיסמה\" ומוסר אותה למשתמש.", pending: true },
-    // D47: every account created before go-live is test data.
-    { text: `עד העלייה לאוויר כל חשבון חדש הוא חשבון בדיקה (🧪), בכתובת ‎@${TEST_EMAIL_DOMAIN} בלבד.` },
-    ...(tech
-      ? [{ text: "המייל משמש לכניסה ולשיוך זימונים מ-Outlook. טכנאי חדש פעיל ומקבל זימונים חדשים; את המייל ב-Outlook ואת \"פעיל\" משנה היוצר ב\"עריכת פרטים\"." }]
-      : []),
-  ];
+  // Owner review 2026-11-18: one short note (TEMPORARY, Step 2 plan Q1: the Creator sets the first
+  // password); the test-data box is replaced by the screen's banner (D74).
+  const notes = [{ text: "את הסיסמה הראשונה קובע היוצר ומוסר אותה למשתמש." }];
+  const emailHelpId = `${id}-email-help`;
 
   return (
     <AccountDialog title="הוספת משתמש" dirty={dirty} busy={busy} onClose={onClose}>
@@ -212,7 +206,7 @@ export function AccountAddDialog({
               // TEMPORARY (Q9): shown, never selectable, no value the form could send.
               <label className="set-swatch-opt acct-role-pending">
                 <input type="radio" name={`${id}-role`} disabled />
-                {ACCOUNT_ROLE_LABELS.creator} · ממתין להחלטת בעלים
+                {ACCOUNT_ROLE_LABELS.creator}
               </label>
             )}
           </fieldset>
@@ -230,7 +224,7 @@ export function AccountAddDialog({
             />
           </label>
           <label className="vc-label">
-            {tech ? "מייל (כניסה ו-Outlook)" : "מייל"}
+            מייל
             <input
               ref={emailRef}
               type="email"
@@ -242,8 +236,12 @@ export function AccountAddDialog({
               autoComplete="off"
               disabled={busy}
               onChange={(e) => edit(setEmail, "email")(e.target.value)}
-              {...invalidProps("email")}
+              aria-describedby={error?.field === "email" ? `${emailHelpId} ${errorId}` : emailHelpId}
+              aria-invalid={error?.field === "email" ? true : undefined}
             />
+            <span id={emailHelpId} className="vc-help">
+              {tech ? "משמש לכניסה ולשיוך זימונים מ-Outlook" : "משמש לכניסה"}
+            </span>
           </label>
           <label className="vc-label">
             טלפון עבודה
@@ -290,18 +288,20 @@ export function AccountAddDialog({
           )}
           <DialogNotes notes={notes} />
         </div>
-        <div className="df">
+        {error && (
+          <div style={{ padding: "0 20px 10px" }}>
+            <span id={errorId} role="alert" className="set-err vc-err">
+              {error.text}
+            </span>
+          </div>
+        )}
+        <div className="df acct-df-end">
           <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>
             {busy ? "יוצר…" : "הוספה"}
           </button>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             ביטול
           </button>
-          {error && (
-            <span id={errorId} role="alert" className="set-err vc-err">
-              {error.text}
-            </span>
-          )}
         </div>
       </form>
     </AccountDialog>
