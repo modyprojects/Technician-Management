@@ -99,7 +99,7 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     await expect(day).toContainText(mine.noon.req);
     await expect(day).toContainText("שובצה");
     await expect(day).toContainText("07:00");
-    await expect(page.getByRole("note", { name: "מקרא צבעים" })).toHaveText(/שובצה.*בטיפול.*טופל.*המשך טיפול/);
+    await expect(page.getByRole("note", { name: "מקרא צבעים" })).toHaveText(/שובצה.*בדרך.*בטיפול.*טופל.*המשך טיפול/);
     await expect(page.getByText("מוצגים נתוני בדיקה")).toBeVisible();
     // "today" is the server's: the URL's today= is ignored (the strip starts at today).
     await expect(page.getByRole("group", { name: "הימים הקרובים" }).getByRole("link").first()).toHaveAttribute("href", `/tech/calendar?view=day&date=${today}`);
