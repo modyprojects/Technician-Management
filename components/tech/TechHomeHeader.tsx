@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { TestPill } from "@/components/ui/TestBadge";
 import { BellLink } from "./BellLink";
 
 // Technician home header (demo techHome() head, TE-01): date, greeting, avatar, bell, counters.
 // The bell (BellLink) opens the notifications (TE-28) and "הושלמו ›" the completed-visits list
-// ("הושלמו היום", TE-26); both are links (navigation).
+// ("הושלמו היום", TE-26); both are links (navigation). The bell is shown only with a notifications
+// screen to open: the real app has no notifications until Step 7 (TE-28, D25), so it shows none
+// rather than a bell that leads nowhere (G-06).
 export function TechHomeHeader({
   dateLine,
   greeting,
+  isTest = false,
   initial,
   avatarColor,
   unread,
@@ -17,13 +21,16 @@ export function TechHomeHeader({
 }: {
   dateLine: string;
   greeting: string;
+  /** The 🧪 badge of a test user beside the greeting (SIM-18). */
+  isTest?: boolean;
   initial: string;
   avatarColor: string;
-  unread: number;
+  /** Unread notifications; with `notificationsHref` only. */
+  unread?: number;
   visitsToday: number;
   completed: number;
-  /** Notifications screen (TE-28). */
-  notificationsHref: string;
+  /** Notifications screen (TE-28); without it no bell is shown. */
+  notificationsHref?: string;
   /** Completed-visits list ("הושלמו היום", TE-26). */
   completedHref: string;
 }) {
@@ -40,7 +47,10 @@ export function TechHomeHeader({
           marginTop: 2,
         }}
       >
-        <h1 style={{ fontSize: 22 }}>{greeting}</h1>
+        <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+          <h1 style={{ fontSize: 22 }}>{greeting}</h1>
+          {isTest && <TestPill />}
+        </span>
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span
             aria-hidden="true"
@@ -57,7 +67,7 @@ export function TechHomeHeader({
           >
             {initial}
           </span>
-          <BellLink href={notificationsHref} unread={unread} />
+          {notificationsHref && <BellLink href={notificationsHref} unread={unread ?? 0} />}
         </span>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>

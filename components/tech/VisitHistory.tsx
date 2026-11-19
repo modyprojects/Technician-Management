@@ -1,5 +1,5 @@
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { VisitHistoryItem } from "@/features/visits/data/types";
 
 // "↻ ביקור המשך" box on the technician visit card (docs/demo.html techCall() L519-524; TE-06).
@@ -66,7 +66,7 @@ export function VisitHistory({ items }: { items: readonly VisitHistoryItem[] }) 
             )}
             <div className="num" style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, display: "flex", gap: 6, alignItems: "center" }}>
               {mediaLabel(h.media.length)}
-              {h.media.some((m) => m.isTest) && <TestBadge />}
+              {h.media.some((m) => m.isTest) && <TestPill />}
             </div>
             {h.media.length > 0 && (
               <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>

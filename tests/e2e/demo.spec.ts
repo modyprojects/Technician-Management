@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { testAccountEmailError } from "@/features/accounts/data/validate";
 import { SIGN_IN_MESSAGES } from "@/features/data-access/supabase-errors";
 import { DEMO_PAGES, FIXTURE_SENTINEL, horizontalOverflow, onlyInProject, openPage, verticalPageOverflow } from "./helpers";
 
@@ -548,7 +549,7 @@ test.describe("office calendar test data and bounds", () => {
     await openPage(page, "/dev/demo/office/mgr/calendar");
     await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
     await expect(page.locator("a.ocal-ev").first()).toContainText("נתוני בדיקה");
-    await expect(page.locator("a.ocal-ev").first().locator(".pill")).toContainText("🧪");
+    await expect(page.locator("a.ocal-ev").first().locator('[title="נתוני בדיקה"]')).toBeAttached();
 
     await openPage(page, "/dev/demo/office/mgr/calendar?view=week");
     await expect(page.getByRole("note").filter({ hasText: "היומן כולל נתוני בדיקה" })).toBeVisible();
@@ -586,7 +587,7 @@ test.describe("showcase: \"הושלמו היום\" with rows", () => {
     await expect(list.getByRole("link")).toHaveCount(3);
     await expect(list.getByRole("link").first()).toContainText("08:00");
     await expect(list.getByRole("link").first()).toContainText("טופל");
-    await expect(list.locator(".pill", { hasText: "🧪" })).toHaveCount(2);
+    await expect(list.locator('[title="נתוני בדיקה"]')).toHaveCount(2);
     await expect(page.getByRole("navigation", { name: "עמודי הביקורים שהושלמו" })).toBeVisible();
     expect(await horizontalOverflow(page)).toEqual([]);
     await page.waitForLoadState("networkidle");
@@ -904,7 +905,7 @@ test.describe("account administration (SE-01, D34)", () => {
     // Step 2 PR 2.3: 11 accounts (with גלעד, a Technician account without a field profile) and the
     // Creator's own open creation intent ("יצירה שלא הושלמה").
     await expect(users.locator("tbody tr")).toHaveCount(12);
-    await expect(users.locator("tbody tr").filter({ hasText: "🧪" })).toHaveCount(12);
+    await expect(users.locator("tbody tr").filter({ has: page.locator('[title="נתוני בדיקה"]') })).toHaveCount(12);
     const own = users.locator("tbody tr").filter({ hasText: "החשבון שלך" });
     // The own row: only "עריכה" (no state change of himself; no credential dialogs, TEMPORARY Q22).
     await expect(own.getByRole("button")).toHaveCount(1);
@@ -917,14 +918,13 @@ test.describe("account administration (SE-01, D34)", () => {
     await expect(own.getByRole("button", { name: /סיסמה|שינוי מייל|מייל ·/ })).toHaveCount(0);
     await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
     const form = page.getByRole("form", { name: "הוספת משתמש" });
-    // Step 2 PR 2.2 (Q9, TEMPORARY): a Creator account is not offered; the option says why and is disabled.
+    // Step 2 PR 2.2 (Q9): a Creator account is not offered (no option; the note says so).
     const roles = form.getByLabel("הרשאה").locator("option");
-    await expect(roles).toHaveText(["שירות לקוחות", "מנהל", "יוצר · ממתין להחלטת בעלים"]);
-    await expect(roles.last()).toHaveJSProperty("disabled", true);
+    await expect(roles).toHaveText(["שירות לקוחות", "מנהל"]);
     await expect(roles.first()).toHaveJSProperty("disabled", false);
     await expect(form.getByLabel("הרשאה")).toHaveValue("cs");
     await expect(form.locator('option[value="creator"]')).toHaveCount(0);
-    await expect(form.getByText("יצירת חשבון יוצר: ממתין להחלטת בעלים.", { exact: false })).toBeVisible();
+    await expect(form.getByText("לא ניתן ליצור חשבון יוצר באפליקציה.", { exact: false })).toBeVisible();
     await expect(form.locator('input[type="password"]')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toEqual([]);
   });
@@ -1251,7 +1251,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await form.getByLabel("הרשאה").selectOption("mgr");
     // Test users get example.test addresses only (D47): the simulated command refuses others.
     await form.getByRole("button", { name: "יצירת חשבון" }).click();
-    await expect(form.getByRole("alert")).toContainText("רק כתובות @example.test");
+    await expect(form.getByRole("alert")).toContainText(testAccountEmailError("") ?? "");
     await expect(users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" })).toHaveCount(0);
 
     await form.getByLabel("מייל", { exact: true }).fill("manager2@example.test");
@@ -1259,7 +1259,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await expect(toast(page).filter({ hasText: "יצירת חשבון מנהל" })).toContainText(SIMULATED);
     await expect(form).toHaveCount(0);
     const row = users.locator("tbody tr").filter({ hasText: "מנהלת בדיקה" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("מנהל");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     await expect(page.getByText(/בהדגמה: החשבון של מנהלת בדיקה היה נוצר מיד/)).toBeVisible();
@@ -1279,7 +1279,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await expect(form).toHaveCount(0);
     await expect(page.getByRole("button", { name: "+ הוספת טכנאי" })).toBeFocused();
     const row = page.locator("main table tbody tr").filter({ hasText: "טכנאי בדיקה" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     // The command returned a technician id (not the account id): the switch validates and runs.
     const active = row.getByRole("button", { name: "טכנאי בדיקה פעיל – מקבל זימונים חדשים" });
@@ -1299,7 +1299,7 @@ test.describe("add forms (simulated submit flows)", () => {
     await form.getByRole("button", { name: "הוספה" }).click();
     await expect(toast(page)).toContainText("הוספת טכנאי");
     const row = page.getByRole("table", { name: "חשבונות שירות לקוחות וטכנאים" }).locator("tbody tr").filter({ hasText: "טכנאי מתלמד" });
-    await expect(row).toContainText("🧪");
+    await expect(row.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(row).toContainText("טכנאי");
     await expect(row).toContainText("לא נשמר · פעולה מדומה");
     await expect(page.getByText(/בהדגמה: הטכנאי טכנאי מתלמד היה נוסף מיד/)).toBeVisible();
@@ -1791,14 +1791,16 @@ test.describe("unparsed invitations (IN-01 to IN-04, OF-16)", () => {
     // An unknown SKU is never a reason (IN-02, D19).
     await expect(main).toContainText("מק״ט שלא מופיע ברשימת המוצרים אינו סיבה");
     // Every row: the rep mail is not sent, pending d09 (IN-04).
-    await expect(list.getByText("מייל לנציגה: לא נשלח · ממתין להחלטת בעלים (d09)")).toHaveCount(7);
+    await expect(list.getByText("מייל לנציגה: לא נשלח", { exact: true })).toHaveCount(7);
     // No line about an email says it was or will be sent ("נשלח" elsewhere is the corrected invitation).
     const mailLines = (await main.innerText()).split("\n").filter((l) => l.includes("מייל"));
     expect(mailLines.length).toBeGreaterThanOrEqual(7);
     for (const l of mailLines) expect(l).not.toMatch(/(?<!לא )(נשלח|יישלח|נשלחים)/);
     // Source of every invitation: the simulator (SIM-14); event-driven intake, no polling (D08).
     await expect(list.getByText("🧪 זימון בדיקה")).toHaveCount(7);
-    await expect(main).toContainText("בלי בדיקה תקופתית");
+    await expect(main).toContainText("ברגע שהוא מגיע");
+    await expect(main).not.toContainText("בלי בדיקה תקופתית");
+    await expect(main.locator(".ib-note")).toHaveCount(1);
     // No actions on this screen.
     await expect(main.getByRole("button")).toHaveCount(0);
   });
@@ -2379,7 +2381,7 @@ test.describe("closed-visit corrections on the call card (OF-10, D14, D43, D45)"
     await expect(page.locator("#visit-1-corrections")).toHaveCount(1);
     const rows = history(page, 1).locator(".vc-row:not(.vc-orig)");
     await expect(rows).toHaveCount(3);
-    for (const row of await rows.all()) await expect(row.locator(".pill", { hasText: "🧪" })).toHaveCount(1);
+    for (const row of await rows.all()) await expect(row.locator('[title="נתוני בדיקה"]')).toHaveCount(1);
     // Customer service reads the history (with `card`): the mark is there too, without the action.
     await openPage(page, "/dev/demo/office/cs/calls/47969");
     await expect(page.locator("#visit-1").getByRole("link", { name: /תוקן במשרד/ })).toBeVisible();
@@ -3038,7 +3040,7 @@ test.describe("D57 dashboard: scope, no fabrication, colours", () => {
     await expect(page.locator(".ma-progress .ma-seg-pending")).toHaveCSS("background-color", "rgb(185, 193, 205)");
     await expect(page.locator(".ma-progress .ma-seg-missed")).toHaveCSS("background-color", "rgb(193, 79, 79)");
     // 🧪 on the General SKU bars (SIM-17); SKUs are LTR text.
-    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".pill").first()).toContainText("🧪");
+    await expect(page.getByRole("list", { name: "5 מק״טים מובילים" }).locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     for (const sku of await page.getByRole("list", { name: "5 מק״טים מובילים" }).locator(".ma-bar-name bdi").all()) {
       await expect(sku).toHaveAttribute("dir", "ltr");
     }
@@ -3111,7 +3113,7 @@ test.describe("D57 dashboard: scope, no fabrication, colours", () => {
     await expect(page.locator("main")).not.toContainText("טפטוף");
     await expect(table.locator("tbody td:first-child", { hasText: "MX-410" })).toHaveCount(1);
     await expect(table.locator("tbody td:first-child", { hasText: "TB-75" })).toHaveCount(1);
-    await expect(table.locator("tbody tr").first().locator("td").nth(1)).toContainText("🧪");
+    await expect(table.locator("tbody tr").first().locator("td").nth(1).locator('[title="נתוני בדיקה"]')).toBeAttached();
     for (const cell of await table.locator("tbody td:first-child").all()) await expect(cell).toHaveAttribute("dir", "ltr");
   });
 });
@@ -3778,10 +3780,10 @@ test.describe("Step 2 role start screens (Q18)", () => {
       await expect(page.getByRole("heading", { level: 1, name: "בית" })).toBeVisible();
       const main = page.locator("main.work");
       await expect(main.getByRole("heading", { level: 2, name: `שלום, ${who}` })).toBeVisible();
-      await expect(main.locator(".start-hello")).toContainText("🧪");
+      await expect(main.locator(".start-hello").locator('[title="נתוני בדיקה"]')).toBeAttached();
       await expect(main.getByText(`הרשאה: ${roleLabel}`, { exact: true })).toBeVisible();
       await expect(main.getByText("מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.")).toBeVisible();
-      await expect(main.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+      await expect(main.getByText(/ממתין להחלטת בעלים/)).toHaveCount(0);
       await expect(sideNav(page).getByRole("link")).toHaveText([...items]);
       await expect(sideNav(page).getByRole("link", { name: "בית" })).toHaveAttribute("aria-current", "page");
       if (settingsHref) {
@@ -3797,9 +3799,9 @@ test.describe("Step 2 role start screens (Q18)", () => {
   test("/dev/demo/start/tech and the minimal profile: the session user, \"היום\" and \"פרופיל\" only, sign-out", async ({ page }) => {
     await openPage(page, "/dev/demo/start/tech");
     await expect(page.getByRole("heading", { level: 1, name: "שלום, יורם" })).toBeVisible();
-    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head").locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(page.getByText("הרשאה: טכנאי", { exact: true })).toBeVisible();
-    await expect(page.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+    await expect(page.getByText(/ממתין להחלטת בעלים/)).toHaveCount(0);
     const nav = page.locator(".ph-nav");
     await expect(nav.getByRole("link")).toHaveText(["היום", "פרופיל"]);
     await expect(nav.getByRole("link", { name: "היום" })).toHaveAttribute("aria-current", "page");
@@ -3809,7 +3811,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
     await nav.getByRole("link", { name: "פרופיל" }).click();
     await expect(page).toHaveURL(/\/dev\/demo\/start\/tech\/profile$/);
     await expect(page.getByRole("heading", { level: 1, name: "יורם" })).toBeVisible();
-    await expect(page.locator(".ph-head")).toContainText("🧪");
+    await expect(page.locator(".ph-head").locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(page.locator(".ph-head")).toContainText("הרשאה: טכנאי");
     await expect(page.locator(".ph-nav").getByRole("link", { name: "פרופיל" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "חשבון" })).toBeVisible();
@@ -3864,7 +3866,7 @@ test.describe("Step 2 credentials (Creator only)", () => {
     await expect(username).toHaveAttribute("tabindex", "-1");
     await expect(username).toHaveAttribute("readonly", "");
     await expect(dialog).toContainText("רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה.");
-    await expect(dialog).toContainText("עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.");
+    await expect(dialog).toContainText("היוצר מוסר את הסיסמה למשתמש בעצמו.");
     await expect(dialog).toContainText("חוזק הסיסמה נבדק במערכת ההתחברות.");
     // No show/hide toggle and no confirmation field (owner question Q-C).
     await expect(dialog.locator('input[type="password"]')).toHaveCount(1);
@@ -3937,7 +3939,7 @@ test.describe("Step 2 credentials (Creator only)", () => {
     const save = dialog.getByRole("button", { name: "שמירת המייל" });
     await field.fill("hadas@example.com");
     await save.click();
-    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("alert")).toHaveText(testAccountEmailError("") ?? "");
     await field.fill("REP2@example.test");
     await save.click();
     await expect(dialog.getByRole("alert")).toHaveText("אין שינוי לשמור");
@@ -4063,7 +4065,7 @@ test.describe("Step 2 notices (Creator)", () => {
     const expected: [string, string, string | null][] = [
       ["בקשה ממתינה · הפעלה מחדש · אורית", "שירות לקוחות · על ידי דורון · היום 08:45", "להחלטה ב\"בקשות לאישור\""],
       ["בקשה ממתינה · יצירת חשבון · נציגה 3", "שירות לקוחות · על ידי דורון · אתמול 11:30", "להחלטה ב\"בקשות לאישור\""],
-      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים"],
+      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook"],
       ["השבתה על ידי המנהל · אורית", "שירות לקוחות · על ידי דורון · 01.09 09:00", null],
       ["השבתה על ידי המנהל · בני", "טכנאי · על ידי דורון · 14.08 16:30", null],
     ];
@@ -4073,7 +4075,7 @@ test.describe("Step 2 notices (Creator)", () => {
       await expect(item.locator(".sub").first()).toHaveText(two);
       await expect(item.locator(".sub")).toHaveCount(three ? 2 : 1);
       if (three) await expect(item.locator(".sub").nth(1)).toHaveText(three);
-      await expect(item).toContainText("🧪");
+      await expect(item.locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     }
     // Decided, cancelled and fulfilled requests are not notices.
     for (const name of ["שמואל", "נציג זמני", "נציגת ערב", "הדס"]) await expect(first).not.toContainText(name);
@@ -4170,7 +4172,7 @@ test.describe("Step 2 routine edit", () => {
     const outlook = dialog.getByLabel("מייל ב-Outlook");
     await outlook.fill("a@b.com");
     await save.click();
-    await expect(dialog.getByRole("alert")).toHaveText("נתוני בדיקה: רק כתובות @example.test");
+    await expect(dialog.getByRole("alert")).toHaveText(testAccountEmailError("") ?? "");
     await expect(outlook).toBeFocused();
     await outlook.fill("yoram@example.test");
     await save.click();
@@ -4199,7 +4201,7 @@ test.describe("Step 2 routine edit", () => {
     const dialog = page.getByRole("dialog", { name: "עריכת פרטים · אדי" });
     await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveCount(0);
     await expect(dialog.getByRole("switch")).toHaveCount(0);
-    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\".");
     await expect(dialog).toContainText("מייל וסיסמה משנה היוצר בלבד.");
     expect(await horizontalOverflow(page)).toEqual([]);
     await dialog.getByLabel("כחול").check();
@@ -4259,8 +4261,8 @@ test.describe("Step 2 incomplete creations", () => {
     await expect(kv).toContainText("התחילהאתמול 09:05");
     await expect(dialog.getByLabel("טלפון")).toHaveValue("");
     await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
-    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים");
-    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר.");
+    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook.");
     expect(await horizontalOverflow(page)).toEqual([]);
     const submit = dialog.getByRole("button", { name: "השלמת היצירה" });
     await submit.click();
@@ -4322,7 +4324,7 @@ test.describe("Step 2 incomplete creations", () => {
       const dialog = page.getByRole("dialog", { name: "השלמת פרופיל טכנאי · גלעד" });
       await expect(dialog.locator('.kv [dir="ltr"]')).toHaveText("gilad@example.test");
       await expect(dialog.locator('.kv input')).toHaveCount(0);
-      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים");
+      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook.");
       await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
       expect(await horizontalOverflow(page)).toEqual([]);
       await dialog.getByLabel("ירוק").check();

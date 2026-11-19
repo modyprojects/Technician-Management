@@ -5,7 +5,7 @@
 // D62). Next.js checks the Origin of every server-action POST against the Host.
 //
 // Order of checks (fail closed):
-//   1. the environment switch (CALENDAR_SIMULATOR=1, never on Vercel Production): when off, the
+//   1. the environment switch (CALENDAR_SIMULATOR=1; on Vercel Production only while testingPeriod, D90): when off, the
 //      action answers "not-found" and does nothing (docs/security.md §9: disabled simulator
 //      endpoints are unreachable). This is the ONLY place the switch holds: the database cannot
 //      see it, and the RPC public.ingest_calendar_event stays callable through the Data API by any

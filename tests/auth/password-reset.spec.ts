@@ -257,6 +257,38 @@ test.describe("password reset (D65)", () => {
     await expect(page.locator(".login-card")).toHaveText(`${M.sentTitle}${M.sent}${M.backToLogin}`);
   });
 
+  test("a deleted (banned) account gets the same answer; no link is built and no email sent (user-management review N4)", async ({ page }) => {
+    const { resetDeleted: user } = seeded();
+    const skippedBefore = logCount("skipped_banned");
+    await requestReset(page, user.email);
+    await expect.poll(() => logCount("skipped_banned")).toBe(skippedBefore + 1);
+    expect(mailsTo(user.email)).toHaveLength(0);
+    await expect(page.locator(".login-card")).toHaveText(`${M.sentTitle}${M.sent}${M.backToLogin}`);
+  });
+
+  test("an account that has never signed in gets the same answer and no link; after its first sign-in it gets one (D67 (a))", async ({ browser }) => {
+    const { resetNever: never, resetFirst: first } = seeded();
+    const contexts: BrowserContext[] = [];
+    try {
+      const { page } = await newPage(contexts, browser);
+      const skippedBefore = logCount("skipped_never_signed_in");
+      await requestReset(page, never.email);
+      await expect.poll(() => logCount("skipped_never_signed_in")).toBe(skippedBefore + 1);
+      expect(mailsTo(never.email)).toHaveLength(0);
+      await expect(page.locator(".login-card")).toHaveText(`${M.sentTitle}${M.sent}${M.backToLogin}`);
+
+      // The same kind of account after its first sign-in (the password the Creator handed over).
+      const signedIn = await newPage(contexts, browser);
+      await signInAs(signedIn.page, first, /\/office$/);
+      const other = await newPage(contexts, browser);
+      await requestReset(other.page, first.email);
+      await expect.poll(() => mailsTo(first.email).length).toBe(1);
+      expect(linkOf(onlyMailTo(first.email))).toMatch(LINK);
+    } finally {
+      for (const context of contexts) await context.close();
+    }
+  });
+
   test("a signed-in user who opens the request screen goes to his own start", async ({ page }) => {
     const { mgr } = seeded();
     await signInAs(page, mgr, /\/office$/);

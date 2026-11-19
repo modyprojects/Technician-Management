@@ -1,34 +1,40 @@
 # STATUS — Technician Management
-Updated 2026-11-18 (rules reset; all agents stopped). Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-19 (~13:10). Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
-- Version 1 target Tue 2026-11-24, online only: sign-in + user management, simulator, technician screens, office screens, manager dashboard on real data.
-- `main` = 9271e8f. Supabase: Migrations 1–6 applied (M6 = remote version 20261118082250, fingerprint verified). M7 not applied.
+- Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
+- `main` = 63aa98e. Supabase: M1–M7 applied (M7 = remote 20261119095402, payload SHA 489901e5… verified); bucket `visit-media` awaits approval.
+- Public repo (D84): never commit secrets or real data. Rules: levels A/B/C (D80), skeleton first (D81), `docs/design-rules.md` (D82).
 
-## Done on main
-- Sign-in, session guards, role landing, password reset with mock mail (#33, #35).
-- Step 6: ingestion + simulator server side + Migration 6 (#37); D31 post-deploy checks passed.
+## Done on main (19.11)
+- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 D79–D84, design rules; #36 user management; #48 D85–D89; #49 TimeRange + status colours.
 
-## In progress
-- PR #39 CI audit gate: picomatch GHSA-fc5q-39xc-vjpf has no fix, so `npm audit` turns every CI red. Owner approved the final head (devOnly enforced); review CONFIRMED; merge only after CI green.
-- PR #38 Migration 7 (technician writers, visit media), draft, NOT applied. Rebased on main (4 M7 commits; backup `claude/step4-migration7-backup`). Review fixes done (hash without device_sent_at/TZ text, replay after ownership, confirm needs visit in progress, real-row tests, stale text); pgTAP 1674/1674 locally. New SHA 489901e5…8d974 awaits approval.
-- The approval of e4a92876… no longer covers M7. Guard diff, canary fixture and bucket SQL are approved and unchanged.
-- PR A (branch `claude/efficiency-pr-a`, WIP 4b8d72e, no PR): WORKING-EFFICIENTLY.md, settings + 2 hooks + tests, supabase-postgres-best-practices skill. Hook review FIX: 7 high + 3 medium bypasses, not fixed. Do not merge.
-- Technician: `claude/tech-today` awaits visual approval; `claude/tech-visit-flow` (23a6b08) works on the local stack (spec 7/7, 51 WebP shots) — send for approval after M7 is applied. Bug: a tiny photo shows "הקובץ גדול מדי".
-- Office: `claude/office-unparsed` (simulator) and `claude/office-calls-list` (74df887) await visual approval.
-- PR #36 user management: draft, CI green on 0c59bbc; unfinished screenshot/test work on `claude/step2-user-management-wip`.
+## Modules (D88: one open module per lane, end to end)
+- Technician: **1. calendar #45 (open: skeleton review)** → 2. visit flow (M7 applied) → 3. profile.
+- Office: **1. calls: #43 → #44 → #46 (open)** → 2. office technician calendar → 3. manager dashboard on real data.
+
+## Open PRs
+- #38 M7: applied + post-checks passed 19.11 → `visit-media` bucket (approval of SHA a3f7b93c…) → merge.
+- #45 technician calendar on real data (9ba1414): independent review APPROVE WITH FIXES (test gap, being fixed); then owner "מאשר".
+- Calls: #43 20dd1cb (level-B fix, shots retaken signed in; advisor check) → #44 45f1c41 ("מאשר") → #46 skeleton approved: real data after #44.
+- Simulator gate (D90): PR in progress; independent review before merge.
 
 ## Waiting for the owner
-- Rules-reset PR (this lean CLAUDE.md): approval after advisor review.
-- M7: approval of the new SHA after the fixes.
-- Visual approvals: tech-today, calls list, unparsed + simulator, user management (final).
+- 15:30 review: #45, #46 (and #43, #44 visual approval).
+- D87: the three Supabase variables in Vercel Production; then Claude redeploys and checks read-only.
+- Bucket `visit-media` approval (SHA a3f7b93c…); V1 date; `/dev/demo` "ממתין..." hints: change or leave?
+- IT: the M365 app registration (D86, plan in `docs/m365-mail-plan.md`).
 
 ## Next, in order
-1. Merge #39 after CI green; sync open branches with main.
-2. M7: re-review of the fixes → new-SHA approval → CI → apply → `visit-media` bucket → merge #38. apply_migration decodes literal `\uXXXX` text: encode those escapes in the wrapper (as for M6).
-3. Fix the PR A hook bypasses → re-review → PR A; then decisions-current.md (PR B), CI docs-only/@responsive (PR D), test cleanup E1.
-4. Remaining V1 screens: office call card, office technician calendar, technician calendar, manager dashboard on real data.
-5. Follow-up PR: next 16.4.3 → 16.4.6 (two moderate advisories).
+1. bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
+2. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
+3. Follow-up: next 16.4.3 → 16.4.6 (`next build` stops once with a security notice; the retry passes).
+
+## Go-live gate (D87; all before the first real user)
+- Separate Production Supabase project; rotate the secret key; Vercel Authentication off.
+- Post-M7 hardening migration: deleted-but-not-banned accounts (Creator notice, no reset link), "נקרא" (D78); #36 re-review L1/L2.
+- MFA for the Creator and Managers; rate limits (sign-in, reset, invitation).
+- Invitation + reset email through M365 (D86) once IT connects it. Simulator off: `testingPeriod` false (D90).
 
 ## Notes
-- New sessions start in a fresh container: local worktrees and the scratchpad may be gone; everything above is pushed to GitHub.
+- Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may fail ("Data limit exceeded"): retag cached `kong`, `mailpit`, `vector` as `supabase/…` and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.

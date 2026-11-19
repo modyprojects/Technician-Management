@@ -5,8 +5,8 @@ import type { CreatorNoticeEntry } from "./AccountAdminParts";
 import { SettingsCardHead, SettingsMore } from "./SettingsShell";
 
 // The Creator's "התראות חשבונות" (Step 2 plan §4 #8, §3.10; D34 b and f; SE-18 PROPOSED): pending
-// requests that wait for him, a Manager's deactivations, and Outlook-email changes of technicians
-// made by anyone but him. No read/unread state (that would need a table). Placement: first on
+// requests that wait for him (the /dev/demo prototype only), a Manager's deactivations, Outlook-email
+// changes of technicians made by anyone but him and (D67 (b)) every account a Manager creates. No read/unread state (that would need a table). Placement: first on
 // Settings › "משתמשים והרשאות" (TEMPORARY, Step 2 plan Q13: the demo's placement, shown to the
 // owner). No hooks: a Server Component card; the page's loader reads the notices for the Creator
 // only (production: the adapter denies any other caller).
@@ -21,6 +21,8 @@ function lineOne(n: CreatorNotice): string {
       return `השבתה על ידי המנהל · ${n.target.name}`;
     case "outlook-email-change":
       return `שינוי מייל ב-Outlook · ${n.target.name}`;
+    case "manager-creation":
+      return `משתמש חדש שהמנהל יצר · ${n.target.name}`;
   }
 }
 
@@ -30,7 +32,7 @@ function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null 
   // TEMPORARY (Step 2 plan Q14): the database lets a Manager change the Outlook email; the app keeps
   // it for the Creator until the owner decides, so such a change is labelled.
   if (n.kind === "outlook-email-change" && n.actorRole === "mgr") {
-    return { text: "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים", pending: true };
+    return { text: "באפליקציה רק היוצר משנה מייל ב-Outlook", pending: false };
   }
   return null;
 }
@@ -38,14 +40,24 @@ function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null 
 /** A "ממתין להחלטת בעלים" line, in the warning colours of every such label (review UI-5). */
 const PENDING_LINE = { color: "var(--warn-fg)", fontWeight: 700 } as const;
 
-export function AccountNoticesCard({ notices }: { notices: Bounded<CreatorNoticeEntry> }) {
+/** The card's sub-line in the /dev/demo prototype, which still has the retired requests (D61 (1)). */
+const DEMO_SUB = 'בקשות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים.';
+
+export function AccountNoticesCard({
+  notices,
+  sub = DEMO_SUB,
+}: {
+  notices: Bounded<CreatorNoticeEntry>;
+  /** The sub-line; the real screen (D60 (7), no "בקשות לאישור", C-02) passes its own. */
+  sub?: string;
+}) {
   const n = notices.total;
   return (
     <section className="card" style={{ overflow: "hidden" }} aria-labelledby={TITLE_ID}>
       <SettingsCardHead
         id={TITLE_ID}
         title="התראות חשבונות"
-        sub={'בקשות שממתינות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים. אין סימון "נקרא".'}
+        sub={sub}
         action={n > 0 ? <span className="pill acct-warn">{n === 1 ? "התראה אחת" : `${n} התראות`}</span> : undefined}
       />
       {notices.items.length === 0 ? (

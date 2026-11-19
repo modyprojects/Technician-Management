@@ -1017,5 +1017,117 @@ a.tnp-item:focus-visible { outline-offset: -3px; }
 /* Creator notices ("התראות חשבונות", Q13 demo placement). */
 .acct-notices { list-style: none; margin: 0; padding: 0; }
 .acct-notices > li { padding: 12px 18px; border-top: 1px solid var(--line2); line-height: 1.5; overflow-wrap: anywhere; }
+/* The real unified user management (D60 (7), Step 2): addresses and phones read left to right in a
+   right-aligned cell (the demo's dir="ltr" + text-align: right); a Technician's colour line under his
+   name; the role choice and the deletion's explicit confirmation in the account dialogs. */
+.acct-ltr { display: block; direction: ltr; text-align: right; font-size: 12px; overflow-wrap: anywhere; }
+td.acct-ltr-cell { direction: ltr; text-align: right; color: var(--muted); overflow-wrap: anywhere; }
+td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
+.acct-tech-line { display: block; font-size: 12px; margin-top: 2px; }
+.acct-tech-line .set-swatch { width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.acct-roles { gap: 8px 18px; }
+.acct-roles .set-swatch-opt { min-height: 32px; }
+.acct-role-pending { color: var(--warn-fg); font-weight: 700; font-size: 13px; }
+.acct-confirm-line { line-height: 1.6; }
+.acct-legend { padding: 8px 18px 0; font-size: 12px; }
+.acct-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; line-height: 1.5; background: var(--danger-bg); color: var(--danger-fg); border-radius: 8px; padding: 10px 12px; }
+.acct-check input { margin-top: 4px; flex: none; width: 18px; height: 18px; }
 /* end step2-screens */
 
+/* D74 (owner, 2026-11-18): the quiet per-record test-data marker and the screen banner. */
+.test-mark { display: inline-block; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; vertical-align: baseline; }
+.test-banner { background: var(--line2); color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; padding: 6px 12px; border-radius: 10px; margin: 0 0 10px; }
+/* D75 (owner, 2026-11-18): user-management dialogs are a centred modal on desktop, full screen on phone. */
+@media (min-width: 601px) {
+  .drawer-bg.acct-modal-bg { justify-content: center; align-items: center; padding: 24px; }
+  .drawer.acct-modal { width: min(560px, 100%); height: auto; max-height: calc(100vh - 48px); border-radius: 14px; overflow: hidden; }
+}
+@media (max-width: 600px) {
+  .drawer.acct-modal { width: 100%; }
+}
+/* The add dialog (owner, 2026-11-18): actions at the bottom left, help text under a field. */
+.drawer .df.acct-df-end { justify-content: flex-end; }
+.vc-help { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+
+/* D76: the row ⋮ menu (a portal under its button). */
+.row-menu-btn { min-width: 36px; min-height: 32px; padding: 2px 10px; font-size: 18px; line-height: 1; }
+.row-menu { position: fixed; z-index: 70; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(20, 36, 58, .18); padding: 4px; display: flex; flex-direction: column; }
+.row-menu-item { text-align: start; background: transparent; border: 0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: var(--ink); min-height: 40px; }
+.row-menu-item:hover, .row-menu-item:focus { background: var(--line2); outline: none; }
+.row-menu-item.danger { color: var(--danger); }
+/* User management: search and filters (client side), and the phone cards (D72). */
+.acct-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
+.acct-filters .acct-search { flex: 1 1 220px; min-width: 0; }
+.acct-filters input, .acct-filters select { min-height: 38px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 14px; background: var(--card); color: var(--ink); }
+.acct-filters select { flex: 0 1 auto; max-width: 100%; }
+.acct-cards { list-style: none; margin: 0; padding: 0; }
+.acct-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line2); outline-offset: -3px; }
+.acct-card-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.acct-wrap { overflow-wrap: anywhere; }
+.acct-chips { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 6px; min-width: 0; overflow: hidden; }
+.acct-chips .pill { white-space: nowrap; }
+/* D73 (owner, 2026-11-18): the real office's phone header (600 px and below): logo left, ☰ right,
+   a drawer from the right with the navigation and "יציאה". Desktop keeps the sidebar. */
+.ophone { display: none; }
+@container stage (max-width: 600px) {
+  .office-phonebar > .side { display: none; }
+  .office-phonebar > .ophone { display: flex; align-items: center; justify-content: space-between; background: var(--ink); padding: 8px 12px; min-height: 52px; }
+}
+.ophone-menu { background: none; border: 1px solid var(--ink3); color: var(--on-dark); border-radius: 8px; min-width: 40px; min-height: 40px; font-size: 20px; line-height: 1; }
+.ophone-logo { display: block; width: 92px; height: auto; max-width: 100%; }
+.ophone-bg { position: fixed; inset: 0; background: var(--scrim); z-index: 60; display: flex; justify-content: flex-start; }
+.ophone-drawer { width: min(300px, 86%); height: 100%; background: var(--card); display: flex; flex-direction: column; box-shadow: 0 0 30px rgba(0, 0, 0, .25); }
+.ophone-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px; border-bottom: 1px solid var(--line); }
+.ophone-who { font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.ophone-who small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.ophone-nav { display: flex; flex-direction: column; padding: 8px; gap: 2px; }
+.ophone-nav a { padding: 12px; border-radius: 8px; font-weight: 600; font-size: 15px; color: var(--ink); text-decoration: none; }
+.ophone-nav a.on { background: var(--line2); }
+.ophone-out { margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--line); }
+
+/* office-unparsed */
+/* The Outlook invitation simulator inside "זימונים שלא נקלטו" (D60 (11); X-05: the demo's Outlook
+   modal, docs/demo.html L168-170 .modal-bg / .modal / .ol-top and L1020-1036): a centred white
+   dialog with the Outlook-blue header, the form's label column (70px in the demo) beside the fields,
+   one column at 520px and below. The radio chips reuse .chip / .chip.on; the result and the field
+   errors use the existing warning and danger colours. */
+/* The dialog is rendered into document.body, outside the "stage" container: .sim-bg is its own. */
+.sim-bg { container-type: inline-size; container-name: sim; position: fixed; inset: 0; background: var(--scrim); z-index: 70; display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding-block: 30px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.sim-modal { background: var(--card); border-radius: 14px; width: min(860px, 100%); overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.sim-modal:focus { outline: none; }
+/* demo .ol-top: the Outlook blue of the demo (L170). */
+.sim-top { background: #0F6CBD; color: var(--on-dark); padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.sim-top b { min-width: 0; overflow-wrap: anywhere; }
+.xbtn.sim-x { background: rgba(255, 255, 255, .15); color: var(--on-dark); }
+.sim-top :focus-visible { outline-color: var(--on-dark); }
+.sim-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.sim-samples { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sim-actions { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sim-actions > legend { font-size: 13px; font-weight: 700; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.sim-chips { display: flex; gap: 6px 8px; flex-wrap: wrap; }
+.sim-chips .chip { cursor: pointer; position: relative; min-height: 32px; display: inline-flex; align-items: center; }
+.sim-chips .chip:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sim-hint { margin: 0; }
+.sim-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px 10px; align-items: start; }
+.sim-row > label { padding-top: 9px; font-weight: 700; font-size: 14px; }
+.sim-cell { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sim-cell > select, .sim-cell > input { width: 100%; min-width: 0; }
+.sim-when { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sim-when input[type="date"] { flex: 1 1 140px; min-width: 0; max-width: 200px; }
+.sim-time { width: 72px; flex: none; }
+.sim-body-label { font-weight: 700; }
+.sim-text { width: 100%; font-size: 14px; line-height: 1.55; min-width: 0; }
+.sim-err { color: var(--danger); font-size: 13px; font-weight: 700; }
+[aria-invalid="true"] { border-color: var(--danger); }
+.sim-result { margin: 0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.sim-result.sim-ok { background: var(--s-done-bg); color: var(--s-done-fg); }
+.sim-result.sim-warn { background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-ink); }
+.sim-result.sim-error { background: var(--danger-bg); color: var(--danger-fg); font-weight: 700; }
+.sim-line { display: block; font-size: 13px; }
+.sim-problems { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sim-foot { display: flex; gap: 8px; justify-content: flex-start; flex-wrap: wrap; }
+@container sim (max-width: 552px) {
+  .sim-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .sim-row > label { padding-top: 0; }
+}
+/* end office-unparsed */

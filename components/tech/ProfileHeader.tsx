@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { TechnicianProfile } from "@/features/profile/data/types";
 
 // Header of the technician's profile (docs/demo.html techProfile() head L684 and the "› חזרה"
@@ -40,7 +40,7 @@ export function ProfileHeader({ profile, backHref }: { profile: TechnicianProfil
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <h1 style={{ fontSize: 22 }}>{t.name}</h1>
-            {profile.isTest && <TestBadge />}
+            {profile.isTest && <TestPill />}
           </div>
           <div className="sub" style={{ color: "var(--on-dark2)" }}>
             טכנאי שירות · <span dir="ltr">{t.phone}</span>

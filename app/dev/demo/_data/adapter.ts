@@ -49,13 +49,16 @@ import {
   creatorNoticesOf,
   isAccountRole,
   technicianProfileMissing,
+  type AccountListEntry,
   type AccountRef,
   type AccountRequest,
   type AccountRole,
+  type AccountTechnician,
   type CreationIntent,
   type CreatorNotice,
   type UserAccount,
 } from "@/features/accounts/data/types";
+import { technicianColorTokenOf } from "@/features/reference/data/types";
 import type { SessionQueries } from "@/features/auth/data/ports";
 import { sessionUserOf } from "@/features/auth/data/session";
 import {
@@ -308,6 +311,30 @@ function accountRef(id: string): AccountRef {
 /** An account as the port returns it (with its invitation alias, D34 d). */
 const userAccount = (a: DemoAccount): UserAccount => ({ ...a, technicianMissing: technicianProfileMissing(a), isTest: TEST });
 
+/**
+ * A listed account's field profile (D60 (7) unified list, AccountListEntry) from the demo's
+ * technicians (Settings › טכנאים). The demo has no session: it returns the Creator's view (Outlook
+ * email and "פעיל"); its loaders narrow per scope (Q14) as before.
+ */
+function accountTechnician(id: string | null): AccountTechnician | null {
+  const t = id === null ? undefined : TECHS.find((x) => x.id === id);
+  if (!t) return null;
+  const colorToken = technicianColorTokenOf(t.color);
+  return {
+    id: t.id,
+    name: t.name,
+    colorToken,
+    color: colorToken ? t.color : "",
+    device: TECH_DEVICE,
+    outlookEmail: t.email,
+    active: TECH_ACTIVE,
+    version: TECH_VERSIONS[t.id],
+    isTest: TEST,
+  };
+}
+
+const accountEntry = (a: DemoAccount): AccountListEntry => ({ ...userAccount(a), technician: accountTechnician(a.technicianId) });
+
 /** The acting account's role (CreatorNotice.actorRole); null when the account is unknown. */
 const actorRoleOf = (id: string): AccountRole | null => accountById(id)?.role ?? null;
 
@@ -506,7 +533,8 @@ const productOptions = (list: readonly ProductOptionRecord[]) => {
 /** Untrusted invitation text, cut to UNPARSED_VALUE_MAX characters. */
 const invitationText = (text: string): string => (text.length > UNPARSED_VALUE_MAX ? `${text.slice(0, UNPARSED_VALUE_MAX)}…` : text);
 
-const TEMPLATE_ORDER = new Map(TEMPLATE_LABELS.map((l, i) => [l.key, i]));
+type TemplateKey = (typeof TEMPLATE_LABELS)[number]["key"];
+const TEMPLATE_ORDER = new Map<TemplateKey, number>(TEMPLATE_LABELS.map((l, i) => [l.key, i]));
 
 const templateLabel = (field: (typeof TEMPLATE_LABELS)[number]["key"]): string => TEMPLATE_LABELS.find((l) => l.key === field)?.label ?? field;
 
@@ -525,14 +553,14 @@ function unparsedInvitation(x: DemoUnparsedInvitation): UnparsedInvitation {
   const t = TECHS.find((tech) => tech.email === x.attendee);
   const problems = x.problems
     .map(unparsedProblem)
-    .sort((a, b) => (TEMPLATE_ORDER.get(a.field) ?? 0) - (TEMPLATE_ORDER.get(b.field) ?? 0));
+    .sort((a, b) => (TEMPLATE_ORDER.get(a.field as TemplateKey) ?? 0) - (TEMPLATE_ORDER.get(b.field as TemplateKey) ?? 0));
   return {
     id: x.id,
     receivedAt: x.receivedAt,
     source: x.source,
     subject: invitationText(x.subject),
     organizer: { email: x.organizer, name: USERS.find((u) => u.email === x.organizer)?.name ?? null },
-    attendee: { email: x.attendee, technician: t ? { id: t.id, name: t.name, color: t.color } : null },
+    attendees: { emails: [x.attendee], technician: t ? { id: t.id, name: t.name, color: t.color } : null },
     event: { date: x.date, start: x.start, end: x.end },
     requestNumber: x.req,
     customerName: x.customer === null ? null : invitationText(x.customer),
@@ -1115,7 +1143,11 @@ export const demoDataAccess: DataAccess = {
       const roles = filterListValues(query?.roles, isAccountRole, ACCOUNT_ROLE_VALUES);
       const matches = roles ? ACCOUNTS_BY_ROLE.filter((a) => roles.includes(a.role)) : ACCOUNTS_BY_ROLE;
       const page = pageOf(matches, query?.page, query?.limit);
-      return { ...page, items: page.items.map(userAccount) };
+      return { ...page, items: page.items.map(accountEntry) };
+    },
+    async get(accountId) {
+      const a = typeof accountId === "string" ? accountById(accountId) : undefined;
+      return a ? accountEntry(a) : null;
     },
     async requests(query) {
       const statuses = filterListValues(query?.statuses, isAccountRequestStatus, ACCOUNT_REQUEST_STATUSES);

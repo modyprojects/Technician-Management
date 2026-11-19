@@ -8,12 +8,13 @@ import { localSql, seeded, sessionCookies, signInAs, submitSignIn } from "./help
 // Sign-ins are counted: the local Auth allows 30 per 5 minutes per IP (supabase/config.toml).
 
 test.describe("sign-in and role landing", () => {
-  test("Manager: lands on the office start, titled \"דשבורד\", with only the landing item", async ({ page, context }) => {
+  test("Manager: lands on the office start, titled \"דשבורד\", with the landing item and \"הגדרות\"", async ({ page, context }) => {
     const { mgr } = seeded();
     await signInAs(page, mgr, /\/office$/);
     await expect(page.getByRole("heading", { level: 1, name: "דשבורד" })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "ניווט ראשי" });
-    await expect(nav.getByRole("link")).toHaveText(["דשבורד"]);
+    // Only built screens (Q18): the landing item, "זימונים שלא נקלטו" (S-05) and Settings › "משתמשים" (D57 (1), D60 (7)).
+    await expect(nav.getByRole("link")).toHaveText(["דשבורד", "זימונים שלא נקלטו", "הגדרות"]);
     await expect(page.getByText(`שלום, ${mgr.name}`)).toBeVisible();
     await expect(page.locator(".start-role")).toHaveText("הרשאה: מנהל");
     // D47: a test user carries the marker.
@@ -42,7 +43,7 @@ test.describe("sign-in and role landing", () => {
     await signInAs(page, cs, /\/office$/);
     await expect(page.getByRole("heading", { level: 1, name: "קריאות" })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "ניווט ראשי" });
-    await expect(nav.getByRole("link")).toHaveText(["קריאות"]);
+    await expect(nav.getByRole("link")).toHaveText(["קריאות", "זימונים שלא נקלטו"]);
     await expect(page.getByText("בית", { exact: true })).toHaveCount(0);
     await expect(page.locator(".start-role")).toHaveText("הרשאה: שירות לקוחות");
   });
