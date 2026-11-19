@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { InvitationSimulator } from "@/components/office/InvitationSimulator";
 import { UnparsedInvitationsList } from "@/components/office/UnparsedInvitationsList";
 import { Pager } from "@/components/ui/Pager";
+import { TestDataBanner } from "@/components/ui/TestBadge";
 import { accountTimeLabel } from "@/features/accounts/data/time-label";
 import { OFFICE_UNPARSED_PATH } from "@/features/auth/landing";
 import { LOGIN_NO_ACCESS_PATH } from "@/features/auth/session-state";
@@ -58,6 +58,7 @@ export default async function OfficeUnparsedPage({ searchParams }: PageProps<"/o
 
   return (
     <OfficeFrame me={me} active="unparsed">
+      {includesTestData && <TestDataBanner />}
       <div className="ptitle">
         <div>
           <h1>זימונים שלא נקלטו</h1>
@@ -65,7 +66,6 @@ export default async function OfficeUnparsedPage({ searchParams }: PageProps<"/o
         </div>
         {simulatorOn && <InvitationSimulator run={runInvitationSimulator} technicians={technicians} today={today} />}
       </div>
-      {includesTestData && <DashboardTestNote id="unparsed-test-note">הרשימה כוללת נתוני בדיקה (סביבת בדיקה)</DashboardTestNote>}
       <UnparsedInvitationsList
         id="unparsed-list"
         page={page}

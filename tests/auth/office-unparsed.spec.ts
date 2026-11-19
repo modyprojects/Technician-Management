@@ -155,7 +155,7 @@ test.describe.serial("זימונים שלא נקלטו and the invitation simula
     await expect(row2).toContainText("טכנאי לא זוהה");
     await expect(row2).toContainText("לא תואמת למייל ה-Outlook של טכנאי במערכת");
     await expect(row2).toContainText("nobody-office@example.test");
-    await expect(page.locator("#unparsed-test-note")).toContainText("נתוני בדיקה");
+    await expect(page.locator(".test-banner")).toContainText("נתוני בדיקה");
   });
 
   test("Manager: update, reschedule, re-assign and cancel one simulated invitation (SIM-03, SIM-04)", async () => {
