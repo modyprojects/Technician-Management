@@ -15,7 +15,7 @@ English for code, comments, docs, commits, PRs, tests. Hebrew to the owner. UI a
 ## Hard product limits
 - No ONE ERP integration, adapter, schema, field, status, export or preparation of any kind.
 - Fictional data only until Microsoft 365 is connected. Every test record is marked (`is_test`/`data_source`) and labelled "נתוני בדיקה". Migrations never contain fictional data.
-- No real email (mock mail adapter + outbox). No Microsoft 365 connection until explicitly approved. Calendar intake = one ingestion service; the Outlook invitation simulator runs only where the env setting enables it (never production).
+- No real email (mock mail adapter + outbox). No Microsoft 365 connection until explicitly approved. Calendar intake = one ingestion service; the Outlook invitation simulator runs only where the env setting enables it; in Production only while `config/release.json` `testingPeriod` is true (D90), never after go-live.
 - No scheduled background jobs. In-app notifications only, created by events.
 - No public sign-up. Manager manages Technician and Customer Service accounts only; only the Creator manages Manager/Creator accounts and role changes. Managers never set passwords or change emails.
 - Closed synced visits are read-only to technicians. Call status, visit status and sync state are separate.
