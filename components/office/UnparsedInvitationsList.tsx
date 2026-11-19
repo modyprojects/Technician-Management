@@ -10,6 +10,7 @@ import type {
 import type { IsoTimestamp } from "@/features/data-access/common";
 import { DashboardSection } from "./DashboardSection";
 import { problemKindLabel } from "./unparsed-labels";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // "זימונים שלא נקלטו" (spec office screens and "Invitation intake", OF-16, IN-01 to IN-04;
 // docs/demo.html has no such screen, so it is designed in the demo's language: card + .sec head,
@@ -133,7 +134,7 @@ function UnparsedRow({ item, receivedLabel }: { item: UnparsedInvitation; receiv
           <span className="num">
             {item.event ? (
               <>
-                מועד בזימון: {ddmm(item.event.date)} {item.event.start}–{item.event.end}
+                מועד בזימון: {ddmm(item.event.date)} <TimeRange start={item.event.start} end={item.event.end} />
               </>
             ) : (
               <>מועד בזימון: לא נקרא</>

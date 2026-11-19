@@ -3,6 +3,7 @@ import { StatusPill, VISIT_STATUSES } from "@/components/ui/StatusPill";
 import { VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { LaneVisit, TechnicianLane } from "@/features/dashboards/data/types";
 import type { TechnicianId } from "@/features/reference/data/types";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // Technicians' day, one card per technician (docs/demo.html dashGen() "עכשיו בשטח", L882: colour
 // edge, name, current-status pill or "פנוי", current / next customer, "היום: X/Y הושלמו"), plus
@@ -129,7 +130,7 @@ export function TechLanes({
                   <li key={`${v.req}-${v.n}`}>
                     <Link href={callHref(v.req)} prefetch={false} className="od-visit">
                       <span className="num od-visit-t">
-                        {v.start}–{v.end}
+                        <TimeRange start={v.start} end={v.end} />
                       </span>
                       <span className="od-visit-c">
                         <b>{v.customerName}</b>

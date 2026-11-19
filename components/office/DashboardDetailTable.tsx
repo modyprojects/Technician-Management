@@ -9,6 +9,7 @@ import { dateLabel } from "@/features/dashboards/data/periods";
 import { jerusalemDate, jerusalemTime } from "@/features/dashboards/data/time";
 import type { DashboardDetail, DashboardDetailRow } from "@/features/dashboards/data/types";
 import { SHORT_COL } from "./AnalyticsParts";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // The rows of the manager dashboard's details dialog (spec-final §6.9): the visits or service calls
 // behind one metric, one page of up to 50, each row linking to the call card. Server Component;
@@ -153,7 +154,7 @@ export function DashboardDetailTable({
                   <>
                     <td className={`${SHORT_COL} num`}>{r.n}</td>
                     <td className={`${SHORT_COL} num`}>{r.date ? dateLabel(r.date) : "—"}</td>
-                    <td className={`${SHORT_COL} num`}>{r.start && r.end ? `${r.start}–${r.end}` : "—"}</td>
+                    <td className={`${SHORT_COL} num`}>{r.start && r.end ? <TimeRange start={r.start} end={r.end} /> : "—"}</td>
                   </>
                 ) : (
                   <>
