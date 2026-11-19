@@ -41,7 +41,7 @@ Run against another local stack: `SUPABASE_BIN=<wrapper adding --workdir> AUTH_T
 
 ## Screenshots (390 / 820 / 1440)
 
-`<width>-empty.png` (no unparsed invitation), `-mgr-list.png` (the Manager's view with data), `-cs-list.png` (Customer Service's view and navigation), `-reasons-missing.png`, `-reasons-technician.png` (one invitation's reasons), `-simulator-open(.png|-full.png)`, `-simulator-filled.png`, `-simulator-errors.png` (the form's own errors), `-simulator-result(.png|-full.png)` (an invalid invitation sent, with its reasons), `-simulator-cancel.png`.
+`<width>-empty.webp` (no unparsed invitation), `-mgr-list.webp` (the Manager's view with data), `-cs-list.webp` (Customer Service's view and navigation), `-reasons-missing.webp`, `-reasons-technician.webp` (one invitation's reasons), `-simulator-open(.webp|-full.webp)`, `-simulator-filled.webp`, `-simulator-errors.webp` (the form's own errors), `-simulator-result(.webp|-full.webp)` (an invalid invitation sent, with its reasons), `-simulator-cancel.webp`.
 
 ## מה לבדוק (בעברית)
 
