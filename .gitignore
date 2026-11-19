@@ -21,3 +21,6 @@ blob-report/
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches/
+
+# Claude Code subagent worktrees (temporary, never committed)
+.claude/worktrees/

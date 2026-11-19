@@ -105,7 +105,7 @@ Assets: customer identity/address/phones, technician schedules, photos, signatur
 - No scheduled background jobs in the first release (D25).
 
 ## 9. Outlook invitation simulator (D24) and test data (D47)
-- Enabled **only** by an environment setting: on in development and Preview, off in production. No UI toggle. Enabling it in production requires separate explicit owner approval and an agreed data-isolation policy.
+- Enabled **only** by an environment setting (`CALENDAR_SIMULATOR=1`): on in development and Preview. In Production only while `config/release.json` `testingPeriod` is true, as a second lock (D90, owner 2026-11-19: Production uses the test database until go-live, D87); any unrecognised environment is refused. Off in Production from go-live (go-live gate). No UI toggle. The database does not enforce the switch yet (OQ-13: `ingest_calendar_event` is callable by office sessions); closing that is in the post-M7 hardening migration (go-live gate).
 - Access: Manager, Creator and Customer Service; never technicians; never anonymous. Enforced on the server and in RLS, not only by hiding the menu. No public simulator API.
 - Inputs validated with the same Zod schemas as the ingestion service. Simulated event IDs are stable so replays are idempotent.
 - Every record created through the simulator is marked as test data. Fictitious data only.
