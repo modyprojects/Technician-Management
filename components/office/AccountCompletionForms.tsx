@@ -132,8 +132,8 @@ export function CompleteCreationForm({
 
   const invalid = (field: Field) => (error?.field === field ? { "aria-invalid": true as const, "aria-describedby": errorId } : {});
   const notes = [
-    { text: "החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים", pending: true },
-    ...(tech ? [{ text: "המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים", pending: true }] : []),
+    { text: "החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר." },
+    ...(tech ? [{ text: "המייל משמש גם לשיוך זימונים מ-Outlook." }] : []),
   ];
 
   return (
@@ -336,7 +336,7 @@ export function CompleteTechnicianForm({
               {account.email ?? "—"}
             </span>
           </div>
-          <DialogNotes notes={[{ text: "המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים", pending: true }]} />
+          <DialogNotes notes={[{ text: "המייל לכניסה משמש גם ב-Outlook." }]} />
         </div>
         <div className="df">
           <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>

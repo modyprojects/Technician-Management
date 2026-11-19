@@ -102,6 +102,8 @@ export type UserManagementProps = {
   intents: Bounded<CreationIntentEntry>;
   /** The real server actions (lib/actions/accounts.ts), passed in by the page. */
   actions: AccountActions;
+  /** Cards shown under the test-data banner and above the users card (the Creator's notices, D74). */
+  top?: ReactNode;
 };
 
 /** The email as the viewer may know it (TEMPORARY, Step 2 plan Q5): null when unknown ("—"). */
@@ -157,16 +159,16 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-export function UserManagementScreen({ scope, self, rows, intents, actions }: UserManagementProps) {
+export function UserManagementScreen({ scope, self, rows, intents, actions, top }: UserManagementProps) {
   const commands = useMemo(() => accountCommandsOfActions(actions), [actions]);
   return (
     <AccountCommandsProvider commands={commands}>
-      <UserManagementBody scope={scope} self={self} rows={rows} intents={intents} />
+      <UserManagementBody scope={scope} self={self} rows={rows} intents={intents} top={top} />
     </AccountCommandsProvider>
   );
 }
 
-function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementProps, "actions">) {
+function UserManagementBody({ scope, self, rows, intents, top }: Omit<UserManagementProps, "actions">) {
   const router = useRouter();
   const [reloading, startReload] = useTransition();
   const id = useId();
@@ -495,6 +497,7 @@ function UserManagementBody({ scope, self, rows, intents }: Omit<UserManagementP
   return (
     <>
       {hasTest && <TestDataBanner />}
+      {top}
       <section className="card" style={{ overflow: "hidden" }} aria-labelledby={`${id}-title`} aria-busy={reloading || undefined}>
         <SettingsCardHead
           id={`${id}-title`}

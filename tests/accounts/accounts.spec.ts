@@ -589,7 +589,7 @@ test.describe("Creator (D60 (7): every role, role changes, credentials, deletion
     expect(made.tech?.technician).toMatchObject({ outlookEmail: techEmail, active: true, colorToken: "t-e" });
     // A Creator account is never created through the app (D49; Step 2 plan Q9).
     expect(err(await keep(c.createAccount({ name: "יוצר", email: testEmail("x"), phone: PHONE, role: "creator" as never })))).toBe(
-      "יצירת חשבון יוצר: ממתין להחלטת בעלים",
+      "לא ניתן ליצור חשבון יוצר באפליקציה",
     );
     // The unified list: every role, in the port's order, the Creator first.
     const page = await queriesOf(creator).list({ limit: 100 });

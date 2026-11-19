@@ -646,7 +646,7 @@ test.describe("manager-dashboard review screenshots", () => {
 });
 
 // Step 2 PR 2.2 (port alignment): the two visible demo changes. "+ הוספת משתמש" no longer offers
-// "יוצר" (a disabled "יוצר · ממתין להחלטת בעלים" and a note, TEMPORARY Q9), and the Manager's
+// "יוצר" (no Creator option; a note says so, Q9), and the Manager's
 // "+ בקשת חשבון שירות לקוחות" has no phone field. The demo counterpart of the Creator's form is
 // docs/review/ui-demo-3/<w>-demo-settings-users.png (docs/demo.html's "+ הוספת משתמש" is a toast);
 // docs/demo.html has no request form. A closed native select hides its options, so a crop of the
@@ -669,7 +669,7 @@ test.describe("step2-pr22 review screenshots", () => {
       const account = page.getByRole("form", { name: "הוספת משתמש" });
       await expect(account).toBeVisible();
       await appShot(page, file("creator-add-user-form"), true);
-      // The role options as a list (screenshot only): "יוצר · ממתין להחלטת בעלים" is greyed out.
+      // The role options as a list (screenshot only): no Creator option.
       await account.getByLabel("הרשאה").evaluate((el) => el.setAttribute("size", "3"));
       await account.scrollIntoViewIfNeeded();
       await account.screenshot({ path: file("creator-add-user-roles") });

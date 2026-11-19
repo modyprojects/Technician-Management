@@ -322,7 +322,7 @@ export function AccountEditForm({
                 </>
               ) : (
                 // TEMPORARY (Q14): in the warning colours of every "ממתין להחלטת בעלים" line (review UI-5).
-                <DialogNotes notes={[{ text: MANAGER_TECHNICIAN_FIELDS_PENDING, pending: true }]} />
+                <DialogNotes notes={[{ text: MANAGER_TECHNICIAN_FIELDS_PENDING }]} />
               )}
             </fieldset>
           )}

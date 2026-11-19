@@ -311,6 +311,13 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await expect(page.getByRole("heading", { level: 1, name: "הגדרות · משתמשים והרשאות", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "התראות חשבונות" })).toBeVisible();
     await expect(page.getByText("בקשות לאישור")).toHaveCount(0);
+    // Owner fix 19.11: the help text has no "נקרא" sentence and no "ממתין..." text anywhere.
+    await expect(page.getByText("משתמשים שמנהל יצר או השבית, ושינויים במייל Outlook של טכנאים.", { exact: true })).toBeVisible();
+    await expect(page.locator("main")).not.toContainText("נקרא");
+    await expect(page.locator("main")).not.toContainText("ממתין להחלטת בעלים");
+    // D74 / owner fix 19.11: the test-data banner is the first thing on the screen, above the notices card.
+    const firstCard = page.locator("main .test-banner, main section.card").first();
+    await expect(firstCard).toHaveClass(/test-banner/);
     const own = rowOf(page, creator()?.name ?? "");
     await expect(own.getByText("החשבון שלך")).toBeVisible();
     await own.getByRole("button", { name: /^פעולות · / }).click();

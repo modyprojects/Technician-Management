@@ -106,7 +106,7 @@ export function testAccountEmailError(email: string): string | null {
  * TEMPORARY (Step 2 plan Q9, PR 1.3 Q11; D49): no Creator account is created through the app until
  * the owner decides. The same words label the option in "+ הוספת משתמש".
  */
-export const CREATOR_ACCOUNT_PENDING = "יצירת חשבון יוצר: ממתין להחלטת בעלים";
+export const CREATOR_ACCOUNT_PENDING = "לא ניתן ליצור חשבון יוצר באפליקציה";
 
 /** "+ הוספת משתמש": Manager, Customer Service or Technician (NEW_ACCOUNT_ROLES); a Creator is pending (Q9). */
 export function newAccountError(input: NewAccountInput): string | null {
@@ -471,7 +471,7 @@ export function technicianUpdateError(input: UpdateTechnicianInput): string | nu
  * TEMPORARY (Step 2 plan Q14): the database lets a Manager change a technician's Outlook email and
  * "פעיל"; the app keeps both for the Creator until the owner decides.
  */
-export const MANAGER_TECHNICIAN_FIELDS_PENDING = "רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים";
+export const MANAGER_TECHNICIAN_FIELDS_PENDING = "רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\".";
 
 
 /**

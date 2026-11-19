@@ -32,7 +32,7 @@ function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null 
   // TEMPORARY (Step 2 plan Q14): the database lets a Manager change the Outlook email; the app keeps
   // it for the Creator until the owner decides, so such a change is labelled.
   if (n.kind === "outlook-email-change" && n.actorRole === "mgr") {
-    return { text: "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים", pending: true };
+    return { text: "באפליקציה רק היוצר משנה מייל ב-Outlook", pending: false };
   }
   return null;
 }
@@ -41,7 +41,7 @@ function lineThree(n: CreatorNotice): { text: string; pending: boolean } | null 
 const PENDING_LINE = { color: "var(--warn-fg)", fontWeight: 700 } as const;
 
 /** The card's sub-line in the /dev/demo prototype, which still has the retired requests (D61 (1)). */
-const DEMO_SUB = 'בקשות שממתינות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים. אין סימון "נקרא".';
+const DEMO_SUB = 'בקשות לאישורך, חשבונות שהמנהל השבית ושינויים במייל ב-Outlook של טכנאים.';
 
 export function AccountNoticesCard({
   notices,

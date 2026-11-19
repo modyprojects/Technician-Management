@@ -918,14 +918,13 @@ test.describe("account administration (SE-01, D34)", () => {
     await expect(own.getByRole("button", { name: /סיסמה|שינוי מייל|מייל ·/ })).toHaveCount(0);
     await page.getByRole("button", { name: "+ הוספת משתמש" }).click();
     const form = page.getByRole("form", { name: "הוספת משתמש" });
-    // Step 2 PR 2.2 (Q9, TEMPORARY): a Creator account is not offered; the option says why and is disabled.
+    // Step 2 PR 2.2 (Q9): a Creator account is not offered (no option; the note says so).
     const roles = form.getByLabel("הרשאה").locator("option");
-    await expect(roles).toHaveText(["שירות לקוחות", "מנהל", "יוצר · ממתין להחלטת בעלים"]);
-    await expect(roles.last()).toHaveJSProperty("disabled", true);
+    await expect(roles).toHaveText(["שירות לקוחות", "מנהל"]);
     await expect(roles.first()).toHaveJSProperty("disabled", false);
     await expect(form.getByLabel("הרשאה")).toHaveValue("cs");
     await expect(form.locator('option[value="creator"]')).toHaveCount(0);
-    await expect(form.getByText("יצירת חשבון יוצר: ממתין להחלטת בעלים.", { exact: false })).toBeVisible();
+    await expect(form.getByText("לא ניתן ליצור חשבון יוצר באפליקציה.", { exact: false })).toBeVisible();
     await expect(form.locator('input[type="password"]')).toHaveCount(0);
     expect(await horizontalOverflow(page)).toEqual([]);
   });
@@ -3782,7 +3781,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
       await expect(main.locator(".start-hello").locator('[title="נתוני בדיקה"]')).toBeAttached();
       await expect(main.getByText(`הרשאה: ${roleLabel}`, { exact: true })).toBeVisible();
       await expect(main.getByText("מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.")).toBeVisible();
-      await expect(main.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+      await expect(main.getByText(/ממתין להחלטת בעלים/)).toHaveCount(0);
       await expect(sideNav(page).getByRole("link")).toHaveText([...items]);
       await expect(sideNav(page).getByRole("link", { name: "בית" })).toHaveAttribute("aria-current", "page");
       if (settingsHref) {
@@ -3800,7 +3799,7 @@ test.describe("Step 2 role start screens (Q18)", () => {
     await expect(page.getByRole("heading", { level: 1, name: "שלום, יורם" })).toBeVisible();
     await expect(page.locator(".ph-head").locator('[title="נתוני בדיקה"]').first()).toBeAttached();
     await expect(page.getByText("הרשאה: טכנאי", { exact: true })).toBeVisible();
-    await expect(page.getByText("מסך פתיחה זמני · ממתין להחלטת בעלים")).toBeVisible();
+    await expect(page.getByText(/ממתין להחלטת בעלים/)).toHaveCount(0);
     const nav = page.locator(".ph-nav");
     await expect(nav.getByRole("link")).toHaveText(["היום", "פרופיל"]);
     await expect(nav.getByRole("link", { name: "היום" })).toHaveAttribute("aria-current", "page");
@@ -3865,7 +3864,7 @@ test.describe("Step 2 credentials (Creator only)", () => {
     await expect(username).toHaveAttribute("tabindex", "-1");
     await expect(username).toHaveAttribute("readonly", "");
     await expect(dialog).toContainText("רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה.");
-    await expect(dialog).toContainText("עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.");
+    await expect(dialog).toContainText("היוצר מוסר את הסיסמה למשתמש בעצמו.");
     await expect(dialog).toContainText("חוזק הסיסמה נבדק במערכת ההתחברות.");
     // No show/hide toggle and no confirmation field (owner question Q-C).
     await expect(dialog.locator('input[type="password"]')).toHaveCount(1);
@@ -4064,7 +4063,7 @@ test.describe("Step 2 notices (Creator)", () => {
     const expected: [string, string, string | null][] = [
       ["בקשה ממתינה · הפעלה מחדש · אורית", "שירות לקוחות · על ידי דורון · היום 08:45", "להחלטה ב\"בקשות לאישור\""],
       ["בקשה ממתינה · יצירת חשבון · נציגה 3", "שירות לקוחות · על ידי דורון · אתמול 11:30", "להחלטה ב\"בקשות לאישור\""],
-      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook · ממתין להחלטת בעלים"],
+      ["שינוי מייל ב-Outlook · אדי", "טכנאי · על ידי דורון · 18.10 10:15", "באפליקציה רק היוצר משנה מייל ב-Outlook"],
       ["השבתה על ידי המנהל · אורית", "שירות לקוחות · על ידי דורון · 01.09 09:00", null],
       ["השבתה על ידי המנהל · בני", "טכנאי · על ידי דורון · 14.08 16:30", null],
     ];
@@ -4200,7 +4199,7 @@ test.describe("Step 2 routine edit", () => {
     const dialog = page.getByRole("dialog", { name: "עריכת פרטים · אדי" });
     await expect(dialog.getByLabel("מייל ב-Outlook")).toHaveCount(0);
     await expect(dialog.getByRole("switch")).toHaveCount(0);
-    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\" · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("רק היוצר משנה מייל ב-Outlook ומצב \"פעיל\".");
     await expect(dialog).toContainText("מייל וסיסמה משנה היוצר בלבד.");
     expect(await horizontalOverflow(page)).toEqual([]);
     await dialog.getByLabel("כחול").check();
@@ -4260,8 +4259,8 @@ test.describe("Step 2 incomplete creations", () => {
     await expect(kv).toContainText("התחילהאתמול 09:05");
     await expect(dialog.getByLabel("טלפון")).toHaveValue("");
     await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
-    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים");
-    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים");
+    await expect(dialog).toContainText("החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר.");
+    await expect(dialog).toContainText("המייל משמש גם לשיוך זימונים מ-Outlook.");
     expect(await horizontalOverflow(page)).toEqual([]);
     const submit = dialog.getByRole("button", { name: "השלמת היצירה" });
     await submit.click();
@@ -4323,7 +4322,7 @@ test.describe("Step 2 incomplete creations", () => {
       const dialog = page.getByRole("dialog", { name: "השלמת פרופיל טכנאי · גלעד" });
       await expect(dialog.locator('.kv [dir="ltr"]')).toHaveText("gilad@example.test");
       await expect(dialog.locator('.kv input')).toHaveCount(0);
-      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים");
+      await expect(dialog).toContainText("המייל לכניסה משמש גם ב-Outlook.");
       await expect(dialog.getByLabel("מכשיר")).toHaveValue("סמארטפון");
       expect(await horizontalOverflow(page)).toEqual([]);
       await dialog.getByLabel("ירוק").check();

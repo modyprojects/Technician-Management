@@ -33,7 +33,6 @@ export function RoleStartCard({
         )}
         <div className="start-role">הרשאה: {roleLabel}</div>
         <p className="start-p">מסכי העבודה יתווספו בשלבים הבאים של הפיתוח.</p>
-        <p className="sub start-p start-pending">מסך פתיחה זמני · ממתין להחלטת בעלים</p>
       </div>
       {signOut && (
         <div className="tnp-row start-row">

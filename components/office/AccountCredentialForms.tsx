@@ -31,7 +31,7 @@ const PASSWORD_NOTES = [
   { text: "רק היוצר קובע סיסמאות. האפליקציה לא שומרת את הסיסמה אצלה, לא מציגה אותה שוב ולא שולחת אותה במייל או בהודעה." },
   // TEMPORARY (Step 2 plan Q1): the Creator hands the password over himself and no change is forced
   // at the first sign-in; the self-service reset (D65) needs email delivery, which is not enabled.
-  { text: "עד החלטת הבעלים, היוצר מוסר את הסיסמה למשתמש בעצמו.", pending: true },
+  { text: "היוצר מוסר את הסיסמה למשתמש בעצמו." },
   // TEMPORARY (Q12).
   { text: "חוזק הסיסמה נבדק במערכת ההתחברות." },
 ] as const;
@@ -160,7 +160,7 @@ export function EmailForm({
   const notes = [
     { text: "רק היוצר משנה מייל של חשבון. זה המייל לכניסה לאפליקציה." },
     // TEMPORARY (Step 2 plan Q17): an app-only rule until the owner decides.
-    ...(account.isTest ? [{ text: "חשבון בדיקה: רק כתובות ‎@example.test · ממתין להחלטת בעלים", pending: true }] : []),
+    ...(account.isTest ? [{ text: "חשבון בדיקה: רק כתובות ‎@example.test." }] : []),
     // TEMPORARY (Q14): the Outlook email is a separate field of the technician's profile.
     ...(account.role === "tech" ? [{ text: "המייל ב-Outlook של הטכנאי לא משתנה כאן: הוא נערך ב\"עריכת פרטים\"." }] : []),
   ];

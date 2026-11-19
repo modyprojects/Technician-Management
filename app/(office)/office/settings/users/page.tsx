@@ -51,7 +51,7 @@ const ACTIONS: AccountActions = {
 };
 
 /** The notices card's sub-line on the real screen (no "בקשות לאישור", C-02; a Manager's creations, D67 (b)). */
-const NOTICES_SUB = 'חשבונות שהמנהל יצר או השבית, ושינויים במייל ב-Outlook של טכנאים שביצעו אחרים. אין סימון "נקרא".';
+const NOTICES_SUB = "משתמשים שמנהל יצר או השבית, ושינויים במייל Outlook של טכנאים.";
 
 // Settings › "משתמשים" (the Manager) and Settings › "משתמשים והרשאות" (the Creator): the real
 // unified user management (D60 (7); QA M-06, M-10, C-01, C-02, C-09; D57 (1), D60 (8)), one screen
@@ -102,10 +102,12 @@ export default async function SettingsUsersPage() {
   return (
     <OfficeFrame me={me} active="settings">
       <SettingsShell title={USER_MANAGEMENT_TITLES[scope]} tabs={[]}>
-        {notices && noticeEntries && (
-          <AccountNoticesCard notices={{ items: noticeEntries, total: notices.total, limit: notices.limit }} sub={NOTICES_SUB} />
-        )}
         <UserManagementScreen
+          top={
+            notices && noticeEntries ? (
+              <AccountNoticesCard notices={{ items: noticeEntries, total: notices.total, limit: notices.limit }} sub={NOTICES_SUB} />
+            ) : null
+          }
           scope={scope}
           self={{ id: me.id, name: me.name }}
           rows={{ items: list.items.map(userManagementRowOf), total: list.total, limit: list.limit }}

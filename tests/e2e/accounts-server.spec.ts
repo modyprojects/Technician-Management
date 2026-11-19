@@ -294,7 +294,7 @@ test.describe("input re-validation (features/accounts/supabase/schemas.ts)", () 
     expect(testAccountEmailError("x@real-company.co.il")).toBe("נתוני בדיקה: רק כתובות \u200E@example.test");
     expect(parseNewAccount({ name: "x", email: "x@example.test", phone: "050-000-1111", role: "creator" })).toEqual({
       ok: false,
-      error: "יצירת חשבון יוצר: ממתין להחלטת בעלים",
+      error: "לא ניתן ליצור חשבון יוצר באפליקציה",
     });
     for (const extra of [{ isTest: false }, { password: "x" }, { id: UUID_A }, { role2: "x" }]) {
       expect(parseNewAccount({ name: "x", email: "x@example.test", phone: "050-000-1111", role: "cs", ...extra }), JSON.stringify(extra)).toEqual({
