@@ -6,12 +6,10 @@
 import "server-only";
 import type { CallsListQueries } from "@/features/calls/data/ports";
 import {
-  callCardBriefOf,
   callsListQueriesOf,
   callsPermittedOf,
   CallsQueryError,
   technicianOptionsOf,
-  type CallCardBrief,
 } from "@/features/calls/supabase/list-queries";
 import { callCardOf, cardPermittedOf, type CallCard } from "@/features/calls/supabase/card-queries";
 import { logAuthEvent } from "@/lib/auth/log";
@@ -59,11 +57,6 @@ export async function callTechnicianOptions(): Promise<{ id: string; name: strin
   return c ? logged("technicians", () => technicianOptionsOf(c.client, c.user)) : [];
 }
 
-/** One call for the temporary call-card page; null when absent or not readable. */
-export async function callCardBrief(req: string): Promise<CallCardBrief | null> {
-  const c = await caller();
-  return c ? logged("card", () => callCardBriefOf(c.client, c.user, req)) : null;
-}
 
 /** The office call card of one call (D60 (5), D88); null when absent or not readable (one 404). */
 export async function callCard(req: string): Promise<CallCard | null> {

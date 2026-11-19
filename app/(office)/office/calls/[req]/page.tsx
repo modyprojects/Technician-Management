@@ -29,10 +29,10 @@ export default async function OfficeCallCardPage({ params }: PageProps<"/office/
   const [call, showReport] = await Promise.all([callCard(req), cardPermitted()]);
   if (!call) notFound();
   const { technician, ...detail } = call;
-  const hasTest = call.isTest || call.visits.some((v) => v.source === "simulator");
   return (
     <OfficeFrame me={me} active="calls">
-      {hasTest && <TestDataBanner />}
+      {/* One predicate (callShowsTestData) drives the banner and the mark by the title (D74). */}
+      {call.isTest && <TestDataBanner />}
       <CallDetail
         call={detail}
         backHref={OFFICE_CALLS_PATH}

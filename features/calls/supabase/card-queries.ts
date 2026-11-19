@@ -134,6 +134,14 @@ export function dateLabelOf(iso: string | null, today: string): string {
   return d.slice(0, 4) === today.slice(0, 4) ? label : `${label}.${d.slice(2, 4)}`;
 }
 
+/**
+ * Whether the card shows test data (D74): the call, its customer, its product or any shown visit.
+ * One predicate drives both the top banner and the single quiet "בדיקה" by the title.
+ */
+export function callShowsTestData(row: Pick<CallCardRow, "is_test" | "customers" | "products" | "visits">): boolean {
+  return row.is_test || row.customers.is_test || row.products.is_test || row.visits.some((v) => v.status !== "cancelled" && v.is_test);
+}
+
 /** The call row and its extras → the card (D60 (1): cancelled visits are left out). */
 export function callCardOfRows(row: CallCardRow, x: CallCardExtras): CallCard {
   const shown = [...row.visits].filter((v) => v.status !== "cancelled").sort((a, b) => a.visit_number - b.visit_number);
@@ -203,7 +211,7 @@ export function callCardOfRows(row: CallCardRow, x: CallCardExtras): CallCard {
   return {
     req: row.request_number,
     status: CALL_STATUS_OF_DB[row.status],
-    isTest: row.is_test,
+    isTest: callShowsTestData(row),
     type: row.call_types?.label_he ?? "לא הוזן",
     warranty: warrantyLabel(row.warranty_status, row.warranty_until),
     customer: {
@@ -248,7 +256,11 @@ function parsed<T>(schema: z.ZodType<T>, result: { data: unknown; error: { code?
  */
 export async function callCardOf(db: SupabaseClient, viewer: Pick<SessionUser, "role"> | null, req: string, now = new Date()): Promise<CallCard | null> {
   if (!readsCalls(viewer) || !isRequestNumber(req)) return null;
-  const call = await db.from("service_calls").select(CALL_CARD_COLUMNS).eq("request_number", req).limit(VISITS_MAX, { referencedTable: "visits" }).maybeSingle();
+  const call = await db.from("service_calls").select(CALL_CARD_COLUMNS).eq("request_number", req)
+    // Deterministic cap: the newest VISITS_MAX visits by number (the card re-sorts them).
+    .order("visit_number", { ascending: false, referencedTable: "visits" })
+    .limit(VISITS_MAX, { referencedTable: "visits" })
+    .maybeSingle();
   if (call.error) throw new CallsQueryError(call.error.code);
   if (call.data === null) return null;
   const row = callCardRowSchema.safeParse(call.data);

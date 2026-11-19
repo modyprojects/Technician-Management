@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { minutesLabel, visitDurationsOf, wholeMinutesBetween } from "@/features/calls/data/visit-durations";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  callCardOf,
   callCardOfRows,
+  callShowsTestData,
   callCardRowSchema,
   dateLabelOf,
   isRequestNumber,
@@ -192,6 +195,44 @@ test.describe("call card mapping (D60 (1), (5); D39; D74)", () => {
   test("a malformed row is refused by the schema", () => {
     expect(callCardRowSchema.safeParse({ ...row, request_number: "a b" }).success).toBe(false);
     expect(callCardRowSchema.safeParse({ ...row, visits: [{ ...row.visits[0], technician_id: "x" }] }).success).toBe(false);
+  });
+});
+
+test.describe("call card: one test-data predicate (D74) and a deterministic visit cap", () => {
+  onlyInProject("desktop");
+
+  const real = { ...row, is_test: false, customers: { ...row.customers, is_test: false }, products: { ...row.products, is_test: false } };
+  const realVisits = real.visits.map((v) => ({ ...v, is_test: false }));
+
+  test("the call, customer, product or a shown visit makes it test data; a cancelled test visit does not", () => {
+    expect(callShowsTestData({ ...real, visits: realVisits })).toBe(false);
+    expect(callShowsTestData({ ...real, is_test: true, visits: realVisits })).toBe(true);
+    expect(callShowsTestData({ ...real, customers: { ...real.customers, is_test: true }, visits: realVisits })).toBe(true);
+    expect(callShowsTestData({ ...real, products: { ...real.products, is_test: true }, visits: realVisits })).toBe(true);
+    const oneTestVisit = realVisits.map((v) => (v.id === V2 ? { ...v, is_test: true } : v));
+    expect(callShowsTestData({ ...real, visits: oneTestVisit })).toBe(true);
+    const cancelledTestVisit = realVisits.map((v) => (v.id === V3 ? { ...v, is_test: true } : v));
+    expect(callShowsTestData({ ...real, visits: cancelledTestVisit })).toBe(false);
+    // The card's isTest (banner and title mark) is that predicate.
+    expect(callCardOfRows({ ...real, visits: oneTestVisit }, extras()).isTest).toBe(true);
+    expect(callCardOfRows({ ...real, visits: realVisits }, extras()).isTest).toBe(false);
+  });
+
+  test("the embedded visits are ordered by number, newest first, before the cap of 100", async () => {
+    const calls: [string, unknown[]][] = [];
+    const chain: Record<string, unknown> = {};
+    for (const m of ["from", "select", "eq", "order", "limit"]) {
+      chain[m] = (...args: unknown[]) => {
+        calls.push([m, args]);
+        return chain;
+      };
+    }
+    chain.maybeSingle = async () => ({ data: null, error: null });
+    expect(await callCardOf(chain as unknown as SupabaseClient, { role: "mgr" }, "73001")).toBeNull();
+    const names = calls.map(([m]) => m);
+    expect(calls).toContainEqual(["order", ["visit_number", { ascending: false, referencedTable: "visits" }]]);
+    expect(calls).toContainEqual(["limit", [100, { referencedTable: "visits" }]]);
+    expect(names.indexOf("order")).toBeLessThan(names.indexOf("limit"));
   });
 });
 
