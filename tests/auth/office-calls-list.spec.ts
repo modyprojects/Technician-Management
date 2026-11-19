@@ -91,9 +91,9 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await expect(rowA.getByRole("link", { name: `מס׳ פנייה ${a} · ${customerA}` })).toBeVisible();
     // Two visits of one call; the source and the test marker (SIM-14, SIM-15, D47).
     await expect(rowA.locator("td").nth(7)).toHaveText("2");
-    // The test marker reads "🧪 בדיקה" (QA T-06), on the call and on its visit's source.
-    await expect(rowA.locator("td").first()).toContainText("🧪 בדיקה");
-    await expect(rowA.locator("td").nth(8)).toContainText("🧪 בדיקה");
+    // The test marker reads "בדיקה" (D74), on the call and on its visit's source.
+    await expect(rowA.locator("td").first()).toContainText("בדיקה");
+    await expect(rowA.locator("td").nth(8)).toContainText("בדיקה");
     await expect(rowA.getByText("נתוני בדיקה")).toHaveCount(2);
     await expect(rowA).toContainText("פתוחה");
     await expect(rowA).toContainText("טכנאי בדיקה");

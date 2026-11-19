@@ -35,9 +35,9 @@ Not here (not built, no fake action): the Excel export (Step 8), the "מסכים
 | Local stack `node tests/auth/run-local.mjs [--with-creator] tests/auth/office-calls-list.spec.ts` | see the branch report |
 | Screenshots `SCREENSHOTS=1 node tests/auth/run-local.mjs tests/auth/office-calls-list-screenshots.spec.ts` (after `supabase db reset`) | images in this folder |
 
-## Screenshots (390 / 820 / 1440)
+## Screenshots (390 / 1440)
 
-`<width>-empty.png` (no call yet, Customer Service), `-cs-list.png`, `-mgr-list.png` (both views with data), `-filter-technician.png`, `-filter-search.png`, `-filter-status-empty.png` (a chip with no call), `-call-temporary.png` (a row's temporary call page).
+`-cs-list.webp`, `-mgr-list.webp` (both views with data), `-filter-technician.webp`, `-filter-search.webp`, `-filter-status-empty.webp` (a chip with no call), `-call-temporary.webp` (a row's temporary call page).
 
 ## מה לבדוק (בעברית)
 
