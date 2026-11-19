@@ -91,10 +91,11 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await expect(rowA.getByRole("link", { name: `מס׳ פנייה ${a} · ${customerA}` })).toBeVisible();
     // Two visits of one call; the source and the test marker (SIM-14, SIM-15, D47).
     await expect(rowA.locator("td").nth(7)).toHaveText("2");
-    // The test marker reads "בדיקה" (D74), on the call and on its visit's source.
+    // The test marker reads "בדיקה" (D74): exactly one per row, on the call (not repeated on its visit's source).
     await expect(rowA.locator("td").first()).toContainText("בדיקה");
-    await expect(rowA.locator("td").nth(8)).toContainText("בדיקה");
-    await expect(rowA.getByText("נתוני בדיקה")).toHaveCount(2);
+    await expect(rowA.locator("td").nth(8)).not.toContainText("בדיקה");
+    await expect(rowA.getByText("נתוני בדיקה")).toHaveCount(1);
+    await expect(rowA.locator(".test-mark")).toHaveCount(1);
     await expect(rowA).toContainText("פתוחה");
     await expect(rowA).toContainText("טכנאי בדיקה");
   });
@@ -105,7 +106,7 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await expect(page).toHaveURL(new RegExp(`[?&]q=${b}(&|$)`));
     await expect(rows(page)).toHaveCount(1);
     await expect(rows(page).first()).toContainText(customerB);
-    await expect(rows(page).first()).toContainText("טכנאית שנייה בדיקה");
+    await expect(rows(page).first()).toContainText("טכנאי שני בדיקה");
     // A search that matches nothing.
     await page.getByRole("searchbox", { name: "חיפוש קריאות" }).fill(`nothing-${run}`);
     await expect(page.getByText("לא נמצאו קריאות")).toBeVisible();

@@ -57,12 +57,13 @@ export type CallsTableRow = {
 const SHORT = "col-center col-fit";
 
 /**
- * The shown visit's source (SIM-14). Owner feedback (2026-11-17, QA T-06): the 🧪 icon alone read as
- * a pencil, so a simulated visit's source is the shared "🧪 בדיקה" pill (TestPill); an Outlook visit
- * keeps the 📅 icon.
+ * The shown visit's source (SIM-14). An Outlook visit keeps the 📅 icon. A simulated visit shows the
+ * quiet "בדיקה" marker (TestPill) only when the row itself is not marked: a test row carries exactly
+ * one marker (D74, owner fix 19.11).
  */
-function SourceMark({ source }: { source: VisitSource }) {
-  return source === "simulator" ? <TestPill /> : <VisitSourceIcon source={source} />;
+function SourceMark({ source, rowIsTest }: { source: VisitSource; rowIsTest: boolean }) {
+  if (source !== "simulator") return <VisitSourceIcon source={source} />;
+  return rowIsTest ? null : <TestPill />;
 }
 
 export function CallsTable({
@@ -167,7 +168,7 @@ export function CallsTable({
                 </td>
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
-                  {r.source && <SourceMark source={r.source} />} {r.when || "—"}
+                  {r.source && <SourceMark source={r.source} rowIsTest={r.isTest} />} {r.when || "—"}
                   {r.whenCancelled && (
                     <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
                       <span className="oc-sep"> · </span>בוטל
@@ -212,7 +213,7 @@ export function CallsTable({
                 ) : null}
                 {r.when ? (
                   <span className="num">
-                    {r.source && <SourceMark source={r.source} />} {r.when}
+                    {r.source && <SourceMark source={r.source} rowIsTest={r.isTest} />} {r.when}
                     {r.whenCancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
                   </span>
                 ) : null}
