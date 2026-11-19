@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { OfficePhoneBar } from "./OfficePhoneBar";
 import { OfficeSidebar, type OfficeNavItem } from "./OfficeSidebar";
 
 // Office shell (demo renderOffice()): dark sidebar on the right, work area beside it.
@@ -13,6 +14,7 @@ export function OfficeShell({
   activeIsCurrent,
   user,
   signOut,
+  phoneSignOut,
   children,
 }: {
   nav: readonly OfficeNavItem[];
@@ -22,10 +24,17 @@ export function OfficeShell({
   user: { name: string; roleLabel: string; avatarColor: string };
   /** The sign-out control in the sidebar's user block (Step 2 PR 2.3, Q4; OfficeSidebar). */
   signOut?: ReactNode;
+  /**
+   * D73 (owner, 2026-11-18): the real office passes its sign-out control for the phone drawer; then
+   * at 600 px and below the sidebar gives way to OfficePhoneBar (logo left, ☰ right). The /dev/demo
+   * showcase passes nothing and keeps its layout.
+   */
+  phoneSignOut?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="office">
+    <div className={phoneSignOut ? "office office-phonebar" : "office"}>
+      {phoneSignOut && <OfficePhoneBar nav={nav} activeKey={activeKey} activeIsCurrent={activeIsCurrent} user={user} signOut={phoneSignOut} />}
       <OfficeSidebar nav={nav} activeKey={activeKey} activeIsCurrent={activeIsCurrent} user={user} signOut={signOut} />
       <main className="work">{children}</main>
     </div>

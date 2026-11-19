@@ -483,7 +483,7 @@ test.describe("Supabase errors to Hebrew messages (no raw database or Auth text)
 
   test("55000 business refusals by their exact Migration 1 text; any other text is generic", () => {
     const known: [string, string][] = [
-      ["an open request exists", "קיימת כבר בקשה פתוחה."],
+      ["an open request exists", "קיימת כבר יצירה פתוחה לכתובת המייל הזו."],
       ["a pending request exists", "קיימת כבר בקשה פתוחה."],
       ["the request is not pending", "הבקשה כבר טופלה."],
       ["the request does not apply", "הבקשה אינה מתאימה לחשבון הזה."],
@@ -546,12 +546,18 @@ test.describe("Supabase errors to Hebrew messages (no raw database or Auth text)
 
   test("Auth Admin errors by Auth error code; an address already in Auth names a safe request reference only", () => {
     const ref = "0b7e3f1a-1111-4222-8333-944455556666";
+    // A Manager is told to ask the Creator; the Creator never is (review N2).
     expect(authAdminErrorMessage({ code: "email_exists", status: 422 }, { requestRef: ref })).toBe(
-      `${AUTH_ADMIN_MESSAGES.emailExists} (מספר בקשה ${ref}).`,
+      `כתובת המייל כבר רשומה במערכת ההתחברות. פנו ליוצר (מספר בקשה ${ref}).`,
     );
-    expect(authAdminErrorMessage({ code: "user_already_exists" })).toBe(`${AUTH_ADMIN_MESSAGES.emailExists}.`);
+    expect(authAdminErrorMessage({ code: "email_exists", status: 422 }, { requestRef: ref, forCreator: true })).toBe(
+      `כתובת המייל כבר רשומה במערכת ההתחברות (מספר בקשה ${ref}).`,
+    );
+    expect(authAdminErrorMessage({ code: "user_already_exists" })).toBe(`${AUTH_ADMIN_MESSAGES.emailExists}. ${AUTH_ADMIN_MESSAGES.askCreator}.`);
+    expect(authAdminErrorMessage({ code: "user_already_exists" }, { forCreator: true })).toBe(`${AUTH_ADMIN_MESSAGES.emailExists}.`);
+    expect(authAdminErrorMessage({ code: "email_exists" }, { forCreator: true })).not.toContain(AUTH_ADMIN_MESSAGES.askCreator);
     for (const bad of ["<b>x</b>", "a b", "x".repeat(65), ""]) {
-      expect(authAdminErrorMessage({ code: "email_exists" }, { requestRef: bad }), bad).toBe(`${AUTH_ADMIN_MESSAGES.emailExists}.`);
+      expect(authAdminErrorMessage({ code: "email_exists" }, { requestRef: bad }), bad).toBe(`${AUTH_ADMIN_MESSAGES.emailExists}. ${AUTH_ADMIN_MESSAGES.askCreator}.`);
     }
     expect(authAdminErrorMessage({ code: "weak_password", message: "Password should be at least 6 characters" })).toBe(AUTH_ADMIN_MESSAGES.weakPassword);
     expect(authAdminErrorMessage({ code: "user_not_found" })).toBe(AUTH_ADMIN_MESSAGES.userNotFound);

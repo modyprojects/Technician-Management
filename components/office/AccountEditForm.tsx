@@ -27,12 +27,12 @@ import { flushSync } from "react-dom";
 import type { AccountAdminScope, TechnicianEditField } from "@/features/accounts/data/offers";
 import type { UserAccount } from "@/features/accounts/data/types";
 import {
+  accountEmailError,
   ACCOUNT_NAME_MAX,
   accountNameError,
   DEVICE_MAX,
   deviceError,
   EMAIL_MAX,
-  emailError,
   INVITATION_ALIAS_MAX,
   invitationAliasError,
   MANAGER_TECHNICIAN_FIELDS_PENDING,
@@ -43,7 +43,7 @@ import {
   technicianUpdateError,
   testAccountEmailError,
 } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import { ACTION_MESSAGES } from "@/features/data-access/supabase-errors";
 import { technicianColorTokenOf, type TechnicianColorToken } from "@/features/reference/data/types";
 import { AccountDialog, ColorChoice, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
@@ -84,7 +84,7 @@ export function AccountEditForm({
   onDone: (name: string, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const nameRef = useRef<HTMLInputElement>(null);
@@ -149,7 +149,7 @@ export function AccountEditForm({
       checks.push(["device", device.trim() === "" ? null : deviceError(device)]);
       if (creatorTech) {
         // A test-marked technician keeps an example.test Outlook address (D47), as the command checks.
-        checks.push(["outlook", emailError(outlook) ?? (tech.isTest !== false ? testAccountEmailError(outlook) : null)]);
+        checks.push(["outlook", accountEmailError(outlook) ?? (tech.isTest !== false ? testAccountEmailError(outlook) : null)]);
       }
     }
     const hit = checks.find(([, text]) => text !== null);
@@ -322,7 +322,7 @@ export function AccountEditForm({
                 </>
               ) : (
                 // TEMPORARY (Q14): in the warning colours of every "ממתין להחלטת בעלים" line (review UI-5).
-                <DialogNotes notes={[{ text: MANAGER_TECHNICIAN_FIELDS_PENDING, pending: true }]} />
+                <DialogNotes notes={[{ text: MANAGER_TECHNICIAN_FIELDS_PENDING }]} />
               )}
             </fieldset>
           )}

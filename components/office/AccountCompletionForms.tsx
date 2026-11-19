@@ -28,7 +28,7 @@ import {
   type UserAccount,
 } from "@/features/accounts/data/types";
 import { DEVICE_MAX, deviceError, PHONE_MAX, phoneError } from "@/features/accounts/data/validate";
-import { useCommands } from "@/features/data-access/commands-context";
+import { useAccountCommands } from "@/features/accounts/commands-context";
 import type { TechnicianColorToken } from "@/features/reference/data/types";
 import { AccountDialog, ColorChoice, DIALOG_FAILED, DialogNotes } from "./AccountDialog";
 
@@ -69,7 +69,7 @@ export function CompleteCreationForm({
   onDone: (created: CompletedCreation, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const target = sourceTarget(source);
@@ -132,8 +132,8 @@ export function CompleteCreationForm({
 
   const invalid = (field: Field) => (error?.field === field ? { "aria-invalid": true as const, "aria-describedby": errorId } : {});
   const notes = [
-    { text: "החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר · ממתין להחלטת בעלים", pending: true },
-    ...(tech ? [{ text: "המייל משמש גם לשיוך זימונים מ-Outlook · ממתין להחלטת בעלים", pending: true }] : []),
+    { text: "החשבון נוצר בלי סיסמה. את הסיסמה הראשונה קובע היוצר." },
+    ...(tech ? [{ text: "המייל משמש גם לשיוך זימונים מ-Outlook." }] : []),
   ];
 
   return (
@@ -243,7 +243,7 @@ export function CompleteTechnicianForm({
   onDone: (created: CompletedTechnicianProfile, simulated: boolean) => void;
   onClose: () => void;
 }) {
-  const { accounts } = useCommands();
+  const accounts = useAccountCommands();
   const id = useId();
   const errorId = `${id}-error`;
   const deviceRef = useRef<HTMLInputElement>(null);
@@ -336,7 +336,7 @@ export function CompleteTechnicianForm({
               {account.email ?? "—"}
             </span>
           </div>
-          <DialogNotes notes={[{ text: "המייל לכניסה משמש גם ב-Outlook · ממתין להחלטת בעלים", pending: true }]} />
+          <DialogNotes notes={[{ text: "המייל לכניסה משמש גם ב-Outlook." }]} />
         </div>
         <div className="df">
           <button ref={submitRef} type="submit" className="btn pri" disabled={busy}>
