@@ -29,7 +29,8 @@ function creator(): SeededUser | null {
 async function signedIn(browser: Browser, user: SeededUser): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ locale: "he-IL", viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await signInAs(page, user, /\/office$/);
+  // Customer Service lands on "קריאות" (/office/calls), the other office roles on /office.
+  await signInAs(page, user, /\/office(\/calls)?$/);
   return { context, page };
 }
 
@@ -371,7 +372,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
 
   test("the account signs in with the new email and the password the Creator set", async ({ browser }) => {
     const r = await trySignIn(browser, second);
-    expect(r.url).toMatch(/\/office$/);
+    expect(r.url).toMatch(/\/office(\/calls)?$/);
   });
 
   test("deactivated: sign-in refused; reactivated: sign-in works again", async ({ browser }) => {
@@ -388,7 +389,7 @@ test.describe.serial("Creator: Settings › משתמשים והרשאות (every
     await rowAction(page, name, /^הפעלה/);
     await expect(page.getByText(`החשבון של ${name} הופעל.`)).toBeVisible();
     const back = await trySignIn(browser, second);
-    expect(back.url).toMatch(/\/office$/);
+    expect(back.url).toMatch(/\/office(\/calls)?$/);
   });
 
   test("deletes after the explicit confirmation: the row is gone, sign-in refused, history kept", async ({ browser }) => {

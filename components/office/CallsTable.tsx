@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { MouseEvent } from "react";
 import { CallStatusPill } from "@/components/ui/CallStatusPill";
-import { TestBadge, VisitSourceIcon } from "@/components/ui/TestBadge";
+import { TestPill, VisitSourceIcon } from "@/components/ui/TestBadge";
 import type { CallStatus } from "@/features/calls/data/types";
 import type { VisitSource } from "@/features/visits/data/types";
 
@@ -33,14 +33,14 @@ export type CallsTableRow = {
   /** Product name. */
   product: string;
   sku: string;
-  /** Technician of the last (or next) visit. */
-  tech: { name: string; color: string };
+  /** Technician of the last (or next) visit; null when no visit is shown (D60 (1): every visit cancelled). */
+  tech: { name: string; color: string } | null;
   /** Number of visits. */
   visits: number;
-  /** Last (or next) visit: day label and start time, e.g. "היום 09:00" or "22.10 13:00". */
+  /** Last (or next) visit: day label and start time, e.g. "היום 09:00" or "22.10 13:00"; "" when none. */
   when: string;
-  /** Source of that visit (SIM-14). */
-  source: VisitSource;
+  /** Source of that visit (SIM-14); null when no visit is shown. */
+  source: VisitSource | null;
   /** That visit was cancelled: "בוטל" after the time. */
   whenCancelled?: boolean;
   /** Service-call status (OF-17). */
@@ -55,6 +55,16 @@ export type CallsTableRow = {
 
 // Short columns: centred and sized to their content (G-07).
 const SHORT = "col-center col-fit";
+
+/**
+ * The shown visit's source (SIM-14). An Outlook visit keeps the 📅 icon. A simulated visit shows the
+ * quiet "בדיקה" marker (TestPill) only when the row itself is not marked: a test row carries exactly
+ * one marker (D74, owner fix 19.11).
+ */
+function SourceMark({ source, rowIsTest }: { source: VisitSource; rowIsTest: boolean }) {
+  if (source !== "simulator") return <VisitSourceIcon source={source} />;
+  return rowIsTest ? null : <TestPill />;
+}
 
 export function CallsTable({
   rows,
@@ -79,14 +89,19 @@ export function CallsTable({
     router.push(href);
   }
 
+  function openCard(e: MouseEvent<HTMLLIElement>, href: string) {
+    if (e.target instanceof Element && e.target.closest("a, button, input, select, textarea")) return;
+    router.push(href);
+  }
+
   return (
     <section className="card" style={{ overflow: "hidden" }}>
-      <div className="scrollx">
+      <div className="scrollx oc-tablewrap">
         <table aria-label="קריאות שירות">
           <thead>
             <tr>
               <th scope="col" className={SHORT}>
-                פנייה
+                מס׳ פנייה
               </th>
               <th scope="col">לקוח</th>
               <th scope="col" className={`${SHORT} oc-custno-col`}>
@@ -120,13 +135,13 @@ export function CallsTable({
             {rows.map((r) => (
               <tr key={r.req} className="click" onClick={(e) => openRow(e, r.href)}>
                 <td className={SHORT}>
-                  <Link href={r.href} prefetch={false} className="lnk num" aria-label={`פנייה ${r.req} · ${r.customer}`}>
+                  <Link href={r.href} prefetch={false} className="lnk num" aria-label={`מס׳ פנייה ${r.req} · ${r.customer}`}>
                     {r.req}
                   </Link>
                   {r.isTest && (
                     <>
                       {" "}
-                      <TestBadge />
+                      <TestPill />
                     </>
                   )}
                 </td>
@@ -143,11 +158,17 @@ export function CallsTable({
                   {r.sku}
                 </td>
                 <td className={SHORT}>
-                  <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                  {r.tech ? (
+                    <>
+                      <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                    </>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className={`${SHORT} num`}>{r.visits}</td>
                 <td className={`${SHORT} num`}>
-                  <VisitSourceIcon source={r.source} /> {r.when}
+                  {r.source && <SourceMark source={r.source} rowIsTest={r.isTest} />} {r.when || "—"}
                   {r.whenCancelled && (
                     <span className="oc-when-cancel" style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}>
                       <span className="oc-sep"> · </span>בוטל
@@ -166,6 +187,40 @@ export function CallsTable({
             ))}
           </tbody>
         </table>
+        <ul className="oc-cards" aria-label="קריאות שירות">
+          {rows.map((r) => (
+            <li key={r.req} className="oc-card" onClick={(e) => openCard(e, r.href)}>
+              <div className="oc-card-top">
+                <Link href={r.href} prefetch={false} className="lnk num" aria-label={`מס׳ פנייה ${r.req} · ${r.customer}`}>
+                  {r.req}
+                </Link>
+                {r.isTest && <TestPill />}
+                <span className="oc-card-status">
+                  <CallStatusPill status={r.status} />
+                </span>
+              </div>
+              <b>{r.customer}</b>
+              <div className="sub">
+                {r.product}
+                {r.city ? ` · ${r.city}` : ""}
+              </div>
+              {r.reason && <div className="sub">{r.reason}</div>}
+              <div className="sub oc-card-meta">
+                {r.tech ? (
+                  <span>
+                    <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                  </span>
+                ) : null}
+                {r.when ? (
+                  <span className="num">
+                    {r.source && <SourceMark source={r.source} rowIsTest={r.isTest} />} {r.when}
+                    {r.whenCancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
+                  </span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
         <div aria-live="polite">
           {total ? (
             <div className="sub" style={{ padding: "10px 14px" }}>

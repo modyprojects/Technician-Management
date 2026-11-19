@@ -14,7 +14,7 @@ import { officeRoleParams } from "../../../_data/params";
 import { callsAreaLinks, isOfficeRole, VIEWPOINTS } from "../../../_data/roles";
 import { demoHref } from "../../../_data/routes";
 import type { OfficeRole } from "@/features/reference/data/types";
-import { CallsBrowser } from "./_CallsBrowser";
+import { CallsBrowser } from "@/components/office/CallsBrowser";
 
 export const dynamicParams = false;
 
