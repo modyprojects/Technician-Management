@@ -3,11 +3,17 @@ import type { VisitStatus } from "@/features/visits/data/types";
 // Technician calendar skeleton (D81): the shape of the fake days. Every record is test data (D74).
 export type FakeVisit = {
   id: string;
+  /** מספר פנייה, shown on every block. */
+  request: string;
   start: string;
   end: string;
   customer: string;
   city: string;
+  /** Street address, shown in the reduced view of a closed past visit. */
+  address: string;
   product: string;
+  /** One-line work summary, shown in the reduced view of a closed past visit. */
+  summary: string;
   status: VisitStatus;
   isFollowUp?: boolean;
 };

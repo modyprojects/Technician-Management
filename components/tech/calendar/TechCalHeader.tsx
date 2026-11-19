@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 
 // Header of the technician calendar (demo techCalendar() head L606-608): title and "‹ label ›".
-// No bell (D83). `arrows` is null in the week view (it shows the whole window). At the edge of the
-// window (today, today+6) the arrow is a dimmed, disabled span: no past days (D83).
+// No bell (D83). Daily: arrows over today..today+6. Weekly: the current and the next week only. At
+// the edge the arrow is a dimmed, disabled span: no past days or weeks (D83).
 const ARROW: CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, minHeight: 32 };
 
 function Arrow({ href, glyph, name }: { href: string | null; glyph: string; name: string }) {
@@ -21,18 +21,18 @@ function Arrow({ href, glyph, name }: { href: string | null; glyph: string; name
   );
 }
 
-export type TechCalArrows = { prevHref: string | null; nextHref: string | null };
+export type TechCalArrows = { prevHref: string | null; nextHref: string | null; prevName?: string; nextName?: string };
 
-export function TechCalHeader({ label, arrows }: { label: string; arrows: TechCalArrows | null }) {
+export function TechCalHeader({ label, arrows }: { label: string; arrows: TechCalArrows }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
       <h1 style={{ fontSize: 22 }}>היומן שלי</h1>
       <span style={{ display: "flex", gap: 4, alignItems: "center", color: "var(--on-dark3)" }}>
-        {arrows && <Arrow href={arrows.prevHref} glyph="‹" name="היום הקודם" />}
+        <Arrow href={arrows.prevHref} glyph="‹" name={arrows.prevName ?? "היום הקודם"} />
         <span className="num" aria-live="polite" style={{ fontSize: 14, whiteSpace: "nowrap" }}>
           {label}
         </span>
-        {arrows && <Arrow href={arrows.nextHref} glyph="›" name="היום הבא" />}
+        <Arrow href={arrows.nextHref} glyph="›" name={arrows.nextName ?? "היום הבא"} />
       </span>
     </div>
   );
