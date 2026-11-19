@@ -38,4 +38,3 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 
 ## Notes
 - Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may fail ("Data limit exceeded"): retag cached `kong`, `mailpit`, `vector` as `supabase/…` and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.
-- Backups: `claude/office-unparsed-backup`, `claude/office-calls-list-backup`, `claude/tech-calendar-backup`.
