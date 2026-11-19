@@ -1,5 +1,5 @@
 # STATUS — Technician Management
-Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-19 (~13:10). Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
 - Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
@@ -7,7 +7,7 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 - Public repo (D84): never commit secrets or real data. Rules: levels A/B/C (D80), skeleton first (D81), `docs/design-rules.md` (D82).
 
 ## Done on main (19.11)
-- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 decisions D79–D84, design rules; #36 user management.
+- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 D79–D84, design rules; #36 user management; #48 D85–D89; #49 TimeRange + status colours.
 
 ## Modules (D88: one open module per lane, end to end)
 - Technician: **1. calendar #45 (open: skeleton review)** → 2. visit flow (M7 applied) → 3. profile.
@@ -15,8 +15,9 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 
 ## Open PRs
 - #38 M7: applied + post-checks passed 19.11 → `visit-media` bucket (approval of SHA a3f7b93c…) → merge.
-- #45 technician calendar skeleton (c5b5fab, D89 applied) → 15:30 review. Skeleton-only `?today=` override: remove before real data.
-- Calls module re-stacked on main: #43 28921a9 → #44 22ab8b5 → #46 cc32d45 (owner answers applied) → 15:30 review.
+- #45 technician calendar on real data (9ba1414): independent review APPROVE WITH FIXES (test gap, being fixed); then owner "מאשר".
+- Calls: #43 20dd1cb (level-B fix, shots retaken signed in; advisor check) → #44 45f1c41 ("מאשר") → #46 skeleton approved: real data after #44.
+- Simulator gate (D90): PR in progress; independent review before merge.
 
 ## Waiting for the owner
 - 15:30 review: #45, #46 (and #43, #44 visual approval).
@@ -33,7 +34,7 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 - Separate Production Supabase project; rotate the secret key; Vercel Authentication off.
 - Post-M7 hardening migration: deleted-but-not-banned accounts (Creator notice, no reset link), "נקרא" (D78); #36 re-review L1/L2.
 - MFA for the Creator and Managers; rate limits (sign-in, reset, invitation).
-- Invitation + reset email through M365 (D86) once IT connects it.
+- Invitation + reset email through M365 (D86) once IT connects it. Simulator off: `testingPeriod` false (D90).
 
 ## Notes
 - Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may fail ("Data limit exceeded"): retag cached `kong`, `mailpit`, `vector` as `supabase/…` and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.
