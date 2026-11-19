@@ -50,6 +50,12 @@ export type TechViewer = { technicianId: string; name: string };
 /** Cap of the visits read for one day (a technician's day never comes close). */
 export const TECH_DAY_LIMIT = 100;
 
+/** Cap of the visits read for the calendar window (two weeks; never close in practice). */
+export const TECH_CALENDAR_LIMIT = 300;
+
+/** The longest window the calendar may read, in days (the current week and the next, D89 (a)). */
+export const TECH_CALENDAR_MAX_DAYS = 14;
+
 /** "לא צוין" for a pickup place the invitation did not name (the demo's fallback). */
 export const PICKUP_PLACE_NOT_GIVEN = "לא צוין";
 
@@ -135,6 +141,7 @@ const HistoryRowSchema = z.object({
 const TechnicianRowSchema = z.object({ id: z.string(), display_name: text, color: text, is_test: z.boolean() });
 
 const ReportRowSchema = z.object({ summary_text: text });
+const ReportSummaryRowSchema = z.object({ visit_id: z.string().refine(isUuid), summary_text: text });
 const SignatureRowSchema = z.object({ signer_name: text, signed_ack_text: text });
 
 /** A row through its schema, or the read fails ("invalid-row"): never a half-understood value. */
@@ -188,12 +195,42 @@ export type TechVisitView =
       detailsAvailable: boolean;
     };
 
+/**
+ * One visit of the technician calendar (D85, D89). `request`, `customer` and `product` come from
+ * `my_visit_details`, which serves a visit that is open or was closed today only (Migration 3
+ * TEMPORARY OQ-10): for a visit closed before today they are "" and the calendar shows the reduced
+ * view (address, status, summary; D79 (2)).
+ */
+export type TechCalendarVisit = {
+  id: string;
+  isTest: boolean;
+  /** Asia/Jerusalem date of scheduled_start. */
+  date: IsoDate;
+  request: string;
+  start: HourMinute;
+  end: HourMinute;
+  customer: string;
+  city: string;
+  address: string;
+  product: string;
+  /** The treatment summary of a closed visit (visit_reports); "" otherwise. */
+  summary: string;
+  status: VisitStatus;
+  isFollowUp: boolean;
+};
+
 /** The queries of one Technician's own visits. */
 export type TechVisitsQueries = {
   /** His visits scheduled on `date` (Asia/Jerusalem), cancelled excluded, with the home counters. */
   day(date: IsoDate): Promise<TechDay<TechDayVisitWithId>>;
   /** One of his visits by id; null when not found, not his, cancelled or not a uuid. */
   visit(id: string): Promise<TechVisitView | null>;
+  /**
+   * His visits scheduled from `from` to `to` (Asia/Jerusalem dates, inclusive, at most
+   * TECH_CALENDAR_MAX_DAYS days), cancelled excluded, in start order. `today` (the caller's clock)
+   * only decides which rows the details are asked for: open ones, and closed ones closed today.
+   */
+  calendar(from: IsoDate, to: IsoDate, today: IsoDate): Promise<TechCalendarVisit[]>;
 };
 
 type Rpc = <T>(fn: string, visitId: string, schema: z.ZodType<T>) => Promise<T[] | null>;
@@ -416,6 +453,72 @@ export function techVisitsQueriesOf(db: SupabaseClient, viewer: TechViewer): Tec
         editable: false,
       };
       return { kind: "closed", id: row.id, detail, detailsAvailable: d !== null };
+    },
+
+    async calendar(from, to, today) {
+      if (!isIsoDate(from) || !isIsoDate(to) || !isIsoDate(today)) throw new TechVisitsQueryError("invalid-date");
+      if (to < from || addDays(from, TECH_CALENDAR_MAX_DAYS - 1) < to) throw new TechVisitsQueryError("invalid-range");
+      const rows = await db
+        .from("visits")
+        .select(TECH_VISIT_COLUMNS)
+        .eq("technician_id", viewer.technicianId)
+        .neq("status", "cancelled")
+        .gte("scheduled_start", atJerusalem(from, "00:00"))
+        .lt("scheduled_start", atJerusalem(addDays(to, 1), "00:00"))
+        .order("scheduled_start", { ascending: true })
+        .order("visit_number", { ascending: true })
+        .limit(TECH_CALENDAR_LIMIT);
+      if (rows.error) throw new TechVisitsQueryError(rows.error.code);
+      const visits = (rows.data ?? []).map((r) => {
+        const row = parsed(VisitRowSchema, r);
+        const status = visitStatusOfDb(row.status);
+        if (!status) throw new TechVisitsQueryError("invalid-row");
+        return { row, status, date: dayOf(row.scheduled_start) };
+      });
+      const isClosed = (status: VisitStatus): boolean => status === "done" || status === "cont";
+      // The details are served only for an open visit or one closed today (42501 otherwise): ask
+      // only for those, and never for an open visit of a past day (not shown, D79 (1)). closed_at
+      // carries microseconds (PostgREST), which the strict ISO check refuses: normalise it first.
+      const closedDay = (iso: string | null): IsoDate | null => {
+        const ms = iso === null ? Number.NaN : Date.parse(iso);
+        return Number.isNaN(ms) ? null : jerusalemDate(new Date(ms).toISOString());
+      };
+      const served = (v: (typeof visits)[number]): boolean => (isClosed(v.status) ? closedDay(v.row.closed_at) === today : v.date >= today);
+      const closedIds = visits.filter((v) => isClosed(v.status)).map((v) => v.row.id);
+      const [withDetails, reports] = await Promise.all([
+        Promise.all(visits.map(async (v) => ({ ...v, d: served(v) ? await details(v.row.id) : null }))),
+        closedIds.length
+          ? db.from("visit_reports").select("visit_id, summary_text").in("visit_id", closedIds).limit(TECH_CALENDAR_LIMIT)
+          : Promise.resolve({ data: [] as unknown[], error: null }),
+      ]);
+      if (reports.error) throw new TechVisitsQueryError(reports.error.code);
+      const summaries = new Map(
+        (reports.data ?? []).map((r) => {
+          const row = parsed(ReportSummaryRowSchema, r);
+          return [row.visit_id, row.summary_text] as const;
+        }),
+      );
+      return withDetails.flatMap(({ row, status, date, d }): TechCalendarVisit[] =>
+        status === "cancel"
+          ? []
+          : [
+              {
+                id: row.id,
+                isTest: row.is_test,
+                date,
+                request: d?.request_number ?? "",
+                start: clock(row.scheduled_start),
+                end: clock(row.scheduled_end),
+                customer: d?.customer_name ?? "",
+                city: row.city,
+                address: addressOf(row),
+                product: d?.product_name ?? "",
+                summary: summaries.get(row.id) ?? "",
+                status,
+                isFollowUp: row.visit_number > 1,
+              },
+            ],
+      );
     },
   };
 }
