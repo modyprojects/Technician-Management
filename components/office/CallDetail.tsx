@@ -221,7 +221,8 @@ function CustomerCalls({ rows }: { rows: readonly CustomerCallRow[] }) {
       </div>
       {rows.map((r) => (
         <Link key={r.req} href={r.href} className="li">
-          <span className="t num" style={{ width: 56 }}>
+          {/* Request numbers run to 32 characters: never a fixed width that they overflow. */}
+          <span className="t num" style={{ minWidth: 56, flex: "none", whiteSpace: "nowrap" }}>
             {r.req}
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>

@@ -136,9 +136,9 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await page.goto(`/office/calls?q=${a}`);
     await rows(page).first().getByRole("link").click();
     await expect(page).toHaveURL(new RegExp(`/office/calls/${a}$`));
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); // the call card skeleton (D81): fictional data
-    await expect(page.getByText("נתוני בדיקה")).toBeVisible();
-    await page.getByRole("link", { name: "› חזרה לקריאות" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(customerA); // the call card on real data (D88)
+    await expect(page.locator(".test-banner")).toContainText("נתוני בדיקה");
+    await page.getByRole("link", { name: "חזרה לקריאות" }).click();
     await expect(page).toHaveURL(/\/office\/calls$/);
     for (const req of ["NO-SUCH-1", "a%20b", "x".repeat(40)]) {
       const response = await page.goto(`/office/calls/${req}`);
