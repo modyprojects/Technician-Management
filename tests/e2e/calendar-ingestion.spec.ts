@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import release from "@/config/release.json";
+import { simulatorEnabledFor } from "@/features/calendar/adapters/simulator/env";
 import {
   buildSimulatorEvent,
   parseSimulatorRequest,
@@ -397,18 +399,38 @@ test.describe("calendar ingestion: the Outlook invitation simulator (D24, SIM-02
   let n = 0;
   const deps = { now: () => new Date("2026-11-17T08:00:00.000Z"), newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}` };
 
-  test("switched only by the environment: CALENDAR_SIMULATOR=1, never on Vercel Production", () => {
-    const cases: [string | undefined, string | undefined, boolean][] = [
-      ["1", undefined, true],
-      ["1", "preview", true],
-      ["1", "development", true],
-      ["1", "production", false],
-      [undefined, "preview", false],
-      ["true", "preview", false],
-      ["", undefined, false],
-      ["0", undefined, false],
+  test("switched only by the environment: CALENDAR_SIMULATOR=1; on Vercel Production only in the testing period", () => {
+    // [flag, VERCEL_ENV, config/release.json testingPeriod, expected]
+    const cases: [string | undefined, string | undefined, unknown, boolean][] = [
+      // Vercel Production: both locks must hold (owner decision 19.11, D24 exception).
+      ["1", "production", true, true],
+      [undefined, "production", true, false],
+      ["0", "production", true, false],
+      ["1", "production", false, false],
+      [undefined, "production", false, false],
+      // Missing or malformed testingPeriod fails closed.
+      ["1", "production", undefined, false],
+      ["1", "production", null, false],
+      ["1", "production", "true", false],
+      ["1", "production", 1, false],
+      ["1", "production", {}, false],
+      // Elsewhere: unchanged, the flag alone decides, whatever testingPeriod says.
+      ["1", undefined, false, true],
+      ["1", "preview", false, true],
+      ["1", "development", false, true],
+      ["1", "preview", true, true],
+      [undefined, "preview", true, false],
+      ["true", "preview", true, false],
+      ["", undefined, true, false],
+      ["0", undefined, true, false],
     ];
-    for (const [flag, vercelEnv, expected] of cases) expect(simulatorEnabled({ flag, vercelEnv }), `${flag}/${vercelEnv}`).toBe(expected);
+    for (const [flag, vercelEnv, testingPeriod, expected] of cases)
+      expect(simulatorEnabledFor({ flag, vercelEnv }, testingPeriod), `${flag}/${vercelEnv}/${String(testingPeriod)}`).toBe(expected);
+  });
+
+  test("the default testingPeriod is read from config/release.json", () => {
+    expect(simulatorEnabled({ flag: "1", vercelEnv: "production" })).toBe(release.testingPeriod === true);
+    expect(simulatorEnabled({ flag: undefined, vercelEnv: "production" })).toBe(false);
   });
 
   test("create draws a new event id; update, reschedule and reassign keep it with a new change key", () => {
