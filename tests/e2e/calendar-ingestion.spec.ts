@@ -423,6 +423,11 @@ test.describe("calendar ingestion: the Outlook invitation simulator (D24, SIM-02
       ["true", "preview", true, false],
       ["", undefined, true, false],
       ["0", undefined, true, false],
+      // An unrecognised VERCEL_ENV is refused, whatever the flag and testingPeriod (fail closed).
+      ["1", "staging", true, false],
+      ["1", "Production", true, false],
+      ["1", "PREVIEW", false, false],
+      ["1", "", true, false],
     ];
     for (const [flag, vercelEnv, testingPeriod, expected] of cases)
       expect(simulatorEnabledFor({ flag, vercelEnv }, testingPeriod), `${flag}/${vercelEnv}/${String(testingPeriod)}`).toBe(expected);
