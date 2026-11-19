@@ -1,5 +1,12 @@
 # Work Log (English only)
 
+## 2026-11-19 — CI unblocked (public repo), M7 applied, calls module and technician calendar merged
+- Decisions D79–D92 (approval levels, skeletons, design rules, module-by-module, public repo, M365 invitations, Production on the test DB, simulator and test data during the testing period); V1 = 2 December 2026.
+- Remote: M7 applied (20261119095402, SHA 489901e5… verified) and bucket `visit-media` created, both owner-approved; Production redeployed from main with the owner's env settings.
+- Merged: #36 user management, #42/#45/#54 technician home + calendar, #43/#44/#46 office calls module, #38 M7, #49 TimeRange + status colours, #51/#52 simulator gate (independent reviews on #45, #46, #51), docs #41/#47/#48/#50/#53/#55/#56.
+- Open: skeletons #57 (office technician calendar) and #58 (visit flow) await the owner's answers; owner browser check of Production.
+- Lessons: screenshots must be opened once to confirm a signed-in screen; shared stack data broke a count-based test (fixed by search).
+
 ## 2026-11-19 — Owner decisions D79–D83, #36 level-B fixes, three lanes
 - Decisions D79–D83 and `docs/design-rules.md` (≤40 lines) recorded on the docs branch stacked on #41.
 - #36: notice suffix, Creator banner on top, notices help text, all real-app "ממתין להחלטת בעלים" texts removed; 20/20 local-stack user-management tests, 259 demo/server tests pass; 10 shots retaken (6abe2bc).
