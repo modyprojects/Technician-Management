@@ -18,7 +18,7 @@ const HOUR_PX = 56;
 const COLUMNS = "24px repeat(7, minmax(0, 1fr))";
 const LEGEND = ["new", "work", "done", "cont"] as const;
 const PAST: CSSProperties = { opacity: 0.55, filter: "grayscale(1)" };
-const NARROW = "min-[820px]:hidden";
+const NARROW = "flex flex-col gap-px min-[820px]:hidden";
 const WIDE = "hidden min-[820px]:block";
 
 function Block({ v, past, box }: { v: FakeVisit; past: boolean; box: { top: number; height: number } }) {
@@ -29,7 +29,7 @@ function Block({ v, past, box }: { v: FakeVisit; past: boolean; box: { top: numb
       aria-label={past ? `${blockName(v)} · ${v.address} · ${v.summary}` : blockName(v)}
       style={{ position: "absolute", top: box.top + 1, height: Math.max(18, box.height - 2), right: 1, left: 1, background: s.bg, color: s.fg, borderRight: `3px solid ${s.c}`, borderRadius: 5, padding: "3px 3px", fontSize: 10, fontWeight: 700, lineHeight: 1.25, overflow: "hidden", overflowWrap: "anywhere", textAlign: "right", textDecoration: "none" }}
     >
-      <span className={NARROW} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <span className={NARROW}>
         <span className="num" style={{ fontSize: 10.5 }}>{v.request}</span>
         <span className="num" dir="ltr" style={{ fontWeight: 600, opacity: 0.9, textAlign: "right", fontSize: 9 }}>
           {v.start}
