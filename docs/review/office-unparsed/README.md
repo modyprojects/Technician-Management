@@ -39,7 +39,7 @@ Not in this screen: no action on a row (the fix is in the invitation itself, D08
 
 Run against another local stack: `SUPABASE_BIN=<wrapper adding --workdir> AUTH_TEST_DB_CONTAINER=supabase_db_<project_id> node tests/auth/run-local.mjs …`. The suite starts two more servers of the same build (ports 3121 and 3122) to prove the simulator is absent with the switch off and on Vercel Production.
 
-## Screenshots (390 / 820 / 1440)
+## Screenshots (390 / 1440)
 
 `<width>-empty.webp` (no unparsed invitation), `-mgr-list.webp` (the Manager's view with data), `-cs-list.webp` (Customer Service's view and navigation), `-reasons-missing.webp`, `-reasons-technician.webp` (one invitation's reasons), `-simulator-open(.webp|-full.webp)`, `-simulator-filled.webp`, `-simulator-errors.webp` (the form's own errors), `-simulator-result(.webp|-full.webp)` (an invalid invitation sent, with its reasons), `-simulator-cancel.webp`.
 
