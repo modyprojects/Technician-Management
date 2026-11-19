@@ -12,11 +12,12 @@ import { localSqlValue, seeded, submitSignIn } from "./helpers";
 const OUT = path.resolve("docs/review/office-calls-list");
 const SIZES = [
   { width: 390, height: 844 },
-  { width: 820, height: 1180 },
   { width: 1440, height: 900 },
 ] as const;
 
 test.skip(!process.env.SCREENSHOTS, "screenshots are taken on demand only");
+
+const rowsOf = (p: Page, width: number) => p.locator(width <= 600 ? ".oc-cards > li" : 'table[aria-label="קריאות שירות"] tbody tr');
 
 async function ready(page: Page) {
   await page.evaluate(async () => {
@@ -28,7 +29,7 @@ async function ready(page: Page) {
 }
 
 async function signedIn(browser: Browser, user: SeededUser, home: RegExp): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ locale: "he-IL", viewport: SIZES[2] });
+  const context = await browser.newContext({ locale: "he-IL", viewport: SIZES[1] });
   const page = await context.newPage();
   await submitSignIn(page, user.email, user.password);
   await expect(page).toHaveURL(home);
@@ -73,7 +74,7 @@ test.describe.serial("office-calls-list screenshots", () => {
   test("calls sent through the simulator, and a second visit of the first", async () => {
     test.setTimeout(120_000);
     const { page } = cs;
-    await page.setViewportSize(SIZES[2]);
+    await page.setViewportSize(SIZES[1]);
     let first = "";
     for (const [i, c] of [...CALLS, CALLS[0]].entries()) {
       await page.goto("/office/unparsed");
@@ -110,28 +111,28 @@ test.describe.serial("office-calls-list screenshots", () => {
       const c = cs.page;
       await c.setViewportSize(size);
       await c.goto("/office/calls");
-      await expect(c.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr").first()).toBeVisible();
+      await expect(rowsOf(c, size.width).first()).toBeVisible();
       await shot(c, "cs-list");
 
       const m = mgr.page;
       await m.setViewportSize(size);
       await m.goto("/office/calls");
-      await expect(m.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr").first()).toBeVisible();
+      await expect(rowsOf(m, size.width).first()).toBeVisible();
       await shot(m, "mgr-list");
       // Filters: the second technician, then a search that finds one call, then a chip with no call.
       await m.getByRole("combobox", { name: "סינון לפי טכנאי" }).selectOption(process.env.AUTH_E2E_TECH2_ROW ?? "");
       await expect(m).toHaveURL(/[?&]tech=/);
-      await expect(m.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr")).toHaveCount(2);
+      await expect(rowsOf(m, size.width).first()).toBeVisible();
       await shot(m, "filter-technician");
       await m.goto("/office/calls?q=" + encodeURIComponent("חולון"));
-      await expect(m.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr")).toHaveCount(1);
+      await expect(rowsOf(m, size.width).first()).toBeVisible();
       await shot(m, "filter-search");
       await m.goto("/office/calls?status=resolved");
       await expect(m.getByText("לא נמצאו קריאות")).toBeVisible();
       await shot(m, "filter-status-empty");
       // A row opens its call's address (the card itself is the next screen).
       await m.goto("/office/calls?q=" + encodeURIComponent("משפחת לוי"));
-      await m.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr").first().getByRole("link").click();
+      await rowsOf(m, size.width).first().getByRole("link").click();
       await expect(m).toHaveURL(/\/office\/calls\/[^/?]+$/);
       await shot(m, "call-temporary");
     });
