@@ -13,7 +13,7 @@
 // Presentational: the caller passes the DTOs with their links and formatted times.
 import Link from "next/link";
 import { useId, type ReactNode } from "react";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { AppNotification, NotificationKind } from "@/features/notifications/data/types";
 import { useNotificationState } from "./NotificationState";
 
@@ -51,7 +51,7 @@ function NotificationItem({ entry, unread }: { entry: NotificationEntry; unread:
             {n.isTest && (
               <>
                 {" "}
-                <TestBadge />
+                <TestPill />
               </>
             )}
           </span>

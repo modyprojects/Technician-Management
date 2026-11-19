@@ -33,3 +33,12 @@ export function localSql(sql: string) {
     stdio: ["pipe", "ignore", "inherit"],
   });
 }
+
+/** The `-At` output of one query against the LOCAL database container (assertions only). */
+export function localSqlValue(query: string): string {
+  return execFileSync("docker", ["exec", "-i", localDbContainer(), "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-q", "-At"], {
+    input: query,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "inherit"],
+  }).trim();
+}

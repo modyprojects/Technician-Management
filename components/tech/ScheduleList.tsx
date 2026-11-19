@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { TechDayVisit } from "@/features/visits/data/types";
 
 // "לו"ז היום" on the technician home (docs/demo.html techHome() L510-513; TE-04 KEEP): the open
@@ -61,7 +61,7 @@ export function ScheduleList({
               {v.isTest && (
                 <>
                   {" "}
-                  <TestBadge />
+                  <TestPill />
                 </>
               )}
               <div className="sub">

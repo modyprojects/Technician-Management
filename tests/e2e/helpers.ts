@@ -129,7 +129,18 @@ export const DEV_PAGES = [
  * state, except the password-reset screens (D65): /login/forgot shows its form and /login/reset its
  * invalid-link state.
  */
-export const REAL_PAGES = ["/", "/login", "/office", "/tech", "/tech/profile", "/login/forgot", "/login/reset"] as const;
+export const REAL_PAGES = [
+  "/",
+  "/login",
+  "/office",
+  "/tech",
+  "/tech/profile",
+  // Step 3: "הושלמו היום" and a visit card (any id: without the Supabase variables /login answers first).
+  "/tech/done",
+  "/tech/visit/00000000-0000-4000-8000-000000000000",
+  "/login/forgot",
+  "/login/reset",
+] as const;
 
 export const ALL_PAGES = [...REAL_PAGES, "/no-such-page", ...DEV_PAGES] as const;
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { TechDayVisit } from "@/features/visits/data/types";
 
 // "הושלמו היום" (docs/demo.html techDoneList() L657-662; TE-26 CHANGE: same look, read-only, D14):
@@ -54,7 +54,7 @@ export function DoneList({ entries, pager }: { entries: readonly DoneListEntry[]
               {v.isTest && (
                 <>
                   {" "}
-                  <TestBadge />
+                  <TestPill />
                 </>
               )}
               <div className="sub">

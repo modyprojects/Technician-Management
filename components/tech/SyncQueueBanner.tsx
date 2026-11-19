@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { IsoTimestamp } from "@/features/data-access/common";
 import {
   DEVICE_SYNC_LABELS,
@@ -49,7 +49,7 @@ function VisitLine({ visit, info }: { visit: VisitDeviceSync; info: SyncVisitInf
         {visit.isTest && (
           <>
             {" "}
-            <TestBadge />
+            <TestPill />
           </>
         )}
       </span>
