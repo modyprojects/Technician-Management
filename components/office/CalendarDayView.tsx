@@ -21,7 +21,7 @@ const H = 60;
 /** The demo's minimum block height. */
 const MIN_BLOCK = 36;
 
-function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; href: string }) {
+function DayBlock({ v, from, href, showRequest }: { v: PlacedCalendarVisit; from: number; href: string; showRequest: boolean }) {
   const s = VISIT_STATUSES[v.status];
   const start = toMinutes(v.start);
   const end = toMinutes(v.end);
@@ -48,6 +48,14 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
       }}
     >
       <span className="ev-body">
+        {showRequest && (
+          <>
+            <bdi dir="ltr" className="num">
+              {v.req}
+            </bdi>{" "}
+            ·{" "}
+          </>
+        )}
         <b>{v.customerName}</b> <span className="num">{v.start}</span> · {v.city}
         {v.n > 1 && ` · ביקור ${v.n}`} <br />
         {s.label}
@@ -66,7 +74,16 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
   );
 }
 
-export function CalendarDayView({ day, visitHref }: { day: OfficeCalendarDay; visitHref: (visit: VisitRef) => string }) {
+/** `showRequest`: the request number first on each block (D89 (d)); the default look is unchanged. */
+export function CalendarDayView({
+  day,
+  visitHref,
+  showRequest = false,
+}: {
+  day: OfficeCalendarDay;
+  visitHref: (visit: VisitRef) => string;
+  showRequest?: boolean;
+}) {
   const lanes = day.lanes;
   const { from, to } = hourRange(lanes.flatMap((l) => l.visits.items));
   const hours = Math.round((to - from) / 60);
@@ -109,7 +126,7 @@ export function CalendarDayView({ day, visitHref }: { day: OfficeCalendarDay; vi
                     <div key={i} className="hr" style={{ top: (i + 1) * H }} aria-hidden="true" />
                   ))}
                   {l.visits.items.map((v) => (
-                    <DayBlock key={calVisitKey(v)} v={v} from={from} href={visitHref({ req: v.req, n: v.n })} />
+                    <DayBlock key={calVisitKey(v)} v={v} from={from} href={visitHref({ req: v.req, n: v.n })} showRequest={showRequest} />
                   ))}
                 </div>
               ))}

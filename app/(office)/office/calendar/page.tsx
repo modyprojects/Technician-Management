@@ -88,8 +88,8 @@ export default async function OfficeTechCalendarPage({ searchParams }: { searchP
       <TestDataBanner />
       <CalendarToolbar title={title} views={views} prev={prev} todayHref={href({ date: SKELETON_TODAY })} next={next} technicians={techChips} />
       <div className="max-[600px]:hidden">
-        {day && <CalendarDayView day={day} visitHref={visitHref} />}
-        {week && <CalendarWeekView week={week} today={SKELETON_TODAY} dayHref={dayHref} visitHref={visitHref} />}
+        {day && <CalendarDayView day={day} visitHref={visitHref} showRequest />}
+        {week && <CalendarWeekView week={week} today={SKELETON_TODAY} dayHref={dayHref} visitHref={visitHref} quietTest showRequest />}
         {week && week.total === 0 && <div className="empty">אין ביקורים בשבוע הזה</div>}
       </div>
       <div className="min-[601px]:hidden">

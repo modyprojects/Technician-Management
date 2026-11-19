@@ -175,12 +175,14 @@ test.describe("the real office navigation and the settings routes", () => {
     for (const role of ["mgr", "creator"] as const) {
       expect(realOfficeNav(role)).toEqual([
         { key: "analytics", label: "דשבורד", href: "/office" },
+        { key: "cal", label: "יומן טכנאים", href: "/office/calendar" },
         { key: "calls", label: "קריאות", href: "/office/calls" },
         { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },
         { key: "settings", label: "הגדרות", href: OFFICE_SETTINGS_USERS_PATH },
       ]);
     }
     expect(realOfficeNav("cs")).toEqual([
+      { key: "cal", label: "יומן טכנאים", href: "/office/calendar" },
       { key: "calls", label: "קריאות", href: "/office/calls" },
       { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },
     ]);
