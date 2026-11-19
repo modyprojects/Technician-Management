@@ -1791,14 +1791,16 @@ test.describe("unparsed invitations (IN-01 to IN-04, OF-16)", () => {
     // An unknown SKU is never a reason (IN-02, D19).
     await expect(main).toContainText("מק״ט שלא מופיע ברשימת המוצרים אינו סיבה");
     // Every row: the rep mail is not sent, pending d09 (IN-04).
-    await expect(list.getByText("מייל לנציגה: לא נשלח · ממתין להחלטת בעלים (d09)")).toHaveCount(7);
+    await expect(list.getByText("מייל לנציגה: לא נשלח", { exact: true })).toHaveCount(7);
     // No line about an email says it was or will be sent ("נשלח" elsewhere is the corrected invitation).
     const mailLines = (await main.innerText()).split("\n").filter((l) => l.includes("מייל"));
     expect(mailLines.length).toBeGreaterThanOrEqual(7);
     for (const l of mailLines) expect(l).not.toMatch(/(?<!לא )(נשלח|יישלח|נשלחים)/);
     // Source of every invitation: the simulator (SIM-14); event-driven intake, no polling (D08).
     await expect(list.getByText("🧪 זימון בדיקה")).toHaveCount(7);
-    await expect(main).toContainText("בלי בדיקה תקופתית");
+    await expect(main).toContainText("ברגע שהוא מגיע");
+    await expect(main).not.toContainText("בלי בדיקה תקופתית");
+    await expect(main.locator(".ib-note")).toHaveCount(1);
     // No actions on this screen.
     await expect(main.getByRole("button")).toHaveCount(0);
   });

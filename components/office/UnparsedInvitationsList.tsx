@@ -186,16 +186,15 @@ export function UnparsedInvitationsList({
 }) {
   return (
     <DashboardSection id={id} flush title="ממתינים לתיקון ב-Outlook" count={page.total} hint="החדשים קודם · כל זימון עם מה שחסר או שגוי בו">
+      {/* D08: event-driven intake, never polling. Decision codes stay in comments, not in user text. */}
       <div className="note ib-note">
-        <p>
-          {/* D08: event-driven intake, never polling. Decision codes stay in comments, not in user text. */}
-          מתקנים את הזימון ב-Outlook, והוא נשלח מחדש. המערכת מקבלת את העדכון ברגע שהוא נשלח (לפי אירוע, בלי בדיקה תקופתית),
-          קולטת את הזימון המתוקן, והוא יורד מהרשימה.
-        </p>
-        {/* IN-02, D19: an unknown SKU creates the product; it is never a reason. */}
-        <p>מק״ט שלא מופיע ברשימת המוצרים אינו סיבה: מוצר חדש נוצר בקליטה.</p>
-        {note && <p>{note}</p>}
+        <p>מתקנים את הזימון ב-Outlook והוא נשלח מחדש: המערכת קולטת אותו ברגע שהוא מגיע, והוא יורד מהרשימה.</p>
       </div>
+      {/* IN-02, D19: an unknown SKU creates the product; it is never a reason. Short help text, not the info box. */}
+      <p className="sub" style={{ margin: "0 18px 12px" }}>
+        מק״ט שלא מופיע ברשימת המוצרים אינו סיבה: מוצר חדש נוצר בקליטה.
+        {note && <> {note}</>}
+      </p>
       {page.items.length ? (
         <>
           <ul className="ib-list" aria-label="זימונים שלא נקלטו">
