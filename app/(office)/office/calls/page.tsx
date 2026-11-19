@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import type { CallStatusOption, CallTechOption } from "@/components/office/CallFilters";
 import { CallsBrowser } from "@/components/office/CallsBrowser";
 import type { CallsTableRow } from "@/components/office/CallsTable";
-import { DashboardTestNote } from "@/components/office/DashboardTestNote";
 import { SettingsNoAccess } from "@/components/office/SettingsNoAccess";
 import { CALL_STATUS_ORDER, CALL_STATUSES } from "@/components/ui/CallStatusPill";
+import { TestDataBanner } from "@/components/ui/TestBadge";
 import { OFFICE_UNPARSED_PATH, officeCallPath } from "@/features/auth/landing";
 import { LOGIN_NO_ACCESS_PATH } from "@/features/auth/session-state";
 import { ddmm } from "@/features/calendar/data/dates";
@@ -83,13 +83,13 @@ export default async function OfficeCallsPage({ searchParams }: PageProps<"/offi
 
   return (
     <OfficeFrame me={me} active="calls">
+      {includesTestData && <TestDataBanner />}
       <div className="ptitle">
         <div>
           <h1>קריאות</h1>
           <div className="sub">כל הקריאות שנקלטו מהזימונים. לחיצה על שורה פותחת את כרטיס הקריאה.</div>
         </div>
       </div>
-      {includesTestData && <DashboardTestNote id="calls-test-note">הרשימה כוללת נתוני בדיקה (סביבת בדיקה)</DashboardTestNote>}
       {page.capped && (
         <div className="note" role="note">
           החיפוש והסינון לפי טכנאי נעשים ב-{CALLS_WINDOW.toLocaleString("en-US")} הקריאות האחרונות שנפתחו. לקריאה ישנה יותר אפשר לסנן לפי סטטוס.

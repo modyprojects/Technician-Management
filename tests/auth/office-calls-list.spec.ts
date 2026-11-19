@@ -84,7 +84,7 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     const chips = page.getByRole("group", { name: "סינון לפי סטטוס קריאה" });
     await expect(chips.getByRole("button", { name: `הכל ${all}` })).toBeVisible();
     await expect(chips.getByRole("button", { name: `פתוחה ${open}` })).toBeVisible();
-    await expect(page.locator("#calls-test-note")).toContainText("נתוני בדיקה");
+    await expect(page.locator(".test-banner")).toContainText("נתוני בדיקה");
     // Newest first: B (scheduled at the same time, opened later) or A's visit 2 is at the top.
     const rowA = rows(page).filter({ hasText: customerA });
     await expect(rowA).toHaveCount(1);
