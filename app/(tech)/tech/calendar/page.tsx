@@ -1,91 +1,87 @@
 import type { Metadata } from "next";
 import { TechCalDay } from "@/components/tech/calendar/TechCalDay";
 import { TechCalHeader, type TechCalArrows } from "@/components/tech/calendar/TechCalHeader";
+import { TechCalLegend } from "@/components/tech/calendar/TechCalLegend";
 import { TechCalStrip } from "@/components/tech/calendar/TechCalStrip";
 import { TechCalSwitch } from "@/components/tech/calendar/TechCalSwitch";
 import { TechCalWeek } from "@/components/tech/calendar/TechCalWeek";
-import type { FakeDay, TechCalView } from "@/components/tech/calendar/types";
+import { calendarModel, calendarWindow } from "@/components/tech/calendar/model";
+import type { TechCalView } from "@/components/tech/calendar/types";
 import { TechShell } from "@/components/tech/TechShell";
 import { TestDataBanner } from "@/components/ui/TestBadge";
-import { addDays, dayName, ddmm, weekStartOf } from "@/features/calendar/data/dates";
+import { TimeRange } from "@/components/ui/TimeRange";
+import { addDays, dayName, ddmm } from "@/features/calendar/data/dates";
 import { jerusalemToday } from "@/features/visits/data/today";
 import { requireArea } from "@/lib/auth/guards";
+import { techVisitsQueries } from "@/lib/data/supabase/tech-visits";
 import { TECH_CALENDAR_PATH, TECH_START_HREFS, TECH_START_TABS } from "../_tabs";
-import { fakeCalendar } from "./_components/calendar-fake";
 
 export const metadata: Metadata = { title: "יומן · ניהול טכנאים" };
 
-// SKELETON (D81, D83): the technician calendar on fictional data. Daily: today and the next 6 days
-// (day strip, no past days). Weekly: a calendar week, Sunday to Saturday, the current week and the
-// next only. In the current week the days before today are greyed and show only visits closed that
-// day; a visit left open on a previous day is not shown. No monthly view. The URL is the state
-// (?view=day|week&date=...), so every control is a link. `today=` is a skeleton-only override of
-// "today" for the review screenshots (fake data only). No bell. No database, no server logic beyond
-// the role guard.
-const ISO = /^\d{4}-\d{2}-\d{2}$/;
+// The technician calendar (D83, D85, D89) on real data: the signed-in Technician's own visits of the
+// current calendar week and the next (Sunday to Saturday, Asia/Jerusalem), read under his own session
+// (RLS and my_technician_id(); lib/data/supabase/tech-visits.ts `calendar`). Daily: today and the
+// next 6 days (day strip, no past days). Weekly: the current week or the next. In the current week
+// the days before today are greyed and show only visits closed on them, in the reduced view; a visit
+// left open on a previous day is not shown (D79). The rules are components/tech/calendar/model.ts.
+// No monthly view, no bell. The URL is the state (?view=day|week&date=...), so every control is a
+// link; "today" is always the server's clock (no override from the URL).
+// The guard runs here (requireArea("tech")): anonymous visitors go to /login, other roles to the
+// no-access state. A failed read throws (a code only, logged): the page fails closed.
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default async function TechCalendarPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireArea("tech");
+  const me = await requireArea("tech");
+  const queries = await techVisitsQueries(me);
+  const today = jerusalemToday();
+  const span = calendarWindow(today);
+  const visits = await queries.calendar(span.from, span.to, today);
+
   const sp = await searchParams;
-  const override = first(sp.today);
-  const today = override && ISO.test(override) ? override : jerusalemToday();
-  const href = (view: TechCalView, date: string) => `${TECH_CALENDAR_PATH}?view=${view}&date=${date}${today === override ? `&today=${today}` : ""}`;
-
-  const all = fakeCalendar(today);
-  const view: TechCalView = first(sp.view) === "week" ? "week" : "day";
-  const wanted = first(sp.date) ?? today;
-
-  // Daily: today..today+6.
-  const last = addDays(today, 6);
-  const strip: FakeDay[] = all.filter((d) => d.date >= today && d.date <= last);
-  const date = strip.some((d) => d.date === wanted) ? wanted : today;
-  const day = strip.find((d) => d.date === date) ?? strip[0]!;
-
-  // Weekly: the current week or the next one (Sunday to Saturday).
-  const thisWeek = weekStartOf(today);
-  const nextWeek = addDays(thisWeek, 7);
-  const weekStart = weekStartOf(wanted) === nextWeek ? nextWeek : thisWeek;
-  const isNext = weekStart === nextWeek;
-  const week: FakeDay[] = all
-    .filter((d) => d.date >= weekStart && d.date <= addDays(weekStart, 6))
-    .map((d) => (d.date < today ? { ...d, visits: d.visits.filter((v) => v.status === "done") } : d));
+  const m = calendarModel({ view: first(sp.view), date: first(sp.date) }, today, visits);
+  const href = (view: TechCalView, date: string) => `${TECH_CALENDAR_PATH}?view=${view}&date=${date}`;
 
   const dayArrows: TechCalArrows = {
-    prevHref: date > today ? href("day", addDays(date, -1)) : null,
-    nextHref: date < last ? href("day", addDays(date, 1)) : null,
+    prevHref: m.date > today ? href("day", addDays(m.date, -1)) : null,
+    nextHref: m.date < m.lastStripDay ? href("day", addDays(m.date, 1)) : null,
   };
   const weekArrows: TechCalArrows = {
-    prevHref: isNext ? href("week", thisWeek) : null,
-    nextHref: isNext ? null : href("week", nextWeek),
+    prevHref: m.isNextWeek ? href("week", m.thisWeek) : null,
+    nextHref: m.isNextWeek ? null : href("week", m.nextWeek),
     prevName: "השבוע הנוכחי",
     nextName: "השבוע הבא",
   };
   // A weekly heading opens the daily view only for a day that is in the strip.
-  const stripDays = new Set(strip.map((d) => d.date));
+  const stripDays = new Set(m.strip.map((d) => d.date));
+  const shown = m.view === "day" ? m.strip : m.week;
+  const showsTestData = me.isTest || shown.some((d) => d.visits.some((v) => v.isTest));
 
   return (
     <TechShell
       head={
-        view === "day" ? (
-          <TechCalHeader label={`${dayName(date)} ${ddmm(date)}`} arrows={dayArrows} />
+        m.view === "day" ? (
+          <TechCalHeader label={`${dayName(m.date)} ${ddmm(m.date)}`} arrows={dayArrows} />
         ) : (
-          <TechCalHeader label={`${ddmm(weekStart)}–${ddmm(addDays(weekStart, 6))}`} arrows={weekArrows} />
+          <TechCalHeader label={<TimeRange start={ddmm(m.weekStart)} end={ddmm(addDays(m.weekStart, 6))} />} arrows={weekArrows} />
         )
       }
       activeTab="cal"
       navTabs={TECH_START_TABS}
       navHrefs={TECH_START_HREFS}
     >
-      <TestDataBanner />
-      <TechCalSwitch view={view} hrefOf={(v) => (v === "week" ? href("week", view === "week" ? weekStart : date) : href("day", view === "day" ? date : stripDays.has(wanted) ? wanted : today))} />
-      {view === "day" ? (
+      {showsTestData && <TestDataBanner />}
+      <TechCalSwitch view={m.view} hrefOf={(v) => (v === "week" ? href("week", m.view === "week" ? m.weekStart : m.date) : href("day", m.date))} />
+      {m.view === "day" ? (
         <>
-          <TechCalStrip days={strip} selected={date} dayHref={(d) => href("day", d)} />
-          <TechCalDay day={day} />
+          <TechCalStrip days={m.strip} selected={m.date} dayHref={(d) => href("day", d)} />
+          <TechCalLegend />
+          <TechCalDay day={m.day} />
         </>
       ) : (
-        <TechCalWeek days={week} today={today} label={isNext ? "השבוע הבא" : "השבוע"} dayHref={(d) => (stripDays.has(d) ? href("day", d) : null)} />
+        <>
+          <TechCalLegend />
+          <TechCalWeek days={m.week} today={today} label={m.isNextWeek ? "השבוע הבא" : "השבוע"} dayHref={(d) => (stripDays.has(d) ? href("day", d) : null)} />
+        </>
       )}
     </TechShell>
   );

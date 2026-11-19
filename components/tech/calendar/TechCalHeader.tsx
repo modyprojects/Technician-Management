@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 // Header of the technician calendar (demo techCalendar() head L606-608): title and "‹ label ›".
 // No bell (D83). Daily: arrows over today..today+6. Weekly: the current and the next week only. At
@@ -23,7 +23,7 @@ function Arrow({ href, glyph, name }: { href: string | null; glyph: string; name
 
 export type TechCalArrows = { prevHref: string | null; nextHref: string | null; prevName?: string; nextName?: string };
 
-export function TechCalHeader({ label, arrows }: { label: string; arrows: TechCalArrows }) {
+export function TechCalHeader({ label, arrows }: { label: ReactNode; arrows: TechCalArrows }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
       <h1 style={{ fontSize: 22 }}>היומן שלי</h1>

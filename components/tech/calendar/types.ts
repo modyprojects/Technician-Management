@@ -1,23 +1,10 @@
-import type { VisitStatus } from "@/features/visits/data/types";
+import type { TechCalendarVisit } from "@/features/visits/supabase/tech";
+import type { IsoDate } from "@/features/data-access/common";
 
-// Technician calendar skeleton (D81): the shape of the fake days. Every record is test data (D74).
-export type FakeVisit = {
-  id: string;
-  /** מספר פנייה, shown on every block. */
-  request: string;
-  start: string;
-  end: string;
-  customer: string;
-  city: string;
-  /** Street address, shown in the reduced view of a closed past visit. */
-  address: string;
-  product: string;
-  /** One-line work summary, shown in the reduced view of a closed past visit. */
-  summary: string;
-  status: VisitStatus;
-  isFollowUp?: boolean;
-};
+// The technician calendar's visit (D85, D89): one of the technician's own visits, read under his
+// session (features/visits/supabase/tech.ts `calendar`). Cancelled visits never get here (D60 (1)).
+export type CalVisit = TechCalendarVisit;
 
-export type FakeDay = { date: string; visits: FakeVisit[] };
+export type CalDay = { date: IsoDate; visits: CalVisit[] };
 
 export type TechCalView = "day" | "week";

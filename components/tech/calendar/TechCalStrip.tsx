@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { dayName, dayOfMonth, dayShort, ddmm, visitCountLabel } from "@/features/calendar/data/dates";
-import type { FakeDay } from "./types";
+import type { CalDay } from "./types";
 
 // The day strip (demo L611): today and the next 6 days, each with its visit count; Friday and
 // Saturday are shown. The chosen day is in the accent colour.
-export function TechCalStrip({ days, selected, dayHref }: { days: FakeDay[]; selected: string; dayHref: (d: string) => string }) {
+export function TechCalStrip({ days, selected, dayHref }: { days: CalDay[]; selected: string; dayHref: (d: string) => string }) {
   return (
     <div role="group" aria-label="הימים הקרובים" style={{ display: "flex", gap: 4, flex: "none" }}>
       {days.map(({ date, visits }) => {
