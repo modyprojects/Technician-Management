@@ -1,23 +1,21 @@
 import type { ReactNode } from "react";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { TestPill } from "@/components/ui/TestBadge";
 import type { VisitDetail } from "@/features/visits/data/types";
 
 // Details of an open visit on the technician visit card (docs/demo.html techCall() L530-543).
 // Look as in the demo: a key-value card (address, building / floor / apartment, arrival notes,
 // phone, product, SKU, warranty, handling rep), the fault description, and the yellow
 // "לאסוף לפני הביקור" card with "Waze ›" to the pickup place. Changes (docs/demo-deviations.md):
-// - TE-08: warranty shows "לא צוין" when empty.
+// - D69 (owner, 2026-11-18): no warranty row and no "ביקור בתשלום" marker on technician screens
+//   (supersedes TE-11; warranty removed from TE-08 here; the office call card keeps it).
+// - Owner, 2026-11-18: building / floor / apartment in three equal columns, label and value
+//   centred in each (building right, floor middle, apartment left).
 // - TE-09 (ADD): "מספר לקוח".
 // - TE-10 (ADD): "הערות לטכנאי" from the invitation, as a note under the fault description.
-// - TE-11 (ADD): "ביקור בתשלום" marker when the warranty is "לא".
 // - SIM-16, SIM-17: 🧪 badge on a test customer (next to the customer number) and product.
 // - Added: the second phone when the invitation has one.
+// - Added (Step 3, the coordinator's visit-card list): "סוג קריאה" ("תיקון" / "התקנה", D48).
 // Presentational: the caller passes the pickup place's "Waze ›" element.
-
-export const WARRANTY_NOT_GIVEN = "לא צוין";
-
-/** TE-11: the warranty field says the visit is not covered. */
-export const isPaidVisit = (warranty: string): boolean => warranty.trim() === "לא";
 
 const Row = ({ k, children }: { k: string; children: ReactNode }) => (
   <div className="row">
@@ -27,7 +25,7 @@ const Row = ({ k, children }: { k: string; children: ReactNode }) => (
 );
 
 const Cell = ({ k, v }: { k: string; v: string }) => (
-  <div>
+  <div style={{ textAlign: "center" }}>
     <div className="k" style={{ fontSize: 12 }}>
       {k}
     </div>
@@ -35,10 +33,9 @@ const Cell = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-/** Customer, address and product rows (TE-08 to TE-11). */
+/** Customer, address and product rows (TE-08 to TE-10; no warranty, D69). */
 export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
   const { customer: cu, product: p, call } = visit;
-  const warranty = call.warranty.trim();
   return (
     <section className="card" aria-label="פרטי הלקוח והמוצר" style={{ padding: "4px 14px" }}>
       <Row k="כתובת">
@@ -46,7 +43,7 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           {cu.address.street}, {cu.address.city}
         </b>
       </Row>
-      <div className="row" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
+      <div className="row" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
         <Cell k="בניין" v={cu.address.building} />
         <Cell k="קומה" v={cu.address.floor} />
         <Cell k="דירה" v={cu.address.apt} />
@@ -74,18 +71,23 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
           {cu.isTest && (
             <>
               {" "}
-              <TestBadge />
+              <TestPill />
             </>
           )}
         </span>
       </Row>
+      {call.type && (
+        <Row k="סוג קריאה">
+          <span>{call.type}</span>
+        </Row>
+      )}
       <Row k="מוצר">
         <span>
           {p.name}
           {p.isTest && (
             <>
               {" "}
-              <TestBadge />
+              <TestPill />
             </>
           )}
         </span>
@@ -93,21 +95,11 @@ export function VisitInfoCard({ visit }: { visit: VisitDetail }) {
       <Row k='מק"ט'>
         <span dir="ltr">{p.sku}</span>
       </Row>
-      <Row k="באחריות">
-        <span style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <span style={{ fontWeight: 700, color: warranty.startsWith("כן") ? "var(--s-done)" : "var(--muted)" }}>
-            {warranty || WARRANTY_NOT_GIVEN}
-          </span>
-          {isPaidVisit(warranty) && (
-            <span className="pill" style={{ background: "var(--danger-bg)", color: "var(--danger-fg)" }}>
-              ₪ ביקור בתשלום
-            </span>
-          )}
-        </span>
-      </Row>
-      <Row k="נציגה מטפלת">
-        <span>{call.representative.name}</span>
-      </Row>
+      {call.representative.name && (
+        <Row k="נציגה מטפלת">
+          <span>{call.representative.name}</span>
+        </Row>
+      )}
     </section>
   );
 }

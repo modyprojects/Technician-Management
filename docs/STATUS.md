@@ -1,34 +1,37 @@
 # STATUS — Technician Management
-Updated 2026-11-18 (rules reset; all agents stopped). Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-19 (~10:45). Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
-- Version 1 target Tue 2026-11-24, online only: sign-in + user management, simulator, technician screens, office screens, manager dashboard on real data.
-- `main` = 9271e8f. Supabase: Migrations 1–6 applied (M6 = remote version 20261118082250, fingerprint verified). M7 not applied.
+- Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
+- `main` = 2abb7d5 (#41, #42 merged 19.11). Supabase: Migrations 1–6 applied (M6 = remote 20261118082250). M7 not applied.
+- Repository is **public** since 19.11 (D84): Actions minutes free, CI unblocked. Never commit secrets or real data; any doubt = stop.
+- New working rules (19.11): approval levels A/B/C (D80), skeleton first for new screens (D81), `docs/design-rules.md` self-check (D82), technician calendar = today + 7 days (D83).
 
-## Done on main
-- Sign-in, session guards, role landing, password reset with mock mail (#33, #35).
-- Step 6: ingestion + simulator server side + Migration 6 (#37); D31 post-deploy checks passed.
+## Done on main (19.11)
+- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום".
 
-## In progress
-- PR #39 CI audit gate: picomatch GHSA-fc5q-39xc-vjpf has no fix, so `npm audit` turns every CI red. Owner approved the final head (devOnly enforced); review CONFIRMED; merge only after CI green.
-- PR #38 Migration 7 (technician writers, visit media), draft, NOT applied. Review: APPROVE WITH FIXES — medium: the idempotency hash includes device_sent_at and time-zone-dependent text, so a retry raises 23505; low: confirm_visit_media ignores visit status, replay skips the ownership check, no real-row tests, stale text. Fixes NOT started.
-- Fixing M7 changes its SHA: the owner's approval of e4a92876… no longer covers it; ask again. Guard diff, canary fixture and bucket SQL are approved and unchanged.
-- PR A (branch `claude/efficiency-pr-a`, WIP 4b8d72e, no PR): WORKING-EFFICIENTLY.md, settings + 2 hooks + tests, supabase-postgres-best-practices skill. Hook review FIX: 7 high + 3 medium bypasses, not fixed. Do not merge.
-- Technician: `claude/tech-today` awaits visual approval; `claude/tech-visit-flow` (23a6b08) works on the local stack (spec 7/7, 51 WebP shots) — send for approval after M7 is applied. Bug: a tiny photo shows "הקובץ גדול מדי".
-- Office: `claude/office-unparsed` (simulator) and `claude/office-calls-list` (74df887) await visual approval.
-- PR #36 user management: draft, CI green on 0c59bbc; unfinished screenshot/test work on `claude/step2-user-management-wip`.
+## Open PRs (all unmerged)
+- #47 docs (D79–D84, design-rules.md, this STATUS), rebased on main. Merge after CI green (level C).
+- #36 user management (6abe2bc): level-B fixes a–d done 19.11, affected shots retaken; awaits "מאשר" by SHA.
+- #43 office-unparsed (087e689) → #44 office-calls-list (0872251) → #46 office call card skeleton (e4cc27c), stacked on #36. Unparsed/calls-list shots being retaken.
+- #45 technician calendar skeleton (f19954a), was stacked on #42 (merged; retarget to main); awaits owner answers (5 questions).
+- #38 M7 (c80828f): CI + pgTAP green 19.11; file SHA 489901e5… approved; apply package + runbook ready (PR comment). Needs the separate APPLY approval; bucket `visit-media` = its own write approval.
 
 ## Waiting for the owner
-- Rules-reset PR (this lean CLAUDE.md): approval after advisor review.
-- M7: approval of the new SHA after the fixes.
-- Visual approvals: tech-today, calls list, unparsed + simulator, user management (final).
+- "מאשר" on #36 6abe2bc; skeleton answers #45, #46; M7 APPLY approval (after CI); V1 date.
+- `/dev/demo` prototype still shows "ממתין להחלטת בעלים (dNN)" hints: change or leave (it is not a real-app screen)?
 
 ## Next, in order
-1. Merge #39 after CI green; sync open branches with main.
-2. M7 fixes (DB lane) → re-review → new-SHA approval → CI → apply → `visit-media` bucket → merge #38. apply_migration decodes literal `\uXXXX` text: encode those escapes in the wrapper (as for M6).
-3. Fix the PR A hook bypasses → re-review → PR A; then decisions-current.md (PR B), CI docs-only/@responsive (PR D), test cleanup E1.
-4. Remaining V1 screens: office call card, office technician calendar, technician calendar, manager dashboard on real data.
-5. Follow-up PR: next 16.4.3 → 16.4.6 (two moderate advisories).
+1. Merge #47 after CI; #36 after "מאשר" (CI green on 6abe2bc); rebase #36/#43/#44/#46 and #45 on main.
+2. M7: APPLY approval → apply → `visit-media` bucket → merge #38.
+3. Screens after skeleton approval: office call card, technician calendar; then office technician calendar, manager dashboard; tech-visit-flow after M7 (D71).
+4. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
+5. Follow-up: next 16.4.3 → 16.4.6 (`next build` fails once with a security notice, the retry passes).
+
+## Must fix before real users (hardening gate)
+- Post-M7 migration: deleted-but-not-banned account handling (Creator notice + no reset link); "נקרא" for account notices (D78). #36 re-review lows L1/L2.
+- MFA for Creator and Manager before production.
 
 ## Notes
-- New sessions start in a fresh container: local worktrees and the scratchpad may be gone; everything above is pushed to GitHub.
+- Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may hit "Data limit exceeded" — retag cached images (`kong`, `mailpit`, `vector` → `supabase/…`) and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.
+- Backups: `claude/office-unparsed-backup`, `claude/office-calls-list-backup`, plus the earlier ones. New sessions start fresh; everything above is pushed.

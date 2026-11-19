@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { TEST_DATA_LABEL, TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
+import { TEST_DATA_LABEL, TestPill, VisitSourceLine } from "@/components/ui/TestBadge";
 import type { ClosedVisitDetail, MediaItem, MediaPhase } from "@/features/visits/data/types";
 import { VisitHeader } from "./VisitHeader";
 
@@ -56,7 +56,7 @@ export function DoneVisitHeader({
       title={visit.customer.name}
       trailing={
         <>
-          {visit.call.isTest && <TestBadge />}
+          {visit.call.isTest && <TestPill />}
           <StatusPill status={visit.status} />
         </>
       }
@@ -77,7 +77,7 @@ function MediaSection({ title, items }: { title: string; items: readonly MediaIt
               <span role="img" aria-label={m.isTest ? `${name} · ${TEST_DATA_LABEL}` : name} style={{ position: "absolute", inset: 0 }} />
               {m.isTest && (
                 <span aria-hidden="true" style={{ position: "absolute", bottom: 4, insetInlineStart: 4, lineHeight: 1 }}>
-                  <TestBadge />
+                  <TestPill />
                 </span>
               )}
             </div>
@@ -132,7 +132,7 @@ export function DoneVisitView({ visit, sync }: { visit: ClosedVisitDetail; sync?
             {p.isTest && (
               <>
                 {" "}
-                <TestBadge />
+                <TestPill />
               </>
             )}
           </span>
@@ -161,7 +161,7 @@ export function DoneVisitView({ visit, sync }: { visit: ClosedVisitDetail; sync?
               <span aria-hidden="true">🎙 </span>
               הקלטה <span className="num">{recordingLabel(rec)}</span>
             </span>
-            {visit.isTest && <TestBadge />}
+            {visit.isTest && <TestPill />}
             <span>· אי אפשר להשמיע אותה אחרי שהביקור נסגר בשרת</span>
           </div>
         )}

@@ -207,7 +207,7 @@ test.describe("server-only modules", () => {
 
 test.describe("real routes without the Supabase variables (fail closed)", () => {
   test("every real page goes to /login, which shows the unavailable state and no form", async ({ page }) => {
-    for (const p of ["/", "/office", "/office/settings", "/office/settings/users", "/tech", "/tech/profile", "/login", "/login?state=no-access", "/login?state=failed"]) {
+    for (const p of ["/", "/office", "/office/settings", "/office/settings/users", "/tech", "/tech/profile", "/tech/done", "/tech/visit/00000000-0000-4000-8000-000000000000", "/login", "/login?state=no-access", "/login?state=failed"]) {
       await openPage(page, p);
       await expect(page, p).toHaveURL(/\/login(\?state=(no-access|failed))?$/);
       await expect(page.locator(".login-alert"), p).toHaveText(SIGN_IN_MESSAGES.service);
@@ -227,7 +227,7 @@ test.describe("real routes without the Supabase variables (fail closed)", () => 
   });
 
   test("real routes never render the demo frame or demo records (D61)", async ({ page }) => {
-    for (const p of ["/login", "/office", "/office/settings/users", "/tech"]) {
+    for (const p of ["/login", "/office", "/office/settings/users", "/tech", "/tech/done"]) {
       await openPage(page, p);
       await expect(page.locator(".demobar, .demo-strip, [data-demo]"), p).toHaveCount(0);
       const html = await page.content();

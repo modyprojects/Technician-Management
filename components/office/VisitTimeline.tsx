@@ -21,7 +21,7 @@ export type TimelineVisit = {
   /** Visit number within the call. */
   n: number;
   /** Task number from the invitation. */
-  task: number;
+  task: number | string;
   status: VisitStatus;
   /** "היום" or "21.10". */
   dateLabel: string;

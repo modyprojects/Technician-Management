@@ -135,6 +135,9 @@ export const REAL_PAGES = [
   "/office",
   "/tech",
   "/tech/profile",
+  // Step 3: "הושלמו היום" and a visit card (any id: without the Supabase variables /login answers first).
+  "/tech/done",
+  "/tech/visit/00000000-0000-4000-8000-000000000000",
   "/login/forgot",
   "/login/reset",
   // The unified user management (D60 (7)): Settings › "משתמשים" / "משתמשים והרשאות".

@@ -1,5 +1,18 @@
 # Work Log (English only)
 
+## 2026-11-19 — Owner decisions D79–D83, #36 level-B fixes, three lanes
+- Decisions D79–D83 and `docs/design-rules.md` (≤40 lines) recorded on the docs branch stacked on #41.
+- #36: notice suffix, Creator banner on top, notices help text, all real-app "ממתין להחלטת בעלים" texts removed; 20/20 local-stack user-management tests, 259 demo/server tests pass; 10 shots retaken (6abe2bc).
+- Office lane: #43/#44 re-stacked on #36, #46 call card skeleton. Technician lane: #45 calendar skeleton. DB lane: M7 apply package and runbook (PR #38 comment), local DB tests 1674/1674.
+- CI blocked by billing; nothing merged, nothing applied remotely.
+
+## 2026-11-18 — Owner decisions, screens sent for approval, M7 fixes
+- M7 (#38): review fixes (retry hash, replay ownership, confirm status, real-row tests), re-review APPROVE; owner approved the file SHA 489901e5… (file only).
+- #42 tech-today and #36 user management rebased on main and sent for visual approval; owner corrections applied (D69, D74, centred columns; #36 cards, ⋮ menu, filters, modals, phone header, 390 overflow test).
+- #41: decisions D68–D78 and the CLAUDE.md width rules (owner-approved).
+- #36 re-review of the review fixes CONFIRMED; lows L1/L2 deferred to the post-M7 migration (hardening gate).
+- CI blocked by GitHub billing all day; nothing merged.
+
 ## 2026-11-18 — Step 2 user management (PR #36): rebased on main, screenshot work finished
 - Rebased on main (1cdf5a7): the earlier merge's resolved content as one commit, then the 2 later commits and the wip checkpoint; conflicts only in docs (PROJECT-MAP, WORKLOG, testing; both sides kept). Old head kept as `claude/step2-user-management-backup`.
 - Fixed a timing bug in the S6 a browser test (Escape while the dialog was busy).

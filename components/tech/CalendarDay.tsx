@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
-import { TEST_DATA_LABEL, TestBadge } from "@/components/ui/TestBadge";
+import { TEST_DATA_LABEL, TestPill } from "@/components/ui/TestBadge";
 import type { CalendarVisit, TechWeek } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
 import { dayName, dayOfMonth, dayShort, ddmm, visitCountLabel } from "@/features/calendar/data/dates";
@@ -132,7 +132,7 @@ export function CalendarDayTimeline({
                   {v.isTest && (
                     <>
                       {" "}
-                      <TestBadge />
+                      <TestPill />
                     </>
                   )}
                 </b>
