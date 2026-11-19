@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
-import { TEST_DATA_LABEL } from "@/components/ui/TestBadge";
+import { TEST_DATA_LABEL, TestBadge } from "@/components/ui/TestBadge";
 import { dayName, ddmm, visitCountLabel } from "@/features/calendar/data/dates";
 import type { CalendarVisit, OfficeCalendarWeek } from "@/features/calendar/data/types";
 import type { IsoDate } from "@/features/data-access/common";
@@ -17,7 +17,8 @@ import { TimeRange } from "@/components/ui/TimeRange";
 // opacity .85), so it keeps the status colours' contrast. Addition: a 🧪 mark on test visits
 // (SIM-15, D47; the blocks are too narrow for the badge), read as "נתוני בדיקה".
 
-function WeekBlock({ v, href }: { v: CalendarVisit; href: string }) {
+/** `quietTest`: the quiet "בדיקה" marker (D74) instead of 🧪; `showRequest`: the request number (D89 (d)). Defaults keep the old look. */
+function WeekBlock({ v, href, quietTest, showRequest }: { v: CalendarVisit; href: string; quietTest: boolean; showRequest: boolean }) {
   const s = VISIT_STATUSES[v.status];
   return (
     <Link
@@ -32,11 +33,25 @@ function WeekBlock({ v, href }: { v: CalendarVisit; href: string }) {
         <TimeRange start={v.start} end={v.end} />
       </b>{" "}
       · {v.customerName}
-      {v.isTest && (
-        <>
-          <span aria-hidden="true"> 🧪</span>
-          <span className="sr-only"> · {TEST_DATA_LABEL}</span>
-        </>
+      {v.isTest &&
+        (quietTest ? (
+          <>
+            {" "}
+            <TestBadge />
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true"> 🧪</span>
+            <span className="sr-only"> · {TEST_DATA_LABEL}</span>
+          </>
+        ))}
+      {showRequest && (
+        <span style={{ display: "block" }}>
+          מס׳ פנייה{" "}
+          <bdi dir="ltr" className="num">
+            {v.req}
+          </bdi>
+        </span>
       )}
       <span style={{ display: "block" }}>
         {v.city} · {v.technician.name} · {s.label}
@@ -50,12 +65,16 @@ export function CalendarWeekView({
   today,
   dayHref,
   visitHref,
+  quietTest = false,
+  showRequest = false,
 }: {
   week: OfficeCalendarWeek;
   today: IsoDate;
   /** The day view of a date. */
   dayHref: (date: IsoDate) => string;
   visitHref: (visit: VisitRef) => string;
+  quietTest?: boolean;
+  showRequest?: boolean;
 }) {
   return (
     <>
@@ -77,7 +96,7 @@ export function CalendarWeekView({
                   <ul className="ocal-wk-list">
                     {d.visits.items.map((v) => (
                       <li key={calVisitKey(v)}>
-                        <WeekBlock v={v} href={visitHref({ req: v.req, n: v.n })} />
+                        <WeekBlock v={v} href={visitHref({ req: v.req, n: v.n })} quietTest={quietTest} showRequest={showRequest} />
                       </li>
                     ))}
                   </ul>
