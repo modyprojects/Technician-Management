@@ -1,5 +1,12 @@
 # Work Log (English only)
 
+## 2026-11-18 — Owner decisions, screens sent for approval, M7 fixes
+- M7 (#38): review fixes (retry hash, replay ownership, confirm status, real-row tests), re-review APPROVE; owner approved the file SHA 489901e5… (file only).
+- #42 tech-today and #36 user management rebased on main and sent for visual approval; owner corrections applied (D69, D74, centred columns; #36 cards, ⋮ menu, filters, modals, phone header, 390 overflow test).
+- #41: decisions D68–D78 and the CLAUDE.md width rules (owner-approved).
+- #36 re-review of the review fixes CONFIRMED; lows L1/L2 deferred to the post-M7 migration (hardening gate).
+- CI blocked by GitHub billing all day; nothing merged.
+
 ## 2026-11-17 — Step 6: independent review fixes (APPROVE WITH FIXES), local only
 - Branch `claude/step6-calendar-ingestion`, still not pushed; Migration 6 still **local only, not applied** (changed in place). Record: `docs/review/step6-ingestion/README.md` section 13.
 - **Fixed:** M1 (a visit en route opens a `reassignment` / `address_change` item only when that version changed the technician or address, compared with the event's previous processed version; no repeat after later versions or after `keep_current`); S1 (three text-rule predicates with the code-point classes of Migrations 2 and 3; the writer checks every value, the event part, the recognised values and each problem before anything is written; organizer, attendee and problems CHECKs tightened; the TypeScript address rule aligned); N1 (content checked before the stale and after-deletion paths); N3 (the answer counts only items on its own call); N5 (a version for a closed visit resolves the open unparsed row as `superseded`). S2: `tests/auth/calendar-ingestion-concurrency.spec.ts` (simultaneous RPC calls), and `AUTH_TEST_DB_CONTAINER` lets the local-stack specs run against an isolated stack.
