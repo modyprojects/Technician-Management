@@ -70,7 +70,7 @@ export function setPermissionError(role: unknown, key: unknown, value: unknown):
   if (!isPermissionKey(key)) return "הרשאה לא תקינה";
   if (typeof value !== "boolean") return "ערך לא תקין";
   // User-facing text names no decision code; the screen shows the pending hint next to the cell.
-  return pendingMatrixDecision(role, key) ? "הערך ממתין להחלטת בעלים ולא ניתן לשינוי" : null;
+  return pendingMatrixDecision(role, key) ? "הערך נעול ולא ניתן לשינוי" : null;
 }
 
 export function newPlaceError(input: NewPlaceInput): string | null {

@@ -1,37 +1,39 @@
 # STATUS — Technician Management
-Updated 2026-11-19 (~10:45). Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
 - Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
-- `main` = 2abb7d5 (#41, #42 merged 19.11). Supabase: Migrations 1–6 applied (M6 = remote 20261118082250). M7 not applied.
-- Repository is **public** since 19.11 (D84): Actions minutes free, CI unblocked. Never commit secrets or real data; any doubt = stop.
-- New working rules (19.11): approval levels A/B/C (D80), skeleton first for new screens (D81), `docs/design-rules.md` self-check (D82), technician calendar = today + 7 days (D83).
+- `main` = 63aa98e. Supabase: M1–M7 applied (M7 = remote 20261119095402, payload SHA 489901e5… verified); bucket `visit-media` awaits approval.
+- Public repo (D84): never commit secrets or real data. Rules: levels A/B/C (D80), skeleton first (D81), `docs/design-rules.md` (D82).
 
 ## Done on main (19.11)
-- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום".
+- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 decisions D79–D84, design rules; #36 user management.
 
-## Open PRs (all unmerged)
-- #47 docs (D79–D84, design-rules.md, this STATUS), rebased on main. Merge after CI green (level C).
-- #36 user management (6abe2bc): level-B fixes a–d done 19.11, affected shots retaken; awaits "מאשר" by SHA.
-- #43 office-unparsed (087e689) → #44 office-calls-list (0872251) → #46 office call card skeleton (e4cc27c), stacked on #36. Unparsed/calls-list shots being retaken.
-- #45 technician calendar skeleton (f19954a), was stacked on #42 (merged; retarget to main); awaits owner answers (5 questions).
-- #38 M7 (c80828f): CI + pgTAP green 19.11; file SHA 489901e5… approved; apply package + runbook ready (PR comment). Needs the separate APPLY approval; bucket `visit-media` = its own write approval.
+## Modules (D88: one open module per lane, end to end)
+- Technician: **1. calendar #45 (open: skeleton review)** → 2. visit flow (M7 applied) → 3. profile.
+- Office: **1. calls: #43 → #44 → #46 (open)** → 2. office technician calendar → 3. manager dashboard on real data.
+
+## Open PRs
+- #38 M7: applied + post-checks passed 19.11 → `visit-media` bucket (approval of SHA a3f7b93c…) → merge.
+- #45 technician calendar skeleton (c5b5fab, D89 applied) → 15:30 review. Skeleton-only `?today=` override: remove before real data.
+- Calls module re-stacked on main: #43 28921a9 → #44 22ab8b5 → #46 cc32d45 (owner answers applied) → 15:30 review.
 
 ## Waiting for the owner
-- "מאשר" on #36 6abe2bc; skeleton answers #45, #46; M7 APPLY approval (after CI); V1 date.
-- `/dev/demo` prototype still shows "ממתין להחלטת בעלים (dNN)" hints: change or leave (it is not a real-app screen)?
+- 15:30 review: #45, #46 (and #43, #44 visual approval).
+- D87: the three Supabase variables in Vercel Production; then Claude redeploys and checks read-only.
+- Bucket `visit-media` approval (SHA a3f7b93c…); V1 date; `/dev/demo` "ממתין..." hints: change or leave?
+- IT: the M365 app registration (D86, plan in `docs/m365-mail-plan.md`).
 
 ## Next, in order
-1. Merge #47 after CI; #36 after "מאשר" (CI green on 6abe2bc); rebase #36/#43/#44/#46 and #45 on main.
-2. M7: APPLY approval → apply → `visit-media` bucket → merge #38.
-3. Screens after skeleton approval: office call card, technician calendar; then office technician calendar, manager dashboard; tech-visit-flow after M7 (D71).
-4. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
-5. Follow-up: next 16.4.3 → 16.4.6 (`next build` fails once with a security notice, the retry passes).
+1. bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
+2. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
+3. Follow-up: next 16.4.3 → 16.4.6 (`next build` stops once with a security notice; the retry passes).
 
-## Must fix before real users (hardening gate)
-- Post-M7 migration: deleted-but-not-banned account handling (Creator notice + no reset link); "נקרא" for account notices (D78). #36 re-review lows L1/L2.
-- MFA for Creator and Manager before production.
+## Go-live gate (D87; all before the first real user)
+- Separate Production Supabase project; rotate the secret key; Vercel Authentication off.
+- Post-M7 hardening migration: deleted-but-not-banned accounts (Creator notice, no reset link), "נקרא" (D78); #36 re-review L1/L2.
+- MFA for the Creator and Managers; rate limits (sign-in, reset, invitation).
+- Invitation + reset email through M365 (D86) once IT connects it.
 
 ## Notes
-- Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may hit "Data limit exceeded" — retag cached images (`kong`, `mailpit`, `vector` → `supabase/…`) and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.
-- Backups: `claude/office-unparsed-backup`, `claude/office-calls-list-backup`, plus the earlier ones. New sessions start fresh; everything above is pushed.
+- Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may fail ("Data limit exceeded"): retag cached `kong`, `mailpit`, `vector` as `supabase/…` and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.

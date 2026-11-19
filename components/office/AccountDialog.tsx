@@ -102,7 +102,7 @@ export function AccountDialog({
 
   return createPortal(
     <div
-      className="drawer-bg"
+      className="drawer-bg acct-modal-bg"
       onPointerDown={(e) => {
         pressOnBackdrop.current = e.target === e.currentTarget;
       }}
@@ -112,7 +112,7 @@ export function AccountDialog({
         if (fromBackdrop && !dirty) close();
       }}
     >
-      <div ref={panelRef} className="drawer vc-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+      <div ref={panelRef} className="drawer vc-dialog acct-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="dh">
           <div style={{ minWidth: 0 }}>
             {sub && <div className="sub">{sub}</div>}

@@ -64,7 +64,6 @@ export type AccountFormResult =
 const OFFICE_ACCOUNT_ROLES: readonly NewAccountRole[] = ["cs", "mgr"];
 
 /** The disabled role option's text (Q9). */
-const CREATOR_PENDING_OPTION = `${ACCOUNT_ROLE_LABELS.creator} · ממתין להחלטת בעלים`;
 
 const FAILED = "הפעולה לא בוצעה. נסה שוב.";
 
@@ -270,10 +269,6 @@ export function AccountForm({
                 {ACCOUNT_ROLE_LABELS[r]}
               </option>
             ))}
-            {/* TEMPORARY (Q9): shown, never selectable, no `creator` value. */}
-            <option value="" disabled>
-              {CREATOR_PENDING_OPTION}
-            </option>
           </select>
         </label>
       )}

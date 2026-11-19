@@ -13,7 +13,7 @@ import type {
   CreationIntentEntry,
 } from "@/components/office/AccountAdminParts";
 import { ownIntents } from "@/features/accounts/data/offers";
-import type { AccountRef, AccountRequest, AccountRole, CreationIntent, UserAccount } from "@/features/accounts/data/types";
+import type { AccountListEntry, AccountRef, AccountRequest, AccountRole, CreationIntent, UserAccount } from "@/features/accounts/data/types";
 import { MAX_PAGE_LIMIT } from "@/features/data-access/common";
 import type { OfficeRole, TechnicianId } from "@/features/reference/data/types";
 import type { TechnicianSetting } from "@/features/settings/data/types";
@@ -52,6 +52,18 @@ const intentEntry = (intent: CreationIntent): CreationIntentEntry => ({
 function technicianDetails(t: TechnicianSetting, scope: AccountAdminScope): AccountTechnicianDetails {
   const base: AccountTechnicianDetails = { id: t.id, name: t.name, color: t.color, device: t.device, version: t.version, isTest: t.isTest };
   return scope === "all" ? { ...base, outlookEmail: t.email, active: t.active } : base;
+}
+
+/**
+ * A listed account as this screen uses it (UserAccount). The unified list entry (D60 (7)) also
+ * carries the Technician's field profile with the Creator's view of it (the demo adapter has no
+ * session); it never reaches the page: the field profile travels only through `technicians`,
+ * mapped per scope (technicianDetails), so the Manager's payload holds no Outlook email (Q14).
+ */
+function userAccountOf(entry: AccountListEntry): UserAccount {
+  const { technician, ...account } = entry;
+  void technician;
+  return account;
 }
 
 /** Only the technician records of the listed accounts, mapped per scope. */
@@ -98,7 +110,7 @@ export async function loadAccountAdmin(role: OfficeRole): Promise<AccountAdminDa
 
   return {
     scope,
-    accounts,
+    accounts: { items: accounts.items.map(userAccountOf), total: accounts.total, limit: accounts.limit },
     requests: { items: items.map(entry), total, limit: requests.limit },
     intents: { items: own.items.map(intentEntry), total: own.total, limit: own.limit },
     technicians: listedTechnicians(accounts.items, technicians.items, scope),
