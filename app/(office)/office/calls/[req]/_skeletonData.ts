@@ -4,8 +4,8 @@ import type { CallDetailData } from "@/components/office/CallDetail";
 // layout before the real read model exists. No database, no server logic. Replaced by the real read
 // (the call, its visits and the customer's other calls under the viewer's own session) after the
 // owner approves the skeleton.
-const TECH_A = { name: "אורי בדיקה", color: "#2F6F73", phone: "050-0000001" };
-const TECH_B = { name: "טכנאית בדיקה", color: "#8A5A9E", phone: "050-0000002" };
+const TECH_A = { name: "אורי כהן", color: "#2F6F73", phone: "050-0000001" };
+const TECH_B = { name: "דנה אברהם", color: "#8A5A9E", phone: "050-0000002" };
 
 export const skeletonCall = (req: string): CallDetailData => ({
   req,
@@ -14,7 +14,7 @@ export const skeletonCall = (req: string): CallDetailData => ({
   type: "תיקון",
   warranty: "כן · עד 03/2027",
   customer: {
-    name: "משפחת לוי (בדיקה)",
+    name: "משפחת לוי",
     number: "100245",
     phone: "050-0000100",
     phone2: "",
@@ -26,15 +26,9 @@ export const skeletonCall = (req: string): CallDetailData => ({
     rep: "שירה",
     isTest: true,
   },
-  product: { sku: "KT-2041", name: "ברז מטבח נשלף", brand: "מותג בדיקה", supplier: "", isTest: true },
+  product: { sku: "KT-2041", name: "ברז מטבח נשלף", brand: "נובה", supplier: "", isTest: true },
   desc: "הברז מטפטף מהבסיס גם כשהוא סגור.",
   techNote: "",
-  assignment: {
-    scheduled: [
-      { n: 2, task: 2, status: "new", when: "חמישי 26.11 · 09:00–10:30", tech: TECH_B, collect: "אטם לברז KT-2041", collectFrom: "מחסן ראשי" },
-    ],
-    emptyText: "אין ביקור משובץ",
-  },
   visits: [
     {
       n: 1,

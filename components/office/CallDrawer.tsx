@@ -8,6 +8,7 @@ import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
 import { dayName, ddmm } from "@/features/calendar/data/dates";
 import type { CalendarVisitDetail } from "@/features/calendar/data/types";
 import { calVisitKey } from "./CalendarParts";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // The office calendar's visit drawer (docs/demo.html drawerHtml() L803-815, look .drawer-bg /
 // .drawer): request and visit number, customer, status pill, when, technician, phone, address,
@@ -182,7 +183,7 @@ export function CallDrawer({
             <span>
               {dayName(visit.date)}{" "}
               <span className="num">
-                {ddmm(visit.date)} · {visit.start}–{visit.end}
+                {ddmm(visit.date)} · <TimeRange start={visit.start} end={visit.end} />
               </span>
             </span>
             <span>טכנאי</span>
