@@ -88,9 +88,14 @@ export function CallsTable({
     router.push(href);
   }
 
+  function openCard(e: MouseEvent<HTMLLIElement>, href: string) {
+    if (e.target instanceof Element && e.target.closest("a, button, input, select, textarea")) return;
+    router.push(href);
+  }
+
   return (
     <section className="card" style={{ overflow: "hidden" }}>
-      <div className="scrollx">
+      <div className="scrollx oc-tablewrap">
         <table aria-label="קריאות שירות">
           <thead>
             <tr>
@@ -181,6 +186,40 @@ export function CallsTable({
             ))}
           </tbody>
         </table>
+        <ul className="oc-cards" aria-label="קריאות שירות">
+          {rows.map((r) => (
+            <li key={r.req} className="oc-card" onClick={(e) => openCard(e, r.href)}>
+              <div className="oc-card-top">
+                <Link href={r.href} prefetch={false} className="lnk num" aria-label={`מס׳ פנייה ${r.req} · ${r.customer}`}>
+                  {r.req}
+                </Link>
+                {r.isTest && <TestPill />}
+                <span className="oc-card-status">
+                  <CallStatusPill status={r.status} />
+                </span>
+              </div>
+              <b>{r.customer}</b>
+              <div className="sub">
+                {r.product}
+                {r.city ? ` · ${r.city}` : ""}
+              </div>
+              {r.reason && <div className="sub">{r.reason}</div>}
+              <div className="sub oc-card-meta">
+                {r.tech ? (
+                  <span>
+                    <span className="dot" aria-hidden="true" style={{ background: r.tech.color }} /> {r.tech.name}
+                  </span>
+                ) : null}
+                {r.when ? (
+                  <span className="num">
+                    {r.source && <SourceMark source={r.source} />} {r.when}
+                    {r.whenCancelled && <span style={{ color: "var(--s-cancel-fg)", fontWeight: 700 }}> · בוטל</span>}
+                  </span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
         <div aria-live="polite">
           {total ? (
             <div className="sub" style={{ padding: "10px 14px" }}>

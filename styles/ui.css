@@ -1131,3 +1131,15 @@ td.acct-ltr-cell .acct-ltr { margin-top: 2px; }
   .sim-row > label { padding-top: 0; }
 }
 /* end office-unparsed */
+
+/* office-calls-list: phone cards (design rules: lists are cards on the phone, 600 px and below). */
+.oc-cards { display: none; list-style: none; margin: 0; padding: 0; }
+@container stage (max-width: 600px) {
+  .oc-tablewrap table { display: none; }
+  .oc-cards { display: block; }
+  .oc-card { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-top: 1px solid var(--line2); cursor: pointer; }
+  .oc-card:first-child { border-top: 0; }
+  .oc-card-top { display: flex; align-items: center; gap: 8px; }
+  .oc-card-status { margin-inline-start: auto; }
+  .oc-card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+}
