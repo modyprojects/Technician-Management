@@ -85,7 +85,10 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await expect(chips.getByRole("button", { name: `הכל ${all}` })).toBeVisible();
     await expect(chips.getByRole("button", { name: `פתוחה ${open}` })).toBeVisible();
     await expect(page.locator(".test-banner")).toContainText("נתוני בדיקה");
-    // Newest first: B (scheduled at the same time, opened later) or A's visit 2 is at the top.
+    // The shared local stack may hold more calls than one page (40): find A by its request number
+    // through the list's own search, so the row checks below do not depend on the stack's size.
+    await page.getByRole("searchbox", { name: "חיפוש קריאות" }).fill(a);
+    await expect(page).toHaveURL(new RegExp(`[?&]q=${a}(&|$)`));
     const rowA = rows(page).filter({ hasText: customerA });
     await expect(rowA).toHaveCount(1);
     await expect(rowA.getByRole("link", { name: `מס׳ פנייה ${a} · ${customerA}` })).toBeVisible();
@@ -136,9 +139,9 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await page.goto(`/office/calls?q=${a}`);
     await rows(page).first().getByRole("link").click();
     await expect(page).toHaveURL(new RegExp(`/office/calls/${a}$`));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`${customerA} · מס׳ פנייה ${a}`);
-    await expect(page.getByText("נתוני בדיקה")).toBeVisible();
-    await page.getByRole("link", { name: "› חזרה לקריאות" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(customerA); // the call card on real data (D88)
+    await expect(page.locator(".test-banner")).toContainText("נתוני בדיקה");
+    await page.getByRole("link", { name: "חזרה לקריאות" }).click();
     await expect(page).toHaveURL(/\/office\/calls$/);
     for (const req of ["NO-SUCH-1", "a%20b", "x".repeat(40)]) {
       const response = await page.goto(`/office/calls/${req}`);

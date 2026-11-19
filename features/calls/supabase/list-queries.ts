@@ -263,25 +263,3 @@ export async function callsPermittedOf(db: SupabaseClient, viewer: Pick<SessionU
   if (error) throw new CallsQueryError(error.code);
   return data === true;
 }
-
-/** What the temporary call-card page shows: the call's number, customer, status and test marker. */
-export type CallCardBrief = { req: string; customer: string; status: CallStatus; isTest: boolean };
-
-/** One call by its request number, or null when it does not exist or the caller may not read it. */
-export async function callCardBriefOf(db: SupabaseClient, viewer: Pick<SessionUser, "role"> | null, req: string): Promise<CallCardBrief | null> {
-  if (!readsCalls(viewer) || !/^[A-Za-z0-9-]{1,32}$/.test(req)) return null;
-  const { data, error } = await db.from("service_calls").select("request_number, status, is_test, customers(name)").eq("request_number", req).maybeSingle();
-  if (error) throw new CallsQueryError(error.code);
-  const parsed = z
-    .object({
-      request_number: z.string(),
-      status: z.enum(["open", "awaiting_scheduling", "awaiting_followup", "resolved"]),
-      is_test: z.boolean(),
-      customers: z.object({ name: z.string().max(200) }),
-    })
-    .nullable()
-    .safeParse(data);
-  if (!parsed.success) throw new CallsQueryError("invalid-row");
-  const d = parsed.data;
-  return d ? { req: d.request_number, customer: d.customers.name, status: CALL_STATUS_OF_DB[d.status], isTest: d.is_test } : null;
-}

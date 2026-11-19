@@ -6,6 +6,7 @@ import type { CalendarVisit, OfficeCalendarWeek } from "@/features/calendar/data
 import type { IsoDate } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
 import { calVisitKey } from "./CalendarParts";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // Office calendar, week view (docs/demo.html offCal() L769-774): five columns, Sunday to
 // Thursday, today tinted; each day's header opens that day's day view, and each visit is a block
@@ -28,7 +29,7 @@ function WeekBlock({ v, href }: { v: CalendarVisit; href: string }) {
       style={{ borderRightColor: v.technician.color, background: s.bg, color: s.fg }}
     >
       <b className="num">
-        {v.start}–{v.end}
+        <TimeRange start={v.start} end={v.end} />
       </b>{" "}
       · {v.customerName}
       {v.isTest && (

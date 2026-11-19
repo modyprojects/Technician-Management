@@ -3,6 +3,7 @@ import { PinIcon } from "@/components/ui/Icons";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { TestPill } from "@/components/ui/TestBadge";
 import type { TechDayVisit, VisitStatus } from "@/features/visits/data/types";
+import { TimeRange } from "@/components/ui/TimeRange";
 
 // Next-visit card on the technician home (docs/demo.html techHome() L489-496; TE-02, TE-33).
 // Look as in the demo: accent border, "הביקור הבא" / "עכשיו" with the visit's time, status pill,
@@ -48,7 +49,7 @@ export function NextVisitCard({
     <section className="card" style={{ padding: 14, border: "2px solid var(--accent)" }} aria-label="הביקור הבא">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span className="num" style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>
-          {status === "new" ? "הביקור הבא" : status === "go" || status === "work" ? "עכשיו" : "נסגר"} · {visit.start}–{visit.end}
+          {status === "new" ? "הביקור הבא" : status === "go" || status === "work" ? "עכשיו" : "נסגר"} · <TimeRange start={visit.start} end={visit.end} />
         </span>
         <StatusPill status={status} />
       </div>

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { StatusPill, VISIT_STATUSES } from "@/components/ui/StatusPill";
 import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
-import type { MediaKind, MediaPhase, VisitSource, VisitStatus } from "@/features/visits/data/types";
+import { isClosedVisitStatus, type MediaKind, type MediaPhase, type VisitSource, type VisitStatus } from "@/features/visits/data/types";
+import { TimeRange } from "@/components/ui/TimeRange";
+import { minutesLabel } from "@/features/calls/data/visit-durations";
 
 // Visit timeline of the office call card (docs/demo.html offCard() visitHtml, L836-846;
 // demo-deviations OF-06): one section per visit, newest first, edged in the visit-status colour,
@@ -27,7 +29,7 @@ export type TimelineVisit = {
   dateLabel: string;
   start: string;
   end: string;
-  tech: { name: string; color: string };
+  tech: { name: string; color: string; phone?: string };
   source: VisitSource;
   /** Field times "HH:MM" (office only, TE-25). */
   departAt: string | null;
@@ -35,6 +37,11 @@ export type TimelineVisit = {
   endAt: string | null;
   /** Minutes from arrival to end, or null. */
   treatMin: number | null;
+  /** Minutes from departure to arrival and from departure to end, computed by the caller from the
+   *  recorded instants (features/calls/data/visit-durations.ts; correct across midnight). When
+   *  absent (the demo), they are derived from the "HH:MM" labels above. */
+  travelMin?: number | null;
+  totalMin?: number | null;
   /** Follow-up reason. */
   reason: string | null;
   summary: string;
@@ -68,6 +75,7 @@ export function VisitTimeline({
   showReport = true,
   renderRecording,
   renderExtra,
+  perFieldTestMarks = true,
 }: {
   visits: readonly TimelineVisit[];
   /** The technician's report (summary, recording, media, signature): the matrix key `card`. */
@@ -76,6 +84,8 @@ export function VisitTimeline({
   renderRecording?: RenderRecording;
   /** A part at the end of each visit (the caller decides per visit). */
   renderExtra?: RenderVisitExtra;
+  /** False on the real card (D74): no per-field test marks (media, simulator source line). */
+  perFieldTestMarks?: boolean;
 }) {
   const newestFirst = [...visits].sort((a, b) => b.n - a.n);
   return (
@@ -85,11 +95,20 @@ export function VisitTimeline({
       </h2>
       <div className="grid">
         {newestFirst.map((v) => (
-          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} renderExtra={renderExtra} />
+          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} renderExtra={renderExtra} perFieldTestMarks={perFieldTestMarks} />
         ))}
       </div>
     </section>
   );
+}
+
+const toMinutes = (hm: string): number => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+
+/** Whole minutes from one "HH:MM" to another, or null when either is missing or the order is wrong. */
+function minutesBetween(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const d = toMinutes(to) - toMinutes(from);
+  return d >= 0 ? d : null;
 }
 
 const timePillStyle = { background: "var(--bg)", color: "var(--ink2)" } as const;
@@ -100,19 +119,25 @@ function VisitSection({
   showReport,
   renderRecording,
   renderExtra,
+  perFieldTestMarks,
 }: {
   v: TimelineVisit;
   showReport: boolean;
   renderRecording?: RenderRecording;
   renderExtra?: RenderVisitExtra;
+  perFieldTestMarks: boolean;
 }) {
   const s = VISIT_STATUSES[v.status];
   const hasReport = v.summary || v.recLabel;
+  // D60 (5), every closed visit: total (departure to finish) and travel (departure to arrival).
+  const closed = isClosedVisitStatus(v.status);
+  const travelMin = v.travelMin !== undefined ? v.travelMin : minutesBetween(v.departAt, v.arriveAt);
+  const totalMin = v.totalMin !== undefined ? v.totalMin : minutesBetween(v.departAt, v.endAt);
   return (
     <article id={`visit-${v.n}`} className="card vis vc-anchor" style={{ borderRightColor: s.c }} aria-label={`ביקור ${v.n}`}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <h3 className="num" style={{ fontSize: 16 }}>
-          ביקור {v.n} · {v.dateLabel} · {v.start}–{v.end}
+          ביקור {v.n} · {v.dateLabel} · <TimeRange start={v.start} end={v.end} />
         </h3>
         <StatusPill status={v.status} extra={v.reason ? ` · ${v.reason}` : ""} />
       </div>
@@ -120,9 +145,11 @@ function VisitSection({
         <span className="dot" style={{ background: v.tech.color }} aria-hidden="true" /> {v.tech.name} · משימה{" "}
         <span className="num">{v.task}</span>
       </div>
-      <div style={{ marginTop: 4 }}>
-        <VisitSourceLine source={v.source} />
-      </div>
+      {(perFieldTestMarks || v.source !== "simulator") && (
+        <div style={{ marginTop: 4 }}>
+          <VisitSourceLine source={v.source} />
+        </div>
+      )}
       {v.correctedCount ? (
         <div style={{ marginTop: 6 }}>
           <a className="pill vc-mark" href={`#visit-${v.n}-corrections`}>
@@ -150,7 +177,17 @@ function VisitSection({
           )}
           {v.endAt && v.treatMin != null && (
             <span className="pill num" style={timePillStyle}>
-              בטיפול {v.treatMin} דק׳
+              בטיפול {minutesLabel(v.treatMin)}
+            </span>
+          )}
+          {closed && travelMin != null && (
+            <span className="pill num" style={timePillStyle}>
+              זמן נסיעה {minutesLabel(travelMin)}
+            </span>
+          )}
+          {closed && totalMin != null && (
+            <span className="pill num" style={timePillStyle}>
+              משך כולל {minutesLabel(totalMin)}
             </span>
           )}
         </div>
@@ -181,7 +218,7 @@ function VisitSection({
           {v.recLabel && (
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
               {renderRecording ? renderRecording(v) : <LockedRecording label={v.recLabel} />}
-              {v.mediaIsTest && <TestBadge />}
+              {perFieldTestMarks && v.mediaIsTest && <TestBadge />}
             </div>
           )}
         </>
@@ -220,7 +257,7 @@ function VisitSection({
             <span>
               תמונות וסרטונים (<span className="num">{v.media.length}</span>)
             </span>
-            {v.mediaIsTest && <TestBadge />}
+            {perFieldTestMarks && v.mediaIsTest && <TestBadge />}
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
             {v.media.map((m, i) => (

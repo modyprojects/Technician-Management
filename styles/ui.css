@@ -299,8 +299,13 @@ a.ev > .ev-body { min-width: 0; }
    (phones), so the 120px key column of .kv keeps room for its values. */
 .ocd { container-type: inline-size; container-name: ocd; }
 .ocd-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
+/* DOM order = phone order (D81 owner answer d): visits, then customer, call details, other calls.
+   Wide: the info column stays first (right in RTL), the visits second (left). */
+.ocd-info { order: 1; }
+.ocd-visits { order: 2; }
 @container ocd (max-width: 599px) {
   .ocd-cols { grid-template-columns: minmax(0, 1fr); }
+  .ocd-info, .ocd-visits { order: 0; }
 }
 /* end office-call-detail */
 
