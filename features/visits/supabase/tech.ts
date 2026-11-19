@@ -477,9 +477,13 @@ export function techVisitsQueriesOf(db: SupabaseClient, viewer: TechViewer): Tec
       });
       const isClosed = (status: VisitStatus): boolean => status === "done" || status === "cont";
       // The details are served only for an open visit or one closed today (42501 otherwise): ask
-      // only for those, and never for an open visit of a past day (not shown, D79 (1)).
-      const served = (v: (typeof visits)[number]): boolean =>
-        isClosed(v.status) ? v.row.closed_at !== null && jerusalemDate(v.row.closed_at) === today : v.date >= today;
+      // only for those, and never for an open visit of a past day (not shown, D79 (1)). closed_at
+      // carries microseconds (PostgREST), which the strict ISO check refuses: normalise it first.
+      const closedDay = (iso: string | null): IsoDate | null => {
+        const ms = iso === null ? Number.NaN : Date.parse(iso);
+        return Number.isNaN(ms) ? null : jerusalemDate(new Date(ms).toISOString());
+      };
+      const served = (v: (typeof visits)[number]): boolean => (isClosed(v.status) ? closedDay(v.row.closed_at) === today : v.date >= today);
       const closedIds = visits.filter((v) => isClosed(v.status)).map((v) => v.row.id);
       const [withDetails, reports] = await Promise.all([
         Promise.all(visits.map(async (v) => ({ ...v, d: served(v) ? await details(v.row.id) : null }))),

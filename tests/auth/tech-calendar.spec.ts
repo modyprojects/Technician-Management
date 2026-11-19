@@ -41,6 +41,7 @@ const mine = {
   cancelled: base(`K4-${run}`, "לקוח מבוטל בדיקה", "הנמל 4"),
   pastOpen: base(`K5-${run}`, "לקוח פתוח מאתמול בדיקה", "הנמל 5"),
   pastClosed: base(`K6-${run}`, "לקוח סגור מאתמול בדיקה", "הנמל 6"),
+  closedToday: base(`K7-${run}`, "לקוח סגור היום בדיקה", "הנמל 7"),
 };
 const other = base(`KO-${run}`, "לקוח של טכנאי אחר בדיקה", "הנמל 9");
 const ids: Record<string, string> = {};
@@ -57,6 +58,8 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     ids.cancelled = await ingestVisit(office, me, today, "15:00", "16:00", mine.cancelled);
     ids.other = await ingestVisit(office, them, today, "10:00", "11:00", other);
     cancelVisitAsPostgres(ids.cancelled);
+    ids.closedToday = await ingestVisit(office, me, today, "09:00", "09:45", mine.closedToday);
+    closeVisitAsPostgres(ids.closedToday, "טופל היום בדיקה");
     if (hasPastDay) {
       ids.pastOpen = await ingestVisit(office, me, yesterday, "09:00", "10:00", mine.pastOpen);
       ids.pastClosed = await ingestVisit(office, me, yesterday, "11:00", "12:00", mine.pastClosed);
@@ -75,6 +78,8 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     expect(ownIds).not.toContain(ids.other);
     expect(ownIds).not.toContain(ids.cancelled);
     expect(own.find((v) => v.id === ids.early)).toMatchObject({ request: mine.early.req, start: "07:00", end: "08:30", status: "new", isTest: true, date: today });
+    // Closed today: the details are still served (request number), with its summary.
+    expect(own.find((v) => v.id === ids.closedToday)).toMatchObject({ request: mine.closedToday.req, customer: mine.closedToday.customer, status: "done", summary: "טופל היום בדיקה" });
     // Negative: asking for the other technician's id under this session returns nothing.
     expect(await techVisitsQueriesOf(client, { technicianId: tech2Row, name: tech.name }).calendar(span.from, span.to, today)).toEqual([]);
     // The other technician sees his visit and none of ours.
