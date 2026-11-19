@@ -119,24 +119,24 @@ select is(
    join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and t.tgfoid = 'private.tg_reject_truncate()'::regprocedure
      and t.tgenabled = 'O' and (t.tgtype & 32) <> 0 and (t.tgtype & 2) <> 0),
-  26::bigint, 'every PR 1.3, PR 1.4, PR 1.5, PR 1.6 and Step 6 table (26) has an enabled BEFORE TRUNCATE statement trigger');
+  27::bigint, 'every PR 1.3, PR 1.4, PR 1.5, PR 1.6, Step 6 and Step 4 table (27) has an enabled BEFORE TRUNCATE statement trigger');
 select throws_ok(
   $$ truncate public.audit_logs, public.account_requests, public.role_permissions, public.permissions,
        public.technicians, public.profiles, public.brands, public.suppliers, public.products, public.customers,
        public.call_types, public.followup_reasons, public.collection_locations, public.service_calls, public.visits,
        public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events,
        public.entity_changes, public.review_items, public.visit_corrections, public.offline_operations,
-       public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors $$,
+       public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors, public.visit_media $$,
   '55000', 'audit_logs cannot be truncated', 'truncating all PR 1.3 to PR 1.6 and Step 6 tables together is rejected, even as postgres');
 -- PR 1.5: each new table, as postgres (with the tables that reference it, see the header).
 select throws_ok(
-  $$ truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures,
+  $$ truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_media,
        public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections,
        public.offline_operations, public.external_calendar_events, public.calendar_event_changes,
        public.calendar_ingestion_errors $$,
   '55000', 'service_calls cannot be truncated', 'PR 1.5: service_calls cannot be truncated, even as postgres');
 select throws_ok(
-  $$ truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events,
+  $$ truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_media, public.visit_time_reports, public.visit_events,
        public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events,
        public.calendar_event_changes, public.calendar_ingestion_errors $$,
   '55000', 'visits cannot be truncated', 'PR 1.5: visits cannot be truncated, even as postgres');

@@ -186,7 +186,7 @@ test("an unterminated dollar quote is reported", () => {
 // PR 1.8 (Migration 5) adds no entry: it replaces three listed writers with the same signatures
 // (authorize_account_creation, admin_create_profile, add_call_type, add_followup_reason) and its new
 // writer admin_delete_user only updates (see the PR 1.8 tests at the end of this file).
-test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5, PR 1.6 and Step 6 writer functions, pinned to signature, tables and marker exceptions (unchanged by PR 1.8)", () => {
+test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5, PR 1.6, Step 6 and Step 4 writer functions, pinned to signature, tables and marker exceptions (unchanged by PR 1.8)", () => {
   assert.deepEqual(
     [...ALLOWED_WRITERS]
       .map(([signature, { tables, markers }]) => `${signature} -> ${tables.join(",")}${markers ? ` markers=${markers.join(",")}` : ""}`)
@@ -195,12 +195,16 @@ test("ALLOWED_WRITERS lists exactly the reviewed PR 1.3, PR 1.4, PR 1.5, PR 1.6 
       "private.add_call_type(text) -> public.call_types",
       "private.add_collection_location(text,text,text,text,text) -> public.collection_locations",
       "private.add_followup_reason(text) -> public.followup_reasons",
+      "private.add_visit_media(uuid,uuid,text,text,text,integer,timestamptz,text,integer,timestamptz) -> public.visit_media",
       "private.admin_create_profile(uuid,text,text,text,text,uuid) -> public.profiles",
       "private.admin_create_technician(uuid,text,text,text,text,boolean) -> public.technicians",
+      "private.arrive_visit(uuid,uuid,integer,timestamptz,text,integer,timestamptz) -> public.visit_events,public.visit_time_reports",
       "private.authorize_account_creation(text,text,text) -> public.account_requests",
       "private.bootstrap_first_creator(uuid,text) -> public.profiles",
+      "private.close_visit(uuid,uuid,integer,text,text,text,text,uuid,uuid,text,timestamptz,text,integer,timestamptz) -> public.visit_reports,public.visit_signatures,public.visit_events,public.visit_time_reports",
       "private.correct_visit(uuid,text,text,text,integer) -> public.visit_corrections,public.visit_time_reports",
       "private.create_review_item(text,text,uuid,uuid,text,text,uuid,jsonb,jsonb,jsonb) -> public.review_items",
+      "private.depart_visit(uuid,uuid,integer,timestamptz,text,integer,timestamptz) -> public.visit_events,public.visit_time_reports",
       "private.ingest_calendar_event(jsonb) -> public.external_calendar_events,public.calendar_event_changes,public.calendar_ingestion_errors,public.customers,public.products,public.service_calls,public.visits,public.visit_events markers=simulator",
       "private.record_offline_operation(uuid,uuid,text,text,integer,timestamptz,text,integer,text,integer,uuid) -> public.offline_operations",
       "private.request_account_change(text,uuid,text,text,text) -> public.account_requests",
@@ -1689,4 +1693,23 @@ test("Step 6: only the exact 'simulator' string is exempt, only in the ingestion
   const problems = checkSql(audit("'simulator'"));
   assert.equal(problems.length, 1, JSON.stringify(problems));
   assert.match(problems[0], /test marker/);
+});
+
+// Step 4 (Migration 7, proposed): the four field writers may insert only into their pinned tables;
+// the same body under another signature, or inserting into another table, still fails; the
+// update-only confirm_visit_media needs no entry.
+test("Step 4: the field writers are pinned to their signature and tables", () => {
+  const body = (name, args, table) =>
+    `create function private.${name}(${args}) returns void language plpgsql set search_path = pg_catalog, pg_temp as $$ begin insert into ${table} (visit_id) values (null); end $$;`;
+  const depart = "p_visit_id uuid, p_operation_id uuid, p_expected_field_version integer, p_reported_at timestamptz, p_device_tz text, p_device_utc_offset_min integer, p_device_sent_at timestamptz";
+  assert.deepEqual(checkSql(body("depart_visit", depart, "public.visit_events")), []);
+  assert.deepEqual(checkSql(body("depart_visit", depart, "public.visit_time_reports")), []);
+  assert.ok(checkSql(body("depart_visit", depart, "public.visit_reports")).some((p) => /INSERT into "visit_reports" is not allowed/.test(p)));
+  assert.ok(checkSql(body("depart_visit", `${depart}, p_extra text`, "public.visit_events")).some((p) => /is not allowed/.test(p)));
+  const media = "p_visit_id uuid, p_operation_id uuid, p_kind text, p_phase text, p_mime_type text, p_size_bytes integer, p_captured_at timestamptz, p_device_tz text, p_device_utc_offset_min integer, p_device_sent_at timestamptz";
+  assert.deepEqual(checkSql(body("add_visit_media", media, "public.visit_media")), []);
+  assert.ok(checkSql(body("add_visit_media", media, "public.visit_signatures")).some((p) => /is not allowed/.test(p)));
+  // A test marker in a field writer still fails (no marker exception for them).
+  const marked = `create function private.add_visit_media(${media}) returns void language plpgsql set search_path = pg_catalog, pg_temp as $$ begin insert into public.visit_media (storage_path) values ('simulator'); end $$;`;
+  assert.ok(checkSql(marked).some((p) => /test marker/.test(p)));
 });

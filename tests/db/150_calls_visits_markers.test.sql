@@ -96,14 +96,14 @@ create temporary table tm_setup (k text primary key, sql text not null) on commi
 insert into tm_setup values
   ('service_role',
    'grant select, insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.visit_signatures, public.visit_media, public.visit_time_reports, public.visit_events, public.entity_changes,
       public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events,
       public.calendar_event_changes, public.calendar_ingestion_errors to service_role;
     grant select on public.profiles, public.technicians, public.customers, public.products, public.call_types,
       public.followup_reasons, public.collection_locations to service_role'),
   ('authenticated_writes',
    'grant insert, update, delete, truncate on public.service_calls, public.visits, public.visit_reports,
-      public.visit_signatures, public.visit_time_reports, public.visit_events, public.entity_changes,
+      public.visit_signatures, public.visit_media, public.visit_time_reports, public.visit_events, public.entity_changes,
       public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events,
       public.calendar_event_changes, public.calendar_ingestion_errors to authenticated');
 
@@ -381,10 +381,10 @@ insert into tm_case (grp, label, stmt, expected) values
   ('guards', 'truncate visit_events', 'truncate public.visit_events', '55000 visit_events cannot be truncated'),
   ('guards', 'truncate entity_changes', 'truncate public.entity_changes', '55000 entity_changes cannot be truncated'),
   ('guards', 'truncate visits with its children',
-   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
+   'truncate public.visits, public.visit_reports, public.visit_signatures, public.visit_media, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 visits cannot be truncated'),
   ('guards', 'truncate service_calls with every table that references it',
-   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
+   'truncate public.service_calls, public.visits, public.visit_reports, public.visit_signatures, public.visit_media, public.visit_time_reports, public.visit_events, public.review_items, public.visit_corrections, public.offline_operations, public.external_calendar_events, public.calendar_event_changes, public.calendar_ingestion_errors',
    '55000 service_calls cannot be truncated');
 select results_eq(
   $$ select c.label, pg_temp.tm_try(c.stmt) from tm_case c where c.grp = 'guards' and c.label like 'marker:%' order by c.n $$,

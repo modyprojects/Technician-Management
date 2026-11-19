@@ -160,6 +160,18 @@ export const ALLOWED_WRITERS = new Map([
       "public.customers", "public.products", "public.service_calls", "public.visits", "public.visit_events"],
     markers: ["simulator"],
   }],
+  // Step 4 (Version 1), Migration 7 field writers (D14, D38, D43, D45, D46; T-09): the technician's
+  // departure, arrival and closure (status events, device time reports, the summary and the
+  // signature) and the pending media row. Each checks its caller (an active Technician, his own
+  // visit) and is idempotent per device operation. Accepting them needs the owner's acceptance.
+  ["private.depart_visit(uuid,uuid,integer,timestamptz,text,integer,timestamptz)",
+    { tables: ["public.visit_events", "public.visit_time_reports"] }],
+  ["private.arrive_visit(uuid,uuid,integer,timestamptz,text,integer,timestamptz)",
+    { tables: ["public.visit_events", "public.visit_time_reports"] }],
+  ["private.close_visit(uuid,uuid,integer,text,text,text,text,uuid,uuid,text,timestamptz,text,integer,timestamptz)",
+    { tables: ["public.visit_reports", "public.visit_signatures", "public.visit_events", "public.visit_time_reports"] }],
+  ["private.add_visit_media(uuid,uuid,text,text,text,integer,timestamptz,text,integer,timestamptz)",
+    { tables: ["public.visit_media"] }],
 ]);
 
 // Extensions a migration may create (rule 6). None so far.
