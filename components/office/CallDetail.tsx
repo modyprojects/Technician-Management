@@ -1,10 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CallStatusPill } from "@/components/ui/CallStatusPill";
-import { StatusPill } from "@/components/ui/StatusPill";
 import { TestBadge } from "@/components/ui/TestBadge";
 import type { CallStatus } from "@/features/calls/data/types";
-import type { VisitStatus } from "@/features/visits/data/types";
 import { VisitTimeline, type RenderRecording, type RenderVisitExtra, type TimelineVisit } from "./VisitTimeline";
 
 // Office service-call card as a full page (docs/demo.html offCard() L834-859, with the fields of
@@ -23,29 +21,6 @@ import { VisitTimeline, type RenderRecording, type RenderVisitExtra, type Timeli
 // "תיקונים" history of a closed visit and, for Manager and Creator only, "תיקון ביקור סגור"
 // (components/office/VisitCorrections). The card itself decides nothing about who may correct.
 // Presentational only: the caller passes formatted data and the header actions.
-
-export type CallDetailTech = { name: string; color: string; phone: string };
-
-/** An open visit (scheduled, en route, in progress) in the assignment card. */
-export type ScheduledVisit = {
-  n: number;
-  task: number | string;
-  status: VisitStatus;
-  /** "היום · 09:00–11:00" or "חמישי 22.10 · 09:00–10:30". */
-  when: string;
-  tech: CallDetailTech;
-  collect: string;
-  collectFrom: string;
-};
-
-export type CallAssignment = {
-  /** Open visits, in visit order. */
-  scheduled: ScheduledVisit[];
-  /** Technician of the last visit, shown when nothing is scheduled. */
-  lastTech?: { tech: CallDetailTech; caption: string };
-  /** Shown when nothing is scheduled. */
-  emptyText: string;
-};
 
 /** Another call of the same customer. */
 export type CustomerCallRow = { req: string; href: string; product: string; when: string; status: CallStatus };
@@ -81,7 +56,6 @@ export type CallDetailData = {
   desc: string;
   /** "הערות לטכנאי" from the invitation. */
   techNote: string;
-  assignment: CallAssignment;
   /** Every visit of the call, in visit order. */
   visits: TimelineVisit[];
   customerCalls: CustomerCallRow[];
@@ -97,6 +71,7 @@ export function CallDetail({
   renderRecording,
   renderVisitExtra,
   customerHref,
+  perFieldTestMarks = true,
 }: {
   call: CallDetailData;
   /** The calls list. */
@@ -110,6 +85,8 @@ export function CallDetail({
   renderRecording?: RenderRecording;
   /** A part at the end of each visit of the timeline (OF-10 corrections); null for none. */
   renderVisitExtra?: RenderVisitExtra;
+  /** False on the real card (D74): only the screen banner and one mark by the title. */
+  perFieldTestMarks?: boolean;
 }) {
   const { customer: cu, product: p } = call;
   const visitCount = call.visits.length === 1 ? "ביקור אחד" : `${call.visits.length} ביקורים`;
@@ -144,13 +121,23 @@ export function CallDetail({
 
       <div className="ocd">
         <div className="ocd-cols">
-          <div className="grid">
+          <div className="grid ocd-visits">
+            <VisitTimeline
+              visits={call.visits}
+              showReport={showReport}
+              renderRecording={renderRecording}
+              renderExtra={renderVisitExtra}
+              perFieldTestMarks={perFieldTestMarks}
+            />
+          </div>
+
+          <div className="grid ocd-info">
             <section className="card sec">
               {/* The customer-card link sits beside the heading, not inside it (a heading's name stays its title). */}
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 12 }}>
                 <h2 style={{ display: "flex", gap: 8, alignItems: "center", margin: 0 }}>
                   לקוח וכתובת
-                  {cu.isTest && <TestBadge />}
+                  {perFieldTestMarks && cu.isTest && <TestBadge />}
                 </h2>
                 {customerHref && (
                   <Link className="lnk" href={customerHref} prefetch={false} aria-label={`לכרטיס הלקוח · ${cu.name}`} style={{ fontSize: 14, fontWeight: 600 }}>
@@ -195,7 +182,7 @@ export function CallDetail({
                 <span>{call.type}</span>
                 <span>מוצר</span>
                 <span>
-                  {p.name} {p.isTest && <TestBadge />}
+                  {p.name} {perFieldTestMarks && p.isTest && <TestBadge />}
                 </span>
                 <span>{'מק"ט'}</span>
                 <span dir="ltr" style={{ textAlign: "right" }}>
@@ -220,93 +207,9 @@ export function CallDetail({
 
             {call.customerCalls.length > 0 && <CustomerCalls rows={call.customerCalls} />}
           </div>
-
-          <div className="grid">
-            <Assignment a={call.assignment} />
-            <VisitTimeline visits={call.visits} showReport={showReport} renderRecording={renderRecording} renderExtra={renderVisitExtra} />
-          </div>
         </div>
       </div>
     </>
-  );
-}
-
-function TechRow({ tech, caption, aside }: { tech: CallDetailTech; caption?: string; aside?: ReactNode }) {
-  return (
-    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: "50%",
-          background: tech.color,
-          color: "var(--on-dark)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "var(--display)",
-          fontWeight: 600,
-          fontSize: 18,
-          flex: "none",
-        }}
-      >
-        {tech.name.slice(0, 1)}
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <b>{tech.name}</b>
-        <span className="sub" style={{ display: "block" }}>
-          <span dir="ltr" className="num">
-            {tech.phone}
-          </span>
-          {caption && ` · ${caption}`}
-        </span>
-      </span>
-      {aside}
-    </div>
-  );
-}
-
-/** Who is assigned and when the next visits are (date, window, status, task, pickup). */
-function Assignment({ a }: { a: CallAssignment }) {
-  return (
-    <section className="card sec">
-      <h2>שיבוץ</h2>
-      {a.scheduled.length > 0 ? (
-        <div className="grid" style={{ gap: 14 }}>
-          {a.scheduled.map((s) => (
-            <div key={s.n}>
-              <TechRow tech={s.tech} caption="טכנאי משובץ" aside={<StatusPill status={s.status} />} />
-              <div className="num" style={{ marginTop: 10, fontSize: 14 }}>
-                <b>ביקור {s.n}</b> · {s.when} · משימה {s.task}
-              </div>
-              {s.collect && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    background: "var(--warn-bg)",
-                    border: "1px solid var(--warn-bd)",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    fontSize: 14,
-                    color: "var(--warn-ink)",
-                  }}
-                >
-                  <b>לאסוף לפני הביקור:</b> {s.collect} · מ{s.collectFrom}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <>
-          {a.lastTech && <TechRow tech={a.lastTech.tech} caption={a.lastTech.caption} />}
-          <div className="sub" style={{ marginTop: a.lastTech ? 10 : 0 }}>
-            {a.emptyText}
-          </div>
-        </>
-      )}
-    </section>
   );
 }
 
