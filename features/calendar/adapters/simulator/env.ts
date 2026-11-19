@@ -6,6 +6,7 @@
 //     testingPeriod is exactly true (owner decision 19.11, D24 exception: Production uses the test
 //     database until go-live). Read the same way as the /dev gate (app/dev/_gate.ts). Any other
 //     value (false, missing, malformed) keeps it off there: fail closed. After go-live it is off.
+//   - an unrecognised VERCEL_ENV value (not production, preview or development) is always off.
 // The owner sets the flag himself where he wants it; after Microsoft 365 is connected it is
 // switched off without changing records or the ingestion architecture (SIM-12).
 import release from "@/config/release.json";
@@ -28,7 +29,9 @@ export type SimulatorEnvInput = {
 export function simulatorEnabledFor(input: SimulatorEnvInput, testingPeriod: unknown): boolean {
   if (input.flag !== "1") return false;
   if (input.vercelEnv === "production") return testingPeriod === true;
-  return true;
+  // Outside Vercel (undefined), Preview and Development keep the flag's answer; any other,
+  // unrecognised VERCEL_ENV value is refused (fail closed, as app/dev/_gate.ts; owner 19.11).
+  return input.vercelEnv === undefined || input.vercelEnv === "preview" || input.vercelEnv === "development";
 }
 
 /** Whether the simulator may run, with the testing period read from config/release.json. */
