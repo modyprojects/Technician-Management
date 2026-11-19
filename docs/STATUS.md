@@ -16,7 +16,7 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 ## Open PRs
 - #38 M7: applied + post-checks passed 19.11 → `visit-media` bucket (approval of SHA a3f7b93c…) → merge.
 - #45 technician calendar skeleton (c5b5fab, D89 applied) → 15:30 review. Skeleton-only `?today=` override: remove before real data.
-- #46 office call card skeleton with owner answers (ae6671b) → 15:30 review. Stacked: #43 → #44 → #46 on #36.
+- Calls module re-stacked on main: #43 28921a9 → #44 22ab8b5 → #46 cc32d45 (owner answers applied) → 15:30 review.
 
 ## Waiting for the owner
 - 15:30 review: #45, #46 (and #43, #44 visual approval).
@@ -25,7 +25,7 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 - IT: the M365 app registration (D86, plan in `docs/m365-mail-plan.md`).
 
 ## Next, in order
-1. Re-stack #43/#44/#46 on main (in progress); bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
+1. bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
 2. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
 3. Follow-up: next 16.4.3 → 16.4.6 (`next build` stops once with a security notice; the retry passes).
 
