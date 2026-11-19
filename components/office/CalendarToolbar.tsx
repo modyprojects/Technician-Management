@@ -1,5 +1,20 @@
 import Link from "next/link";
+import { TimeRange } from "@/components/ui/TimeRange";
 import { CalendarLegend } from "./CalendarParts";
+
+const WEEK_TITLE = /^(.*?)(\d\d\.\d\d)–(\d\d\.\d\d)$/;
+
+/** A "שבוע 15.11–19.11" title: the range goes through TimeRange (start–end, design-rules), the rest stays text. */
+function PeriodTitle({ title }: { title: string }) {
+  const m = WEEK_TITLE.exec(title);
+  if (!m) return <>{title}</>;
+  return (
+    <>
+      {m[1]}
+      <TimeRange start={m[2] ?? ""} end={m[3] ?? ""} />
+    </>
+  );
+}
 
 // Title row and filter row of the office "יומן טכנאים" (docs/demo.html offCal() L794-801): the
 // title with the shown period, the "תצוגה בלבד" note, the יום / שבוע / חודש segments, previous /
@@ -43,7 +58,9 @@ export function CalendarToolbar({
     <>
       <div className="ptitle">
         <div>
-          <h1>יומן טכנאים · {title}</h1>
+          <h1>
+            יומן טכנאים · <PeriodTitle title={title} />
+          </h1>
           <div className="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div>
         </div>
         <div className="ocal-actions">
