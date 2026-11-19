@@ -4,7 +4,7 @@ Updated 2026-11-19 (morning). Keep ≤40 lines; update at the end of every task.
 ## Where we are
 - Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
 - `main` = 1cdf5a7. Supabase: Migrations 1–6 applied (M6 = remote 20261118082250). M7 not applied.
-- **CI blocked** (GitHub billing; owner sets the budget today). Until then: no CI waits/re-runs, local lint/typecheck/build/tests in every report, draft PRs only, no merges, no M7 apply.
+- Repository is **public** since 19.11 (D84): Actions minutes free, CI unblocked. Never commit secrets or real data; any doubt = stop.
 - New working rules (19.11): approval levels A/B/C (D80), skeleton first for new screens (D81), `docs/design-rules.md` self-check (D82), technician calendar = today + 7 days (D83).
 
 ## Open PRs (all unmerged)
@@ -16,12 +16,11 @@ Updated 2026-11-19 (morning). Keep ≤40 lines; update at the end of every task.
 - #38 M7 (c80828f): file SHA 489901e5… approved; apply package + runbook ready (PR comment). Needs CI green + separate APPLY approval; bucket `visit-media` = its own write approval.
 
 ## Waiting for the owner
-- GitHub budget → then the "free plans only" exception as a decision.
 - "מאשר" on #36 6abe2bc; skeleton answers #45, #46; M7 APPLY approval (after CI); V1 date.
 - `/dev/demo` prototype still shows "ממתין להחלטת בעלים (dNN)" hints: change or leave (it is not a real-app screen)?
 
 ## Next, in order
-1. Budget → CI green → merge #41 + docs branch, #42, then #36 after "מאשר"; rebase stacked branches after each merge.
+1. CI green → merge #41 + docs branch, #42, then #36 after "מאשר"; rebase stacked branches after each merge.
 2. M7: CI on #38 → APPLY approval → apply → `visit-media` bucket → merge #38.
 3. Screens after skeleton approval: office call card, technician calendar; then office technician calendar, manager dashboard; tech-visit-flow after M7 (D71).
 4. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).

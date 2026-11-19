@@ -1,6 +1,6 @@
 # Decision Register — approved product choices
 
-Last updated: 2026-11-19 (D79–D83: tech-today questions, approval levels, skeletons, design rules, technician calendar scope); earlier: 2026-11-17 (D59 rewritten: screen approval and merges; D60: QA corrections 01 and roadmap integration; D61: the real application and the demo; D62: QA corrections per real screen). Source: owner decisions. Status is **APPROVED** unless marked OPEN, PROVISIONAL or WITHDRAWN (a withdrawn proposal changes nothing). Technical recommendations are not approved until the owner approves them.
+Last updated: 2026-11-19 (D84: public repository; D79–D83: tech-today questions, approval levels, skeletons, design rules, technician calendar scope); earlier: 2026-11-17 (D59 rewritten: screen approval and merges; D60: QA corrections 01 and roadmap integration; D61: the real application and the demo; D62: QA corrections per real screen). Source: owner decisions. Status is **APPROVED** unless marked OPEN, PROVISIONAL or WITHDRAWN (a withdrawn proposal changes nothing). Technical recommendations are not approved until the owner approves them.
 
 The owner tracks decisions on a planning board. The **Board ref** column (`d01`, `d02`…) links each entry to that board and to references in `docs/demo-deviations.md`.
 
@@ -92,6 +92,7 @@ D33–D50 were approved by the owner on 2026-11-03 with the Step 1 plan (version
 | D81 | **Skeleton instead of sketch for every new screen** (owner, 2026-11-19). Built in the real code and components with fake data only: no database, logic or tests. Screenshots at 390 and the role's wide width (office 1440, technician 820) with 3–5 Hebrew questions. The rest is built only after the owner approves the skeleton. Any visible change after that approval is listed in the PR under "Changes from the approved skeleton", each with a reason. |
 | D82 | **Design rules file** (owner, 2026-11-19). `docs/design-rules.md` (≤40 lines) holds the rules from the 18.11 review. Every agent self-checks its screens against it before sending screenshots. No user-facing "ממתין להחלטת בעלים" / "ממתין לאישור" texts anywhere. |
 | D83 | **Technician calendar, Version 1 scope** (owner, 2026-11-19). Today and the coming week only; no past days. Closed visits follow D79. A "יומן" tab is added between "היום" and "פרופיל". |
+| D84 | **Public repository** (owner, 2026-11-19). The GitHub repository was made public to remove the GitHub Actions minutes limit (CI was blocked by billing). The owner accepts that code, docs and history are visible. No secret, credential, env value or real personal/customer data may ever be committed; any doubt = stop and report to the owner. No GitHub budget is needed, so no exception to "free plans only" is recorded. Check at the switch (19.11): history scan for key/token patterns found none; workflows use no `pull_request_target` and no repository secrets. |
 
 ## Open decisions — do not guess
 
