@@ -135,7 +135,7 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await page.goto(`/office/calls?q=${a}`);
     await rows(page).first().getByRole("link").click();
     await expect(page).toHaveURL(new RegExp(`/office/calls/${a}$`));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`${customerA} · מס׳ פנייה ${a}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); // the call card skeleton (D81): fictional data
     await expect(page.getByText("נתוני בדיקה")).toBeVisible();
     await page.getByRole("link", { name: "› חזרה לקריאות" }).click();
     await expect(page).toHaveURL(/\/office\/calls$/);
