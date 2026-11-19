@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { pendingDecisionHint } from "@/components/ui/pending-hint";
 import { INVITATION_SOURCE_LABELS, TestPill } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
 import type {
@@ -29,7 +28,7 @@ import { problemKindLabel } from "./unparsed-labels";
 function repMailText(state: UnparsedRepMailState): string {
   switch (state.status) {
     case "pending":
-      return `מייל לנציגה: לא נשלח · ${pendingDecisionHint(state.decision)}`;
+      return "מייל לנציגה: לא נשלח";
   }
 }
 
