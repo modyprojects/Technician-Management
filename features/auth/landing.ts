@@ -39,6 +39,9 @@ export const OFFICE_SETTINGS_USERS_PATH = "/office/settings/users";
 /** "קריאות" (V1 item 4; D57 (1), D60 (4)): the calls list; Customer Service's landing (QA S-01). */
 export const OFFICE_CALLS_PATH = "/office/calls";
 
+/** "יומן טכנאים" (D88 office module 2; D60 (4)): the office technician calendar. */
+export const OFFICE_CALENDAR_PATH = "/office/calendar";
+
 /** The call card of one request number (the card itself is the next screen; a temporary page until then). */
 export const officeCallPath = (req: string): string => `${OFFICE_CALLS_PATH}/${encodeURIComponent(req)}`;
 
@@ -49,7 +52,7 @@ export const officeCallPath = (req: string): string => `${OFFICE_CALLS_PATH}/${e
 export const OFFICE_UNPARSED_PATH = "/office/unparsed";
 
 /** A real office navigation item (OfficeSidebar), with its real address. */
-export type RealOfficeNavItem = { key: "analytics" | "calls" | "unparsed" | "settings"; label: string; href: string };
+export type RealOfficeNavItem = { key: "analytics" | "cal" | "calls" | "unparsed" | "settings"; label: string; href: string };
 
 /**
  * The real office navigation (TEMPORARY, Step 2 plan Q18: only screens that are built are listed),
@@ -66,8 +69,10 @@ export type RealOfficeNavItem = { key: "analytics" | "calls" | "unparsed" | "set
 export function realOfficeNav(role: unknown): RealOfficeNavItem[] {
   const start = officeStartItem(role);
   if (!start) return [];
-  const items: RealOfficeNavItem[] = [{ key: start.key, label: start.label, href: start.key === "calls" ? OFFICE_CALLS_PATH : OFFICE_START_PATH }];
-  if (start.key !== "calls") items.push({ key: "calls", label: "קריאות", href: OFFICE_CALLS_PATH });
+  const items: RealOfficeNavItem[] = [];
+  if (start.key !== "calls") items.push({ key: start.key, label: start.label, href: OFFICE_START_PATH });
+  items.push({ key: "cal", label: "יומן טכנאים", href: OFFICE_CALENDAR_PATH });
+  items.push({ key: "calls", label: "קריאות", href: OFFICE_CALLS_PATH });
   items.push({ key: "unparsed", label: "זימונים שלא נקלטו", href: OFFICE_UNPARSED_PATH });
   if (role === "creator" || role === "mgr") items.push({ key: "settings", label: "הגדרות", href: OFFICE_SETTINGS_USERS_PATH });
   return items;
