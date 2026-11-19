@@ -112,13 +112,17 @@ test.describe("demo pages render", () => {
 test.describe("calls list", () => {
   test("search narrows the results and updates the URL", async ({ page }) => {
     await openPage(page, "/dev/demo/office/mgr/calls");
-    const table = page.getByRole("table", { name: "קריאות שירות" });
+    // Phone: the cards list; tablet and desktop: the table (only one of them is exposed at a width).
+    const callLinks = page
+      .getByRole("table", { name: "קריאות שירות" })
+      .locator("tbody tr a.lnk")
+      .or(page.getByRole("list", { name: "קריאות שירות" }).locator(":scope > li a.lnk"));
     const shown = page.locator("text=/^מציג \\d+ מתוך \\d+$/");
     const totalOf = async () => Number((await shown.innerText()).match(/מתוך (\d+)/)?.[1]);
     const before = await totalOf();
     expect(before).toBeGreaterThan(1);
 
-    const firstLink = table.locator("tbody tr a.lnk").first();
+    const firstLink = callLinks.first();
     const label = (await firstLink.getAttribute("aria-label")) ?? "";
     const customer = label.split(" · ")[1] ?? "";
     expect(customer.length).toBeGreaterThan(1);
@@ -126,7 +130,7 @@ test.describe("calls list", () => {
     await page.getByLabel("חיפוש קריאות").fill(customer);
     await expect(page).toHaveURL(/[?&]q=/);
     await expect.poll(totalOf).toBeLessThan(before);
-    const labels = await table.locator("tbody tr a.lnk").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
+    const labels = await callLinks.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
     expect(labels.length).toBeGreaterThan(0);
     for (const l of labels) expect(l).toContain(customer);
   });
@@ -1594,7 +1598,12 @@ test.describe("customers and the customer card (OF-05, OF-16)", () => {
     expect(value).toBeGreaterThan(0);
     await resolved.click();
     await expect(page).toHaveURL(/\/dev\/demo\/office\/mgr\/calls\?(?=.*q=298747)(?=.*status=resolved)/);
-    await expect(page.getByRole("table", { name: "קריאות שירות" }).locator("tbody tr")).toHaveCount(value);
+    await expect(
+      page
+        .getByRole("table", { name: "קריאות שירות" })
+        .locator("tbody tr")
+        .or(page.getByRole("list", { name: "קריאות שירות" }).locator(":scope > li")),
+    ).toHaveCount(value);
   });
 
   test("the call card's customer link opens the customer card", async ({ page }) => {
