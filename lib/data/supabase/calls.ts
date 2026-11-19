@@ -13,6 +13,7 @@ import {
   technicianOptionsOf,
   type CallCardBrief,
 } from "@/features/calls/supabase/list-queries";
+import { callCardOf, cardPermittedOf, type CallCard } from "@/features/calls/supabase/card-queries";
 import { logAuthEvent } from "@/lib/auth/log";
 import { getSessionState } from "@/lib/auth/session";
 import { createUserSupabaseClient } from "@/lib/supabase/server";
@@ -62,4 +63,16 @@ export async function callTechnicianOptions(): Promise<{ id: string; name: strin
 export async function callCardBrief(req: string): Promise<CallCardBrief | null> {
   const c = await caller();
   return c ? logged("card", () => callCardBriefOf(c.client, c.user, req)) : null;
+}
+
+/** The office call card of one call (D60 (5), D88); null when absent or not readable (one 404). */
+export async function callCard(req: string): Promise<CallCard | null> {
+  const c = await caller();
+  return c ? logged("call_card", () => callCardOf(c.client, c.user, req)) : null;
+}
+
+/** Whether the caller's role has the matrix key `card` (the technician's report); false without a session. */
+export async function cardPermitted(): Promise<boolean> {
+  const c = await caller();
+  return c ? logged("card_permitted", () => cardPermittedOf(c.client, c.user)) : false;
 }

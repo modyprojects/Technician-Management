@@ -3,6 +3,7 @@ import { StatusPill, VISIT_STATUSES } from "@/components/ui/StatusPill";
 import { TestBadge, VisitSourceLine } from "@/components/ui/TestBadge";
 import { isClosedVisitStatus, type MediaKind, type MediaPhase, type VisitSource, type VisitStatus } from "@/features/visits/data/types";
 import { TimeRange } from "@/components/ui/TimeRange";
+import { minutesLabel } from "@/features/calls/data/visit-durations";
 
 // Visit timeline of the office call card (docs/demo.html offCard() visitHtml, L836-846;
 // demo-deviations OF-06): one section per visit, newest first, edged in the visit-status colour,
@@ -36,6 +37,11 @@ export type TimelineVisit = {
   endAt: string | null;
   /** Minutes from arrival to end, or null. */
   treatMin: number | null;
+  /** Minutes from departure to arrival and from departure to end, computed by the caller from the
+   *  recorded instants (features/calls/data/visit-durations.ts; correct across midnight). When
+   *  absent (the demo), they are derived from the "HH:MM" labels above. */
+  travelMin?: number | null;
+  totalMin?: number | null;
   /** Follow-up reason. */
   reason: string | null;
   summary: string;
@@ -105,9 +111,6 @@ function minutesBetween(from: string | null, to: string | null): number | null {
   return d >= 0 ? d : null;
 }
 
-/** "45 דק׳" or "1:05 שע׳" (hours and minutes from 60 on). */
-const minutesLabel = (m: number): string => (m < 60 ? `${m} דק׳` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")} שע׳`);
-
 const timePillStyle = { background: "var(--bg)", color: "var(--ink2)" } as const;
 const labelStyle = { fontWeight: 700, marginTop: 12 } as const;
 
@@ -128,8 +131,8 @@ function VisitSection({
   const hasReport = v.summary || v.recLabel;
   // D60 (5), every closed visit: total (departure to finish) and travel (departure to arrival).
   const closed = isClosedVisitStatus(v.status);
-  const travelMin = minutesBetween(v.departAt, v.arriveAt);
-  const totalMin = minutesBetween(v.departAt, v.endAt);
+  const travelMin = v.travelMin !== undefined ? v.travelMin : minutesBetween(v.departAt, v.arriveAt);
+  const totalMin = v.totalMin !== undefined ? v.totalMin : minutesBetween(v.departAt, v.endAt);
   return (
     <article id={`visit-${v.n}`} className="card vis vc-anchor" style={{ borderRightColor: s.c }} aria-label={`ביקור ${v.n}`}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -174,7 +177,7 @@ function VisitSection({
           )}
           {v.endAt && v.treatMin != null && (
             <span className="pill num" style={timePillStyle}>
-              בטיפול {v.treatMin} דק׳
+              בטיפול {minutesLabel(v.treatMin)}
             </span>
           )}
           {closed && travelMin != null && (
