@@ -3,20 +3,19 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
 - Version 1 target Tue 2026-11-24 (date to be confirmed by the owner), online only.
-- `main` = a1ef568. Supabase: M1–M7 applied (M7 = remote 20261119095402, payload SHA 489901e5… verified); bucket `visit-media` awaits approval.
+- `main` = 63aa98e. Supabase: M1–M7 applied (M7 = remote 20261119095402, payload SHA 489901e5… verified); bucket `visit-media` awaits approval.
 - Public repo (D84): never commit secrets or real data. Rules: levels A/B/C (D80), skeleton first (D81), `docs/design-rules.md` (D82).
 
 ## Done on main (19.11)
-- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 decisions D79–D84, design rules.
+- #41 decisions D68–D78; #42 technician home, visit card, "הושלמו היום"; #47 decisions D79–D84, design rules; #36 user management.
 
 ## Modules (D88: one open module per lane, end to end)
 - Technician: **1. calendar #45 (open: skeleton review)** → 2. visit flow (M7 applied) → 3. profile.
 - Office: **1. calls: #43 → #44 → #46 (open)** → 2. office technician calendar → 3. manager dashboard on real data.
 
 ## Open PRs
-- #36 user management: owner "מאשר" on 6abe2bc; main merged in (1a50eea, app files identical to 6abe2bc). Merge after CI.
 - #38 M7: applied + post-checks passed 19.11 → `visit-media` bucket (approval of SHA a3f7b93c…) → merge.
-- #45 technician calendar skeleton: owner review of cd107a7 (D89) being applied → 15:30 review.
+- #45 technician calendar skeleton (c5b5fab, D89 applied) → 15:30 review. Skeleton-only `?today=` override: remove before real data.
 - #46 office call card skeleton with owner answers (ae6671b) → 15:30 review. Stacked: #43 → #44 → #46 on #36.
 
 ## Waiting for the owner
@@ -26,7 +25,7 @@ Updated 2026-11-19 (~12:15). Keep ≤40 lines; update at the end of every task.
 - IT: the M365 app registration (D86, plan in `docs/m365-mail-plan.md`).
 
 ## Next, in order
-1. Merge #36 → rebase #43/#44/#46 on main; bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
+1. Re-stack #43/#44/#46 on main (in progress); bucket → merge #38. After skeleton approval: #45, #46 on real data (D88).
 2. Customer Service nav: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" (D60 (4)).
 3. Follow-up: next 16.4.3 → 16.4.6 (`next build` stops once with a security notice; the retry passes).
 
