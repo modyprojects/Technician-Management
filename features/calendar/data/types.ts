@@ -206,28 +206,42 @@ export type TechMonth = {
 // (`calendar_ingestion_errors`, docs/database-schema.md); this layer only reads them. Intake is
 // event-driven (Graph change notifications later, the simulator now; D08, D24), never polling.
 
-/** Why an invitation was not ingested (spec: a missing required field or an unknown pickup place; an invalid value). */
-export const UNPARSED_PROBLEM_KINDS = ["missing", "unknown-place", "invalid"] as const;
+/**
+ * Why an invitation was not ingested (spec: a missing required field or an unknown pickup place; an
+ * invalid value; QA S-05 adds the ingestion service's other structured reasons: the attendee is no
+ * known, active, single technician, and a conflict with what is stored).
+ */
+export const UNPARSED_PROBLEM_KINDS = ["missing", "unknown-place", "invalid", "technician", "conflict"] as const;
 export type UnparsedProblemKind = (typeof UNPARSED_PROBLEM_KINDS)[number];
 
+/** Where a problem was found: a template label, or a part of the invitation itself. */
+export type UnparsedProblemField = TemplateFieldKey | "subject" | "attendee" | "organizer" | "schedule" | "body";
+
+/** Why the attendee is not the visit's technician (kind "technician"). */
+export type UnparsedTechnicianReason = "unknown" | "inactive" | "ambiguous";
+
 /**
- * One problem of an invitation. `label` is the template label as configured in Settings › תבנית
- * זימון (for example "מספר לקוח"); `value` is the text read from the invitation, sanitized and cut
- * to UNPARSED_VALUE_MAX characters. Calendar text is untrusted data: screens render it as plain
- * text only, never as HTML or links.
+ * One problem of an invitation, ready to show. `label` is the template label as configured in
+ * Settings › תבנית זימון (for example "מספר לקוח") or the name of the part of the invitation
+ * ("מועד הזימון"); `value` is the text read from the invitation, sanitized and cut to
+ * UNPARSED_VALUE_MAX characters ("" when nothing was read); `expected` and `explanation` are Hebrew
+ * text built by the app (features/calendar/data/unparsed-reasons.ts), never invitation text.
+ * Calendar text is untrusted data: screens render it as plain text only, never as HTML or links.
  * An unknown SKU is NEVER a problem: the product is created (IN-02, D19, PR-04).
  */
 export type UnparsedProblem =
-  | { kind: "missing"; field: TemplateFieldKey; label: string }
-  | { kind: "unknown-place"; field: "collectFrom"; label: string; value: string }
+  | { kind: "missing"; field: UnparsedProblemField; label: string; explanation?: string }
+  | { kind: "unknown-place"; field: "collectFrom"; label: string; value: string; explanation?: string }
   | {
       kind: "invalid";
-      field: TemplateFieldKey;
+      field: UnparsedProblemField;
       label: string;
       value: string;
       /** What the field accepts, in Hebrew (for example "כן / לא / כן · עד MM/YYYY"). */
       expected: string;
-    };
+    }
+  | { kind: "technician"; field: "attendee"; reason: UnparsedTechnicianReason; label: string; value: string; explanation: string }
+  | { kind: "conflict"; field: UnparsedProblemField; label: string; value: string; explanation: string };
 
 /** Longest invitation text a row carries (subject, values). */
 export const UNPARSED_VALUE_MAX = 120;
@@ -246,18 +260,21 @@ export type UnparsedInvitation = TestMarker & {
   receivedAt: IsoTimestamp;
   /** Where it came from: Microsoft 365 ("outlook", later) or the invitation simulator (SIM-14, "🧪 זימון בדיקה"). */
   source: VisitSource;
-  /** Subject as received (starts with the "[קריאת שירות]" prefix), cut to UNPARSED_VALUE_MAX. */
+  /** Subject as received (starts with the "[קריאת שירות]" prefix), cut to UNPARSED_VALUE_MAX; "" when none was read. */
   subject: string;
-  /** The organizer: the representative who sent the invitation; `name` null when the address is not an office user. */
-  organizer: { email: string; name: string | null };
-  /** The attendee; `technician` is the technician matched by the Outlook email in Settings, null when none matches. */
-  attendee: { email: string; technician: Pick<TechnicianRef, "id" | "name" | "color"> | null };
-  /** Date and times from the invitation itself (never the body). */
-  event: { date: IsoDate; start: HourMinute; end: HourMinute };
+  /** The organizer: the representative who sent the invitation; `name` null when the address is not an office user; both null when unknown. */
+  organizer: { email: string | null; name: string | null };
+  /**
+   * The attendees' addresses as received; `technician` is the one technician matched by his Outlook
+   * email in Settings, null when none (or more than one) matches.
+   */
+  attendees: { emails: string[]; technician: Pick<TechnicianRef, "id" | "name" | "color"> | null };
+  /** Date and times from the invitation itself (never the body), in Asia/Jerusalem; null when they could not be read. */
+  event: { date: IsoDate; start: HourMinute; end: HourMinute } | null;
   /** Values that were read, to recognise the invitation; null when missing or unreadable. */
   requestNumber: string | null;
   customerName: string | null;
-  /** Every problem found (at least one), in template label order. */
+  /** Every problem found (at least one). */
   problems: UnparsedProblem[];
   repMail: UnparsedRepMailState;
 };

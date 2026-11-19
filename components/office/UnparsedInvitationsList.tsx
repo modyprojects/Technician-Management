@@ -1,17 +1,15 @@
 import type { ReactNode } from "react";
-import { pendingDecisionHint } from "@/components/ui/pending-hint";
-import { TestBadge } from "@/components/ui/TestBadge";
+import { INVITATION_SOURCE_LABELS, TestPill } from "@/components/ui/TestBadge";
 import { ddmm } from "@/features/calendar/data/dates";
 import type {
   UnparsedInvitation,
   UnparsedInvitationsPage,
   UnparsedProblem,
-  UnparsedProblemKind,
   UnparsedRepMailState,
 } from "@/features/calendar/data/types";
 import type { IsoTimestamp } from "@/features/data-access/common";
-import type { VisitSource } from "@/features/visits/data/types";
 import { DashboardSection } from "./DashboardSection";
+import { problemKindLabel } from "./unparsed-labels";
 
 // "זימונים שלא נקלטו" (spec office screens and "Invitation intake", OF-16, IN-01 to IN-04;
 // docs/demo.html has no such screen, so it is designed in the demo's language: card + .sec head,
@@ -26,102 +24,129 @@ import { DashboardSection } from "./DashboardSection";
 // as plain text only (React escapes it), never as HTML or links.
 // Server Component: read-only, no actions (this screen fixes nothing itself; the fix is in Outlook).
 
-/** The problem kinds as the screen names them. */
-export const UNPARSED_PROBLEM_LABELS = {
-  missing: "חסר שדה חובה",
-  "unknown-place": "מקום איסוף לא מוכר",
-  invalid: "ערך לא תקין",
-} as const satisfies Record<UnparsedProblemKind, string>;
-
-/**
- * Where an invitation came from. Not the visit source line (VISIT_SOURCE_LABELS: "נקלט
- * אוטומטית"): these invitations were NOT ingested.
- */
-const INVITATION_SOURCE_LABELS = {
-  outlook: "📅 זימון Outlook",
-  simulator: "🧪 זימון בדיקה",
-} as const satisfies Record<VisitSource, string>;
-
 /** The rep-mail state (IN-04). Only "pending" exists until the owner decides d09. */
 function repMailText(state: UnparsedRepMailState): string {
   switch (state.status) {
     case "pending":
-      return `מייל לנציגה: לא נשלח · ${pendingDecisionHint(state.decision)}`;
+      return "מייל לנציגה: לא נשלח";
   }
 }
 
-/** A value read from the invitation (plain text; "ריק" when empty). */
+/**
+ * A value read from the invitation (plain text; "ריק" when empty). A value without Hebrew letters
+ * (a number, an address, a SKU) reads left to right, so "48 213" is never shown as "213 48".
+ */
 function InvitationValue({ value }: { value: string }) {
+  const dir = !value || /[\u0590-\u05ff]/.test(value) ? "rtl" : "ltr";
   return (
     <span className="ib-val">
-      <bdi>{value || "ריק"}</bdi>
+      <bdi dir={dir}>{value || "ריק"}</bdi>
     </span>
   );
 }
 
+/** What is wrong and how to fix it: app text, never invitation text. */
+function problemExplanation(problem: UnparsedProblem): string | undefined {
+  switch (problem.kind) {
+    case "missing":
+      return problem.explanation;
+    case "unknown-place":
+      return problem.explanation ?? "לא ברשימת מקומות האיסוף בהגדרות";
+    case "invalid":
+      return `צריך להיות: ${problem.expected}`;
+    case "technician":
+    case "conflict":
+      return problem.explanation;
+  }
+}
+
 function ProblemItem({ problem }: { problem: UnparsedProblem }) {
+  const explanation = problemExplanation(problem);
   return (
     <li>
-      <span className="pill ib-kind">{UNPARSED_PROBLEM_LABELS[problem.kind]}</span>{" "}
+      <span className="pill ib-kind">{problemKindLabel(problem)}</span>{" "}
       {problem.kind === "missing" ? (
         <b>{problem.label}</b>
       ) : (
         <>
           <b>{problem.label}:</b> <InvitationValue value={problem.value} />
-          <span className="sub ib-exp">
-            {problem.kind === "unknown-place" ? "לא ברשימת מקומות האיסוף בהגדרות" : `צריך להיות: ${problem.expected}`}
-          </span>
         </>
       )}
+      {explanation && <span className="sub ib-exp">{explanation}</span>}
     </li>
+  );
+}
+
+function OrganizerText({ organizer }: { organizer: UnparsedInvitation["organizer"] }) {
+  if (organizer.name) return <>{organizer.name}</>;
+  if (!organizer.email) return null;
+  return (
+    <bdi dir="ltr" className="ib-mail">
+      {organizer.email}
+    </bdi>
+  );
+}
+
+function TechnicianText({ attendees }: { attendees: UnparsedInvitation["attendees"] }) {
+  const tech = attendees.technician;
+  if (tech) {
+    return (
+      <>
+        <span className="dot" aria-hidden="true" style={{ background: tech.color }} /> {tech.name}
+      </>
+    );
+  }
+  if (attendees.emails.length === 0) return <>לא זוהה · אין משתתפים</>;
+  return (
+    <>
+      לא זוהה ·{" "}
+      <bdi dir="ltr" className="ib-mail">
+        {attendees.emails.join(", ")}
+      </bdi>
+    </>
   );
 }
 
 function UnparsedRow({ item, receivedLabel }: { item: UnparsedInvitation; receivedLabel: (iso: IsoTimestamp) => string }) {
   const headingId = `unp-${item.id}`;
   const problemsId = `unp-${item.id}-p`;
-  const tech = item.attendee.technician;
   return (
     <li className="ib-item ib-two" aria-labelledby={headingId}>
       <div className="ib-main">
         <div className="ib-head">
           <h3 id={headingId} className="ib-title">
-            <bdi>{item.subject}</bdi>
+            <bdi>{item.subject || "(ללא נושא)"}</bdi>
           </h3>
-          {/* The simulator source line already marks test invitations (SIM-14); other test records get the badge (D47). */}
-          {item.isTest && item.source !== "simulator" && <TestBadge />}
+          {/* The simulator source line already marks test invitations (SIM-14); other test records get the pill (D47; "🧪 בדיקה", QA T-06). */}
+          {item.isTest && item.source !== "simulator" && <TestPill />}
         </div>
         <div className="sub ib-meta">
           <span className="num">התקבל {receivedLabel(item.receivedAt)}</span>
+          {(item.organizer.name || item.organizer.email) && (
+            <span>
+              נציגה: <OrganizerText organizer={item.organizer} />
+            </span>
+          )}
           <span>
-            נציגה:{" "}
-            {item.organizer.name ?? (
-              <bdi dir="ltr" className="ib-mail">
-                {item.organizer.email}
-              </bdi>
-            )}
-          </span>
-          <span>
-            טכנאי:{" "}
-            {tech ? (
-              <>
-                <span className="dot" aria-hidden="true" style={{ background: tech.color }} /> {tech.name}
-              </>
-            ) : (
-              <>
-                לא זוהה ·{" "}
-                <bdi dir="ltr" className="ib-mail">
-                  {item.attendee.email}
-                </bdi>
-              </>
-            )}
+            טכנאי: <TechnicianText attendees={item.attendees} />
           </span>
           <span className="num">
-            מועד בזימון: {ddmm(item.event.date)} {item.event.start}–{item.event.end}
+            {item.event ? (
+              <>
+                מועד בזימון: {ddmm(item.event.date)} {item.event.start}–{item.event.end}
+              </>
+            ) : (
+              <>מועד בזימון: לא נקרא</>
+            )}
           </span>
           {item.requestNumber && (
             <span>
-              פנייה <span className="num">{item.requestNumber}</span>
+              מס׳ פנייה <span className="num">{item.requestNumber}</span>
+            </span>
+          )}
+          {item.customerName && (
+            <span>
+              לקוח: <bdi>{item.customerName}</bdi>
             </span>
           )}
           <span>{INVITATION_SOURCE_LABELS[item.source]}</span>
@@ -133,8 +158,8 @@ function UnparsedRow({ item, receivedLabel }: { item: UnparsedInvitation; receiv
           מה לתקן בזימון
         </p>
         <ul className="ib-plist" aria-labelledby={problemsId}>
-          {item.problems.map((p) => (
-            <ProblemItem key={`${p.kind}-${p.field}`} problem={p} />
+          {item.problems.map((p, i) => (
+            <ProblemItem key={`${i}-${p.kind}-${p.field}`} problem={p} />
           ))}
         </ul>
       </div>
@@ -161,16 +186,15 @@ export function UnparsedInvitationsList({
 }) {
   return (
     <DashboardSection id={id} flush title="ממתינים לתיקון ב-Outlook" count={page.total} hint="החדשים קודם · כל זימון עם מה שחסר או שגוי בו">
+      {/* D08: event-driven intake, never polling. Decision codes stay in comments, not in user text. */}
       <div className="note ib-note">
-        <p>
-          {/* D08: event-driven intake, never polling. Decision codes stay in comments, not in user text. */}
-          מתקנים את הזימון ב-Outlook, והוא נשלח מחדש. המערכת מקבלת את העדכון ברגע שהוא נשלח (לפי אירוע, בלי בדיקה תקופתית),
-          קולטת את הזימון המתוקן, והוא יורד מהרשימה.
-        </p>
-        {/* IN-02, D19: an unknown SKU creates the product; it is never a reason. */}
-        <p>מק״ט שלא מופיע ברשימת המוצרים אינו סיבה: מוצר חדש נוצר בקליטה.</p>
-        {note && <p>{note}</p>}
+        <p>מתקנים את הזימון ב-Outlook והוא נשלח מחדש: המערכת קולטת אותו ברגע שהוא מגיע, והוא יורד מהרשימה.</p>
       </div>
+      {/* IN-02, D19: an unknown SKU creates the product; it is never a reason. Short help text, not the info box. */}
+      <p className="sub" style={{ margin: "0 18px 12px" }}>
+        מק״ט שלא מופיע ברשימת המוצרים אינו סיבה: מוצר חדש נוצר בקליטה.
+        {note && <> {note}</>}
+      </p>
       {page.items.length ? (
         <>
           <ul className="ib-list" aria-label="זימונים שלא נקלטו">

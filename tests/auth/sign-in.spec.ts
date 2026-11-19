@@ -13,8 +13,8 @@ test.describe("sign-in and role landing", () => {
     await signInAs(page, mgr, /\/office$/);
     await expect(page.getByRole("heading", { level: 1, name: "דשבורד" })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "ניווט ראשי" });
-    // Only built screens (Q18): the landing item and Settings › "משתמשים" (D57 (1), D60 (7)).
-    await expect(nav.getByRole("link")).toHaveText(["דשבורד", "הגדרות"]);
+    // Only built screens (Q18): the landing item, "זימונים שלא נקלטו" (S-05) and Settings › "משתמשים" (D57 (1), D60 (7)).
+    await expect(nav.getByRole("link")).toHaveText(["דשבורד", "זימונים שלא נקלטו", "הגדרות"]);
     await expect(page.getByText(`שלום, ${mgr.name}`)).toBeVisible();
     await expect(page.locator(".start-role")).toHaveText("הרשאה: מנהל");
     // D47: a test user carries the marker.
@@ -43,7 +43,7 @@ test.describe("sign-in and role landing", () => {
     await signInAs(page, cs, /\/office$/);
     await expect(page.getByRole("heading", { level: 1, name: "קריאות" })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "ניווט ראשי" });
-    await expect(nav.getByRole("link")).toHaveText(["קריאות"]);
+    await expect(nav.getByRole("link")).toHaveText(["קריאות", "זימונים שלא נקלטו"]);
     await expect(page.getByText("בית", { exact: true })).toHaveCount(0);
     await expect(page.locator(".start-role")).toHaveText("הרשאה: שירות לקוחות");
   });
