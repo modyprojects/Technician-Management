@@ -22,8 +22,13 @@ export function startVisitAsPostgres(visitId: string, to: "en_route" | "in_progr
   localSql(statusChange(visitId, to, `update public.visits set status = '${to}' where id = '${visitId}';`));
 }
 
-/** Closes a scheduled test visit as "טופל" (done) or "המשך טיפול" (followup) with its summary. */
-export function closeVisitAsPostgres(visitId: string, summary: string, to: "done" | "followup" = "done"): void {
+/**
+ * Closes a scheduled test visit as "טופל" (done) or "המשך טיפול" (followup) with its summary.
+ * closedOnItsOwnDay back-dates closed_at to the visit's scheduled end (a past day), so it is closed
+ * BEFORE today as the reduced path (D79) needs; the server guard forbids this write, so triggers
+ * are skipped for that one update only (postgres, LOCAL stack).
+ */
+export function closeVisitAsPostgres(visitId: string, summary: string, to: "done" | "followup" = "done", closedOnItsOwnDay = false): void {
   if (!ID.test(visitId)) throw new Error("not a visit id");
   if (!/^[֐-׿\w ,.-]{1,200}$/.test(summary)) throw new Error("not a plain summary");
   const ack = "אישור בדיקה";
@@ -47,4 +52,10 @@ insert into public.visit_reports (visit_id, summary_text, summary_source, is_tes
 ${signature}`,
     ),
   );
+  if (closedOnItsOwnDay) {
+    localSql(`begin;
+set local session_replication_role = replica;
+update public.visits set closed_at = scheduled_end where id = '${visitId}' and status = '${to}';
+commit;`);
+  }
 }

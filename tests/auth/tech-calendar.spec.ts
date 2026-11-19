@@ -63,7 +63,7 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     if (hasPastDay) {
       ids.pastOpen = await ingestVisit(office, me, yesterday, "09:00", "10:00", mine.pastOpen);
       ids.pastClosed = await ingestVisit(office, me, yesterday, "11:00", "12:00", mine.pastClosed);
-      closeVisitAsPostgres(ids.pastClosed, "הוחלף חלק בדיקה");
+      closeVisitAsPostgres(ids.pastClosed, "הוחלף חלק בדיקה", "done", true);
     }
   });
 
@@ -114,9 +114,24 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     await expect(page.locator("bdi.time-range")).toHaveText(`${ddmm(span.from)}–${ddmm(addDays(span.from, 6))}`);
     const html = await page.content();
     for (const absent of [other.req, other.customer, mine.cancelled.req, mine.pastOpen.req, mine.pastOpen.street]) expect(html).not.toContain(absent);
+    const closedToday = page.locator(`a[href="/tech/visit/${ids.closedToday}"]`);
+    // Closed today: the call details are still served, so request number and customer are shown.
+    await expect(closedToday).toHaveAttribute("aria-label", `פנייה ${mine.closedToday.req} · ${mine.closedToday.customer} · 09:00–09:45 · חיפה · מוצר בדיקה · טופל · נתוני בדיקה`);
+    await expect(closedToday).toContainText(mine.closedToday.req);
     if (hasPastDay) {
+      // Closed BEFORE today (closed_at back-dated to its own day): address, status and summary only.
       const closed = page.locator(`a[href="/tech/visit/${ids.pastClosed}"]`);
-      await expect(closed).toHaveAttribute("aria-label", /הנמל 6, חיפה · טופל · הוחלף חלק בדיקה/);
+      const label = (await closed.getAttribute("aria-label")) ?? "";
+      expect(label).toMatch(/^11:00 · הנמל 6, חיפה · טופל · הוחלף חלק בדיקה · נתוני בדיקה$/);
+      expect(label).not.toContain(mine.pastClosed.req);
+      expect(label).not.toContain(mine.pastClosed.customer);
+      const text = (await closed.textContent()) ?? "";
+      expect(text).not.toContain(mine.pastClosed.req);
+      expect(text).not.toContain(mine.pastClosed.customer);
+    } else {
+      // Sunday: the week starts today, so there is no past day and no past block at all.
+      expect(span.from).toBe(today);
+      expect(html).not.toContain(mine.pastClosed.street);
     }
     await page.goto(`/tech/calendar?view=week&date=${addDays(span.from, 7)}`);
     await expect(page.locator("bdi.time-range")).toHaveText(`${ddmm(addDays(span.from, 7))}–${ddmm(span.to)}`);
