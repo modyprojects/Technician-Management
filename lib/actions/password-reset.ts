@@ -15,7 +15,11 @@
 //    slower for an existing account): the recovery token from the Auth Admin API
 //    (lib/auth/password-reset-admin.ts), the app's own link (origin from configuration, never from
 //    the request) and the email through the mail port, to the account's own address as the Auth
-//    server returns it (review fix 4), never the typed spelling.
+//    server returns it (review fix 4), never the typed spelling. Skipped silently (no link is built
+//    and nothing is sent; the answer was "sent" all the same): a banned account, i.e. a deleted one
+//    (D60 (7) Option A; user-management review N4), and an account that has never signed in (D67 (a):
+//    the self-service reset serves only accounts that have signed in before; the Creator sets the
+//    first password, D50).
 // 2. completePasswordReset: the password rules first (so a typo never uses up the link), then the
 //    link's token once (verifyOtp, on submission only: a link scanner's GET never consumes it), then
 //    the session must be a recent reset-link session (never an ordinary signed-in one), then the new
@@ -62,13 +66,28 @@ function deliveryOrigin(): string | null {
 
 /**
  * Runs after the response: the recovery token, the link and the email. One log line: the refusal
- * code (an unknown address is "user_not_found"), or the delivery's outcome.
+ * code (an unknown address is "user_not_found"), "skipped_banned" for a banned (deleted) account,
+ * "skipped_never_signed_in" for an account that has never signed in (D67 (a)), or the delivery's
+ * outcome.
  */
 async function deliverResetLink(email: string, origin: string): Promise<void> {
   try {
     const token = await createRecoveryTokenHash(email);
     if (!token.ok) {
       logAuthEvent(REQUEST_EVENT, token.code);
+      return;
+    }
+    // A deleted account is banned for good (D60 (7) Option A): no link, no email (review N4). An
+    // account that has never signed in gets none either (D67 (a), owner 2026-11-17: a Manager could
+    // otherwise create an account on a mailbox he controls and set its password himself; the Creator
+    // sets the first password). Auth created the recovery token with the lookup; it is never
+    // delivered.
+    if (token.banned) {
+      logAuthEvent(REQUEST_EVENT, "skipped_banned");
+      return;
+    }
+    if (!token.signedInBefore) {
+      logAuthEvent(REQUEST_EVENT, "skipped_never_signed_in");
       return;
     }
     const link = `${origin}${RESET_PASSWORD_PATH}?token_hash=${token.tokenHash}`;

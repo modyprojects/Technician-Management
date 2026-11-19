@@ -49,13 +49,16 @@ import {
   creatorNoticesOf,
   isAccountRole,
   technicianProfileMissing,
+  type AccountListEntry,
   type AccountRef,
   type AccountRequest,
   type AccountRole,
+  type AccountTechnician,
   type CreationIntent,
   type CreatorNotice,
   type UserAccount,
 } from "@/features/accounts/data/types";
+import { technicianColorTokenOf } from "@/features/reference/data/types";
 import type { SessionQueries } from "@/features/auth/data/ports";
 import { sessionUserOf } from "@/features/auth/data/session";
 import {
@@ -307,6 +310,30 @@ function accountRef(id: string): AccountRef {
 
 /** An account as the port returns it (with its invitation alias, D34 d). */
 const userAccount = (a: DemoAccount): UserAccount => ({ ...a, technicianMissing: technicianProfileMissing(a), isTest: TEST });
+
+/**
+ * A listed account's field profile (D60 (7) unified list, AccountListEntry) from the demo's
+ * technicians (Settings › טכנאים). The demo has no session: it returns the Creator's view (Outlook
+ * email and "פעיל"); its loaders narrow per scope (Q14) as before.
+ */
+function accountTechnician(id: string | null): AccountTechnician | null {
+  const t = id === null ? undefined : TECHS.find((x) => x.id === id);
+  if (!t) return null;
+  const colorToken = technicianColorTokenOf(t.color);
+  return {
+    id: t.id,
+    name: t.name,
+    colorToken,
+    color: colorToken ? t.color : "",
+    device: TECH_DEVICE,
+    outlookEmail: t.email,
+    active: TECH_ACTIVE,
+    version: TECH_VERSIONS[t.id],
+    isTest: TEST,
+  };
+}
+
+const accountEntry = (a: DemoAccount): AccountListEntry => ({ ...userAccount(a), technician: accountTechnician(a.technicianId) });
 
 /** The acting account's role (CreatorNotice.actorRole); null when the account is unknown. */
 const actorRoleOf = (id: string): AccountRole | null => accountById(id)?.role ?? null;
@@ -1115,7 +1142,11 @@ export const demoDataAccess: DataAccess = {
       const roles = filterListValues(query?.roles, isAccountRole, ACCOUNT_ROLE_VALUES);
       const matches = roles ? ACCOUNTS_BY_ROLE.filter((a) => roles.includes(a.role)) : ACCOUNTS_BY_ROLE;
       const page = pageOf(matches, query?.page, query?.limit);
-      return { ...page, items: page.items.map(userAccount) };
+      return { ...page, items: page.items.map(accountEntry) };
+    },
+    async get(accountId) {
+      const a = typeof accountId === "string" ? accountById(accountId) : undefined;
+      return a ? accountEntry(a) : null;
     },
     async requests(query) {
       const statuses = filterListValues(query?.statuses, isAccountRequestStatus, ACCOUNT_REQUEST_STATUSES);

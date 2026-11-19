@@ -1,7 +1,7 @@
 // The typed data-access layer as a whole (owner architecture rule, 2026-11-03): screens read
 // data only through DataAccess and run actions only through Commands. Fixture implementations
 // live under app/dev/demo (G-05); Supabase implementations will live in lib/ (server-only).
-import type { AccountCommands, AccountsQueries } from "@/features/accounts/data/ports";
+import type { DemoAccountCommands, DemoAccountsQueries } from "@/features/accounts/data/ports";
 import type { CalendarQueries, IntakeQueries } from "@/features/calendar/data/ports";
 import type { CallCommands, CallsQueries } from "@/features/calls/data/ports";
 import type { CustomersQueries } from "@/features/customers/data/ports";
@@ -28,7 +28,11 @@ export type DataAccess = {
   notifications: NotificationsQueries;
   profile: ProfileQueries;
   settings: SettingsQueries;
-  accounts: AccountsQueries;
+  /**
+   * The /dev/demo prototype's accounts, with the request path that D60 (7) retired (D61 (1)). The
+   * real screen depends on AccountsQueries alone (features/accounts/data/ports.ts).
+   */
+  accounts: DemoAccountsQueries;
   customers: CustomersQueries;
   products: ProductsQueries;
   intake: IntakeQueries;
@@ -46,7 +50,8 @@ export type Commands = {
   visits: VisitCommands;
   notifications: NotificationCommands;
   settings: SettingsCommands;
-  accounts: AccountCommands;
+  /** As DataAccess.accounts: the demo's commands; the real screen uses AccountCommands alone. */
+  accounts: DemoAccountCommands;
   products: ProductCommands;
   review: ReviewCommands;
   sync: SyncCommands;
