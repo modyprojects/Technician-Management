@@ -47,7 +47,7 @@ export const SKELETON_DEPARTURE_RESULT = "offline" as const;
 export const SKELETON_APPROVAL_TEXT = "קריאת השירות טופלה לשביעות רצון הלקוח";
 
 /** Follow-up reasons as Settings would list them. */
-export const SKELETON_REASONS = ["ממתין לחלקי חילוף", "נדרש ביקור נוסף", "נדרשת בדיקת מתקין", "הזמנת מוצר חדש", "לקוח לא נמצא"] as const;
+export const SKELETON_REASONS = ["חסר חלק חילוף", "נדרש ביקור נוסף", "נדרשת בדיקת מתקין", "הזמנת מוצר חדש", "לקוח לא נמצא"] as const;
 
 /** Photos already taken on the in-progress visit (fake tiles, no image). */
 export const SKELETON_WORK_PHOTOS: { before: readonly SkeletonPhoto[]; after: readonly SkeletonPhoto[] } = {
@@ -166,7 +166,7 @@ const VISITS: readonly SkeletonVisit[] = [
     closed: {
       outcome: "cont",
       summary: "המדחס תקין, נמצאה דליפה בצנרת. נדרש חלק שאינו במלאי.",
-      reason: "ממתין לחלקי חילוף",
+      reason: "חסר חלק חילוף",
       nextNote: "להביא צינור נחושת 3/8 ולהחליף את הקטע הדולף",
       photos: { before: [], after: [{ id: "a1", label: "תמונה 1 · אחרי הטיפול" }] },
     },
