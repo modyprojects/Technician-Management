@@ -5,7 +5,7 @@
 import "server-only";
 import { simulatorEnabled } from "@/features/calendar/adapters/simulator/env";
 
-/** True only where the owner switched the simulator on, and never on Vercel Production. */
+/** True only where the owner switched the simulator on; on Vercel Production only while config/release.json testingPeriod is true (D90). */
 export function calendarSimulatorEnabled(): boolean {
   return simulatorEnabled({ flag: process.env.CALENDAR_SIMULATOR, vercelEnv: process.env.VERCEL_ENV });
 }
