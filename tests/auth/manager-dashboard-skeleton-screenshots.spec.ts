@@ -33,6 +33,13 @@ async function shoot(page: Page, url: string, name: string) {
     await page.goto(url);
     await expect(page.getByRole("heading", { level: 1, name: "דשבורד" })).toBeVisible();
     await ready(page);
+    // The office shell scrolls inside its work area: grow the viewport to the whole dashboard.
+    const height = await page.evaluate(() => {
+      const work = document.querySelector(".work");
+      return Math.max(document.documentElement.scrollHeight, work ? work.scrollHeight + work.getBoundingClientRect().top : 0);
+    });
+    await page.setViewportSize({ width: size.width, height: Math.max(size.height, Math.ceil(height)) });
+    await ready(page);
     const png = path.join(OUT, `${size.width}-${name}.png`);
     await page.screenshot({ path: png, fullPage: true });
     execFileSync("convert", [png, "-quality", "80", png.replace(/\.png$/, ".webp")]);
