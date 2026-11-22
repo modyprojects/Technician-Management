@@ -75,6 +75,7 @@ export function VisitTimeline({
   showReport = true,
   renderRecording,
   renderExtra,
+  renderMedia,
   perFieldTestMarks = true,
 }: {
   visits: readonly TimelineVisit[];
@@ -84,6 +85,8 @@ export function VisitTimeline({
   renderRecording?: RenderRecording;
   /** A part at the end of each visit (the caller decides per visit). */
   renderExtra?: RenderVisitExtra;
+  /** The real card's photos (D92 (2), D95 (f)): replaces the media placeholders when given. */
+  renderMedia?: RenderVisitExtra;
   /** False on the real card (D74): no per-field test marks (media, simulator source line). */
   perFieldTestMarks?: boolean;
 }) {
@@ -95,7 +98,7 @@ export function VisitTimeline({
       </h2>
       <div className="grid">
         {newestFirst.map((v) => (
-          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} renderExtra={renderExtra} perFieldTestMarks={perFieldTestMarks} />
+          <VisitSection key={v.n} v={v} showReport={showReport} renderRecording={renderRecording} renderExtra={renderExtra} renderMedia={renderMedia} perFieldTestMarks={perFieldTestMarks} />
         ))}
       </div>
     </section>
@@ -119,12 +122,14 @@ function VisitSection({
   showReport,
   renderRecording,
   renderExtra,
+  renderMedia,
   perFieldTestMarks,
 }: {
   v: TimelineVisit;
   showReport: boolean;
   renderRecording?: RenderRecording;
   renderExtra?: RenderVisitExtra;
+  renderMedia?: RenderVisitExtra;
   perFieldTestMarks: boolean;
 }) {
   const s = VISIT_STATUSES[v.status];
@@ -251,7 +256,9 @@ function VisitSection({
         </>
       )}
 
-      {showReport && v.media.length > 0 && (
+      {showReport && renderMedia?.(v)}
+
+      {showReport && !renderMedia && v.media.length > 0 && (
         <>
           <div className="sub" style={{ ...labelStyle, display: "flex", gap: 6, alignItems: "center" }}>
             <span>
