@@ -135,8 +135,9 @@ test.describe("the calls pages: navigation and server-side guards", () => {
   test("the navigation of D57 (1) and D60 (4) built so far; Customer Service lands on \"קריאות\" (S-01)", () => {
     expect(OFFICE_CALLS_PATH).toBe("/office/calls");
     expect(officeCallPath("48 213/x")).toBe("/office/calls/48%20213%2Fx");
-    for (const role of ["mgr", "creator"]) expect(realOfficeNav(role).map((i) => i.label)).toEqual(["דשבורד", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
-    expect(realOfficeNav("cs")).toEqual([
+    for (const role of ["mgr", "creator"]) expect(realOfficeNav(role, { cal: true }).map((i) => i.label)).toEqual(["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
+    expect(realOfficeNav("cs", { cal: true })).toEqual([
+      { key: "cal", label: "יומן טכנאים", href: "/office/calendar" },
       { key: "calls", label: "קריאות", href: "/office/calls" },
       { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },
     ]);

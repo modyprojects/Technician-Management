@@ -85,7 +85,10 @@ test.describe.serial("technician calendar on real data (local stack)", () => {
     // The other technician sees his visit and none of ours.
     const client2 = await signedInClient(tech2.email, tech2.password);
     const theirs = (await techVisitsQueriesOf(client2, { technicianId: tech2Row, name: tech2.name }).calendar(span.from, span.to, today)).map((v) => v.id);
-    expect(theirs).toEqual([ids.other]);
+    // Other specs on the shared local stack may add visits for the second technician: assert his visit
+    // is there and none of ours is, not an exact list.
+    expect(theirs).toContain(ids.other);
+    for (const id of [ids.early, ids.noon, ids.tomorrow, ids.closedToday, ids.cancelled]) expect(theirs).not.toContain(id);
     // The window is bounded (two weeks at most).
     await expect(techVisitsQueriesOf(client, { technicianId: techRow, name: tech.name }).calendar(span.from, addDays(span.from, 14), today)).rejects.toThrow(/invalid-range/);
   });

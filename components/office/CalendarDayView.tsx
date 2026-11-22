@@ -14,6 +14,10 @@ import { calVisitKey, hourLabel, hourRange } from "./CalendarParts";
 // The grid shows 08:00-18:00 as in the demo and widens only when a visit falls outside it.
 // Addition: the 🧪 badge on test visits (SIM-15, D47), as on the technician calendar.
 // Presentational: takes the calendar DTO and a link builder.
+// `minColumn` (the real calendar, owner review 22.11, batch 2): every technician's column keeps at
+// least that width so its text stays readable; when the columns do not fit, the calendar scrolls
+// sideways INSIDE .scrollx with the hour column fixed (sticky), and the page itself never scrolls
+// sideways. Without it (the UI demo) the columns share the width as before.
 
 /** Pixels per hour (the demo's H). */
 const H = 60;
@@ -21,7 +25,7 @@ const H = 60;
 /** The demo's minimum block height. */
 const MIN_BLOCK = 36;
 
-function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; href: string }) {
+function DayBlock({ v, from, href, showRequest }: { v: PlacedCalendarVisit; from: number; href: string; showRequest: boolean }) {
   const s = VISIT_STATUSES[v.status];
   const start = toMinutes(v.start);
   const end = toMinutes(v.end);
@@ -48,6 +52,14 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
       }}
     >
       <span className="ev-body">
+        {showRequest && (
+          <>
+            <bdi dir="ltr" className="num">
+              {v.req}
+            </bdi>{" "}
+            ·{" "}
+          </>
+        )}
         <b>{v.customerName}</b> <span className="num">{v.start}</span> · {v.city}
         {v.n > 1 && ` · ביקור ${v.n}`} <br />
         {s.label}
@@ -66,20 +78,34 @@ function DayBlock({ v, from, href }: { v: PlacedCalendarVisit; from: number; hre
   );
 }
 
-export function CalendarDayView({ day, visitHref }: { day: OfficeCalendarDay; visitHref: (visit: VisitRef) => string }) {
+/** `showRequest`: the request number first on each block (D89 (d)); the default look is unchanged. */
+export function CalendarDayView({
+  day,
+  visitHref,
+  showRequest = false,
+  minColumn,
+}: {
+  day: OfficeCalendarDay;
+  visitHref: (visit: VisitRef) => string;
+  showRequest?: boolean;
+  /** The least width of a technician's column, in px; the hour column is then sticky. */
+  minColumn?: number;
+}) {
   const lanes = day.lanes;
   const { from, to } = hourRange(lanes.flatMap((l) => l.visits.items));
   const hours = Math.round((to - from) / 60);
   const height = hours * H;
-  const grid = `56px repeat(${lanes.length}, minmax(0, 1fr))`;
+  const grid = `56px repeat(${lanes.length}, minmax(${minColumn ?? 0}px, 1fr))`;
+  const sticky = minColumn !== undefined;
+  const minWidth = sticky ? 56 + lanes.length * minColumn : lanes.length > 1 ? 640 : 320;
   const cut = lanes.filter((l) => l.visits.total > l.visits.items.length);
   return (
     <>
       {lanes.length > 0 && (
-        <div className="scrollx">
-          <div className="cal" style={{ minWidth: lanes.length > 1 ? 640 : 320 }}>
+        <div className="scrollx" data-day-scroll="">
+          <div className={sticky ? "cal otc-day" : "cal"} style={{ minWidth }}>
             <div className="calhead" style={{ gridTemplateColumns: grid }}>
-              <div />
+              <div className={sticky ? "otc-hours" : undefined} />
               {lanes.map((l) => (
                 <div key={l.technician.id}>
                   <span className="dot" style={{ background: l.technician.color }} aria-hidden="true" /> {l.technician.name}{" "}
@@ -90,7 +116,7 @@ export function CalendarDayView({ day, visitHref }: { day: OfficeCalendarDay; vi
               ))}
             </div>
             <div className="calbody" style={{ gridTemplateColumns: grid }}>
-              <div aria-hidden="true" style={{ position: "relative", height }}>
+              <div aria-hidden="true" className={sticky ? "otc-hours" : undefined} style={{ position: sticky ? "sticky" : "relative", height }}>
                 {Array.from({ length: hours }, (_, i) => (
                   <span key={i} className="num" style={{ position: "absolute", top: i * H + 2, right: 8, fontSize: 11, color: "var(--muted)" }}>
                     {hourLabel(from + i * 60)}
@@ -109,7 +135,7 @@ export function CalendarDayView({ day, visitHref }: { day: OfficeCalendarDay; vi
                     <div key={i} className="hr" style={{ top: (i + 1) * H }} aria-hidden="true" />
                   ))}
                   {l.visits.items.map((v) => (
-                    <DayBlock key={calVisitKey(v)} v={v} from={from} href={visitHref({ req: v.req, n: v.n })} />
+                    <DayBlock key={calVisitKey(v)} v={v} from={from} href={visitHref({ req: v.req, n: v.n })} showRequest={showRequest} />
                   ))}
                 </div>
               ))}

@@ -1,5 +1,21 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { TimeRange } from "@/components/ui/TimeRange";
 import { CalendarLegend } from "./CalendarParts";
+
+const WEEK_TITLE = /^(.*?)(\d\d\.\d\d)–(\d\d\.\d\d)$/;
+
+/** A "שבוע 15.11–19.11" title: the range goes through TimeRange (start–end, design-rules), the rest stays text. */
+function PeriodTitle({ title }: { title: string }) {
+  const m = WEEK_TITLE.exec(title);
+  if (!m) return <>{title}</>;
+  return (
+    <>
+      {m[1]}
+      <TimeRange start={m[2] ?? ""} end={m[3] ?? ""} />
+    </>
+  );
+}
 
 // Title row and filter row of the office "יומן טכנאים" (docs/demo.html offCal() L794-801): the
 // title with the shown period, the "תצוגה בלבד" note, the יום / שבוע / חודש segments, previous /
@@ -7,6 +23,11 @@ import { CalendarLegend } from "./CalendarParts";
 // over in-memory state; here each one is a real link to the calendar URL (?view&date&tech, UI
 // demo, D53) in the demo's look (.seg, .btn, .chip). The calendar is read-only: scheduling stays
 // in Outlook (OF-03). Presentational: the page builds every link.
+// Phone (owner review 22.11, amends D94 (b)): `picker` (the "בחר טכנאי" dropdown) takes the chips'
+// place, and the "תצוגה בלבד" line and the colour legend are left out.
+// Desktop (owner review 22.11, batch 2): `filter` (the one "טכנאים ▾" button with its checkbox list)
+// takes the chips' place, so the filter row stays one row whatever the number of technicians. The
+// chips remain for the UI demo, which passes `technicians` only.
 
 /** A link in the toolbar: a view segment or a technician chip. */
 export type CalendarLink = {
@@ -19,8 +40,24 @@ export type CalendarLink = {
   color?: string;
 };
 
-/** Previous / next: an arrow with an accessible name ("השבוע הקודם"). */
-export type CalendarStep = { href: string; label: string };
+/** Previous / next: an arrow with an accessible name ("השבוע הקודם"); `href` null at the calendar's range edge (D94 (d)). */
+export type CalendarStep = { href: string | null; label: string };
+
+/** An arrow link, or a dimmed, disabled one at the range's edge (as the technician calendar's, D83). */
+function Step({ step, glyph }: { step: CalendarStep; glyph: string }) {
+  if (!step.href) {
+    return (
+      <span className="btn" role="link" aria-disabled="true" aria-label={`${step.label} (מחוץ לטווח היומן)`} style={{ opacity: 0.4, cursor: "default" }}>
+        {glyph}
+      </span>
+    );
+  }
+  return (
+    <Link className="btn" href={step.href} prefetch={false} aria-label={step.label}>
+      {glyph}
+    </Link>
+  );
+}
 
 export function CalendarToolbar({
   title,
@@ -28,7 +65,9 @@ export function CalendarToolbar({
   prev,
   todayHref,
   next,
-  technicians,
+  technicians = [],
+  filter,
+  picker,
 }: {
   /** "רביעי 21.10", "שבוע 18.10–22.10" or "אוקטובר 2026". */
   title: string;
@@ -37,14 +76,20 @@ export function CalendarToolbar({
   todayHref: string;
   next: CalendarStep;
   /** "כולם" first, then every technician. */
-  technicians: readonly CalendarLink[];
+  technicians?: readonly CalendarLink[];
+  /** Desktop: the technician filter button, instead of the chips. */
+  filter?: ReactNode;
+  /** Phone: the technician dropdown instead of the chips; no explanation line, no legend. */
+  picker?: ReactNode;
 }) {
   return (
     <>
       <div className="ptitle">
         <div>
-          <h1>יומן טכנאים · {title}</h1>
-          <div className="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div>
+          <h1>
+            יומן טכנאים · <PeriodTitle title={title} />
+          </h1>
+          {!picker && <div className="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div>}
         </div>
         <div className="ocal-actions">
           <div className="seg ocal-seg" role="group" aria-label="תצוגת היומן">
@@ -55,19 +100,17 @@ export function CalendarToolbar({
             ))}
           </div>
           <div className="ocal-steps" role="group" aria-label="מעבר בין תאריכים">
-            <Link className="btn" href={prev.href} prefetch={false} aria-label={prev.label}>
-              ‹
-            </Link>
+            <Step step={prev} glyph="‹" />
             <Link className="btn" href={todayHref} prefetch={false}>
               היום
             </Link>
-            <Link className="btn" href={next.href} prefetch={false} aria-label={next.label}>
-              ›
-            </Link>
+            <Step step={next} glyph="›" />
           </div>
         </div>
       </div>
+      {picker ?? (
       <div className="ocal-filters">
+        {filter ?? (
         <div className="ocal-chips" role="group" aria-labelledby="ocal-tech-label">
           <span id="ocal-tech-label" className="sub" style={{ fontWeight: 700 }}>
             טכנאי:
@@ -86,8 +129,10 @@ export function CalendarToolbar({
             </Link>
           ))}
         </div>
+        )}
         <CalendarLegend />
       </div>
+      )}
     </>
   );
 }

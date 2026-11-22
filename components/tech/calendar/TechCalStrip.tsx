@@ -4,9 +4,10 @@ import type { CalDay } from "./types";
 
 // The day strip (demo L611): today and the next 6 days, each with its visit count; Friday and
 // Saturday are shown. The chosen day is in the accent colour.
-export function TechCalStrip({ days, selected, dayHref }: { days: CalDay[]; selected: string; dayHref: (d: string) => string }) {
+// `label` (optional): the strip's accessible name; default "הימים הקרובים".
+export function TechCalStrip({ days, selected, dayHref, label = "הימים הקרובים" }: { days: CalDay[]; selected: string; dayHref: (d: string) => string; label?: string }) {
   return (
-    <div role="group" aria-label="הימים הקרובים" style={{ display: "flex", gap: 4, flex: "none" }}>
+    <div role="group" aria-label={label} style={{ display: "flex", gap: 4, flex: "none" }}>
       {days.map(({ date, visits }) => {
         const on = date === selected;
         const n = visits.length;
