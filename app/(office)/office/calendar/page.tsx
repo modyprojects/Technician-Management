@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { CalendarDayView } from "@/components/office/CalendarDayView";
 import { CalendarNoAccess } from "@/components/office/CalendarNoAccess";
 import { CalendarToolbar, type CalendarLink } from "@/components/office/CalendarToolbar";
 import { CalendarWeekView } from "@/components/office/CalendarWeekView";
 import { CallDrawer } from "@/components/office/CallDrawer";
-import { PhoneDayAgenda, PhoneWeekAgenda } from "@/components/office/tech-calendar/PhoneAgenda";
+import { TechSelect } from "@/components/office/tech-calendar/TechSelect";
+import { TechCalDay } from "@/components/tech/calendar/TechCalDay";
+import { TechCalStrip } from "@/components/tech/calendar/TechCalStrip";
+import { TechCalWeek } from "@/components/tech/calendar/TechCalWeek";
 import { TestDataBanner } from "@/components/ui/TestBadge";
 import { OFFICE_CALENDAR_PATH, OFFICE_CALLS_PATH, OFFICE_START_PATH, officeCallPath } from "@/features/auth/landing";
 import { LOGIN_NO_ACCESS_PATH } from "@/features/auth/session-state";
@@ -15,7 +19,8 @@ import type { IsoDate } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
 import { jerusalemToday } from "@/features/visits/data/today";
 import { requireArea } from "@/lib/auth/guards";
-import { calendarRangeOf, clampToRange, inRange, officeCalendarRole, officeDayOf, officeWeekOf, stepsOf } from "@/features/office-calendar/data/office-calendar";
+import { calendarRangeOf, clampToRange, inRange, officeCalendarRole, officeDayOf, officeWeekOf, stepsOf, weekDaysOf } from "@/features/office-calendar/data/office-calendar";
+import { phoneDaysOf, phoneTechOf } from "@/features/office-calendar/data/phone";
 import { callsPermitted } from "@/lib/data/supabase/calls";
 import { officeCalendarQueries } from "@/lib/data/supabase/office-calendar";
 import { OfficeFrame } from "../_OfficeFrame";
@@ -60,7 +65,10 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 // the matrix key `cal`, checked on the server before any read (the database checks every row again);
 // (d) one month back and three months forward from today (Asia/Jerusalem): the date is clamped and
 // the arrows stop at the edges; no month view; (e) read-only: no drag, no edit (scheduling stays in
-// Outlook). On a phone the hour grid is cards (design-rules "phone = cards"). A visit opens the
+// Outlook). Phone (owner review 22.11, amends D94 (b)): one technician at a time, chosen in the
+// "בחר טכנאי" dropdown (?tech=, default the first technician; an unknown id falls back to the
+// first), drawn by the technician calendar's own grids (D85 (b)): the day = the week's day strip and
+// the hour grid, the week = the 7-column grid; no explanation line and no legend. A visit opens the
 // visit drawer, which links to the call card only where the role has `calls`.
 // Guard, at the time of the request: requireArea("office") (anonymous → /login; Technicians and
 // accounts without access → the no-access state), then `cal` on the server: without it "אין הרשאה"
@@ -102,7 +110,10 @@ export default async function OfficeTechCalendarPage({ searchParams }: { searchP
 
   const current: LinkState = { view: asked, date: askedDate, tech, visit: null };
 
-  /** One block of the screen (toolbar and calendar) in `view`; `phone`: cards instead of the grid. */
+  /** The phone's technician (one at a time): the chosen one when shown, else the first. */
+  const phoneTech = phoneTechOf(tech === ALL ? null : tech, data.technicians);
+
+  /** One block of the screen (toolbar and calendar) in `view`; `phone`: one technician on the technician calendar's grids. */
   const block = (view: View, phone: boolean) => {
     const base: LinkState = { ...current, view };
     const href = (next: Partial<LinkState>): string => calendarHref({ ...base, ...next });
@@ -116,30 +127,55 @@ export default async function OfficeTechCalendarPage({ searchParams }: { searchP
       { key: ALL, label: "כולם", href: href({ tech: ALL }), on: tech === ALL },
       ...data.technicians.map((t) => ({ key: t.id, label: t.name, color: t.color, href: href({ tech: t.id }), on: tech === t.id })),
     ];
+    const toolbar = (picker?: ReactNode) => (
+      <CalendarToolbar
+        title={title}
+        views={views}
+        prev={{ href: steps.prev ? href({ date: steps.prev }) : null, label: STEP_LABELS[view].prev }}
+        todayHref={href({ date: null })}
+        next={{ href: steps.next ? href({ date: steps.next }) : null, label: STEP_LABELS[view].next }}
+        technicians={techChips}
+        picker={picker}
+      />
+    );
+    if (phone) {
+      const options = data.technicians.map((t) => ({ id: t.id, name: t.name, href: href({ tech: t.id }) }));
+      const days = phoneDaysOf(data, weekDaysOf(date), phoneTech);
+      const visitOf = (id: string): string => {
+        const [req = "", n = ""] = id.split(":");
+        return visitHref({ req, n: Number(n) });
+      };
+      const day = days.find((d) => d.date === date) ?? { date, visits: [] };
+      return (
+        <>
+          {toolbar(phoneTech ? <TechSelect value={phoneTech} options={options} /> : <div className="empty">אין טכנאים להצגה</div>)}
+          {phoneTech && view === "day" && (
+            <>
+              <TechCalStrip days={days.filter((d) => within(d.date))} selected={date} dayHref={dayHref} label="ימי השבוע" />
+              <TechCalDay day={day} visitHref={(v) => visitOf(v.id)} />
+            </>
+          )}
+          {phoneTech && view === "week" && (
+            <TechCalWeek
+              days={days}
+              today={today}
+              label={title}
+              dayHref={(d) => (within(d) ? dayHref(d) : null)}
+              visitHref={(v) => visitOf(v.id)}
+              greyed={(d) => (within(d) ? null : "מחוץ לטווח היומן")}
+            />
+          )}
+        </>
+      );
+    }
     const day = view === "day" ? officeDayOf(data, date, techFilter) : null;
     const week = view === "week" ? officeWeekOf(data, date, techFilter) : null;
     return (
       <>
-        <CalendarToolbar
-          title={title}
-          views={views}
-          prev={{ href: steps.prev ? href({ date: steps.prev }) : null, label: STEP_LABELS[view].prev }}
-          todayHref={href({ date: null })}
-          next={{ href: steps.next ? href({ date: steps.next }) : null, label: STEP_LABELS[view].next }}
-          technicians={techChips}
-        />
-        {phone ? (
-          <>
-            {day && <PhoneDayAgenda day={day} visitHref={visitHref} />}
-            {week && <PhoneWeekAgenda week={week} today={today} visitHref={visitHref} dayHref={dayHref} inRange={within} />}
-          </>
-        ) : (
-          <>
-            {day && <CalendarDayView day={day} visitHref={visitHref} showRequest />}
-            {week && <CalendarWeekView week={week} today={today} dayHref={dayHref} visitHref={visitHref} quietTest showRequest inRange={within} />}
-            {week && week.total === 0 && <div className="empty">אין ביקורים בשבוע הזה</div>}
-          </>
-        )}
+        {toolbar()}
+        {day && <CalendarDayView day={day} visitHref={visitHref} showRequest />}
+        {week && <CalendarWeekView week={week} today={today} dayHref={dayHref} visitHref={visitHref} quietTest showRequest inRange={within} />}
+        {week && week.total === 0 && <div className="empty">אין ביקורים בשבוע הזה</div>}
       </>
     );
   };

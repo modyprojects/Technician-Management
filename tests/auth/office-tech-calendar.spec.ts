@@ -14,7 +14,8 @@ import { attendeeOf, cancelVisitAsPostgres, ingestVisit, signedInClient, type Fi
 // under the Manager's own session; everything is fictional and test-marked (D47). Records are found
 // by this run's unique request numbers, never by row counts (the stack is shared).
 //   node tests/auth/run-local.mjs [--with-creator] tests/auth/office-tech-calendar.spec.ts
-// Covers D94: (a) Sunday to Saturday; (b) week on desktop, day on phone by default; (c) `cal` on the
+// Covers D94: (a) Sunday to Saturday; (b) week on desktop, day on phone by default, the phone as
+// one technician on the technician calendar's grids with "בחר טכנאי" (owner review 22.11); (c) `cal` on the
 // server for the route and every read (Technicians blocked; with `cal` off: "אין הרשאה" and no data,
 // Creator run only); (d) the range clamp and the arrows' edges; (e) read-only (no edit controls).
 
@@ -59,7 +60,9 @@ function creator(): SeededUser | null {
   return raw ? (JSON.parse(raw) as SeededUser) : null;
 }
 
-const block = (page: Page, req: string) => page.locator(`[data-calendar-block] a[data-cal-visit="${req}:1"]`).filter({ visible: true });
+// A visit's block: the office grids mark it (data-cal-visit); the phone's technician-calendar grids link to its drawer.
+const block = (page: Page, req: string) =>
+  page.locator(`[data-calendar-block] a[data-cal-visit="${req}:1"], [data-calendar-block=phone] a[href*="req=${req}&n=1"]`).filter({ visible: true });
 
 test.describe.serial("יומן טכנאים on real data (local stack)", () => {
   test("setup: visits through the invitation simulator (Manager session)", async () => {
@@ -92,11 +95,15 @@ test.describe.serial("יומן טכנאים on real data (local stack)", () => {
     await expect(page.getByText("מוצגים נתוני בדיקה")).toBeVisible();
     const html = await page.content();
     for (const absent of [visits.cancelled.req, visits.cancelled.customer, visits.far.req]) expect(html).not.toContain(absent);
-    // D94 (e): read-only: no form, input, drag or edit control on the screen.
+    // D94 (e): read-only: no form, input, drag or edit control on the screen; the only select is the
+    // phone's "בחר טכנאי" (navigation only, hidden on desktop).
     const main = page.locator("main");
-    await expect(main.locator("form, input, textarea, select, [draggable=true], [contenteditable=true]")).toHaveCount(0);
+    await expect(main.locator("form, input, textarea, [draggable=true], [contenteditable=true]")).toHaveCount(0);
+    await expect(main.locator("select")).toHaveCount(1);
+    await expect(main.locator("[data-calendar-block=phone] select[data-tech-select]")).toBeHidden();
     await expect(main.getByRole("button")).toHaveCount(0);
     await expect(page.getByText("תצוגה בלבד").first()).toBeVisible();
+    await expect(page.locator("[data-calendar-block=desktop] .ocal-chips")).toBeVisible();
 
     // A block opens the drawer; the Manager has `calls`, so it links to the call card.
     await block(page, visits.mine.req).click();
@@ -136,11 +143,36 @@ test.describe.serial("יומן טכנאים on real data (local stack)", () => {
     await page.context().close();
   });
 
-  test("Customer Service, phone: the day by default (D94 (b)), cards, the drawer", async ({ browser }) => {
+  test("Customer Service, phone: the day by default (D94 (b)), one technician from \"בחר טכנאי\", the hour grid, the week, the drawer", async ({ browser }) => {
     const page = await signedInPage(browser, seeded().cs, /\/office\/calls$/, phone);
+    const mine = process.env.AUTH_E2E_TECH_ROW ?? "";
+    const them = process.env.AUTH_E2E_TECH2_ROW ?? "";
     await page.goto("/office/calendar");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`יומן טכנאים · ${dayName(today)} ${ddmm(today)}`);
+    // Owner review 22.11: a dropdown instead of the chips; no explanation line, no legend.
+    const select = page.getByRole("combobox", { name: "בחר טכנאי" });
+    await expect(select).toBeVisible();
+    await expect(page.locator(".ocal-chips").filter({ visible: true })).toHaveCount(0);
+    await expect(page.getByText("תצוגה בלבד").filter({ visible: true })).toHaveCount(0);
+    await expect(page.locator(".ocal-legend").filter({ visible: true })).toHaveCount(0);
+    // Default: the first technician; choosing one puts it in the address.
+    const firstOption = await select.locator("option").first().getAttribute("value");
+    await expect(select).toHaveValue(firstOption ?? "");
+    await select.selectOption(mine);
+    await expect(page).toHaveURL(new RegExp(`tech=${mine}`));
+    // The technician calendar's day: the week's day strip and the hour grid with the block.
+    await expect(page.getByRole("group", { name: "ימי השבוע" }).filter({ visible: true })).toBeVisible();
     await expect(block(page, visits.mine.req)).toContainText(visits.mine.customer);
+    await expect(block(page, visits.theirs.req)).toHaveCount(0);
+    // An unknown technician falls back to the first.
+    await page.goto("/office/calendar?tech=00000000-0000-4000-8000-000000000000");
+    await expect(select).toHaveValue(firstOption ?? "");
+    // The week: the technician calendar's 7 columns, the other technician's Saturday visit.
+    await page.goto(`/office/calendar?view=week&tech=${them}`);
+    await expect(page.locator("[data-calendar-block=phone] [role=group][aria-label^='שבת']")).toBeVisible();
+    await expect(block(page, visits.theirs.req)).toContainText(visits.theirs.req);
+    await expect(block(page, visits.mine.req)).toHaveCount(0);
+    await page.goto(`/office/calendar?tech=${mine}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await block(page, visits.mine.req).click();
     await expect(page.getByRole("dialog")).toContainText(visits.mine.customer);

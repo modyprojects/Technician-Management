@@ -19,7 +19,8 @@ export const blockName = (v: CalVisit): string =>
     .filter(Boolean)
     .join(" · ");
 
-export function TechCalDay({ day }: { day: CalDay }) {
+/** `visitHref` (optional): where a block links; default the technician's own visit card (D85 (e)). */
+export function TechCalDay({ day, visitHref = (v) => techVisitPath(v.id) }: { day: CalDay; visitHref?: (v: CalVisit) => string }) {
   const range = hourRange(day.visits);
   const hours = range.endHour - range.startHour;
   return (
@@ -38,7 +39,7 @@ export function TechCalDay({ day }: { day: CalDay }) {
         return (
           <Link
             key={v.id}
-            href={techVisitPath(v.id)}
+            href={visitHref(v)}
             className="ev"
             aria-label={blockName(v)}
             style={{ top: top + 2, height: height - 4, right: 52, left: 8, background: s.bg, color: s.fg, borderRightColor: s.c, textDecoration: "none", overflowWrap: "anywhere", alignItems: "flex-start", gap: 6 }}

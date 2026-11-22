@@ -27,11 +27,11 @@ const WIDE = "hidden min-[820px]:block";
 const reducedName = (v: CalVisit): string =>
   [v.request && `פנייה ${v.request}`, v.start, v.address, VISIT_STATUSES[v.status].label, v.summary, v.isTest && TEST_DATA_LABEL].filter(Boolean).join(" · ");
 
-function Block({ v, past, box }: { v: CalVisit; past: boolean; box: { top: number; height: number } }) {
+function Block({ v, past, box, href }: { v: CalVisit; past: boolean; box: { top: number; height: number }; href: string }) {
   const s = VISIT_STATUSES[v.status];
   return (
     <Link
-      href={techVisitPath(v.id)}
+      href={href}
       aria-label={past ? reducedName(v) : blockName(v)}
       style={{ position: "absolute", top: box.top + 1, height: Math.max(18, box.height - 2), right: 1, left: 1, background: s.bg, color: s.fg, borderRight: `3px solid ${s.c}`, borderRadius: 5, padding: "3px 3px", fontSize: 10, fontWeight: 700, lineHeight: 1.25, overflow: "hidden", overflowWrap: "anywhere", textAlign: "right", textDecoration: "none" }}
     >
@@ -59,7 +59,26 @@ function Block({ v, past, box }: { v: CalVisit; past: boolean; box: { top: numbe
   );
 }
 
-export function TechCalWeek({ days, today, label, dayHref }: { days: CalDay[]; today: string; label: string; dayHref: (d: string) => string | null }) {
+/**
+ * Optional (defaults keep the technician calendar): `visitHref`, where a block links (default the
+ * technician's visit card); `greyed`, the accessible note of a greyed day, or null for a normal day
+ * (default: a day before today is "יום שעבר", greyed, its blocks in the reduced view).
+ */
+export function TechCalWeek({
+  days,
+  today,
+  label,
+  dayHref,
+  visitHref = (v) => techVisitPath(v.id),
+  greyed = (d) => (d < today ? "יום שעבר" : null),
+}: {
+  days: CalDay[];
+  today: string;
+  label: string;
+  dayHref: (d: string) => string | null;
+  visitHref?: (v: CalVisit) => string;
+  greyed?: (d: string) => string | null;
+}) {
   const range = hourRange(days.flatMap((d) => d.visits));
   const hours = range.endHour - range.startHour;
   const rows = Array.from({ length: hours }, (_, i) => range.startHour + i);
@@ -70,7 +89,7 @@ export function TechCalWeek({ days, today, label, dayHref }: { days: CalDay[]; t
           <div />
           {days.map(({ date }) => {
             const href = dayHref(date);
-            const past = date < today;
+            const past = greyed(date) !== null;
             const style: CSSProperties = { display: "block", padding: "6px 0", textAlign: "center", textDecoration: "none", color: date === today ? "var(--accent)" : "inherit", ...(past ? PAST : null) };
             const inner = (
               <>
@@ -99,17 +118,18 @@ export function TechCalWeek({ days, today, label, dayHref }: { days: CalDay[]; t
             ))}
           </div>
           {days.map(({ date, visits }) => {
-            const past = date < today;
+            const note = greyed(date);
+            const past = note !== null;
             return (
               <div
                 key={date}
                 role="group"
-                aria-label={`${dayName(date)} ${ddmm(date)}${past ? " · יום שעבר" : ""}`}
+                aria-label={`${dayName(date)} ${ddmm(date)}${note ? ` · ${note}` : ""}`}
                 style={{ position: "relative", borderRight: "1px solid var(--line2)", backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${HOUR_PX - 1}px, var(--line2) ${HOUR_PX - 1}px, var(--line2) ${HOUR_PX}px)`, ...(date === today ? { backgroundColor: "var(--accent-l)" } : null), ...(past ? { backgroundColor: "var(--line2)" } : null) }}
               >
                 <div style={past ? PAST : undefined}>
                   {visits.map((v) => (
-                    <Block key={v.id} v={v} past={past} box={blockBox(v, range, HOUR_PX)} />
+                    <Block key={v.id} v={v} past={past} box={blockBox(v, range, HOUR_PX)} href={visitHref(v)} />
                   ))}
                 </div>
                 {!visits.length && (

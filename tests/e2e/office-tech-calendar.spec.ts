@@ -22,6 +22,7 @@ import {
   type DetailRow,
   type TechnicianRow,
 } from "@/features/office-calendar/data/office-calendar";
+import { phoneDaysOf, phoneTechOf, techCalVisitOf } from "@/features/office-calendar/data/phone";
 import { onlyInProject } from "./helpers";
 
 // "יומן טכנאים" on real data (D88 office module 2; D94): the pure rules of the Supabase adapter
@@ -136,6 +137,23 @@ test.describe("the office calendar's mapping (Supabase adapter)", () => {
     expect(week.days.map((d) => d.visits.total)).toEqual([2, 0, 0, 0, 0, 1, 0]);
     expect(officeWeekOf(data, "2026-11-25", T1).total).toBe(2);
     expect(placeVisits([])).toEqual([]);
+  });
+
+  test("phone (owner review 22.11): one technician, default the first, unknown falls back; the technician calendar's shape", () => {
+    const shown = [tech(T1, "אבי"), tech(T3, "גל")].map((t) => ({ id: t.id }));
+    expect(phoneTechOf(T3, shown)).toBe(T3);
+    expect(phoneTechOf(null, shown)).toBe(T1);
+    expect(phoneTechOf("not-a-tech", shown)).toBe(T1);
+    expect(phoneTechOf(T2, [])).toBeNull();
+    const second = calendarVisitOf(row({ visit_number: 2, scheduled_start: "2026-11-22T06:00:00+00:00", scheduled_end: "2026-11-22T06:30:00+00:00" }), techs)!;
+    const visits = [calendarVisitOf(row(), techs)!, second, calendarVisitOf(row({ technician_id: T3 }), techs)!];
+    const data = { visits, technicians: [], capped: false };
+    const days = phoneDaysOf(data, weekDaysOf("2026-11-25"), T1);
+    expect(days.map((d) => d.visits.length)).toEqual([2, 0, 0, 0, 0, 0, 0]);
+    // By start time; the id is the visit ref the drawer opens.
+    expect(days[0]!.visits.map((v) => v.id)).toEqual(["48213:2", "48213:1"]);
+    expect(techCalVisitOf(visits[0]!)).toMatchObject({ id: "48213:1", request: "48213", customer: "משפחת לוי", city: "רחובות", product: "ברז", start: "09:00", end: "10:30", status: "new", isTest: true, isFollowUp: false });
+    expect(phoneDaysOf(data, ["2026-11-22"], null)[0]!.visits).toEqual([]);
   });
 
   test("the drawer: field times, signer only when done, reason only when follow-up; outside the window or cancelled is null", () => {
@@ -259,6 +277,10 @@ test.describe("the calendar page: navigation and server-side guards", () => {
     expect(page).not.toMatch(/skeleton|fixture|app\/dev/i);
     // D94 (e): read-only: no form, no server action, no drag.
     expect(page).not.toMatch(/<form|"use server"|draggable|onDrag|action=/);
+    // Owner review 22.11: the phone reuses the technician calendar's grids; no card list.
+    expect(page).toContain("<TechCalDay");
+    expect(page).toContain("<TechCalWeek");
+    expect(page).not.toContain("PhoneAgenda");
     const server = readFileSync(path.resolve("lib/data/supabase/office-calendar.ts"), "utf8");
     expect(server).toContain('import "server-only";');
     expect(server).toContain("createUserSupabaseClient");

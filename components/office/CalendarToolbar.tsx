@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { TimeRange } from "@/components/ui/TimeRange";
 import { CalendarLegend } from "./CalendarParts";
 
@@ -22,6 +23,8 @@ function PeriodTitle({ title }: { title: string }) {
 // over in-memory state; here each one is a real link to the calendar URL (?view&date&tech, UI
 // demo, D53) in the demo's look (.seg, .btn, .chip). The calendar is read-only: scheduling stays
 // in Outlook (OF-03). Presentational: the page builds every link.
+// Phone (owner review 22.11, amends D94 (b)): `picker` (the "בחר טכנאי" dropdown) takes the chips'
+// place, and the "תצוגה בלבד" line and the colour legend are left out; the desktop is unchanged.
 
 /** A link in the toolbar: a view segment or a technician chip. */
 export type CalendarLink = {
@@ -60,6 +63,7 @@ export function CalendarToolbar({
   todayHref,
   next,
   technicians,
+  picker,
 }: {
   /** "רביעי 21.10", "שבוע 18.10–22.10" or "אוקטובר 2026". */
   title: string;
@@ -69,6 +73,8 @@ export function CalendarToolbar({
   next: CalendarStep;
   /** "כולם" first, then every technician. */
   technicians: readonly CalendarLink[];
+  /** Phone: the technician dropdown instead of the chips; no explanation line, no legend. */
+  picker?: ReactNode;
 }) {
   return (
     <>
@@ -77,7 +83,7 @@ export function CalendarToolbar({
           <h1>
             יומן טכנאים · <PeriodTitle title={title} />
           </h1>
-          <div className="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div>
+          {!picker && <div className="sub">תצוגה בלבד. השיבוץ נעשה ב-Outlook ומתעדכן כאן אוטומטית. לחיצה על ביקור פותחת את פרטי הקריאה.</div>}
         </div>
         <div className="ocal-actions">
           <div className="seg ocal-seg" role="group" aria-label="תצוגת היומן">
@@ -96,6 +102,7 @@ export function CalendarToolbar({
           </div>
         </div>
       </div>
+      {picker ?? (
       <div className="ocal-filters">
         <div className="ocal-chips" role="group" aria-labelledby="ocal-tech-label">
           <span id="ocal-tech-label" className="sub" style={{ fontWeight: 700 }}>
@@ -117,6 +124,7 @@ export function CalendarToolbar({
         </div>
         <CalendarLegend />
       </div>
+      )}
     </>
   );
 }
