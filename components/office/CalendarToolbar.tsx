@@ -34,8 +34,24 @@ export type CalendarLink = {
   color?: string;
 };
 
-/** Previous / next: an arrow with an accessible name ("השבוע הקודם"). */
-export type CalendarStep = { href: string; label: string };
+/** Previous / next: an arrow with an accessible name ("השבוע הקודם"); `href` null at the calendar's range edge (D94 (d)). */
+export type CalendarStep = { href: string | null; label: string };
+
+/** An arrow link, or a dimmed, disabled one at the range's edge (as the technician calendar's, D83). */
+function Step({ step, glyph }: { step: CalendarStep; glyph: string }) {
+  if (!step.href) {
+    return (
+      <span className="btn" role="link" aria-disabled="true" aria-label={`${step.label} (מחוץ לטווח היומן)`} style={{ opacity: 0.4, cursor: "default" }}>
+        {glyph}
+      </span>
+    );
+  }
+  return (
+    <Link className="btn" href={step.href} prefetch={false} aria-label={step.label}>
+      {glyph}
+    </Link>
+  );
+}
 
 export function CalendarToolbar({
   title,
@@ -72,15 +88,11 @@ export function CalendarToolbar({
             ))}
           </div>
           <div className="ocal-steps" role="group" aria-label="מעבר בין תאריכים">
-            <Link className="btn" href={prev.href} prefetch={false} aria-label={prev.label}>
-              ‹
-            </Link>
+            <Step step={prev} glyph="‹" />
             <Link className="btn" href={todayHref} prefetch={false}>
               היום
             </Link>
-            <Link className="btn" href={next.href} prefetch={false} aria-label={next.label}>
-              ›
-            </Link>
+            <Step step={next} glyph="›" />
           </div>
         </div>
       </div>

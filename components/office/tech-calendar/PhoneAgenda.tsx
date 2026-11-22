@@ -81,15 +81,23 @@ export function PhoneWeekAgenda({
   today,
   visitHref,
   dayHref,
+  inRange = () => true,
 }: {
   week: OfficeCalendarWeek;
   today: IsoDate;
   visitHref: (v: VisitRef) => string;
   dayHref: (d: IsoDate) => string;
+  /** Whether a day is inside the calendar's range (D94 (d)); a day outside it is a short greyed line. */
+  inRange?: (d: IsoDate) => boolean;
 }) {
   return (
     <div style={stackStyle}>
-      {week.days.map((d) => (
+      {week.days.map((d) =>
+        !inRange(d.date) ? (
+          <div key={d.date} className="sub">
+            {dayName(d.date)} {ddmm(d.date)} · מחוץ לטווח היומן
+          </div>
+        ) : (
         <section key={d.date} aria-labelledby={`pw-${d.date}`}>
           <h2 id={`pw-${d.date}`} style={{ fontSize: 16, margin: "0 0 8px" }}>
             <Link href={dayHref(d.date)} prefetch={false} className="lnk">
@@ -110,7 +118,8 @@ export function PhoneWeekAgenda({
             <div className="sub">אין ביקורים</div>
           )}
         </section>
-      ))}
+        ),
+      )}
     </div>
   );
 }

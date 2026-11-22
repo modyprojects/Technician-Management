@@ -8,8 +8,8 @@ import type { VisitRef } from "@/features/visits/data/types";
 import { calVisitKey } from "./CalendarParts";
 import { TimeRange } from "@/components/ui/TimeRange";
 
-// Office calendar, week view (docs/demo.html offCal() L769-774): five columns, Sunday to
-// Thursday, today tinted; each day's header opens that day's day view, and each visit is a block
+// Office calendar, week view (docs/demo.html offCal() L769-774): one column per day of the week
+// DTO (the demo: Sunday to Thursday; the real calendar: Sunday to Saturday, D94 (a)), today tinted; each day's header opens that day's day view, and each visit is a block
 // with the technician's colour on its edge and the status colours as its background. A block is a
 // link that opens the visit drawer (`req&n` in the URL). Sideways scrolling inside .scrollx on
 // narrow screens, as in the demo. Presentational: takes the calendar DTO and link builders.
@@ -67,6 +67,7 @@ export function CalendarWeekView({
   visitHref,
   quietTest = false,
   showRequest = false,
+  inRange,
 }: {
   week: OfficeCalendarWeek;
   today: IsoDate;
@@ -75,22 +76,46 @@ export function CalendarWeekView({
   visitHref: (visit: VisitRef) => string;
   quietTest?: boolean;
   showRequest?: boolean;
+  /** Whether a day is inside the calendar's range (D94 (d)); a day outside it is greyed, without a link. Default: every day. */
+  inRange?: (date: IsoDate) => boolean;
 }) {
+  // One column per day of the DTO: five (Sunday to Thursday, the demo) or seven (Sunday to Saturday, D94 (a)).
+  const cols = Math.max(1, week.days.length);
   return (
     <>
       <div className="scrollx">
-        <div className="cal ocal-wk">
+        <div className="cal ocal-wk" style={cols === 5 ? undefined : { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, minWidth: cols * 140 }}>
           {week.days.map((d) => {
             const isToday = d.date === today;
             const more = d.visits.total - d.visits.items.length;
-            return (
-              <div key={d.date} className={isToday ? "ocal-wk-day today" : "ocal-wk-day"}>
-                <Link className="ocal-wk-head" href={dayHref(d.date)} prefetch={false} aria-current={isToday ? "date" : undefined}>
-                  {dayName(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
+            const inside = inRange ? inRange(d.date) : true;
+            const label = (
+              <>
+                {dayName(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
+                {inside && (
                   <span className="sub" style={{ fontWeight: 400 }}>
                     · <span className="num">{d.visits.total}</span>
                     <span className="sr-only"> ביקורים</span>
                   </span>
+                )}
+              </>
+            );
+            if (!inside) {
+              return (
+                <div key={d.date} className="ocal-wk-day" style={{ background: "var(--line2)", color: "var(--muted)" }}>
+                  <div className="ocal-wk-head" style={{ borderBottom: "1px solid var(--line)", padding: "10px 12px", fontWeight: 700 }}>
+                    {label}
+                  </div>
+                  <div className="sub" style={{ textAlign: "center", padding: 12 }}>
+                    מחוץ לטווח היומן
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={d.date} className={isToday ? "ocal-wk-day today" : "ocal-wk-day"}>
+                <Link className="ocal-wk-head" href={dayHref(d.date)} prefetch={false} aria-current={isToday ? "date" : undefined}>
+                  {label}
                 </Link>
                 {d.visits.items.length > 0 ? (
                   <ul className="ocal-wk-list">
