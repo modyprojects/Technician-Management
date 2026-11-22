@@ -10,7 +10,8 @@ import { seeded, submitSignIn } from "./helpers";
 import { closeVisitAsPostgres, startVisitAsPostgres } from "./tech-calendar-fixtures";
 import { attendeeOf, ingestVisit, signedInClient, type FictionalVisit } from "./tech-fixtures";
 
-// On demand only (SCREENSHOTS=1): the review images of the real "יומן טכנאים" (D94) at 390 and
+// On demand only (SCREENSHOTS=1): the review images of the real "יומן טכנאים" (D94; the phone as
+// amended by the owner's review of 22.11) at 390 and
 // 1440 px (D72), from a local production build signed in as the Manager to the LOCAL stack
 // (tests/auth/run-local.mjs). Every record is fictional and test-marked (D47): the visits are made
 // through the invitation simulator's ingestion service under the Manager's session.
@@ -48,11 +49,23 @@ async function ready(page: Page) {
   await page.waitForLoadState("networkidle");
 }
 
-async function shoot(page: Page, url: string, name: string, sizes: readonly { width: number; height: number }[] = SIZES) {
+/**
+ * `url` at each size; `phoneTech` is added to the phone's address (the phone shows one technician,
+ * owner review 22.11); `before` runs after the page is ready (e.g. to show the dropdown's options).
+ */
+async function shoot(
+  page: Page,
+  url: string,
+  name: string,
+  sizes: readonly { width: number; height: number }[] = SIZES,
+  phoneTech = "",
+  before?: (page: Page) => Promise<void>,
+) {
   for (const size of sizes) {
     await page.setViewportSize(size);
-    await page.goto(url);
+    await page.goto(size.width === 390 && phoneTech ? `${url}${url.includes("?") ? "&" : "?"}tech=${phoneTech}` : url);
     await ready(page);
+    if (before) await before(page);
     const png = path.join(OUT, `${size.width}-${name}.png`);
     await page.screenshot({ path: png, fullPage: size.width === 390 });
     execFileSync("convert", [png, "-quality", "80", png.replace(/\.png$/, ".webp")]);
@@ -60,7 +73,7 @@ async function shoot(page: Page, url: string, name: string, sizes: readonly { wi
   }
 }
 
-test("screenshots: week, day, drawer, empty, range edge", async ({ page }) => {
+test("screenshots: week, day, drawer, technician dropdown, range edge", async ({ page }) => {
   test.setTimeout(240_000);
   mkdirSync(OUT, { recursive: true });
   const { mgr } = seeded();
@@ -87,12 +100,22 @@ test("screenshots: week, day, drawer, empty, range edge", async ({ page }) => {
 
   await submitSignIn(page, mgr.email, mgr.password);
   await expect(page).toHaveURL(/\/office$/);
-  // The default of each device (D94 (b)): the week at 1440, the day at 390.
-  await shoot(page, "/office/calendar", "default");
-  await shoot(page, `/office/calendar?view=week&date=${today}`, "week", [SIZES[0]]);
+  // The default of each device (D94 (b)): the week at 1440, the day at 390 (one technician: the
+  // first one with visits is chosen in the address, as "בחר טכנאי" does).
+  const techA = process.env.AUTH_E2E_TECH_ROW ?? "";
+  await shoot(page, "/office/calendar", "default", SIZES, techA);
+  await shoot(page, `/office/calendar?view=week&date=${today}`, "week", [SIZES[0]], techA);
   await shoot(page, `/office/calendar?view=day&date=${today}`, "day", [SIZES[1]]);
-  await shoot(page, `/office/calendar?view=day&date=${today}&req=${first.req}&n=1`, "drawer");
-  await shoot(page, `/office/calendar?view=week&date=${range.max}`, "range-edge");
+  await shoot(page, `/office/calendar?view=day&date=${today}&req=${first.req}&n=1`, "drawer", SIZES, techA);
+  await shoot(page, `/office/calendar?view=week&date=${range.max}`, "range-edge", SIZES, techA);
+  // "בחר טכנאי" with its options: a phone opens the system picker, which a page screenshot cannot
+  // show, so the list is drawn in place (size = option count) for the image only.
+  await shoot(page, "/office/calendar", "tech-select", [SIZES[0]], techA, async (p) => {
+    await p.locator("[data-calendar-block=phone] select[data-tech-select]").evaluate((el) => {
+      const select = el as HTMLSelectElement;
+      select.size = select.options.length;
+    });
+  });
 });
 
 // D60 (4), D96: Customer Service's menu with `cal`: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו".
