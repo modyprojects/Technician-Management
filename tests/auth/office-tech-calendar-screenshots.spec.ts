@@ -5,7 +5,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { addDays, weekStartOf } from "@/features/calendar/data/dates";
 import { jerusalemToday } from "@/features/visits/data/today";
-import { calendarRangeOf } from "@/lib/data/office-calendar";
+import { calendarRangeOf } from "@/features/office-calendar/data/office-calendar";
 import { seeded, submitSignIn } from "./helpers";
 import { closeVisitAsPostgres, startVisitAsPostgres } from "./tech-calendar-fixtures";
 import { attendeeOf, ingestVisit, signedInClient, type FictionalVisit } from "./tech-fixtures";

@@ -21,11 +21,11 @@ import {
   type CalendarVisitRow,
   type DetailRow,
   type TechnicianRow,
-} from "@/lib/data/office-calendar";
+} from "@/features/office-calendar/data/office-calendar";
 import { onlyInProject } from "./helpers";
 
 // "יומן טכנאים" on real data (D88 office module 2; D94): the pure rules of the Supabase adapter
-// (lib/data/office-calendar.ts), the `cal` gate before any read, and source checks of the page's
+// (features/office-calendar/data/office-calendar.ts), the `cal` gate before any read, and source checks of the page's
 // server-side guards. The screen on real data is tested against the local stack
 // (tests/auth/office-tech-calendar.spec.ts).
 

@@ -1,6 +1,6 @@
 // The office "יומן טכנאים" reads for this request (D88 office module 2; D94). Server-only. The
 // session's user comes from lib/auth/session.ts (server-validated); every read runs under that
-// user's own session (RLS), never the secret key, through lib/data/office-calendar.ts, which checks
+// user's own session (RLS), never the secret key, through features/office-calendar/data/office-calendar.ts, which checks
 // the matrix key `cal` before any read (D94 (c)). Without a signed-in user or the Supabase
 // configuration nothing is read (deny by default, fail closed). A failed read throws
 // OfficeCalendarQueryError (a code only), logged here by its code; the page fails closed.
@@ -17,7 +17,7 @@ import {
   type CalendarRange,
   type OfficeCalendarData,
   type OfficeCalendarQueries,
-} from "@/lib/data/office-calendar";
+} from "@/features/office-calendar/data/office-calendar";
 import { logAuthEvent } from "@/lib/auth/log";
 import { getSessionState } from "@/lib/auth/session";
 import { createUserSupabaseClient } from "@/lib/supabase/server";

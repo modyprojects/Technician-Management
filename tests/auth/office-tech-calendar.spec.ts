@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { addDays, dayName, ddmm, weekStartOf } from "@/features/calendar/data/dates";
 import { jerusalemToday } from "@/features/visits/data/today";
-import { calendarRangeOf, officeCalendarQueriesOf } from "@/lib/data/office-calendar";
+import { calendarRangeOf, officeCalendarQueriesOf } from "@/features/office-calendar/data/office-calendar";
 import type { SeededUser } from "./global-setup";
 import { localSqlValue, seeded, submitSignIn } from "./helpers";
 import { attendeeOf, cancelVisitAsPostgres, ingestVisit, signedInClient, type FictionalVisit } from "./tech-fixtures";

@@ -15,7 +15,7 @@ import type { IsoDate } from "@/features/data-access/common";
 import type { VisitRef } from "@/features/visits/data/types";
 import { jerusalemToday } from "@/features/visits/data/today";
 import { requireArea } from "@/lib/auth/guards";
-import { calendarRangeOf, clampToRange, inRange, officeCalendarRole, officeDayOf, officeWeekOf, stepsOf } from "@/lib/data/office-calendar";
+import { calendarRangeOf, clampToRange, inRange, officeCalendarRole, officeDayOf, officeWeekOf, stepsOf } from "@/features/office-calendar/data/office-calendar";
 import { callsPermitted } from "@/lib/data/supabase/calls";
 import { officeCalendarQueries } from "@/lib/data/supabase/office-calendar";
 import { OfficeFrame } from "../_OfficeFrame";
