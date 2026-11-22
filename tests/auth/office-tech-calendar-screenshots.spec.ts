@@ -94,3 +94,26 @@ test("screenshots: week, day, drawer, empty, range edge", async ({ page }) => {
   await shoot(page, `/office/calendar?view=day&date=${today}&req=${first.req}&n=1`, "drawer");
   await shoot(page, `/office/calendar?view=week&date=${range.max}`, "range-edge");
 });
+
+// D60 (4), D96: Customer Service's menu with `cal`: "יומן טכנאים", "קריאות", "זימונים שלא נקלטו".
+test("screenshots: Customer Service navigation", async ({ browser }) => {
+  test.setTimeout(120_000);
+  mkdirSync(OUT, { recursive: true });
+  const { cs } = seeded();
+  for (const size of SIZES) {
+    const context = await browser.newContext({ viewport: size });
+    const page = await context.newPage();
+    await submitSignIn(page, cs.email, cs.password);
+    await expect(page).toHaveURL(/\/office\/calls$/);
+    if (size.width === 390) {
+      const menu = page.getByRole("button", { name: /תפריט/ });
+      if (await menu.count()) await menu.first().click();
+    }
+    await ready(page);
+    const png = path.join(OUT, `${size.width}-cs-nav.png`);
+    await page.screenshot({ path: png });
+    execFileSync("convert", [png, "-quality", "80", png.replace(/\.png$/, ".webp")]);
+    rmSync(png);
+    await context.close();
+  }
+});

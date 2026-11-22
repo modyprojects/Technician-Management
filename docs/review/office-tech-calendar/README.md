@@ -23,3 +23,8 @@ The local stack is shared, so the technician list also holds technicians made by
 6. **The drawer's "לכרטיס הקריאה המלא" shows only for roles with `calls`**, and "חיוג לטכנאי" only when the technician's work phone is readable (Manager, Creator). Reason: no link to a screen the role cannot open; RLS decides the phone.
 7. **Technicians shown**: every technician who accepts invitations, plus any with a visit that week, by name (the skeleton had four fixed ones). Reason: real data.
 8. **Test-data banner** only when a shown record is test-marked; test records are hidden on Production after go-live. Reason: D91.
+
+## Additions after the independent review (22.11)
+- "יומן טכנאים" appears in the menu only when the user has `cal` (D94 (c)); before, every office role saw it and the page denied. Review nit 4.
+- After go-live the drawer's technician read drops test rows (D91). Review nit 3.
+- Customer Service navigation (D60 (4), D96): "יומן טכנאים", "קריאות", "זימונים שלא נקלטו" — `390-cs-nav.webp`, `1440-cs-nav.webp`.
