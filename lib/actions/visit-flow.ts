@@ -12,7 +12,7 @@
 // App rules on top of the database's (D95 (a)): at most 8 photos per phase, "after" required before a
 // closure, images only up to the bucket's 10 MiB ceiling (the compressed blob's declared type and
 // size, D95 (h), (i)). Signed upload links are created under the caller's session (the Storage
-// INSERT policy admits only his own pending path) and are short-lived; they are never logged.
+// INSERT policy admits only his own pending path); Supabase keeps them valid for about 2 hours. They are never logged.
 import "server-only";
 import { z } from "zod";
 import { isUuid } from "@/features/data-access/common";
@@ -143,8 +143,8 @@ export async function arriveVisit(input: unknown): Promise<Result<{ fieldVersion
 const mediaRow = z.object({ out_media_id: uuid, out_storage_path: z.string().min(1).max(200), out_replay: z.boolean() });
 
 /**
- * A photo or the signature (TE-14, TE-19): the pending row (add_visit_media) and a short-lived
- * signed upload link to exactly its path. A replay answers the same row; when its object is
+ * A photo or the signature (TE-14, TE-19): the pending row (add_visit_media) and a
+ * signed upload link (valid about 2 hours) to exactly its path. A replay answers the same row; when its object is
  * already stored the link is null (the device goes straight to the confirmation).
  */
 export async function addVisitMedia(input: unknown): Promise<Result<{ mediaId: string; uploadUrl: string | null }>> {

@@ -137,6 +137,8 @@ export function VisitFlow(p: VisitFlowProps) {
     } catch {
       return "לא ניתן לקרוא את הטיפול מהמכשיר. נסה שוב";
     }
+    // Only this user's draft (a shared phone; the visit may have been reassigned): never another's.
+    if (draft && draft.userId !== p.userId) draft = undefined;
     if (!draft || !draft.summary.trim() || !draft.photos.some((x) => x.phase === "after")) return "חסר: תמונה אחרי הטיפול או סיכום הטיפול. חזור למסך הטיפול";
     const base = { userId: p.userId, visitId: p.visitId, queuedAt: new Date().toISOString(), attempts: 0, error: null } as const;
     const photos = [...draft.photos.filter((x) => x.phase === "before"), ...draft.photos.filter((x) => x.phase === "after")];
