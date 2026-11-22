@@ -1,103 +1,94 @@
 "use client";
 
-// Close screen skeleton (D81; TE-18 to TE-22, D43, D60 (2)): two outcomes only. "✓ טופל": the fixed
-// approval text, the signer's name and the signature (SignaturePad). "↻ המשך טיפול": a reason from
-// the Settings list and "מה צריך בביקור הבא", no signature. The send button stays disabled until
-// the form is complete and lists what is missing. Fake data only: sending records nothing (the
-// real flow calls close_visit, Migration 7) and shows the confirmation with "חזרה להיום"; it never
-// claims an email was sent (TE-23). No recorded times (D68).
-import Link from "next/link";
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+// Close screen (TE-18 to TE-22; D43, D60 (2), D95 (b), (c)): two outcomes only. "✓ טופל": the fixed
+// Version 1 approval text (from the server; its sha256 is sent and checked by the database), the
+// signer's name and the finger signature (PNG). "↻ המשך טיפול": an active continuation reason and
+// "מה צריך בביקור הבא", no signature. Both carry the written summary from the work screen. The send
+// button stays disabled until the form is complete and lists what is missing. Sending saves the
+// closure on the device (the work queue, with its photos and signature) and returns at once; the
+// queue sends it when there is a connection, so a closure is never lost to a "try again" (D95 (d)).
+// It never claims an email was sent (TE-23). No recorded times (D68).
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { SignaturePad } from "@/components/tech/SignaturePad";
 import { TechShell } from "@/components/tech/TechShell";
 import { VISIT_STATUSES } from "@/components/ui/StatusPill";
 import { TestDataBanner } from "@/components/ui/TestBadge";
+import { closeMissing, NEXT_NOTES_MAX, SIGNER_MAX, type CloseOutcome } from "@/features/visit-flow/rules";
 import { H2, Req } from "./VisitParts";
 
-type Outcome = "done" | "cont";
-
-const OUTCOMES: readonly { value: Outcome; label: string; note: string }[] = [
-  { value: "done", label: "✓ טופל", note: "הקריאה תיסגר" },
-  { value: "cont", label: "↻ המשך טיפול", note: "חוזר למשרד" },
+const OUTCOMES: readonly { value: CloseOutcome; look: "done" | "cont"; label: string; note: string }[] = [
+  { value: "done", look: "done", label: "✓ טופל", note: "הקריאה תיסגר" },
+  { value: "followup", look: "cont", label: "↻ המשך טיפול", note: "חוזר למשרד" },
 ];
 
-const chosen = (o: Outcome): CSSProperties => {
-  const s = VISIT_STATUSES[o];
+const chosen = (look: "done" | "cont"): CSSProperties => {
+  const s = VISIT_STATUSES[look];
   return { borderColor: s.c, background: s.bg, color: s.fg };
 };
 
-function Sent({ outcome, homeHref }: { outcome: Outcome; homeHref: string }) {
-  const ref = useRef<HTMLHeadingElement>(null);
-  useEffect(() => ref.current?.focus(), []);
-  const s = VISIT_STATUSES[outcome];
-  return (
-    <section className="card" style={{ padding: "16px 14px", display: "flex", flexDirection: "column", gap: 10, borderColor: s.c }}>
-      <h2 ref={ref} tabIndex={-1} style={{ fontSize: 18, color: s.fg }}>
-        הביקור נסגר · {outcome === "done" ? "✓ טופל" : "↻ המשך טיפול"}
-      </h2>
-      <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-        {outcome === "done" ? "הקריאה נסגרה. הביקור עבר להושלמו היום." : "הקריאה נשארת פתוחה במשרד. הביקור עבר להושלמו היום."}
-      </div>
-      <Link href={homeHref} className="btn" style={{ height: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        חזרה להיום
-      </Link>
-    </section>
-  );
-}
+export type CloseSubmission =
+  | { outcome: "done"; signer: string; signature: string }
+  | { outcome: "followup"; reasonId: string; nextNotes: string };
 
 export function CloseFlow({
   head,
   approvalText,
   reasons,
-  homeHref,
+  isTest,
+  syncPanel,
+  onSubmit,
 }: {
   head: ReactNode;
   approvalText: string;
-  reasons: readonly string[];
-  homeHref: string;
+  reasons: readonly { id: string; label: string }[];
+  isTest: boolean;
+  syncPanel: ReactNode;
+  /** Saves the closure on the device; an error message when it could not be saved (the form stays). */
+  onSubmit: (s: CloseSubmission) => Promise<string | null>;
 }) {
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [outcome, setOutcome] = useState<CloseOutcome | null>(null);
   const [signer, setSigner] = useState("");
   const [signature, setSignature] = useState<string | null>(null);
-  const [reason, setReason] = useState<string | null>(null);
-  const [nextNote, setNextNote] = useState("");
-  const [sent, setSent] = useState(false);
+  const [reasonId, setReasonId] = useState<string | null>(null);
+  const [nextNotes, setNextNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const outcomeTitle = useId();
   const reasonTitle = useId();
   const signerId = useId();
   const noteId = useId();
   const hintId = useId();
 
-  if (sent && outcome) {
-    return (
-      <TechShell head={head}>
-        <TestDataBanner />
-        <Sent outcome={outcome} homeHref={homeHref} />
-      </TechShell>
-    );
-  }
+  const missing = closeMissing({ outcome, signer, hasSignature: Boolean(signature), reasonId, nextNotes });
+  const ready = missing.length === 0 && !busy;
+  const look = outcome === "done" ? "done" : outcome === "followup" ? "cont" : null;
+  const sendLabel = outcome === "done" ? "שליחה · הקריאה טופלה" : outcome === "followup" ? "שליחה · המשך טיפול" : "בחר תוצאה";
 
-  const missing: string[] = !outcome
-    ? ["תוצאה"]
-    : outcome === "done"
-      ? [!signer.trim() && "שם החותם", !signature && "חתימת הלקוח"].filter((x): x is string => Boolean(x))
-      : [!reason && "סיבה", !nextNote.trim() && "מה צריך בביקור הבא"].filter((x): x is string => Boolean(x));
-  const ready = missing.length === 0;
-  const sendLabel = outcome === "done" ? "שליחה · הקריאה טופלה" : outcome === "cont" ? "שליחה · המשך טיפול" : "בחר תוצאה";
+  const send = async () => {
+    if (!outcome) return;
+    setBusy(true);
+    setError(null);
+    const why =
+      outcome === "done" && signature
+        ? await onSubmit({ outcome, signer: signer.trim(), signature })
+        : outcome === "followup" && reasonId
+          ? await onSubmit({ outcome, reasonId, nextNotes: nextNotes.trim() })
+          : "חסרים פרטים";
+    setBusy(false);
+    setError(why);
+  };
 
   const foot = (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <button
-        type="button"
-        className="bigbtn"
-        disabled={!ready}
-        aria-describedby={ready ? undefined : hintId}
-        style={outcome ? { background: VISIT_STATUSES[outcome].c } : undefined}
-        onClick={() => setSent(true)}
-      >
+      {error && (
+        <div role="alert" className="sub" style={{ color: "var(--danger)", textAlign: "center" }}>
+          {error}
+        </div>
+      )}
+      <button type="button" className="bigbtn" disabled={!ready} aria-describedby={ready ? undefined : hintId} style={look ? { background: VISIT_STATUSES[look].c } : undefined} onClick={send}>
         {sendLabel}
       </button>
-      {!ready && (
+      {missing.length > 0 && (
         <div id={hintId} className="sub" style={{ textAlign: "center" }}>
           חסר: {missing.join(" · ")}
         </div>
@@ -107,13 +98,14 @@ export function CloseFlow({
 
   return (
     <TechShell head={head} foot={foot}>
-      <TestDataBanner />
+      {isTest && <TestDataBanner />}
+      {syncPanel}
       <h2 id={outcomeTitle} style={H2}>
         מה התוצאה של הביקור? <Req />
       </h2>
       <div role="group" aria-labelledby={outcomeTitle} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
         {OUTCOMES.map((o) => (
-          <button key={o.value} type="button" className="res" aria-pressed={outcome === o.value} onClick={() => setOutcome(o.value)} style={outcome === o.value ? chosen(o.value) : undefined}>
+          <button key={o.value} type="button" className="res" aria-pressed={outcome === o.value} onClick={() => setOutcome(o.value)} style={outcome === o.value ? chosen(o.look) : undefined}>
             {o.label}
             <small>{o.note}</small>
           </button>
@@ -126,7 +118,7 @@ export function CloseFlow({
           <label htmlFor={signerId} style={{ fontSize: 13, fontWeight: 700 }}>
             שם החותם <Req />
           </label>
-          <input id={signerId} value={signer} placeholder="שם הלקוח" maxLength={120} autoComplete="off" aria-required="true" onChange={(e) => setSigner(e.target.value)} />
+          <input id={signerId} value={signer} placeholder="שם הלקוח" maxLength={SIGNER_MAX} autoComplete="off" aria-required="true" onChange={(e) => setSigner(e.target.value)} />
           <SignaturePad
             value={signature}
             onChange={setSignature}
@@ -139,23 +131,23 @@ export function CloseFlow({
         </section>
       )}
 
-      {outcome === "cont" && (
+      {outcome === "followup" && (
         <section className="card" aria-label="המשך טיפול" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 id={reasonTitle} style={{ ...H2, fontSize: 13 }}>
             סיבה <Req />
           </h2>
           <div role="group" aria-labelledby={reasonTitle} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {reasons.map((r) => (
-              <button key={r} type="button" className={reason === r ? "reason on" : "reason"} aria-pressed={reason === r} onClick={() => setReason(r)}>
-                {r}
-                {reason === r && " ✓"}
+              <button key={r.id} type="button" className={reasonId === r.id ? "reason on" : "reason"} aria-pressed={reasonId === r.id} onClick={() => setReasonId(r.id)}>
+                {r.label}
+                {reasonId === r.id && " ✓"}
               </button>
             ))}
           </div>
           <label htmlFor={noteId} style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>
             מה צריך בביקור הבא <Req />
           </label>
-          <textarea id={noteId} rows={3} maxLength={1000} placeholder="מה להביא, מה לבדוק, עם מי לתאם" aria-required="true" value={nextNote} onChange={(e) => setNextNote(e.target.value)} style={{ width: "100%", display: "block" }} />
+          <textarea id={noteId} rows={3} maxLength={NEXT_NOTES_MAX} placeholder="מה להביא, מה לבדוק, עם מי לתאם" aria-required="true" value={nextNotes} onChange={(e) => setNextNotes(e.target.value)} style={{ width: "100%", display: "block" }} />
           <div className="sub">ללא חתימה. המנהל ותיבת שירות הלקוחות יקבלו מייל עם פרטי הקריאה, הסטטוס והסיבה.</div>
         </section>
       )}

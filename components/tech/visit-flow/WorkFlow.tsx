@@ -1,80 +1,104 @@
 "use client";
 
-// Work screen skeleton (D81; TE-14, TE-15): photos before (optional) and after (at least one), the
-// written treatment summary, and "סיום ביקור ›" once both required items are there. Fake data only:
-// a picked photo is previewed on this device and never uploaded; nothing is saved (the real flow
-// uses add_visit_media / confirm_visit_media, Migration 7). Images only: JPEG, PNG or WebP up to
-// 10 MiB, the visit-media bucket's limits. The size check compares bytes with bytes (10 × 1024 ×
-// 1024), so a small photo is never reported as too large.
-import Link from "next/link";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+// Work screen (TE-14, TE-15; D95 (a), (h), (i)): photos before (optional) and after (at least one),
+// at most 8 per phase, and the written treatment summary; "סיום ביקור ›" once both required items
+// are there. Every picked photo is compressed ON THE DEVICE first (features/visit-flow/image.ts)
+// and only the compressed blob is kept, in the device's draft (IndexedDB), so a reload or a lost
+// connection loses nothing; the original is never stored. A photo that cannot be compressed shows
+// an inline error and is not kept. The photos are sent with the closure, in order, by the work
+// queue (add_visit_media → upload → confirm_visit_media), so a photo removed here is never sent.
+// No video and no recorded summary in this version (open decisions 3, 4, 11).
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { TechShell } from "@/components/tech/TechShell";
 import { TestDataBanner } from "@/components/ui/TestBadge";
-import type { SkeletonPhoto } from "./fixtures";
-import { H2, PhotoTile, Req } from "./VisitParts";
+import { idbVisitFlowStore } from "@/features/visit-flow/idb";
+import { COMPRESSION_MESSAGE, CompressionError, compressPhoto } from "@/features/visit-flow/image";
+import type { DraftPhoto, WorkDraft } from "@/features/visit-flow/queue";
+import { MEDIA_MIME_TYPES, mediaRefusal, PHASE_TITLE, PHOTOS_PER_PHASE_MAX, photoRoom, SUMMARY_MAX, workMissing, type PhotoPhase } from "@/features/visit-flow/rules";
+import { H2, Req } from "./VisitParts";
 
-const ACCEPT = ["image/jpeg", "image/png", "image/webp"] as const;
-const MAX_BYTES = 10 * 1024 * 1024;
-const PER_PHASE_MAX = 8;
-
-type Picked = { id: string; url: string; name: string };
-type Phase = "before" | "after";
-
-const PHASE_TITLE: Record<Phase, string> = { before: "לפני הטיפול", after: "אחרי הטיפול" };
-
-/** Why a picked file is refused, or null when it is accepted. */
-function refusal(file: File): string | null {
-  if (!(ACCEPT as readonly string[]).includes(file.type)) return "אפשר לצרף רק תמונה (JPEG, PNG או WebP)";
-  if (file.size > MAX_BYTES) return "התמונה גדולה מ-10MB. צלם שוב או בחר תמונה אחרת";
-  return null;
+/**
+ * Local previews of the compressed blobs: created when photos arrive (never during render),
+ * released when a photo is removed or the screen closes.
+ */
+function usePreviews(): [ReadonlyMap<string, string>, (photos: readonly DraftPhoto[]) => void] {
+  const made = useRef(new Map<string, string>());
+  const [urls, setUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    const all = made.current;
+    return () => {
+      all.forEach((u) => URL.revokeObjectURL(u));
+      all.clear();
+    };
+  }, []);
+  const update = useCallback((photos: readonly DraftPhoto[]) => {
+    const keep = new Set(photos.map((p) => p.id));
+    for (const [id, url] of made.current) {
+      if (!keep.has(id)) {
+        URL.revokeObjectURL(url);
+        made.current.delete(id);
+      }
+    }
+    for (const p of photos) if (!made.current.has(p.id)) made.current.set(p.id, URL.createObjectURL(p.blob));
+    setUrls(new Map(made.current));
+  }, []);
+  return [urls, update];
 }
 
-function PhotoCard({ phase, seeded, picked, onPick, onRemove }: { phase: Phase; seeded: readonly SkeletonPhoto[]; picked: readonly Picked[]; onPick: (files: FileList) => string | null; onRemove: (id: string) => void }) {
+function PhotoCard({
+  phase,
+  photos,
+  urls,
+  onPick,
+  onRemove,
+  busy,
+}: {
+  phase: PhotoPhase;
+  photos: readonly DraftPhoto[];
+  urls: ReadonlyMap<string, string>;
+  onPick: (files: FileList) => Promise<string | null>;
+  onRemove: (id: string) => void;
+  busy: boolean;
+}) {
   const [error, setError] = useState<string | null>(null);
   const errId = useId();
   const title = PHASE_TITLE[phase];
-  const count = seeded.length + picked.length;
   return (
     <section className="card" aria-label={title} style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
         <h2 style={H2}>
           {title} {phase === "after" && <Req />}
         </h2>
-        <span className="sub">{phase === "after" ? "חובה · לפחות תמונה אחת" : "רשות"}</span>
+        <span className="sub">
+          {phase === "after" ? "חובה · לפחות תמונה אחת" : "רשות"} · עד {PHOTOS_PER_PHASE_MAX}
+        </span>
       </div>
       <div className="media">
-        {seeded.map((p) => (
-          <PhotoTile key={p.id} label={p.label} />
-        ))}
-        {picked.map((p, i) => (
-          <div key={p.id} className="thumb" style={{ backgroundImage: `url("${p.url}")` }}>
-            <span role="img" aria-label={`תמונה ${seeded.length + i + 1} · ${title}`} style={{ position: "absolute", inset: 0 }} />
-            <button
-              type="button"
-              className="xbtn"
-              aria-label={`הסר תמונה ${seeded.length + i + 1} · ${title}`}
-              onClick={() => onRemove(p.id)}
-              style={{ position: "absolute", top: 4, insetInlineEnd: 4 }}
-            >
+        {photos.map((p, i) => (
+          <div key={p.id} className="thumb" style={urls.get(p.id) ? { backgroundImage: `url("${urls.get(p.id)}")` } : undefined}>
+            <span role="img" aria-label={`תמונה ${i + 1} · ${title}`} style={{ position: "absolute", inset: 0 }} />
+            <button type="button" className="xbtn" aria-label={`הסר תמונה ${i + 1} · ${title}`} onClick={() => onRemove(p.id)} style={{ position: "absolute", top: 4, insetInlineEnd: 4 }}>
               ✕
             </button>
           </div>
         ))}
-        {count < PER_PHASE_MAX && (
-          <label className="addm">
+        {photos.length < PHOTOS_PER_PHASE_MAX && (
+          <label className="addm" aria-busy={busy}>
             <span aria-hidden="true" style={{ fontSize: 20 }}>
               ＋
             </span>
-            צילום
+            {busy ? "מכווץ…" : "צילום"}
             <input
               type="file"
-              accept={ACCEPT.join(",")}
+              accept={MEDIA_MIME_TYPES.join(",")}
               capture="environment"
               multiple
+              disabled={busy}
               aria-label={`הוסף תמונה · ${title}`}
               aria-describedby={error ? errId : undefined}
-              onChange={(e) => {
-                if (e.target.files?.length) setError(onPick(e.target.files));
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (files?.length) setError(await onPick(files));
                 e.target.value = "";
               }}
             />
@@ -90,55 +114,114 @@ function PhotoCard({ phase, seeded, picked, onPick, onRemove }: { phase: Phase; 
   );
 }
 
-export function WorkFlow({ head, seeded, closeHref }: { head: ReactNode; seeded: { before: readonly SkeletonPhoto[]; after: readonly SkeletonPhoto[] }; closeHref: string }) {
-  const [photos, setPhotos] = useState<Record<Phase, Picked[]>>({ before: [], after: [] });
-  const [summary, setSummary] = useState("");
+export function WorkFlow({
+  head,
+  visitId,
+  userId,
+  isTest,
+  syncPanel,
+  onFinish,
+}: {
+  head: ReactNode;
+  visitId: string;
+  userId: string;
+  isTest: boolean;
+  syncPanel: ReactNode;
+  onFinish: () => void;
+}) {
+  const [draft, setDraft] = useState<WorkDraft>({ visitId, userId, summary: "", photos: [] });
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState<PhotoPhase | null>(null);
+  const [saveError, setSaveError] = useState(false);
   const summaryId = useId();
   const hintId = useId();
-  const urls = useRef<string[]>([]);
+  // The newest draft for the handlers (photos are compressed asynchronously).
+  const latest = useRef(draft);
+  const [urls, updatePreviews] = usePreviews();
 
-  // Release the local previews when the screen closes.
-  useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), []);
+  useEffect(() => {
+    let live = true;
+    idbVisitFlowStore
+      .getDraft(visitId)
+      .then((d) => {
+        if (live && d && d.userId === userId) {
+          latest.current = d;
+          setDraft(d);
+          updatePreviews(d.photos);
+        }
+      })
+      .catch(() => live && setSaveError(true))
+      .finally(() => live && setLoaded(true));
+    return () => {
+      live = false;
+    };
+  }, [visitId, userId, updatePreviews]);
 
-  const pick = (phase: Phase, files: FileList): string | null => {
-    let error: string | null = null;
-    const room = PER_PHASE_MAX - seeded[phase].length - photos[phase].length;
-    const added: Picked[] = [];
-    for (const file of Array.from(files)) {
-      const why = refusal(file);
-      if (why) {
-        error = why;
-        continue;
-      }
-      if (added.length >= room) {
-        error = `אפשר עד ${PER_PHASE_MAX} תמונות ${PHASE_TITLE[phase]}`;
-        break;
-      }
-      const url = URL.createObjectURL(file);
-      urls.current.push(url);
-      added.push({ id: `${phase}-${urls.current.length}`, url, name: file.name });
+  const save = async (next: WorkDraft) => {
+    latest.current = next;
+    setDraft(next);
+    updatePreviews(next.photos);
+    try {
+      await idbVisitFlowStore.putDraft(next);
+      setSaveError(false);
+    } catch {
+      setSaveError(true);
     }
-    if (added.length) setPhotos((p) => ({ ...p, [phase]: [...p[phase], ...added] }));
+  };
+
+  const pick = async (phase: PhotoPhase, files: FileList): Promise<string | null> => {
+    setBusy(phase);
+    let error: string | null = null;
+    const added: DraftPhoto[] = [];
+    let room = photoRoom(latest.current.photos.filter((p) => p.phase === phase).length);
+    try {
+      for (const file of Array.from(files)) {
+        if (room <= 0) {
+          error = `אפשר עד ${PHOTOS_PER_PHASE_MAX} תמונות ${PHASE_TITLE[phase]}`;
+          break;
+        }
+        try {
+          const c = await compressPhoto(file);
+          const why = mediaRefusal(c.mime, c.blob.size);
+          if (why) {
+            error = why;
+            continue;
+          }
+          added.push({ id: crypto.randomUUID(), phase, blob: c.blob, mime: c.mime, size: c.blob.size, capturedAt: new Date().toISOString() });
+          room--;
+        } catch (e) {
+          error = e instanceof CompressionError ? COMPRESSION_MESSAGE[e.reason] : COMPRESSION_MESSAGE.encode;
+        }
+      }
+      if (added.length) await save({ ...latest.current, photos: [...latest.current.photos, ...added] });
+    } finally {
+      setBusy(null);
+    }
     return error;
   };
-  const remove = (phase: Phase) => (id: string) => setPhotos((p) => ({ ...p, [phase]: p[phase].filter((x) => x.id !== id) }));
+  const remove = (id: string) => void save({ ...latest.current, photos: latest.current.photos.filter((p) => p.id !== id) });
 
-  const afterCount = seeded.after.length + photos.after.length;
-  const missing = [afterCount === 0 && "תמונה אחרי הטיפול", !summary.trim() && "סיכום הטיפול"].filter(Boolean) as string[];
-  const ready = missing.length === 0;
+  const before = draft.photos.filter((p) => p.phase === "before");
+  const after = draft.photos.filter((p) => p.phase === "after");
+  const missing = workMissing(after.length, draft.summary);
+  const ready = loaded && missing.length === 0 && !busy;
 
   const foot = (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {ready ? (
-        <Link href={closeHref} className="bigbtn" style={{ background: "var(--accent)" }}>
-          סיום ביקור ›
-        </Link>
-      ) : (
-        <button type="button" className="bigbtn" disabled aria-describedby={hintId}>
-          סיום ביקור ›
-        </button>
-      )}
-      {!ready && (
+      <button
+        type="button"
+        className="bigbtn"
+        disabled={!ready}
+        aria-describedby={ready ? undefined : hintId}
+        style={ready ? { background: "var(--accent)" } : undefined}
+        onClick={async () => {
+          await save(latest.current);
+          onFinish();
+        }}
+      >
+        סיום ביקור ›
+      </button>
+      {!ready && missing.length > 0 && (
         <div id={hintId} className="sub" style={{ textAlign: "center" }}>
           חסר: {missing.join(" · ")}
         </div>
@@ -148,9 +231,15 @@ export function WorkFlow({ head, seeded, closeHref }: { head: ReactNode; seeded:
 
   return (
     <TechShell head={head} foot={foot}>
-      <TestDataBanner />
-      <PhotoCard phase="before" seeded={seeded.before} picked={photos.before} onPick={(f) => pick("before", f)} onRemove={remove("before")} />
-      <PhotoCard phase="after" seeded={seeded.after} picked={photos.after} onPick={(f) => pick("after", f)} onRemove={remove("after")} />
+      {isTest && <TestDataBanner />}
+      {syncPanel}
+      {saveError && (
+        <div role="alert" className="card" style={{ padding: "10px 12px", background: "var(--danger-bg)", color: "var(--danger-fg)", fontSize: 14 }}>
+          לא ניתן לשמור במכשיר (אחסון הדפדפן חסום).
+        </div>
+      )}
+      <PhotoCard phase="before" photos={before} urls={urls} onPick={(f) => pick("before", f)} onRemove={remove} busy={busy === "before"} />
+      <PhotoCard phase="after" photos={after} urls={urls} onPick={(f) => pick("after", f)} onRemove={remove} busy={busy === "after"} />
       <section className="card" aria-label="סיכום הטיפול" style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
         <label htmlFor={summaryId} style={H2}>
           סיכום הטיפול <Req />
@@ -158,13 +247,19 @@ export function WorkFlow({ head, seeded, closeHref }: { head: ReactNode; seeded:
         <textarea
           id={summaryId}
           rows={4}
-          maxLength={2000}
+          maxLength={SUMMARY_MAX}
           aria-required="true"
           placeholder="מה נמצא ומה בוצע"
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
+          value={draft.summary}
+          onChange={(e) => {
+            const next = { ...latest.current, summary: e.target.value };
+            latest.current = next;
+            setDraft(next);
+          }}
+          onBlur={() => void save(latest.current)}
           style={{ width: "100%", display: "block" }}
         />
+        <div className="sub">נשמר במכשיר עד השליחה.</div>
       </section>
     </TechShell>
   );
