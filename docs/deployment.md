@@ -1,5 +1,5 @@
 # Deployment and Environments
-- Cloud-first development; GitHub repository PRIVATE; feature branch -> controlled Vercel Preview -> checks and review -> squash-merge to main per D53 (the owner's approval where D53 requires it) -> automatic Production deployment.
+- Cloud-first development; GitHub repository PUBLIC since D84 (never commit secrets or real data); feature branch -> controlled Vercel Preview -> checks and review -> squash-merge to main per D53 (the owner's approval where D53 requires it) -> automatic Production deployment.
 - One Supabase project for testing and production (D93, owner 2026-11-19; no separate production project, D30): during the testing period Preview and Production use it with fictitious data only; before go-live the test data is removed by the approved cleanup script (go-live gate below). Production credentials, services and live data off-limits pending approval.
 - Environment values only in provider-managed secrets with least privileges. Never paste actual values into Claude conversation, repository, PR, screenshot, test fixture or logs.
 - During the testing period only the owner can open Preview and Production deployments (D29, D31): no shareable links, bypass tokens, access exceptions or extra members. Do not expose /dev or support diagnostics publicly. Don't assume Preview URLs are access-controlled automatically; verify.
