@@ -1,7 +1,7 @@
 "use client";
 
 // Work screen (TE-14, TE-15; D95 (a), (h), (i)): photos before (optional) and after (at least one),
-// at most 8 per phase, and the written treatment summary; "סיום ביקור ›" once both required items
+// at most 8 per phase, and the written treatment summary; "סיום טיפול" once both required items
 // are there. Every picked photo is compressed ON THE DEVICE first (features/visit-flow/image.ts)
 // and only the compressed blob is kept, in the device's draft (IndexedDB), so a reload or a lost
 // connection loses nothing; the original is never stored. A photo that cannot be compressed shows
@@ -120,6 +120,7 @@ export function WorkFlow({
   userId,
   isTest,
   syncPanel,
+  contact,
   onFinish,
 }: {
   head: ReactNode;
@@ -127,6 +128,8 @@ export function WorkFlow({
   userId: string;
   isTest: boolean;
   syncPanel: ReactNode;
+  /** The customer's address, phone and WhatsApp (owner 22.11 (e)). */
+  contact: ReactNode;
   onFinish: () => void;
 }) {
   const [draft, setDraft] = useState<WorkDraft>({ visitId, userId, summary: "", photos: [] });
@@ -220,7 +223,7 @@ export function WorkFlow({
           onFinish();
         }}
       >
-        סיום ביקור ›
+        סיום טיפול
       </button>
       {!ready && missing.length > 0 && (
         <div id={hintId} className="sub" style={{ textAlign: "center" }}>
@@ -234,6 +237,7 @@ export function WorkFlow({
     <TechShell head={head} foot={foot}>
       {isTest && <TestDataBanner />}
       {syncPanel}
+      {contact}
       {saveError && (
         <div role="alert" className="card" style={{ padding: "10px 12px", background: "var(--danger-bg)", color: "var(--danger-fg)", fontSize: 14 }}>
           לא ניתן לשמור בטלפון (אחסון הדפדפן חסום).

@@ -26,7 +26,7 @@ import { deviceClock, effectiveStatus, visitQueueState, type FlowStatus, type Ne
 import { sha256Hex } from "@/features/visit-flow/rules";
 import { stepOf, type FlowStep } from "@/features/visit-flow/steps";
 import { departVisit } from "@/lib/actions/visit-flow";
-import { ArriveAction, ContinueWorkAction, DepartAction, type DepartOutcome } from "./CardActions";
+import { ArriveAction, DepartAction, type DepartOutcome } from "./CardActions";
 import { CloseFlow, type CloseSubmission } from "./CloseFlow";
 import { NotSentPill, SyncStatus } from "./SyncStatus";
 import { useVisitQueue } from "./useVisitQueue";
@@ -205,11 +205,19 @@ export function VisitFlow(p: VisitFlowProps) {
     );
   }
 
-  if (step === "work" && status === "work") {
-    const head = <div style={{ display: "contents" }} onClickCapture={backInFlow("card")}>{header(p.basePath, "פרטי קריאה", "חזרה לכרטיס הביקור")}</div>;
-    return <WorkFlow head={head} visitId={p.visitId} userId={p.userId} isTest={p.isTest} syncPanel={syncPanel} onFinish={() => setStep("close")} />;
+  // Owner 22.11: one bottom button per stage; a visit in treatment opens straight on the work
+  // screen (no intermediate card), which keeps the address, the customer's phone and WhatsApp.
+  if (status === "work" && step !== "close") {
+    const contact = (
+      <section className="card" aria-label="פרטי קשר" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>{p.address}</div>
+        <VisitContactTiles address={p.address} customerPhone={p.customerPhone} rep={p.rep} />
+      </section>
+    );
+    const head = header(p.homeHref, "היום", "חזרה למסך היום");
+    return <WorkFlow head={head} visitId={p.visitId} userId={p.userId} isTest={p.isTest} syncPanel={syncPanel} contact={contact} onFinish={() => setStep("close")} />;
   }
-  if (step === "close" && status === "work") {
+  if (status === "work") {
     const head = <div style={{ display: "contents" }} onClickCapture={backInFlow("work")}>{header(hrefOf(p.basePath, "work"), "לטיפול", "חזרה למסך הטיפול")}</div>;
     return <CloseFlow head={head} approvalText={p.approvalText} reasons={p.reasons} isTest={p.isTest} syncPanel={syncPanel} onSubmit={submitClose} />;
   }
@@ -217,14 +225,13 @@ export function VisitFlow(p: VisitFlowProps) {
   let foot: ReactNode = null;
   if (status === "new") foot = <DepartAction wazeHref={p.wazeHref} onDepart={depart} />;
   else if (status === "go") foot = <ArriveAction onArrive={() => void arrive()} disabled={!queue.loaded} />;
-  else if (status === "work") foot = <ContinueWorkAction onContinue={() => setStep("work")} />;
 
   return (
     <TechShell head={header(p.homeHref, "היום", "חזרה למסך היום")} foot={foot}>
       {p.isTest && <TestDataBanner />}
       {syncPanel}
       {/* D95 (e): the Waze tile appears only after "יוצא"; before it the footer's "יוצא · Waze" leads. */}
-      <VisitContactTiles address={p.address} customerPhone={p.customerPhone} rep={p.rep} waze={status === "new" ? <span hidden /> : undefined} />
+      <VisitContactTiles address={p.address} customerPhone={p.customerPhone} rep={p.rep} hideWaze={status === "new"} />
       {p.details}
     </TechShell>
   );

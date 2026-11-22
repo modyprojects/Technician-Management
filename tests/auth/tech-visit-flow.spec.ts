@@ -77,12 +77,12 @@ async function sign(page: Page) {
   await page.mouse.up();
 }
 
-/** From the work screen: one photo per phase, the summary, then "סיום ביקור ›". */
+/** From the work screen: one photo per phase, the summary, then "סיום טיפול". */
 async function doWork(page: Page, summary: string) {
   await expect(page).toHaveURL(/\?step=work$/);
   await page.getByLabel("הוסף תמונה · לפני הטיפול").setInputFiles(await photo(page, "#336699"));
   await expect(page.getByRole("img", { name: "תמונה 1 · לפני הטיפול" })).toBeVisible({ timeout: 15_000 });
-  const finish = page.getByRole("button", { name: "סיום ביקור ›" });
+  const finish = page.getByRole("button", { name: "סיום טיפול" });
   await expect(finish).toBeDisabled();
   await expect(page.getByText("חסר: תמונה אחרי הטיפול · סיכום הטיפול")).toBeVisible();
   await page.getByLabel("הוסף תמונה · אחרי הטיפול").setInputFiles(await photo(page, "#669933"));
@@ -117,6 +117,13 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     await page.goto(`/tech/visit/${idOf("done")}`);
     const tiles = page.getByRole("group", { name: "ניווט ויצירת קשר" });
     await expect(tiles.getByRole("link", { name: /^Waze/ })).toHaveCount(0);
+    // Regression (production 22.11, "an empty grey bar under the header, top-left"): no disabled or
+    // empty tile, and as many columns as tiles.
+    const noEmptyTile = async () => {
+      await expect(tiles.locator('[aria-disabled="true"], [hidden]')).toHaveCount(0);
+      expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(await tiles.locator(":scope > *").count());
+    };
+    await noEmptyTile();
     const popup = context.waitForEvent("page");
     await page.getByRole("button", { name: "יוצא · Waze" }).click();
     const waze = await popup;
@@ -125,6 +132,7 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     expect(statusOf("done")).toBe("en_route");
     await expect(page.locator(".ph-head")).toContainText("בדרך");
     await expect(tiles.getByRole("link", { name: /^Waze · ניווט אל/ })).toBeVisible();
+    await noEmptyTile();
 
     await page.getByRole("button", { name: "הגעתי · התחלת טיפול" }).click();
     await doWork(page, `הוחלף מסנן ${run}`);
@@ -219,7 +227,7 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     await page.getByLabel("הוסף תמונה · אחרי הטיפול").setInputFiles(green);
     await expect(page.getByRole("img", { name: "תמונה 1 · אחרי הטיפול" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill(`טופל ללא חיבור ${run}`);
-    await page.getByRole("button", { name: "סיום ביקור ›" }).click();
+    await page.getByRole("button", { name: "סיום טיפול" }).click();
     await page.getByRole("button", { name: /טופל/ }).click();
     await page.getByLabel("שם החותם").fill("לקוח לא מקוון");
     await sign(page);
@@ -321,6 +329,16 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     expect(statusOf("refuse")).toBe("in_progress");
 
     // The screens refuse the same: the send button stays disabled and says what is missing.
+    // Owner 22.11 (c), (e): a visit in treatment opens straight on the work screen (no card step, no
+    // "המשך לטיפול"), with the customer's address, phone and WhatsApp.
+    await page.goto(`/tech/visit/${idOf("refuse")}`);
+    await expect(page.getByRole("region", { name: "אחרי הטיפול" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /המשך לטיפול/ })).toHaveCount(0);
+    const contact = page.getByRole("region", { name: "פרטי קשר" });
+    await expect(contact).toContainText(`${V.refuse.street}, ${V.refuse.city}`);
+    await expect(contact.getByRole("link", { name: /^לקוח · חיוג/ })).toHaveAttribute("href", "tel:0505550101");
+    await expect(contact.getByRole("link", { name: /^וואטסאפ ללקוח/ })).toBeVisible();
+    await expect(contact.getByRole("link", { name: /^Waze · ניווט אל/ })).toBeVisible();
     await page.goto(`/tech/visit/${idOf("refuse")}?step=work`);
     await doWork(page, "סיכום");
     await page.getByRole("button", { name: /טופל/ }).click();

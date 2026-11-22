@@ -2,8 +2,8 @@
 // demo's look (docs/demo.html techCall() L525-529 action tiles and the pickup "Waze ›"):
 // - "Waze": a Waze deep link to the visit's address; "Waze ›" to a pickup place;
 // - "לקוח": `tel:` to the customer; "וואטסאפ": a WhatsApp chat with the customer;
-// - "נציגה": `tel:` to the handling representative's work phone from her profile (TE-07, D40), shown
-//   disabled when there is none.
+// - "נציגה": `tel:` to the handling representative's work phone from her profile (TE-07, D40), left
+//   out when there is none.
 // Plain links (features/visits/data/links.ts): nothing is recorded and no external service is called
 // by the app. A value that is not a phone number or an address gets a disabled tile, never a broken
 // link. No hooks: usable from Server Components.
@@ -56,31 +56,37 @@ function Tile({ href, icon, label, ariaLabel, primary = false, external = false 
   );
 }
 
-/** The four action tiles of an open visit (TE-07): Waze, customer, WhatsApp, representative. */
+/**
+ * The action tiles of an open visit (TE-07): Waze, customer, WhatsApp, representative. Only the
+ * tiles that lead somewhere are rendered, and the row has as many columns as tiles: a tile with no
+ * target (the handling representative has no work phone, as for every invitation whose rep has no
+ * linked profile) is left out instead of a faded empty-looking box (production bug 22.11: "an empty
+ * grey bar under the header, top-left"). `hideWaze` leaves the Waze tile out until "יוצא" (D95 (e)).
+ */
 export function VisitContactTiles({
   address,
   customerPhone,
   rep,
   waze,
+  hideWaze = false,
 }: {
   address: string;
   customerPhone: string;
   rep: { name: string; phone: string | null };
   /** Replaces the Waze tile (the visit flow's "יוצא · Waze", which also records the departure). */
   waze?: ReactNode;
+  /** No Waze tile (a scheduled visit: the footer's "יוצא · Waze" leads, D95 (e)). */
+  hideWaze?: boolean;
 }) {
   const repPhone = rep.phone ? telHref(rep.phone) : null;
+  const tiles: ReactNode[] = [];
+  if (!hideWaze) tiles.push(waze ?? <Tile key="waze" href={wazeHref(address)} icon={<PinIcon />} label="Waze" ariaLabel={`Waze · ניווט אל ${address}`} primary external />);
+  tiles.push(<Tile key="customer" href={telHref(customerPhone)} icon={<PhoneIcon />} label="לקוח" ariaLabel={`לקוח · חיוג ${customerPhone}`} />);
+  tiles.push(<Tile key="whatsapp" href={whatsappHref(customerPhone)} icon={<WhatsAppIcon />} label="וואטסאפ" ariaLabel={`וואטסאפ ללקוח · ${customerPhone}`} external />);
+  if (repPhone && rep.phone) tiles.push(<Tile key="rep" href={repPhone} icon={<UserIcon />} label="נציגה" ariaLabel={`נציגה · חיוג ל${rep.name} ${rep.phone}`} />);
   return (
-    <div role="group" aria-label="ניווט ויצירת קשר" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-      {waze ?? <Tile href={wazeHref(address)} icon={<PinIcon />} label="Waze" ariaLabel={`Waze · ניווט אל ${address}`} primary external />}
-      <Tile href={telHref(customerPhone)} icon={<PhoneIcon />} label="לקוח" ariaLabel={`לקוח · חיוג ${customerPhone}`} />
-      <Tile href={whatsappHref(customerPhone)} icon={<WhatsAppIcon />} label="וואטסאפ" ariaLabel={`וואטסאפ ללקוח · ${customerPhone}`} external />
-      <Tile
-        href={repPhone}
-        icon={<UserIcon />}
-        label="נציגה"
-        ariaLabel={repPhone && rep.phone ? `נציגה · חיוג ל${rep.name} ${rep.phone}` : `נציגה · ${rep.name || "לא ידועה"} · אין מספר טלפון`}
-      />
+    <div role="group" aria-label="ניווט ויצירת קשר" style={{ display: "grid", gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))`, gap: 8 }}>
+      {tiles}
     </div>
   );
 }

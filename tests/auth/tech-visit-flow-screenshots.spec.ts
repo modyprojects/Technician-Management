@@ -130,7 +130,7 @@ test("visit flow on real data: review screenshots", async ({ page, context }) =>
   await shoot(page, "05-work-ready", TECH);
 
   // Close: choose, "טופל" with signer and signature, "המשך טיפול" with reason and notes.
-  await page.getByRole("button", { name: "סיום ביקור ›" }).click();
+  await page.getByRole("button", { name: "סיום טיפול" }).click();
   await shoot(page, "06-close-choose", TECH);
   await page.getByRole("button", { name: /המשך טיפול/ }).click();
   await page.getByRole("button", { name: localSqlValue("select label_he from public.followup_reasons where is_active order by sort_order limit 1") }).click();
@@ -166,7 +166,7 @@ test("visit flow on real data: review screenshots", async ({ page, context }) =>
   await page.getByLabel("הוסף תמונה · אחרי הטיפול").setInputFiles(await photo(page, "#7a6f9a"));
   await expect(page.getByRole("img", { name: "תמונה 1 · אחרי הטיפול" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("textbox", { name: "סיכום הטיפול" }).fill("המשאבה תקינה, נמצאה דליפה בצינור הניקוז.");
-  await page.getByRole("button", { name: "סיום ביקור ›" }).click();
+  await page.getByRole("button", { name: "סיום טיפול" }).click();
   await page.getByRole("button", { name: /המשך טיפול/ }).click();
   await page.getByRole("button", { name: localSqlValue("select label_he from public.followup_reasons where is_active order by sort_order limit 1") }).click();
   await page.getByLabel("מה צריך בביקור הבא").fill("להביא צינור ניקוז 2 מטר");

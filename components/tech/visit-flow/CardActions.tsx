@@ -6,7 +6,7 @@
 //   (the same operation id, so a lost answer is never recorded twice) and "פתח Waze בכל זאת".
 // - "בדרך": "הגעתי · התחלת טיפול": saved on the device first (the work queue) and sent when there
 //   is a connection; the work screen opens at once, also offline.
-// - "בטיפול": "המשך לטיפול ›" back to the work screen.
+// - "בטיפול": no card action; the visit opens on the work screen (owner 22.11).
 // Recorded times are never mentioned (D68).
 import { useState } from "react";
 import { PinIcon } from "@/components/ui/Icons";
@@ -64,14 +64,6 @@ export function ArriveAction({ onArrive, disabled }: { onArrive: () => void; dis
   return (
     <button type="button" className="bigbtn" style={{ ...BIG, background: VISIT_STATUSES.work.c }} onClick={onArrive} disabled={disabled}>
       הגעתי · התחלת טיפול
-    </button>
-  );
-}
-
-export function ContinueWorkAction({ onContinue }: { onContinue: () => void }) {
-  return (
-    <button type="button" className="bigbtn" style={{ ...BIG, background: VISIT_STATUSES.work.c }} onClick={onContinue}>
-      המשך לטיפול ›
     </button>
   );
 }
