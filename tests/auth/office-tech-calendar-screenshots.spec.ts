@@ -109,11 +109,11 @@ test("screenshots: week, day, drawer, technician dropdown, range edge", async ({
   await shoot(page, `/office/calendar?view=day&date=${today}&req=${first.req}&n=1`, "drawer", SIZES, techA);
   await shoot(page, `/office/calendar?view=week&date=${range.max}`, "range-edge", SIZES, techA);
   // "בחר טכנאי" with its options: a phone opens the system picker, which a page screenshot cannot
-  // show, so the list is drawn in place (size = option count) for the image only.
+  // show, so the list is drawn in place (up to 8 rows) for the image only.
   await shoot(page, "/office/calendar", "tech-select", [SIZES[0]], techA, async (p) => {
     await p.locator("[data-calendar-block=phone] select[data-tech-select]").evaluate((el) => {
       const select = el as HTMLSelectElement;
-      select.size = select.options.length;
+      select.size = Math.min(select.options.length, 8);
     });
   });
 });
