@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { CallContactActions } from "@/components/office/CallContactActions";
 import { CallDetail } from "@/components/office/CallDetail";
+import { CallVisitPhotos } from "@/components/office/CallVisitPhotos";
 import { TestDataBanner } from "@/components/ui/TestBadge";
 import { OFFICE_CALLS_PATH } from "@/features/auth/landing";
 import { LOGIN_NO_ACCESS_PATH } from "@/features/auth/session-state";
@@ -9,6 +10,7 @@ import { isRequestNumber } from "@/features/calls/supabase/card-queries";
 import { readsCalls } from "@/features/calls/supabase/list-queries";
 import { requireArea } from "@/lib/auth/guards";
 import { callCard, callsPermitted, cardPermitted } from "@/lib/data/supabase/calls";
+import { callPhotos } from "@/lib/data/visit-flow";
 import { OfficeFrame } from "../../_OfficeFrame";
 
 export const metadata: Metadata = { title: "כרטיס קריאה · ניהול טכנאים" };
@@ -21,6 +23,8 @@ export const metadata: Metadata = { title: "כרטיס קריאה · ניהול 
 // that does not exist and a call the caller may not read are the same 404. The technician's
 // report (summary, photos, signature) needs the key `card` as well; the database applies the same
 // rule. "התקשר לטכנאי" appears only when the technician's phone is readable and set.
+// Photos (D92 (2), D95 (f)): with the report only, the stored photos of each visit as short-lived
+// signed links created under the same session (lib/data/visit-flow.ts).
 export default async function OfficeCallCardPage({ params }: PageProps<"/office/calls/[req]">) {
   const me = await requireArea("office");
   if (!readsCalls(me)) redirect(LOGIN_NO_ACCESS_PATH);
@@ -28,6 +32,7 @@ export default async function OfficeCallCardPage({ params }: PageProps<"/office/
   if (!isRequestNumber(req) || !(await callsPermitted())) notFound();
   const [call, showReport] = await Promise.all([callCard(req), cardPermitted()]);
   if (!call) notFound();
+  const photos = showReport ? await callPhotos(req) : new Map<number, never[]>();
   const { technician, ...detail } = call;
   return (
     <OfficeFrame me={me} active="calls">
@@ -38,6 +43,7 @@ export default async function OfficeCallCardPage({ params }: PageProps<"/office/
         backHref={OFFICE_CALLS_PATH}
         showReport={showReport}
         perFieldTestMarks={false}
+        renderVisitMedia={(v) => <CallVisitPhotos photos={photos.get(v.n) ?? []} />}
         actions={<CallContactActions tech={technician} customer={{ name: call.customer.name, phone: call.customer.phone }} />}
       />
     </OfficeFrame>

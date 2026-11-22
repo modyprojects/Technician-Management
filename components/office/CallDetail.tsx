@@ -70,6 +70,7 @@ export function CallDetail({
   showReport,
   renderRecording,
   renderVisitExtra,
+  renderVisitMedia,
   customerHref,
   perFieldTestMarks = true,
 }: {
@@ -85,6 +86,8 @@ export function CallDetail({
   renderRecording?: RenderRecording;
   /** A part at the end of each visit of the timeline (OF-10 corrections); null for none. */
   renderVisitExtra?: RenderVisitExtra;
+  /** The visit's photos on the real card (signed links, D92 (2)); replaces the media placeholders. */
+  renderVisitMedia?: RenderVisitExtra;
   /** False on the real card (D74): only the screen banner and one mark by the title. */
   perFieldTestMarks?: boolean;
 }) {
@@ -127,6 +130,7 @@ export function CallDetail({
               showReport={showReport}
               renderRecording={renderRecording}
               renderExtra={renderVisitExtra}
+              renderMedia={renderVisitMedia}
               perFieldTestMarks={perFieldTestMarks}
             />
           </div>

@@ -116,12 +116,17 @@ test.describe.serial("technician home and visit card (Step 3, local stack)", () 
     const tiles = page.getByRole("group", { name: "ניווט ויצירת קשר" });
     await expect(tiles.getByRole("link", { name: /^לקוח · חיוג/ })).toHaveAttribute("href", "tel:0501234567");
     await expect(tiles.getByRole("link", { name: /^וואטסאפ ללקוח/ })).toHaveAttribute("href", "https://wa.me/972501234567");
-    await expect(tiles.getByRole("link", { name: /^Waze · ניווט אל/ })).toHaveAttribute("href", /waze\.com\/ul\?q=/);
-    // The handling rep has no linked profile here: the tile is disabled, never a broken link.
-    await expect(tiles.getByRole("link", { name: /^נציגה/ })).toHaveAttribute("aria-disabled", "true");
+    // D95 (e): before "יוצא" the Waze tile is not shown; the footer's "יוצא · Waze" leads.
+    await expect(tiles.getByRole("link", { name: /^Waze · ניווט אל/ })).toHaveCount(0);
+    // The handling rep has no linked profile here: no tile at all (never a broken link, and never a
+    // faded empty-looking box: the production bug of 22.11), and no empty column in the row.
+    await expect(tiles.getByRole("link", { name: /^נציגה/ })).toHaveCount(0);
+    await expect(tiles.locator('[aria-disabled="true"]')).toHaveCount(0);
+    expect(await tiles.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(await tiles.locator(":scope > *").count());
     await expect(page.getByText("🧪 זימון בדיקה")).toBeVisible();
-    // No field times for the technician (TE-25) and no write action yet.
-    await expect(page.getByRole("button")).toHaveCount(0);
+    // No field times for the technician (TE-25); the one action of a scheduled visit (D71, D95).
+    await expect(page.getByRole("button")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "יוצא · Waze" })).toBeVisible();
   });
 
   test("no warranty and no paid marker on the technician's card (D69), call type shown", async ({ page }) => {
