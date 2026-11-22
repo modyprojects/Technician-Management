@@ -1,5 +1,5 @@
 # STATUS — Technician Management
-Updated 2026-11-19, end of day. Keep ≤40 lines; update at the end of every task.
+Updated 2026-11-22. Keep ≤40 lines; update at the end of every task.
 
 ## Where we are
 - **Version 1: 2 December 2026** (owner, 19.11): all V1 modules merged, on test data; online only.
@@ -17,7 +17,7 @@ Updated 2026-11-19, end of day. Keep ≤40 lines; update at the end of every tas
 - #57, #58 (draft skeletons, above). Nothing else open.
 
 ## Waiting for the owner
-- Production (D87): https://technician-management-mody-projects.vercel.app on main 16b5f10, READY, no runtime errors; separate secret keys per environment; `CALENDAR_SIMULATOR=1`. Owner browser check pending (sign-in per role, landings, simulator) — Claude cannot pass Vercel Authentication without a share link (forbidden); then Claude reads the runtime logs.
+- Production (D87): https://technician-management-mody-projects.vercel.app on main 16b5f10, READY, no runtime errors; separate secret keys per environment; `CALENDAR_SIMULATOR=1` on Production since 22.11 11:56 (owner, redeployed; on 19.11 it was Preview only). Owner browser check pending (sign-in per role, landings, simulator) — Claude cannot pass Vercel Authentication without a share link (forbidden); then Claude reads the runtime logs.
 - IT: the M365 app registration (D86, `docs/m365-mail-plan.md`); video/audio media (open decisions 3, 4, 11).
 
 ## Next, in order
@@ -26,10 +26,8 @@ Updated 2026-11-19, end of day. Keep ≤40 lines; update at the end of every tas
 3. Follow-up: next 16.4.3 → 16.4.6 (`next build` stops once with a security notice; the retry passes).
 
 ## Go-live gate (D87; all before the first real user)
-- Separate Production Supabase project; rotate the secret key (revoke the "vercel_preview" Supabase secret key; Production gets a new key on the new project); Vercel Authentication off.
-- Post-M7 hardening migration: deleted-but-not-banned accounts, "נקרא" (D78), #36 L1/L2, OQ-13 (the DB enforces the simulator switch).
-- MFA for the Creator and Managers; rate limits (sign-in, reset, invitation).
-- Invitation + reset email through M365 (D86) once IT connects it. `testingPeriod` false: simulator off (D90), test data hidden (D91).
+- One Supabase database for testing and production (D93); no separate Production project. In order: acceptance tests with test accounts → backup → cleanup script (rows, Storage, Auth users, notices) → rotate the secret key / revoke "vercel_preview" → `testingPeriod` false (simulator off D90, test data hidden D91) → Vercel Authentication off → hardening (MFA Creator/Managers, rate limits, D65/D67 blockers, D78, OQ-13; post-M7 hardening migration).
+- Invitation + reset email through M365 (D86) once IT connects it.
 
 ## Notes
 - Local stack: CLI via `scripts/install-supabase-cli.sh <dir>`; registry pulls may fail ("Data limit exceeded"): retag cached `kong`, `mailpit`, `vector` as `supabase/…` and start with `-x studio,logflare,vector,imgproxy,edge-runtime`.

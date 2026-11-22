@@ -1,6 +1,6 @@
 # Deployment and Environments
 - Cloud-first development; GitHub repository PRIVATE; feature branch -> controlled Vercel Preview -> checks and review -> squash-merge to main per D53 (the owner's approval where D53 requires it) -> automatic Production deployment.
-- Distinct Supabase development and production projects (recommended; before go-live the owner explicitly approves either a separate production project or a cleanup of the existing database, D47, see the go-live gate); **no Preview links to Production database**. **Known deviation (D31):** during the testing period, Vercel's Production environment will point to the development Supabase project (fictitious data only); revisit at the go-live gate. Production credentials, services and live data off-limits pending approval.
+- One Supabase project for testing and production (D93, owner 2026-11-19; no separate production project, D30): during the testing period Preview and Production use it with fictitious data only; before go-live the test data is removed by the approved cleanup script (go-live gate below). Production credentials, services and live data off-limits pending approval.
 - Environment values only in provider-managed secrets with least privileges. Never paste actual values into Claude conversation, repository, PR, screenshot, test fixture or logs.
 - During the testing period only the owner can open Preview and Production deployments (D29, D31): no shareable links, bypass tokens, access exceptions or extra members. Do not expose /dev or support diagnostics publicly. Don't assume Preview URLs are access-controlled automatically; verify.
 - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are intentionally public; `SUPABASE_SECRET_KEY`, provider mail/transcription keys private server-side only.
@@ -36,14 +36,14 @@ Menu names may differ slightly in the Supabase dashboard. Supabase's built-in em
 ## Go-live gate (before any real use, D23, D31)
 1. Remove `/dev` and all fictitious fixtures from Production: set `testingPeriod` to `false` in `config/release.json` (the `/dev` gate then returns 404 on Vercel Production) and exclude or delete the `/dev` routes so they are not in the Production build.
 2. Re-enable the fixture check: with `testingPeriod: false`, `npm run build && npm run scan:bundle` must pass in CI, which requires the `/dev` routes and fixtures to be removed from the build (the check fails if the fixture sentinel is anywhere in the output). `tests/e2e/gate-logic.spec.ts` already covers Production with `testingPeriod` false (gate closed).
-3. Decide, with the owner's explicit approval, between a separate production Supabase project (recommended) and a cleanup of the existing database (D47; comparison below). With a separate project, point Vercel's Production environment to it (closes the D31 known deviation) while Preview stays on development; no real data in development.
+3. **One database (D93, owner 2026-11-19):** no separate Production project. In order: acceptance tests with test accounts → backup → the cleanup script (test rows, Storage objects, Auth users, notices; a separate owner-approved operation) → rotate the secret key and revoke "vercel_preview" → `testingPeriod` false (simulator off, test data hidden) → Vercel Authentication off → hardening (MFA for the Creator and Managers, rate limits, the D65/D67 blockers, D78, OQ-13).
 4. Decide the Production protection scope for real users (Vercel Authentication on Production would block technicians and Microsoft Graph webhooks).
-5. Simulator off in Production (D24), MFA for Creator/Manager, security review, backup/restore rehearsal and real-device tests (D28) as listed in `docs/security.md` and `docs/testing.md`.
+5. Simulator off in Production (`testingPeriod` false; D90, D93), MFA for Creator/Manager, security review, backup/restore rehearsal and real-device tests (D28) as listed in `docs/security.md` and `docs/testing.md`.
 6. Pass the pre-launch acceptance checklist below (D47): the real app starts with no fictional content.
 7. **Pre-pilot gate (D51): the owner approves the final permission matrix.** No real pilot and no real operational users before this approval; every `role_permissions` value has the status `approved` (no `temporary` values remain).
 
 ### Clean the existing database vs a separate Production project (D47)
-Decided before go-live with the owner's explicit approval. **Nothing is created now** (no new project, no charge; D30).
+**Decided (D93, owner 2026-11-19): clean the existing database.** The comparison is kept for the record; no separate project is created (D30).
 
 | | Clean the existing database | Separate Production project |
 |---|---|---|
@@ -53,7 +53,7 @@ Decided before go-live with the owner's explicit approval. **Nothing is created 
 | After launch | No safe test environment remains (Preview never points at Production) | Development stays as the test environment; Production is clean from creation |
 | Starts with no fictional content | After a successful cleanup | By construction |
 
-**Recommendation (technical, not yet approved):** a separate Production project, decided before go-live with the owner's explicit approval.
+**Decision (D93):** one database; cleanup. The earlier technical recommendation of a separate project was not adopted.
 
 ### Pre-launch acceptance checklist (D47)
 Both options:
