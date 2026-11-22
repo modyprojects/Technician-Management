@@ -120,7 +120,7 @@ test("visit flow on real data: review screenshots", async ({ page, context }) =>
   // Work: empty, then with photos and the summary.
   await page.getByRole("button", { name: "הגעתי · התחלת טיפול" }).click();
   await expect(page).toHaveURL(/\?step=work$/);
-  await expect(page.getByRole("region", { name: "מצב סנכרון" })).toContainText("נשלח לשרת", { timeout: 15_000 });
+  await expect(page.getByRole("region", { name: "מצב שליחה" })).toContainText("נשלח לשרת", { timeout: 15_000 });
   await shoot(page, "04-work-empty", TECH);
   await page.getByLabel("הוסף תמונה · לפני הטיפול").setInputFiles(await photo(page, "#5b7f99"));
   await page.getByLabel("הוסף תמונה · אחרי הטיפול").setInputFiles(await photo(page, "#6f9a5b"));
@@ -141,12 +141,18 @@ test("visit flow on real data: review screenshots", async ({ page, context }) =>
   await sign(page);
   await shoot(page, "08-close-done", TECH, { bottom: true });
 
-  // Sent while offline: kept on the device, "נשמר במכשיר".
+  // Sent without a connection: kept on the phone, the message and "שלח שוב" (D95 as corrected 22.11).
   await context.setOffline(true);
   await page.getByRole("button", { name: "שליחה · הקריאה טופלה" }).click();
   await expect(page.getByText("הביקור נשמר · ✓ טופל")).toBeVisible();
-  await shoot(page, "09-saved-offline", TECH);
+  await expect(page.getByRole("region", { name: "מצב שליחה" })).toContainText("אין חיבור, הסגירה לא נשלחה", { timeout: 15_000 });
+  await shoot(page, "09-close-not-sent", TECH);
   await context.setOffline(false);
+  await page.goto("/tech");
+  await expect(page.getByText("לא נשלח").first()).toBeVisible();
+  await shoot(page, "13-home-not-sent", TECH);
+  await page.goto(`/tech/visit/${b}`);
+  await page.getByRole("button", { name: "שלח שוב" }).click();
   await expect(page.getByText("הביקור נסגר · לצפייה בלבד")).toBeVisible({ timeout: 30_000 });
   await page.reload();
   await expect(page.getByText("הביקור נסגר · לצפייה בלבד")).toBeVisible();
@@ -171,7 +177,6 @@ test("visit flow on real data: review screenshots", async ({ page, context }) =>
   await shoot(page, "11-closed-cont", TECH);
 
   // Office call card: the photo section (Manager).
-  await page.getByRole("button", { name: /יציאה|התנתקות/ }).first().click().catch(() => undefined);
   await context.clearCookies();
   await page.setViewportSize(OFFICE[1]);
   await signInAs(page, mgr, /\/office$/);
