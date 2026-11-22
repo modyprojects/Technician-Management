@@ -159,6 +159,8 @@ export type SyncReport = {
   failed: number;
   /** The field_version each visit reached through a confirmed "הגעתי" in this run. */
   fieldVersions: Record<string, number>;
+  /** The outcome of each closure the server confirmed in this run. */
+  closed: Record<string, CloseOutcome>;
 };
 
 class Transient extends Error {}
@@ -239,7 +241,9 @@ async function runItem(
       deviceSentAt: sentAt(),
     }),
   );
-  return r.ok ? { ok: true, value: null } : r;
+  if (!r.ok) return r;
+  report.closed[item.visitId] = item.outcome;
+  return { ok: true, value: null };
 }
 
 /**
@@ -247,7 +251,7 @@ async function runItem(
  * item (with its error) and holds that visit's later items; a missing connection stops the run.
  */
 export async function syncQueue(store: VisitFlowStore, api: VisitFlowApi, userId: string, now: () => Date = () => new Date()): Promise<SyncReport> {
-  const report: SyncReport = { sent: 0, offline: false, failed: 0, fieldVersions: {} };
+  const report: SyncReport = { sent: 0, offline: false, failed: 0, fieldVersions: {}, closed: {} };
   const all = (await store.list()).filter((i) => i.userId === userId);
   const blocked = new Set<string>();
   for (const item of all) {
@@ -297,10 +301,18 @@ export function visitQueueState(items: readonly QueueItem[], visitId: string, us
 
 export type FlowStatus = "new" | "go" | "work" | "done" | "cont";
 
-/** The status the technician sees: the server's, moved on by what his device still holds. */
-export function effectiveStatus(server: FlowStatus, q: VisitQueueState): FlowStatus {
-  if (q.close && (server === "go" || server === "work")) return q.close.outcome === "done" ? "done" : "cont";
-  if (q.arrivePending && server === "go") return "work";
+/** What this screen saw the server confirm, until the page re-reads the visit. */
+export type Confirmed = { arrived: boolean; closed: CloseOutcome | null };
+
+/**
+ * The status the technician sees: the server's, moved on by what his device still holds or what
+ * the server just confirmed (so the screen never steps back while the page re-reads the visit).
+ */
+export function effectiveStatus(server: FlowStatus, q: VisitQueueState, confirmed: Confirmed = { arrived: false, closed: null }): FlowStatus {
+  const open = server === "go" || server === "work";
+  const closing = q.close?.outcome ?? confirmed.closed;
+  if (closing && open) return closing === "done" ? "done" : "cont";
+  if ((q.arrivePending || confirmed.arrived) && server === "go") return "work";
   return server;
 }
 

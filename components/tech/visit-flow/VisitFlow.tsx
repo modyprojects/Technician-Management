@@ -2,7 +2,8 @@
 
 // The technician's open visit, end to end on one page (D95; TE-02, TE-13 to TE-23): the card with
 // its action, the work screen and the close screen, and the "saved" state after sending. The steps
-// switch on the device (the address bar follows with history.pushState, no server round trip), so
+// switch on the device (the address bar follows as `?step=work|close` with history.pushState, no
+// server round trip; the page stays the same route, so a refresh never remounts the flow), so
 // after "הגעתי" the technician can work and close the visit with no connection: "הגעתי" and the
 // closure (with its photos and signature) go to the device work queue and are sent when there is a
 // connection (features/visit-flow/queue.ts). "יוצא · Waze" is online only (D71). The status shown
@@ -10,7 +11,8 @@
 // beside it ("ממתין לסנכרון", D46). The Waze tile appears only after "יוצא" (D95 (e)). No recorded
 // times (D68); no video or recorded summary in this version (D95 (g)).
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { TechShell } from "@/components/tech/TechShell";
 import { VisitHeader } from "@/components/tech/VisitHeader";
 import { VisitContactTiles } from "@/components/tech/VisitLinks";
@@ -19,6 +21,7 @@ import { TestDataBanner, TestPill } from "@/components/ui/TestBadge";
 import { idbVisitFlowStore } from "@/features/visit-flow/idb";
 import { deviceClock, effectiveStatus, visitQueueState, type FlowStatus, type NewQueueItem } from "@/features/visit-flow/queue";
 import { sha256Hex } from "@/features/visit-flow/rules";
+import { stepOf, type FlowStep } from "@/features/visit-flow/steps";
 import { departVisit } from "@/lib/actions/visit-flow";
 import { ArriveAction, ContinueWorkAction, DepartAction, type DepartOutcome } from "./CardActions";
 import { CloseFlow, type CloseSubmission } from "./CloseFlow";
@@ -26,7 +29,7 @@ import { SyncStatus } from "./SyncStatus";
 import { useVisitQueue } from "./useVisitQueue";
 import { WorkFlow } from "./WorkFlow";
 
-export type FlowStep = "card" | "work" | "close";
+export type { FlowStep };
 
 export type VisitFlowProps = {
   userId: string;
@@ -49,38 +52,34 @@ export type VisitFlowProps = {
   details: ReactNode;
 };
 
-const STEP_PATH: Record<FlowStep, string> = { card: "", work: "/work", close: "/close" };
-
-function stepOfPath(path: string, base: string): FlowStep {
-  if (path === `${base}/work`) return "work";
-  if (path === `${base}/close`) return "close";
-  return "card";
-}
+const hrefOf = (base: string, step: FlowStep): string => (step === "card" ? base : `${base}?step=${step}`);
 
 export function VisitFlow(p: VisitFlowProps) {
   const queue = useVisitQueue(p.userId);
   const q = visitQueueState(queue.items, p.visitId, p.userId);
   const [departed, setDeparted] = useState<number | null>(null);
-  const [step, setStepState] = useState<FlowStep>(p.initialStep);
+  const search = useSearchParams();
+  const step = search ? stepOf(search.get("step")) : p.initialStep;
   const departOp = useRef<string | null>(null);
 
   const fieldVersion = Math.max(p.fieldVersion, departed ?? 0, queue.fieldVersions[p.visitId] ?? 0);
   const server: FlowStatus = departed && p.serverStatus === "new" ? "go" : p.serverStatus;
-  const status = effectiveStatus(server, q);
+  const status = effectiveStatus(server, q, { arrived: p.visitId in queue.fieldVersions, closed: queue.closed[p.visitId] ?? null });
   const closedOnDevice = status === "done" || status === "cont";
 
+  // In-flow moves never ask the server (they work offline); Next.js follows pushState.
   const setStep = (next: FlowStep) => {
-    setStepState(next);
-    const url = `${p.basePath}${STEP_PATH[next]}`;
-    if (window.location.pathname !== url) window.history.pushState(null, "", url);
+    window.history.pushState(null, "", hrefOf(p.basePath, next));
     window.scrollTo(0, 0);
   };
 
-  useEffect(() => {
-    const onPop = () => setStepState(stepOfPath(window.location.pathname, p.basePath));
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [p.basePath]);
+  /** The header's back link inside the flow moves on the device too (also offline). */
+  const backInFlow = (to: FlowStep) => (e: MouseEvent<HTMLDivElement>) => {
+    const a = (e.target as Element).closest("a");
+    if (!a || a.getAttribute("href") !== hrefOf(p.basePath, to) || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    setStep(to);
+  };
 
   const syncPanel = <SyncStatus q={q} syncing={queue.syncing} online={queue.online} sentCount={queue.sentCount} storeError={queue.storeError} onRetry={() => void queue.sync()} />;
 
@@ -193,10 +192,12 @@ export function VisitFlow(p: VisitFlowProps) {
   }
 
   if (step === "work" && status === "work") {
-    return <WorkFlow head={header(p.basePath, "פרטי קריאה", "חזרה לכרטיס הביקור")} visitId={p.visitId} userId={p.userId} isTest={p.isTest} syncPanel={syncPanel} onFinish={() => setStep("close")} />;
+    const head = <div style={{ display: "contents" }} onClickCapture={backInFlow("card")}>{header(p.basePath, "פרטי קריאה", "חזרה לכרטיס הביקור")}</div>;
+    return <WorkFlow head={head} visitId={p.visitId} userId={p.userId} isTest={p.isTest} syncPanel={syncPanel} onFinish={() => setStep("close")} />;
   }
   if (step === "close" && status === "work") {
-    return <CloseFlow head={header(`${p.basePath}/work`, "לטיפול", "חזרה למסך הטיפול")} approvalText={p.approvalText} reasons={p.reasons} isTest={p.isTest} syncPanel={syncPanel} onSubmit={submitClose} />;
+    const head = <div style={{ display: "contents" }} onClickCapture={backInFlow("work")}>{header(hrefOf(p.basePath, "work"), "לטיפול", "חזרה למסך הטיפול")}</div>;
+    return <CloseFlow head={head} approvalText={p.approvalText} reasons={p.reasons} isTest={p.isTest} syncPanel={syncPanel} onSubmit={submitClose} />;
   }
 
   let foot: ReactNode = null;

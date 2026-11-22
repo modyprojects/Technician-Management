@@ -12,9 +12,9 @@ import { ddmm } from "@/features/calendar/data/dates";
 import { wazeHref } from "@/features/visits/data/links";
 import { TECH_HOME_PATH, techVisitPath } from "@/features/visits/data/paths";
 import type { VisitDetail } from "@/features/visits/data/types";
+import type { TechVisitView as TechVisitData } from "@/features/visits/supabase/tech";
+import type { SessionUser } from "@/features/auth/data/types";
 import { APPROVAL_TEXT_V1 } from "@/features/visit-flow/rules";
-import { requireArea } from "@/lib/auth/guards";
-import { techVisitsQueries } from "@/lib/data/supabase/tech-visits";
 import { flowContext, visitPhotos } from "@/lib/data/visit-flow";
 import { TECH_START_HREFS, TECH_START_TABS } from "../../_tabs";
 
@@ -26,16 +26,12 @@ function metaOf(v: Pick<VisitDetail, "task" | "n"> & { call: { req: string } }):
 
 // The technician's visit (Step 3 card + D95 visit flow), on real data only, addressed by the visit's
 // id; shared by /tech/visit/[id] and its /work and /close entries (the step the flow opens on).
-// Read under the signed-in Technician's own session (RLS): his own visit only; another technician's
-// visit, a cancelled visit (D60 (1)) or an unknown id is "not found" (404), with nothing of it
-// rendered. Open visit: the client flow (components/tech/visit-flow/VisitFlow.tsx) with the card's
+// Each page checks the session itself (requireArea("tech")) and reads the visit under the signed-in
+// Technician's own session (RLS): his own visit only; another technician's visit, a cancelled visit
+// (D60 (1)) or an unknown id is "not found" (404), with nothing of it rendered. Open visit: the client flow (components/tech/visit-flow/VisitFlow.tsx) with the card's
 // details rendered here. Closed visit: read-only (D14, TE-26) with its photos as short-lived signed
 // links. No field times for the technician (D68).
-export async function TechVisitView({ id, step }: { id: string; step: FlowStep }) {
-  const me = await requireArea("tech");
-  const queries = await techVisitsQueries(me);
-  const view = await queries.visit(id);
-  if (!view) notFound();
+export async function VisitScreen({ me, view, step }: { me: SessionUser; view: TechVisitData; step: FlowStep }) {
   const visit = view.detail;
   const showsTestData = visit.call.isTest || visit.customer.isTest || visit.product.isTest;
   const title = visit.customer.name || `ביקור ${visit.n} · ${ddmm(visit.date)}`;

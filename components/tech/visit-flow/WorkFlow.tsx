@@ -144,7 +144,8 @@ export function WorkFlow({
     idbVisitFlowStore
       .getDraft(visitId)
       .then((d) => {
-        if (live && d && d.userId === userId) {
+        // Never over what the technician already added on this screen.
+        if (live && d && d.userId === userId && !latest.current.photos.length && !latest.current.summary) {
           latest.current = d;
           setDraft(d);
           updatePreviews(d.photos);

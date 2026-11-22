@@ -197,7 +197,7 @@ test.describe("visit flow work queue (D46, D95 (d))", () => {
     const server = fakeServer({ [V1]: { status: "en_route", fieldVersion: 2 } });
     await store.add(arriveAndClose(V1, 2));
     const report = await syncQueue(store, server.api, USER);
-    expect(report).toEqual({ sent: 5, offline: false, failed: 0, fieldVersions: { [V1]: 3 } });
+    expect(report).toEqual({ sent: 5, offline: false, failed: 0, fieldVersions: { [V1]: 3 }, closed: { [V1]: "done" } });
     expect(server.calls).toEqual(["arrive", ...Array(3).fill(["addMedia", "upload", "confirm"]).flat(), "close"]);
     expect(server.visits[V1]).toEqual({ status: "done", fieldVersion: 4 });
     expect(saved.items.size).toBe(0);
@@ -328,6 +328,9 @@ test.describe("visit flow work queue (D46, D95 (d))", () => {
     expect(effectiveStatus("go", { ...none, pending: 2, arrivePending: true, close })).toBe("done");
     expect(effectiveStatus("work", { ...none, pending: 1, close: { ...close, outcome: "followup" } })).toBe("cont");
     expect(effectiveStatus("done", none)).toBe("done");
+    // Confirmed by the server on this screen, before the page re-reads the visit: never a step back.
+    expect(effectiveStatus("go", none, { arrived: true, closed: null })).toBe("work");
+    expect(effectiveStatus("work", none, { arrived: true, closed: "followup" })).toBe("cont");
   });
 });
 

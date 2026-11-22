@@ -8,6 +8,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { exclusive, idbVisitFlowStore } from "@/features/visit-flow/idb";
+import type { CloseOutcome } from "@/features/visit-flow/rules";
 import { syncQueue, type ApiResult, type NewQueueItem, type QueueItem, type VisitFlowApi } from "@/features/visit-flow/queue";
 import { addVisitMedia, arriveVisit, closeVisit, confirmVisitMedia } from "@/lib/actions/visit-flow";
 
@@ -56,6 +57,8 @@ export type QueueView = {
   sentCount: number;
   /** The field_version a confirmed "הגעתי" reached, per visit (until the page re-reads it). */
   fieldVersions: Record<string, number>;
+  /** Closures the server confirmed during this screen's life, per visit. */
+  closed: Record<string, CloseOutcome>;
   /** The device store could not be opened (private mode, blocked storage). */
   storeError: boolean;
   enqueue: (items: NewQueueItem[], deleteDraftOf?: string) => Promise<boolean>;
@@ -71,6 +74,7 @@ export function useVisitQueue(userId: string): QueueView {
   const [sentCount, setSentCount] = useState(0);
   const [storeError, setStoreError] = useState(false);
   const [fieldVersions, setFieldVersions] = useState<Record<string, number>>({});
+  const [closed, setClosed] = useState<Record<string, CloseOutcome>>({});
   const mounted = useRef(true);
 
   const reload = useCallback(async () => {
@@ -107,6 +111,7 @@ export function useVisitQueue(userId: string): QueueView {
         if (mounted.current) {
           setSentCount((n) => n + report.sent);
           setFieldVersions((v) => ({ ...v, ...report.fieldVersions }));
+          setClosed((v) => ({ ...v, ...report.closed }));
         }
         router.refresh();
       }
@@ -146,5 +151,5 @@ export function useVisitQueue(userId: string): QueueView {
     [reload, sync],
   );
 
-  return { items, loaded, syncing, online, sentCount, fieldVersions, storeError, enqueue, sync };
+  return { items, loaded, syncing, online, sentCount, fieldVersions, closed, storeError, enqueue, sync };
 }
