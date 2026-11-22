@@ -244,7 +244,7 @@ test.describe("Customer Service and Technician cannot reach the settings routes"
   test("Customer Service: no \"הגדרות\" item; the route shows \"אין הרשאה\" and no account data", async ({ browser }) => {
     const { context, page } = await signedIn(browser, seeded().cs);
     try {
-      await expect(nav(page).getByRole("link")).toHaveText(["קריאות", "זימונים שלא נקלטו"]);
+      await expect(nav(page).getByRole("link")).toHaveText(["יומן טכנאים", "קריאות", "זימונים שלא נקלטו"]);
       for (const path of ["/office/settings", USERS_PATH]) {
         await page.goto(path);
         await expect(page).toHaveURL(new RegExp(`${USERS_PATH}$`));

@@ -70,7 +70,7 @@ test.describe.serial("זימונים שלא נקלטו and the invitation simula
 
   test("Customer Service: the navigation of D60 (4) built so far; the screen and its simulator button", async () => {
     const { page } = cs;
-    await expect(nav(page).getByRole("link")).toHaveText(["קריאות", "זימונים שלא נקלטו"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["יומן טכנאים", "קריאות", "זימונים שלא נקלטו"]);
     await nav(page).getByRole("link", { name: "זימונים שלא נקלטו" }).click();
     await expect(page).toHaveURL(/\/office\/unparsed$/);
     await expect(nav(page).getByRole("link", { name: "זימונים שלא נקלטו" })).toHaveAttribute("aria-current", "page");
@@ -112,7 +112,7 @@ test.describe.serial("זימונים שלא נקלטו and the invitation simula
 
   test("Manager: an invalid invitation appears on the list with its structured reasons (S-05)", async () => {
     const { page } = mgr;
-    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
     await page.goto("/office/unparsed");
     const dialog = await openSimulator(page);
     await dialog.getByRole("button", { name: "זימון עם שדות חסרים" }).click();
@@ -269,7 +269,7 @@ test.describe("זימונים שלא נקלטו for the Creator (local stack)", 
   test("Creator: the navigation of D57 (1) built so far, the list and the simulator", async ({ browser }) => {
     const c = creator()!;
     const { context, page } = await signedIn(browser, c);
-    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
     await nav(page).getByRole("link", { name: "זימונים שלא נקלטו" }).click();
     await expect(listOf(page).locator(":scope > li").first()).toBeVisible();
     const dialog = await openSimulator(page);

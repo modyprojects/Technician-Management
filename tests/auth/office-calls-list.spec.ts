@@ -74,7 +74,7 @@ test.describe.serial("קריאות on real data (local stack)", () => {
     await page.goto("/office");
     await expect(page).toHaveURL(/\/office\/calls$/);
     await expect(page.getByRole("heading", { level: 1, name: "קריאות" })).toBeVisible();
-    await expect(nav(page).getByRole("link")).toHaveText(["קריאות", "זימונים שלא נקלטו"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["יומן טכנאים", "קריאות", "זימונים שלא נקלטו"]);
     await expect(nav(page).getByRole("link", { name: "קריאות" })).toHaveAttribute("aria-current", "page");
     // D60 (3): "מס׳ פנייה".
     await expect(table(page).getByRole("columnheader", { name: "מס׳ פנייה" })).toBeVisible();
@@ -151,7 +151,7 @@ test.describe.serial("קריאות on real data (local stack)", () => {
 
   test("Manager: the same list in the navigation of D57 (1)", async ({ browser }) => {
     const { context, page } = await signedIn(browser, seeded().mgr, /\/office$/);
-    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
     await nav(page).getByRole("link", { name: "קריאות" }).click();
     await expect(page).toHaveURL(/\/office\/calls$/);
     await page.getByRole("searchbox", { name: "חיפוש קריאות" }).fill(run);
@@ -180,7 +180,7 @@ test.describe("קריאות for the Creator, and the matrix key `calls` (local s
   test("Creator: the list; with `calls` off for Customer Service the page says \"אין הרשאה\" (D33, server-side)", async ({ browser }) => {
     const c = creator()!;
     const { context, page } = await signedIn(browser, c, /\/office$/);
-    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
+    await expect(nav(page).getByRole("link")).toHaveText(["דשבורד", "יומן טכנאים", "קריאות", "זימונים שלא נקלטו", "הגדרות"]);
     await page.goto("/office/calls");
     await expect(table(page)).toBeVisible();
     await context.close();
