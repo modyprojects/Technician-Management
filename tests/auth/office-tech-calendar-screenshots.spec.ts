@@ -44,7 +44,7 @@ const v = (customer: string, city: string, street: string, product: string): Fic
 
 /** Fictional technicians: 4 for a realistic team (6 with the two seeded ones), then 16 more for the many-technicians shots. */
 const TEAM = ["אורי בדיקה", "דנה בדיקה", "מאיר בדיקה", "שירה בדיקה"];
-const MANY = Array.from({ length: 16 }, (_, i) => `טכנאי נוסף ${i + 1} בדיקה`);
+const MANY = ["אביב", "בר", "גיל", "דור", "הדס", "ורד", "זיו", "חן", "טל", "יעל", "כרמל", "לירון", "מור", "נוי", "ספיר", "עדי"].map((n) => `${n} בדיקה`);
 const COLORS = ["t-y", "t-e", "t-s"];
 const extraId = (i: number) => `0e7c0000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
 
