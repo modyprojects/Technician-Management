@@ -1,5 +1,11 @@
 # Work Log (English only)
 
+## 2026-11-22 — Owner answers on #57/#58; record fixes (one database, simulator on Production)
+- Decisions D93 (one Supabase database, go-live gate in order; amends D87), D94 (office technician calendar), D95 (visit flow).
+- Go-live gate rewritten in STATUS, deployment, architecture and security docs: no separate Production project.
+- `CALENDAR_SIMULATOR=1` on Vercel Production since 22.11 11:56 (owner; on 19.11 it was Preview only); comments in `.env.example`, code and docs follow D90.
+- #57 and #58 move to real-data builds.
+
 ## 2026-11-19 — CI unblocked (public repo), M7 applied, calls module and technician calendar merged
 - Decisions D79–D92 (approval levels, skeletons, design rules, module-by-module, public repo, M365 invitations, Production on the test DB, simulator and test data during the testing period); V1 = 2 December 2026.
 - Remote: M7 applied (20261119095402, SHA 489901e5… verified) and bucket `visit-media` created, both owner-approved; Production redeployed from main with the owner's env settings.

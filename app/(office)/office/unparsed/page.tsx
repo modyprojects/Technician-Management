@@ -33,7 +33,7 @@ const pageHref = (page: number): string => (page > 1 ? `${OFFICE_UNPARSED_PATH}?
 // Who sees it: every office role (D57 (1), D60 (4); the gating matrix key is open decision #15, a
 // TEMPORARY fixed rule here and in the database's policy, Step 6 OQ-1).
 // The Outlook invitation simulator (D24; D60 (11)): its button is rendered only when the server says
-// the simulator is on in this environment (CALENDAR_SIMULATOR=1, never on Vercel Production;
+// the simulator is on in this environment (CALENDAR_SIMULATOR=1; on Vercel Production only while testingPeriod, D90;
 // lib/calendar/simulator-env.ts) and the viewer is a Manager, Creator or Customer Service user. No UI
 // toggle; when it is off nothing of it reaches the browser, and the server action answers
 // "not-found" anyway.

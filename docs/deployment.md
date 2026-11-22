@@ -36,14 +36,14 @@ Menu names may differ slightly in the Supabase dashboard. Supabase's built-in em
 ## Go-live gate (before any real use, D23, D31)
 1. Remove `/dev` and all fictitious fixtures from Production: set `testingPeriod` to `false` in `config/release.json` (the `/dev` gate then returns 404 on Vercel Production) and exclude or delete the `/dev` routes so they are not in the Production build.
 2. Re-enable the fixture check: with `testingPeriod: false`, `npm run build && npm run scan:bundle` must pass in CI, which requires the `/dev` routes and fixtures to be removed from the build (the check fails if the fixture sentinel is anywhere in the output). `tests/e2e/gate-logic.spec.ts` already covers Production with `testingPeriod` false (gate closed).
-3. Decide, with the owner's explicit approval, between a separate production Supabase project (recommended) and a cleanup of the existing database (D47; comparison below). With a separate project, point Vercel's Production environment to it (closes the D31 known deviation) while Preview stays on development; no real data in development.
+3. **One database (D93, owner 2026-11-19):** no separate Production project. In order: acceptance tests with test accounts → backup → the cleanup script (test rows, Storage objects, Auth users, notices; a separate owner-approved operation) → rotate the secret key and revoke "vercel_preview" → `testingPeriod` false (simulator off, test data hidden) → Vercel Authentication off → hardening (MFA for the Creator and Managers, rate limits, the D65/D67 blockers, D78, OQ-13).
 4. Decide the Production protection scope for real users (Vercel Authentication on Production would block technicians and Microsoft Graph webhooks).
-5. Simulator off in Production (D24), MFA for Creator/Manager, security review, backup/restore rehearsal and real-device tests (D28) as listed in `docs/security.md` and `docs/testing.md`.
+5. Simulator off in Production (`testingPeriod` false; D90, D93), MFA for Creator/Manager, security review, backup/restore rehearsal and real-device tests (D28) as listed in `docs/security.md` and `docs/testing.md`.
 6. Pass the pre-launch acceptance checklist below (D47): the real app starts with no fictional content.
 7. **Pre-pilot gate (D51): the owner approves the final permission matrix.** No real pilot and no real operational users before this approval; every `role_permissions` value has the status `approved` (no `temporary` values remain).
 
 ### Clean the existing database vs a separate Production project (D47)
-Decided before go-live with the owner's explicit approval. **Nothing is created now** (no new project, no charge; D30).
+**Decided (D93, owner 2026-11-19): clean the existing database.** The comparison is kept for the record; no separate project is created (D30).
 
 | | Clean the existing database | Separate Production project |
 |---|---|---|
@@ -53,7 +53,7 @@ Decided before go-live with the owner's explicit approval. **Nothing is created 
 | After launch | No safe test environment remains (Preview never points at Production) | Development stays as the test environment; Production is clean from creation |
 | Starts with no fictional content | After a successful cleanup | By construction |
 
-**Recommendation (technical, not yet approved):** a separate Production project, decided before go-live with the owner's explicit approval.
+**Decision (D93):** one database; cleanup. The earlier technical recommendation of a separate project was not adopted.
 
 ### Pre-launch acceptance checklist (D47)
 Both options:
