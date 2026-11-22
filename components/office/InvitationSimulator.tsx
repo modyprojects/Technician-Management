@@ -3,7 +3,7 @@
 // The Outlook invitation simulator inside "זימונים שלא נקלטו" (D24; D60 (11), resolving open
 // decision 27; SIM-01 to SIM-05, SIM-10, SIM-11; X-05: the demo's Outlook modal, docs/demo.html
 // L1020-1036, ".modal-bg" / ".modal" / ".ol-top"). The page renders this component ONLY where the
-// server says the simulator is on (CALENDAR_SIMULATOR=1, never on Vercel Production) and the
+// server says the simulator is on (CALENDAR_SIMULATOR=1; on Vercel Production only while testingPeriod, D90) and the
 // caller's role may use it (Manager, Creator, Customer Service): there is no UI toggle, and a hidden
 // button is not the control. The server action checks the switch, the input and the caller again,
 // and the database decides (Migration 6).

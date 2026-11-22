@@ -205,7 +205,7 @@ PROPOSED rows (Step 2 PR 2.3, Q26): prototypes under `/dev/demo` with fictional 
 | SIM-19 | 🧪 badge on test media | ADD | Test-marked photos, videos and recordings show a 🧪 badge wherever they are listed or opened (for example the call card media section) | D47 |
 | SIM-09 | No real email or external notification from simulated visits | ADD | Completion emails for simulated visits stay in the mock outbox only | D09, security.md |
 | SIM-10 | Who can use it | ADD | Manager, Creator and Customer Service, in development and Preview only. Technicians have no access. Enforced on the server and in database policies, not only by hiding the menu item. No public API | d28, d30 |
-| SIM-11 | Where it runs and how it is switched on/off | ADD | Controlled **only** by an environment setting (feature flag): on in development and Preview, off in production. No on/off toggle in the UI. Never enabled in production without separate explicit approval. Fictitious data only | d28, d29 |
+| SIM-11 | Where it runs and how it is switched on/off | ADD | Controlled **only** by an environment setting (feature flag): on in development and Preview; in Production only while `testingPeriod` is true (D90), off from go-live. No on/off toggle in the UI. Never enabled in production without separate explicit approval. Fictitious data only | d28, d29 |
 | SIM-12 | After Microsoft 365 is connected | ADD | The simulator is disabled by changing the environment setting, without changing service-call records, technician workflows or the ingestion architecture. Do not delete its code automatically | d28, d29 |
 
 ## Completion email
