@@ -96,14 +96,20 @@ test.describe.serial("יומן טכנאים on real data (local stack)", () => {
     const html = await page.content();
     for (const absent of [visits.cancelled.req, visits.cancelled.customer, visits.far.req]) expect(html).not.toContain(absent);
     // D94 (e): read-only: no form, input, drag or edit control on the screen; the only select is the
-    // phone's "בחר טכנאי" (navigation only, hidden on desktop).
+    // phone's "בחר טכנאי" and the only button the desktop's "טכנאים" filter (navigation only).
     const main = page.locator("main");
     await expect(main.locator("form, input, textarea, [draggable=true], [contenteditable=true]")).toHaveCount(0);
     await expect(main.locator("select")).toHaveCount(1);
     await expect(main.locator("[data-calendar-block=phone] select[data-tech-select]")).toBeHidden();
-    await expect(main.getByRole("button")).toHaveCount(0);
+    await expect(main.getByRole("button").filter({ visible: true })).toHaveCount(1);
     await expect(page.getByText("תצוגה בלבד").first()).toBeVisible();
-    await expect(page.locator("[data-calendar-block=desktop] .ocal-chips")).toBeVisible();
+    // Batch 2: one "טכנאים" button instead of the chips; the header row does not grow with the team.
+    await expect(page.locator("[data-calendar-block=desktop] .ocal-chips")).toHaveCount(0);
+    const filterButton = page.locator("[data-calendar-block=desktop] [data-tech-filter] button");
+    await expect(filterButton).toContainText("כל הטכנאים");
+    await expect(filterButton).toHaveAttribute("aria-expanded", "false");
+    const filtersRow = await page.locator("[data-calendar-block=desktop] .ocal-filters").boundingBox();
+    expect(filtersRow?.height ?? 999).toBeLessThan(60);
 
     // A block opens the drawer; the Manager has `calls`, so it links to the call card.
     await block(page, visits.mine.req).click();
@@ -117,11 +123,48 @@ test.describe.serial("יומן טכנאים on real data (local stack)", () => {
   test("day view and technician filter; the range clamp and the arrows' edges (D94 (d))", async ({ browser }) => {
     const page = await signedInPage(browser, seeded().mgr, /\/office$/);
     const tech2 = process.env.AUTH_E2E_TECH2_ROW ?? "";
-    await page.goto(`/office/calendar?view=day&date=${saturday}&tech=${tech2}`);
+    const tech1 = process.env.AUTH_E2E_TECH_ROW ?? "";
+    // Batch 2: the selection in the address (?techs=); an unknown id is ignored.
+    await page.goto(`/office/calendar?view=day&date=${saturday}&techs=${tech2},00000000-0000-4000-8000-000000000000`);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`יומן טכנאים · ${dayName(saturday)} ${ddmm(saturday)}`);
     await expect(block(page, visits.theirs.req)).toBeVisible();
     await expect(page.locator("[data-calendar-block=desktop] .calhead > div")).toHaveCount(2);
-    await expect(page.getByRole("link", { name: "כולם" }).filter({ visible: true })).not.toHaveAttribute("aria-current", "true");
+    const filter = page.locator("[data-calendar-block=desktop] [data-tech-filter]");
+    const button = filter.locator("button");
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    // Open with the keyboard; the list has "כולם" and a labelled checkbox per technician.
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(filter.getByRole("checkbox", { name: "כולם" })).not.toBeChecked();
+    await expect(filter.locator("input[type=checkbox]:checked")).toHaveCount(1);
+    // The only one chosen cannot be cleared (at least one technician).
+    await expect(filter.locator("input[type=checkbox]:checked")).toBeDisabled();
+    // Escape closes and returns focus to the button.
+    await page.keyboard.press("Escape");
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await expect(button).toBeFocused();
+    await expect(filter.locator("input")).toHaveCount(0);
+    // Adding a technician navigates (?techs= with both); a click outside closes the list.
+    await button.click();
+    const team = await filter.locator("ul input[type=checkbox]").count();
+    await filter.locator(`input[value="${tech1}"]`).check();
+    if (team > 2) {
+      await expect(page).toHaveURL(new RegExp(`techs=(${tech1}%2C${tech2}|${tech2}%2C${tech1})`));
+      await expect(button).toContainText("2 טכנאים");
+    } else {
+      // On a fresh stack these two are the whole team: every technician chosen = all, no parameter.
+      await expect(page).not.toHaveURL(/techs=/);
+      await expect(button).toContainText("כל הטכנאים");
+    }
+    await expect(page.locator("[data-calendar-block=desktop] .calhead > div")).toHaveCount(3);
+    await page.locator("[data-calendar-block=desktop] h1").click();
+    await expect(filter.locator("input")).toHaveCount(0);
+    // "כולם": every technician, the parameter dropped.
+    await button.click();
+    await filter.getByRole("checkbox", { name: "כולם" }).check();
+    await expect(page).not.toHaveURL(/techs=/);
+    await expect(button).toContainText("כל הטכנאים");
 
     // Far ahead: clamped to the last day; "next" is disabled; the far visit is never read.
     await page.goto(`/office/calendar?view=day&date=${addDays(range.max, 20)}`);
@@ -133,9 +176,11 @@ test.describe.serial("יומן טכנאים on real data (local stack)", () => {
     await page.goto("/office/calendar?view=day&date=2020-01-01");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`יומן טכנאים · ${dayName(range.min)} ${ddmm(range.min)}`);
     await expect(steps.locator('[aria-disabled="true"]')).toHaveAttribute("aria-label", /יום קודם/);
-    // The week at the edge: the days outside the range are greyed, the next week is disabled.
+    // The week at the edge (batch 2: whole weeks): all seven days open, none greyed; the next week is disabled.
     await page.goto(`/office/calendar?view=week&date=${range.max}`);
     await expect(steps.locator('[aria-disabled="true"]')).toHaveAttribute("aria-label", /השבוע הבא/);
+    await expect(page.locator("[data-calendar-block=desktop] a.ocal-wk-head")).toHaveCount(7);
+    await expect(page.getByText("מחוץ לטווח היומן")).toHaveCount(0);
     // A drawer outside the range opens nothing, even by its exact address.
     await page.goto(`/office/calendar?view=week&date=${range.max}&req=${visits.far.req}&n=1`);
     await expect(page.getByRole("dialog")).toHaveCount(0);
