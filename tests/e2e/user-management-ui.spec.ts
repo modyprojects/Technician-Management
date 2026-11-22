@@ -173,7 +173,7 @@ test.describe("the real office navigation and the settings routes", () => {
 
   test("Manager and Creator: the landing item, \"קריאות\", \"זימונים שלא נקלטו\" and \"הגדרות\"; Customer Service \"קריאות\" and \"זימונים שלא נקלטו\" (S-01, S-05); anything else nothing", () => {
     for (const role of ["mgr", "creator"] as const) {
-      expect(realOfficeNav(role)).toEqual([
+      expect(realOfficeNav(role, { cal: true })).toEqual([
         { key: "analytics", label: "דשבורד", href: "/office" },
         { key: "cal", label: "יומן טכנאים", href: "/office/calendar" },
         { key: "calls", label: "קריאות", href: "/office/calls" },
@@ -181,7 +181,7 @@ test.describe("the real office navigation and the settings routes", () => {
         { key: "settings", label: "הגדרות", href: OFFICE_SETTINGS_USERS_PATH },
       ]);
     }
-    expect(realOfficeNav("cs")).toEqual([
+    expect(realOfficeNav("cs", { cal: true })).toEqual([
       { key: "cal", label: "יומן טכנאים", href: "/office/calendar" },
       { key: "calls", label: "קריאות", href: "/office/calls" },
       { key: "unparsed", label: "זימונים שלא נקלטו", href: "/office/unparsed" },

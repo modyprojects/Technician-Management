@@ -440,7 +440,10 @@ export function officeCalendarQueriesOf(db: SupabaseClient, viewer: Pick<Session
       if (!v || v.status === "cancelled" || (!testRows && v.is_test)) return null;
 
       const [tech, times, signature, reason] = await Promise.all([
-        db.from("technicians").select("id, display_name, color, accepts_invitations, is_test, profile_id").eq("id", v.technician_id).limit(1),
+        (testRows
+          ? db.from("technicians").select("id, display_name, color, accepts_invitations, is_test, profile_id").eq("id", v.technician_id)
+          : db.from("technicians").select("id, display_name, color, accepts_invitations, is_test, profile_id").eq("id", v.technician_id).eq("is_test", false)
+        ).limit(1),
         db.from("visit_time_current").select("kind, reported_at").eq("visit_id", v.id).limit(10),
         db.from("visit_signatures").select("signer_name").eq("visit_id", v.id).limit(1),
         v.followup_reason_id ? db.from("followup_reasons").select("label_he").eq("id", v.followup_reason_id).limit(1) : Promise.resolve({ data: [], error: null }),

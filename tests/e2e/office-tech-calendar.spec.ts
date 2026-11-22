@@ -240,9 +240,14 @@ test.describe("D94 (c): `cal` is checked before any read", () => {
 test.describe("the calendar page: navigation and server-side guards", () => {
   onlyInProject("desktop");
 
-  test("\"יומן טכנאים\" is in every office role's navigation (display only)", () => {
+  test("\"יומן טכנאים\" is in an office role's navigation only with `cal` (D94 (c); display only)", () => {
     expect(OFFICE_CALENDAR_PATH).toBe("/office/calendar");
-    for (const role of ["mgr", "creator", "cs"]) expect(realOfficeNav(role).some((i) => i.key === "cal" && i.href === "/office/calendar")).toBe(true);
+    for (const role of ["mgr", "creator", "cs"]) {
+      expect(realOfficeNav(role, { cal: true }).some((i) => i.key === "cal" && i.href === "/office/calendar")).toBe(true);
+      expect(realOfficeNav(role, { cal: false }).some((i) => i.key === "cal")).toBe(false);
+      expect(realOfficeNav(role).some((i) => i.key === "cal")).toBe(false);
+    }
+    expect(realOfficeNav("tech", { cal: true })).toEqual([]);
     expect(realOfficeNav("tech")).toEqual([]);
   });
 
