@@ -24,7 +24,10 @@ function PeriodTitle({ title }: { title: string }) {
 // demo, D53) in the demo's look (.seg, .btn, .chip). The calendar is read-only: scheduling stays
 // in Outlook (OF-03). Presentational: the page builds every link.
 // Phone (owner review 22.11, amends D94 (b)): `picker` (the "בחר טכנאי" dropdown) takes the chips'
-// place, and the "תצוגה בלבד" line and the colour legend are left out; the desktop is unchanged.
+// place, and the "תצוגה בלבד" line and the colour legend are left out.
+// Desktop (owner review 22.11, batch 2): `filter` (the one "טכנאים ▾" button with its checkbox list)
+// takes the chips' place, so the filter row stays one row whatever the number of technicians. The
+// chips remain for the UI demo, which passes `technicians` only.
 
 /** A link in the toolbar: a view segment or a technician chip. */
 export type CalendarLink = {
@@ -62,7 +65,8 @@ export function CalendarToolbar({
   prev,
   todayHref,
   next,
-  technicians,
+  technicians = [],
+  filter,
   picker,
 }: {
   /** "רביעי 21.10", "שבוע 18.10–22.10" or "אוקטובר 2026". */
@@ -72,7 +76,9 @@ export function CalendarToolbar({
   todayHref: string;
   next: CalendarStep;
   /** "כולם" first, then every technician. */
-  technicians: readonly CalendarLink[];
+  technicians?: readonly CalendarLink[];
+  /** Desktop: the technician filter button, instead of the chips. */
+  filter?: ReactNode;
   /** Phone: the technician dropdown instead of the chips; no explanation line, no legend. */
   picker?: ReactNode;
 }) {
@@ -104,6 +110,7 @@ export function CalendarToolbar({
       </div>
       {picker ?? (
       <div className="ocal-filters">
+        {filter ?? (
         <div className="ocal-chips" role="group" aria-labelledby="ocal-tech-label">
           <span id="ocal-tech-label" className="sub" style={{ fontWeight: 700 }}>
             טכנאי:
@@ -122,6 +129,7 @@ export function CalendarToolbar({
             </Link>
           ))}
         </div>
+        )}
         <CalendarLegend />
       </div>
       )}

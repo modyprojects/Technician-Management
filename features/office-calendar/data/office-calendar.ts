@@ -7,7 +7,8 @@
 // D94: (a) the week is Sunday to Saturday (as the technician calendar, D89); (c) visibility is the
 // matrix key `cal` (private.has_permission('cal')), checked here before ANY read: without it nothing
 // is read and every query returns nothing (deny by default); (d) the window is one month back and
-// three months forward from today (Asia/Jerusalem), and every read is clamped to it; (e) read-only.
+// three months forward from today (Asia/Jerusalem), rounded out to whole weeks (Sunday to Saturday,
+// owner review 22.11), and every read is clamped to it; (e) read-only.
 // D91: test-marked rows are shown with the "נתוני בדיקה" marker, except on Production after go-live
 // (`VERCEL_ENV` production and `testingPeriod` not true), where they are left out (scope).
 // Bounded (docs/security.md §9): one read covers at most one week (7 days) and OFFICE_CALENDAR_WINDOW
@@ -73,10 +74,15 @@ export function addMonths(date: IsoDate, months: number): IsoDate {
 
 export type CalendarRange = { min: IsoDate; max: IsoDate };
 
-/** D94 (d): one month back and three months forward from `today`, both ends included. */
+/**
+ * D94 (d), amended by the owner's review of 22.11 (batch 2): one month back and three months forward
+ * from `today`, rounded out to whole weeks: from the Sunday of the week one month ago to the Saturday
+ * of the week three months ahead, both ends included. Every week shown is complete (no day of a shown
+ * week is outside the range).
+ */
 export const calendarRangeOf = (today: IsoDate): CalendarRange => ({
-  min: addMonths(today, -RANGE_MONTHS_BACK),
-  max: addMonths(today, RANGE_MONTHS_FORWARD),
+  min: weekStartOf(addMonths(today, -RANGE_MONTHS_BACK)),
+  max: addDays(weekStartOf(addMonths(today, RANGE_MONTHS_FORWARD)), 6),
 });
 
 /** `date` inside the window (a date outside it lands on the nearest end). */
@@ -235,9 +241,21 @@ export function shownTechnicians(rows: readonly TechnicianRow[], visits: readonl
     .map((t) => technicianRefOf(t));
 }
 
+/**
+ * The technician filter: null = every technician; one id, or the ids chosen in the desktop's
+ * "טכנאים" list (owner review 22.11, batch 2).
+ */
+export type TechFilter = string | readonly string[] | null;
+
+/** Whether `id` passes the filter. */
+const passes = (tech: TechFilter, id: string): boolean => tech === null || (typeof tech === "string" ? tech === id : tech.includes(id));
+
+/** The DTO's single technician id: the one chosen when exactly one, else null. */
+const singleOf = (tech: TechFilter): string | null => (tech === null ? null : typeof tech === "string" ? tech : tech.length === 1 ? (tech[0] ?? null) : null);
+
 /** The day view: one lane per technician in the filter (all when `tech` is null), placed in overlap lanes. */
-export function officeDayOf(data: OfficeCalendarData, date: IsoDate, tech: string | null): OfficeCalendarDay {
-  const technicians = data.technicians.filter((t) => tech === null || t.id === tech);
+export function officeDayOf(data: OfficeCalendarData, date: IsoDate, tech: TechFilter): OfficeCalendarDay {
+  const technicians = data.technicians.filter((t) => passes(tech, t.id));
   const lanes = technicians.map((t) => {
     const own = data.visits.filter((v) => v.date === date && v.technician.id === t.id);
     return { technician: t, visits: { items: placeVisits(own.sort(byStart).slice(0, CALENDAR_LANE_LIMIT)), total: own.length, limit: CALENDAR_LANE_LIMIT } };
@@ -245,22 +263,22 @@ export function officeDayOf(data: OfficeCalendarData, date: IsoDate, tech: strin
   const shown = lanes.flatMap((l) => l.visits.items);
   return {
     date,
-    filter: { technicianId: tech, statuses: [] },
+    filter: { technicianId: singleOf(tech), statuses: [] },
     includesTestData: shown.some((v) => v.isTest),
     lanes,
     total: lanes.reduce((s, l) => s + l.visits.total, 0),
   };
 }
 
-/** The week view: Sunday to Saturday (D94 (a)), each day's visits by start; days outside the window are empty. */
-export function officeWeekOf(data: OfficeCalendarData, date: IsoDate, tech: string | null): OfficeCalendarWeek {
+/** The week view: Sunday to Saturday (D94 (a)), each day's visits by start (every week shown is inside the window). */
+export function officeWeekOf(data: OfficeCalendarData, date: IsoDate, tech: TechFilter): OfficeCalendarWeek {
   const days = weekDaysOf(date).map((d) => {
-    const own = data.visits.filter((v) => v.date === d && (tech === null || v.technician.id === tech)).sort(byStart);
+    const own = data.visits.filter((v) => v.date === d && passes(tech, v.technician.id)).sort(byStart);
     return { date: d, visits: { items: own.slice(0, CALENDAR_WEEK_DAY_LIMIT), total: own.length, limit: CALENDAR_WEEK_DAY_LIMIT } };
   });
   return {
     weekStart: weekStartOf(date),
-    filter: { technicianId: tech, statuses: [] },
+    filter: { technicianId: singleOf(tech), statuses: [] },
     includesTestData: days.some((d) => d.visits.items.some((v) => v.isTest)),
     days,
     total: days.reduce((s, d) => s + d.visits.total, 0),

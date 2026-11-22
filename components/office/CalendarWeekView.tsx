@@ -67,7 +67,6 @@ export function CalendarWeekView({
   visitHref,
   quietTest = false,
   showRequest = false,
-  inRange,
 }: {
   week: OfficeCalendarWeek;
   today: IsoDate;
@@ -76,8 +75,6 @@ export function CalendarWeekView({
   visitHref: (visit: VisitRef) => string;
   quietTest?: boolean;
   showRequest?: boolean;
-  /** Whether a day is inside the calendar's range (D94 (d)); a day outside it is greyed, without a link. Default: every day. */
-  inRange?: (date: IsoDate) => boolean;
 }) {
   // One column per day of the DTO: five (Sunday to Thursday, the demo) or seven (Sunday to Saturday, D94 (a)).
   const cols = Math.max(1, week.days.length);
@@ -88,34 +85,14 @@ export function CalendarWeekView({
           {week.days.map((d) => {
             const isToday = d.date === today;
             const more = d.visits.total - d.visits.items.length;
-            const inside = inRange ? inRange(d.date) : true;
-            const label = (
-              <>
-                {dayName(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
-                {inside && (
+            return (
+              <div key={d.date} className={isToday ? "ocal-wk-day today" : "ocal-wk-day"}>
+                <Link className="ocal-wk-head" href={dayHref(d.date)} prefetch={false} aria-current={isToday ? "date" : undefined}>
+                  {dayName(d.date)} <span className="num">{ddmm(d.date)}</span>{" "}
                   <span className="sub" style={{ fontWeight: 400 }}>
                     · <span className="num">{d.visits.total}</span>
                     <span className="sr-only"> ביקורים</span>
                   </span>
-                )}
-              </>
-            );
-            if (!inside) {
-              return (
-                <div key={d.date} className="ocal-wk-day" style={{ background: "var(--line2)", color: "var(--muted)" }}>
-                  <div className="ocal-wk-head" style={{ borderBottom: "1px solid var(--line)", padding: "10px 12px", fontWeight: 700 }}>
-                    {label}
-                  </div>
-                  <div className="sub" style={{ textAlign: "center", padding: 12 }}>
-                    מחוץ לטווח היומן
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div key={d.date} className={isToday ? "ocal-wk-day today" : "ocal-wk-day"}>
-                <Link className="ocal-wk-head" href={dayHref(d.date)} prefetch={false} aria-current={isToday ? "date" : undefined}>
-                  {label}
                 </Link>
                 {d.visits.items.length > 0 ? (
                   <ul className="ocal-wk-list">

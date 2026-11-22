@@ -23,6 +23,8 @@ import {
   type TechnicianRow,
 } from "@/features/office-calendar/data/office-calendar";
 import { phoneDaysOf, phoneTechOf, techCalVisitOf } from "@/features/office-calendar/data/phone";
+import { parseTechs, techsLabelOf, techsParamOf } from "@/features/office-calendar/data/tech-filter";
+import { addDays, weekStartOf } from "@/features/calendar/data/dates";
 import { onlyInProject } from "./helpers";
 
 // "יומן טכנאים" on real data (D88 office module 2; D94): the pure rules of the Supabase adapter
@@ -54,14 +56,31 @@ const row = (o: Partial<CalendarVisitRow> = {}): CalendarVisitRow => ({
 test.describe("the office calendar's window, week and steps (D94)", () => {
   onlyInProject("desktop");
 
-  test("(d) one month back and three months forward; month ends are cut", () => {
-    expect(calendarRangeOf("2026-11-22")).toEqual({ min: "2026-10-22", max: "2027-02-22" });
+  test("(d) one month back and three months forward, rounded out to whole weeks (owner review 22.11, batch 2)", () => {
+    // Today Sunday 22.11.26: one month back is Thursday 22.10 → its Sunday 18.10; three months ahead
+    // is Monday 22.02.27 → that week's Saturday 27.02.27.
+    expect(calendarRangeOf("2026-11-22")).toEqual({ min: "2026-10-18", max: "2027-02-27" });
+    // Today Wednesday 25.11: 25.10 is a Sunday (kept); 25.02.27 is a Thursday → Saturday 27.02.
+    expect(calendarRangeOf("2026-11-25")).toEqual({ min: "2026-10-25", max: "2027-02-27" });
+    // Today Saturday 28.11: 28.10 is a Wednesday → Sunday 25.10; 28.02.27 is a Sunday → Saturday 06.03.
+    expect(calendarRangeOf("2026-11-28")).toEqual({ min: "2026-10-25", max: "2027-03-06" });
+    // Month ends: 30.11 → 30.10 (Friday → Sunday 25.10) and 28.02.27 (cut; Sunday → Saturday 06.03).
+    expect(calendarRangeOf("2026-11-30")).toEqual({ min: "2026-10-25", max: "2027-03-06" });
+    // 31.01.26 (Saturday) → 31.12.25 (Wednesday → Sunday 28.12.25) and 30.04.26 (Thursday → Saturday 02.05).
+    expect(calendarRangeOf("2026-01-31")).toEqual({ min: "2025-12-28", max: "2026-05-02" });
+    // Every shown week is complete: the range starts on a Sunday and ends on a Saturday.
+    for (const today of ["2026-11-22", "2026-11-25", "2026-11-28", "2026-11-30", "2026-01-31", "2026-02-28", "2026-12-31"]) {
+      const r = calendarRangeOf(today);
+      expect(weekStartOf(r.min)).toBe(r.min);
+      expect(addDays(weekStartOf(r.max), 6)).toBe(r.max);
+      expect(r.min <= addMonths(today, -1) && r.max >= addMonths(today, 3)).toBe(true);
+    }
     expect(addMonths("2026-11-30", 3)).toBe("2027-02-28");
     expect(addMonths("2026-03-31", -1)).toBe("2026-02-28");
     expect(addMonths("2027-01-15", -1)).toBe("2026-12-15");
     const r = calendarRangeOf("2026-11-22");
-    expect(clampToRange("2025-01-01", r)).toBe("2026-10-22");
-    expect(clampToRange("2030-01-01", r)).toBe("2027-02-22");
+    expect(clampToRange("2025-01-01", r)).toBe("2026-10-18");
+    expect(clampToRange("2030-01-01", r)).toBe("2027-02-27");
     expect(clampToRange("2026-12-01", r)).toBe("2026-12-01");
   });
 
@@ -72,12 +91,14 @@ test.describe("the office calendar's window, week and steps (D94)", () => {
   test("(d) the arrows stop at the edges; days include Friday and Saturday", () => {
     const r = calendarRangeOf("2026-11-22");
     expect(stepsOf("day", "2026-11-27", r)).toEqual({ prev: "2026-11-26", next: "2026-11-28" });
-    expect(stepsOf("day", r.min, r)).toEqual({ prev: null, next: "2026-10-23" });
-    expect(stepsOf("day", r.max, r)).toEqual({ prev: "2027-02-21", next: null });
-    // Week of the lower edge (Sunday 18.10 is before 22.10): no previous week.
+    expect(stepsOf("day", r.min, r)).toEqual({ prev: null, next: "2026-10-19" });
+    expect(stepsOf("day", r.max, r)).toEqual({ prev: "2027-02-26", next: null });
+    // The first week (Sunday 18.10 – Saturday 24.10): no previous week.
     expect(stepsOf("week", "2026-10-22", r).prev).toBeNull();
+    expect(stepsOf("week", "2026-10-18", r).prev).toBeNull();
     expect(stepsOf("week", "2026-10-29", r).prev).toBe("2026-10-22");
-    // Week of the upper edge (Sunday 21.02.27 – Saturday 27.02.27): no next week.
+    // The last week (Sunday 21.02.27 – Saturday 27.02.27): no next week.
+    expect(stepsOf("week", "2027-02-27", r).next).toBeNull();
     expect(stepsOf("week", "2027-02-22", r).next).toBeNull();
     expect(stepsOf("week", "2027-02-15", r).next).toBe("2027-02-22");
   });
@@ -136,7 +157,37 @@ test.describe("the office calendar's mapping (Supabase adapter)", () => {
     expect(week.days).toHaveLength(7);
     expect(week.days.map((d) => d.visits.total)).toEqual([2, 0, 0, 0, 0, 1, 0]);
     expect(officeWeekOf(data, "2026-11-25", T1).total).toBe(2);
+    // The desktop's multi-select (owner review 22.11, batch 2).
+    expect(officeDayOf(data, "2026-11-22", [T1, T3]).lanes.map((l) => l.technician.id)).toEqual([T1, T3]);
+    expect(officeDayOf(data, "2026-11-22", [T3]).filter.technicianId).toBe(T3);
+    expect(officeDayOf(data, "2026-11-22", [T1, T3]).filter.technicianId).toBeNull();
+    expect(officeWeekOf(data, "2026-11-25", [T3]).total).toBe(1);
     expect(placeVisits([])).toEqual([]);
+  });
+
+  test("desktop technician filter (owner review 22.11, batch 2): ?techs= parsing, the address and the button's text", () => {
+    const shown = [
+      { id: T1, name: "אבי" },
+      { id: T2, name: "בני" },
+      { id: T3, name: "גל" },
+    ];
+    // Absent or empty: all.
+    expect(parseTechs(undefined, shown)).toBeNull();
+    expect(parseTechs("", shown)).toBeNull();
+    // In the technicians' order, duplicates and spaces ignored.
+    expect(parseTechs(`${T3},${T1}, ${T3}`, shown)).toEqual([T1, T3]);
+    expect(parseTechs([T2, T3], shown)).toEqual([T2, T3]);
+    // Unknown ids are ignored; nothing left = all; every technician = all.
+    expect(parseTechs(`${T2},00000000-0000-4000-8000-000000000000,x`, shown)).toEqual([T2]);
+    expect(parseTechs("00000000-0000-4000-8000-000000000000,<script>", shown)).toBeNull();
+    expect(parseTechs(`${T1},${T2},${T3}`, shown)).toBeNull();
+    expect(parseTechs(T1, [])).toBeNull();
+    expect(techsParamOf(null, shown)).toBeNull();
+    expect(techsParamOf([T3, T1], shown)).toBe(`${T1},${T3}`);
+    expect(techsParamOf([T1, T2, T3], shown)).toBeNull();
+    expect(techsLabelOf(null, shown)).toBe("כל הטכנאים");
+    expect(techsLabelOf([T2], shown)).toBe("בני");
+    expect(techsLabelOf([T1, T3], shown)).toBe("2 טכנאים");
   });
 
   test("phone (owner review 22.11): one technician, default the first, unknown falls back; the technician calendar's shape", () => {
@@ -281,6 +332,11 @@ test.describe("the calendar page: navigation and server-side guards", () => {
     expect(page).toContain("<TechCalDay");
     expect(page).toContain("<TechCalWeek");
     expect(page).not.toContain("PhoneAgenda");
+    // Owner review 22.11, batch 2: whole weeks, so no day is greyed as out of range; the desktop
+    // filter is one button with a checkbox list, the day view has a minimum column width.
+    expect(page).not.toMatch(/greyed|inRange|מחוץ לטווח/);
+    expect(page).toContain("<TechFilter");
+    expect(page).toContain("minColumn={DAY_COLUMN_MIN}");
     const server = readFileSync(path.resolve("lib/data/supabase/office-calendar.ts"), "utf8");
     expect(server).toContain('import "server-only";');
     expect(server).toContain("createUserSupabaseClient");
