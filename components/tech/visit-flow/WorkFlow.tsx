@@ -236,7 +236,7 @@ export function WorkFlow({
       {syncPanel}
       {saveError && (
         <div role="alert" className="card" style={{ padding: "10px 12px", background: "var(--danger-bg)", color: "var(--danger-fg)", fontSize: 14 }}>
-          לא ניתן לשמור במכשיר (אחסון הדפדפן חסום).
+          לא ניתן לשמור בטלפון (אחסון הדפדפן חסום).
         </div>
       )}
       <PhotoCard phase="before" photos={before} urls={urls} onPick={(f) => pick("before", f)} onRemove={remove} busy={busy === "before"} />
@@ -260,7 +260,7 @@ export function WorkFlow({
           onBlur={() => void save(latest.current)}
           style={{ width: "100%", display: "block" }}
         />
-        <div className="sub">נשמר במכשיר עד השליחה.</div>
+        <div className="sub">נשמר בטלפון עד השליחה.</div>
       </section>
     </TechShell>
   );

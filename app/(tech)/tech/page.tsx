@@ -6,6 +6,7 @@ import { ScheduleList, type ScheduleEntry } from "@/components/tech/ScheduleList
 import { TechHomeHeader } from "@/components/tech/TechHomeHeader";
 import { TechShell } from "@/components/tech/TechShell";
 import { PlaceWazeLink } from "@/components/tech/VisitLinks";
+import { UnsentMarker } from "@/components/tech/visit-flow/UnsentMarker";
 import { dayName, ddmm } from "@/features/calendar/data/dates";
 import { wazeHref } from "@/features/visits/data/links";
 import { TECH_DONE_PATH, techVisitPath } from "@/features/visits/data/paths";
@@ -40,6 +41,8 @@ export default async function TechHomePage() {
   const day = await queries.day(date);
 
   const entry = (v: TechDayVisitWithId): ScheduleEntry => ({ visit: v, href: techVisitPath(v.id) });
+  // D95 (22.11 (e)): "לא נשלח" while this device holds data of an open visit not yet confirmed.
+  const openEntry = (v: TechDayVisitWithId): ScheduleEntry => ({ ...entry(v), sync: <UnsentMarker visitId={v.id} userId={me.id} /> });
   const placeActions = Object.fromEntries(day.pickups.map((g) => [g.place, <PlaceWazeLink key={g.place} place={g.place} address={g.placeAddress} />]));
   const next = day.next;
   const nextWaze = next ? wazeHref(next.address) : null;
@@ -70,7 +73,7 @@ export default async function TechHomePage() {
         <NextVisitEmpty completed={day.stats.completed} />
       )}
       <DevicePickups groups={day.pickups} technicianId={day.technician.id} date={day.date} placeActions={placeActions} />
-      <ScheduleList open={day.open.map(entry)} closed={day.closed.map(entry)} />
+      <ScheduleList open={day.open.map(openEntry)} closed={day.closed.map(entry)} />
     </TechShell>
   );
 }

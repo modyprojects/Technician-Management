@@ -14,8 +14,9 @@ import { attendeeOf, ingestVisit, signedInClient } from "./tech-fixtures";
 // Every assertion searches this run's own uniquely named records (the stack is shared).
 // Covers: "יוצא · Waze" records first and the Waze tile appears only after it (D71, D95 (e));
 // "הגעתי", the photos (compressed on the device, D95 (h)), the summary and "טופל" with signer and
-// signature, or "המשך טיפול" with reason and notes; offline "הגעתי" + closure kept on the device
-// across a reload and synced exactly once on reconnect (D95 (d)); the closed visit read-only with its
+// signature, or "המשך טיפול" with reason and notes; without a connection "הגעתי" + closure kept on
+// the phone across a reload, never sent on their own, sent once by "שלח שוב" (D95 (d) as corrected
+// 22.11), with the "לא נשלח" marker on the card and on "היום"; the closed visit read-only with its
 // photos; the office call card's photos as short-lived signed links (D92 (2), D95 (f)); and the
 // refusals: another technician's visit, office roles calling the writers, "טופל" without signer or
 // signature, "המשך טיפול" without reason.
@@ -195,7 +196,7 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     expect(sqlOf(`select count(*) from public.visit_media where visit_id = '${idOf("cont")}' and kind = 'signature'`)).toBe("0");
   });
 
-  test("offline: arrive and the closure stay on the device across a reload, then sync exactly once", async ({ page, context }) => {
+  test("no connection: arrive and close are kept on the phone (also across a reload), nothing sends on its own, 'שלח שוב' sends once", async ({ page, context }) => {
     test.setTimeout(150_000);
     const { tech } = seeded();
     const client = await signedInClient(tech.email, tech.password);
@@ -206,11 +207,14 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     const blue = await photo(page, "#224466");
     const green = await photo(page, "#446622");
 
+    // "הגעתי" without a connection does not block: the message, then the work screen.
     await context.setOffline(true);
     await page.getByRole("button", { name: "הגעתי · התחלת טיפול" }).click();
     await expect(page).toHaveURL(/\?step=work$/);
+    const panel = page.getByRole("region", { name: "מצב שליחה" });
+    await expect(panel).toContainText("אין חיבור, הסטטוס לא נשלח. הנתונים שמורים בטלפון");
     await expect(page.locator(".ph-head")).toContainText("בטיפול");
-    await expect(page.getByRole("region", { name: "מצב סנכרון" })).toContainText("נשמר במכשיר");
+    await expect(page.locator(".ph-head")).toContainText("לא נשלח");
     await page.getByLabel("הוסף תמונה · לפני הטיפול").setInputFiles(blue);
     await page.getByLabel("הוסף תמונה · אחרי הטיפול").setInputFiles(green);
     await expect(page.getByRole("img", { name: "תמונה 1 · אחרי הטיפול" })).toBeVisible({ timeout: 15_000 });
@@ -220,35 +224,43 @@ test.describe.serial("technician visit flow (D95, local stack)", () => {
     await page.getByLabel("שם החותם").fill("לקוח לא מקוון");
     await sign(page);
     await page.getByRole("button", { name: "שליחה · הקריאה טופלה" }).click();
+    // The closure fails to send: its message and "שלח שוב".
     await expect(page.getByText("הביקור נשמר · ✓ טופל")).toBeVisible();
-    await expect(page.getByRole("region", { name: "מצב סנכרון" })).toContainText("נשמר במכשיר");
+    await expect(panel).toContainText("אין חיבור, הסגירה לא נשלחה. הנתונים שמורים בטלפון", { timeout: 15_000 });
+    await expect(panel.getByRole("button", { name: "שלח שוב" })).toBeEnabled();
     expect(statusOf("offline")).toBe("en_route");
 
-    // Back online, but the server cannot be reached: nothing is lost; a reload still shows it.
-    await page.route("**/tech/visit/**", (r) => (r.request().method() === "POST" ? r.abort("internetdisconnected") : r.continue()));
+    // Back online: nothing is sent on its own, not on the `online` event and not on reopening.
     await context.setOffline(false);
+    await page.waitForTimeout(2_000);
+    expect(statusOf("offline")).toBe("en_route");
     await page.reload();
     await expect(page.getByText("הביקור נשמר · ✓ טופל")).toBeVisible();
-    await expect(page.getByRole("region", { name: "מצב סנכרון" })).toContainText(/ממתין לסנכרון|מסתנכרן/);
-    await expect(page.getByRole("region", { name: "מצב סנכרון" })).toContainText("5 פריטים במכשיר");
+    await expect(panel).toContainText("5 פריטים שמורים בטלפון");
+    await expect(page.locator(".ph-head")).toContainText("לא נשלח");
+    await page.goto("/tech");
+    const row = page.getByRole("region", { name: 'לו"ז היום' }).getByRole("link").filter({ hasText: V.offline.customer });
+    await expect(row).toContainText("לא נשלח");
+    await page.waitForTimeout(1_000);
     expect(statusOf("offline")).toBe("en_route");
 
-    // The server is reachable again: the technician's "נסה שוב" sends it all, once.
-    await page.unroute("**/tech/visit/**");
-    await page.getByRole("button", { name: "נסה שוב" }).click();
+    // "שלח שוב" (a double tap): everything in order, once.
+    await page.goto(`/tech/visit/${idOf("offline")}`);
+    await panel.getByRole("button", { name: "שלח שוב" }).dblclick();
     await expect.poll(() => statusOf("offline"), { timeout: 30_000 }).toBe("done");
     await expect(page.getByText("הביקור נסגר · לצפייה בלבד")).toBeVisible({ timeout: 30_000 });
-    // Another app open: nothing left to send, nothing applied twice.
-    await page.reload();
-    await expect(page.getByText("הביקור נסגר · לצפייה בלבד")).toBeVisible();
+    await page.goto("/tech/done");
+    await page.goto("/tech");
+    await expect(page.getByText("לא נשלח")).toHaveCount(0);
     const id = idOf("offline");
     expect(sqlOf(`select string_agg(kind, ',' order by kind) from public.visit_time_reports where visit_id = '${id}'`)).toBe("arrived,departed,ended,signed");
     expect(sqlOf(`select count(*) from public.visit_media where visit_id = '${id}'`)).toBe("3");
     expect(sqlOf(`select count(*) from public.visit_signatures where visit_id = '${id}'`)).toBe("1");
     expect(sqlOf(`select count(*) from public.visit_reports where visit_id = '${id}'`)).toBe("1");
     expect(sqlOf(`select string_agg(op_type, ',' order by op_type) from public.offline_operations where visit_id = '${id}'`)).toBe("close,media,media,media,time_report,time_report");
+    // The device's times of the taps are the reported times; the server keeps its own receipt time.
+    expect(sqlOf(`select count(*) from public.visit_time_reports where visit_id = '${id}' and kind = 'arrived' and reported_at < received_at - interval '1 second'`)).toBe("1");
   });
-
   test("refusals: another technician's visit, office roles, טופל without signer or signature, המשך טיפול without reason", async ({ page }) => {
     test.setTimeout(120_000);
     const { tech, tech2, mgr, cs } = seeded();

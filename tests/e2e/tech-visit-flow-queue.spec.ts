@@ -14,11 +14,12 @@ import {
 import { APPROVAL_TEXT_V1, closeInputRefusal, closeMissing, MEDIA_MAX_BYTES, mediaRefusal, photoRoom, sha256Hex, workMissing } from "@/features/visit-flow/rules";
 import { onlyInProject } from "./helpers";
 
-// The visit flow's device work queue and pure rules (D46, D95 (a) to (d), (h)): ordering per visit
-// (arrive → media → close), replay with stable operation ids (exactly once), persistence across a
-// reload (a new store over the same saved data), the error states (a refusal keeps the item and
-// holds the visit's later items; a lost connection stops the run and keeps everything), and the
-// photo compression's sizing. No server, no browser: an in-memory store and a fake server with the
+// The visit flow's data kept on the device and its pure rules (D46; D95 (a) to (c), (h), and (d) as
+// corrected 22.11: online only, sent only by the technician's action, "שלח שוב"): ordering per visit
+// (arrive → media → close), resend with stable operation ids (never twice), persistence across a
+// reload (a new store over the same saved data), deletion only after the server confirmed, the
+// error states (a refusal keeps the item and holds the visit's later items; a lost connection stops
+// the send and keeps everything), and the photo compression's sizing. No server, no browser: an in-memory store and a fake server with the
 // Migration 7 writers' replay rule (the same operation id returns the stored outcome).
 
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -188,7 +189,7 @@ function arriveAndClose(visitId: string, fieldVersion: number, userId = USER): N
   ];
 }
 
-test.describe("visit flow work queue (D46, D95 (d))", () => {
+test.describe("visit flow data on the device (D46, D95 (d) as corrected 22.11)", () => {
   onlyInProject("desktop");
 
   test("order per visit: arrive, then each media (add, upload, confirm), then close; values flow forward", async () => {
@@ -203,7 +204,7 @@ test.describe("visit flow work queue (D46, D95 (d))", () => {
     expect(saved.items.size).toBe(0);
   });
 
-  test("offline: nothing is sent or dropped; reconnecting sends everything exactly once", async () => {
+  test("no connection: nothing is sent or dropped; the next 'שלח שוב' sends everything exactly once", async () => {
     const saved = newSaved();
     const server = fakeServer({ [V1]: { status: "en_route", fieldVersion: 1 } });
     await memoryStore(saved).add(arriveAndClose(V1, 1));
@@ -214,7 +215,7 @@ test.describe("visit flow work queue (D46, D95 (d))", () => {
     expect([...saved.items.values()].every((i) => i.error === null)).toBe(true);
     server.setOffline(false);
     await syncQueue(memoryStore(saved), server.api, USER);
-    // A second run (another `online` event, the app reopening) finds nothing to send.
+    // A second "שלח שוב" (a double tap) finds nothing to send.
     await syncQueue(memoryStore(saved), server.api, USER);
     expect(server.applied).toEqual({ arrive: 1, media: 3, close: 1 });
     expect(saved.items.size).toBe(0);
@@ -308,6 +309,24 @@ test.describe("visit flow work queue (D46, D95 (d))", () => {
     const left = [...saved.items.values()];
     expect(left).toHaveLength(1);
     expect(left[0]).toMatchObject({ kind: "close", error: "PT409", attempts: 2, expectedFieldVersion: 2 });
+  });
+
+  test("deleted only after the server confirmed: an unconfirmed upload keeps the photo on the device", async () => {
+    const saved = newSaved();
+    const server = fakeServer({ [V1]: { status: "en_route", fieldVersion: 1 } });
+    await memoryStore(saved).add(arriveAndClose(V1, 1));
+    // The upload "succeeds" but the object is not there: confirm_visit_media refuses (55000).
+    const lost: VisitFlowApi = { ...server.api, upload: async () => ({ ok: true, value: null }) };
+    const r = await syncQueue(memoryStore(saved), lost, USER);
+    expect(r).toMatchObject({ sent: 1, failed: 1 });
+    const left = [...saved.items.values()];
+    expect(left.map((i) => i.kind)).toEqual(["media", "media", "media", "close"]);
+    expect(left[0]).toMatchObject({ error: "55000" });
+    expect(left[0]?.kind === "media" && left[0].blob.size).toBe(4);
+    // "שלח שוב" with a working upload: the same media row (replay), stored, then the rest.
+    await syncQueue(memoryStore(saved), server.api, USER);
+    expect(saved.items.size).toBe(0);
+    expect(server.applied).toEqual({ arrive: 1, media: 3, close: 1 });
   });
 
   test("only the signed-in user's items are sent", async () => {

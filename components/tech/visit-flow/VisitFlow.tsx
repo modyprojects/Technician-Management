@@ -1,15 +1,18 @@
 "use client";
 
-// The technician's open visit, end to end on one page (D95; TE-02, TE-13 to TE-23): the card with
-// its action, the work screen and the close screen, and the "saved" state after sending. The steps
-// switch on the device (the address bar follows as `?step=work|close` with history.pushState, no
-// server round trip; the page stays the same route, so a refresh never remounts the flow), so
-// after "הגעתי" the technician can work and close the visit with no connection: "הגעתי" and the
-// closure (with its photos and signature) go to the device work queue and are sent when there is a
-// connection (features/visit-flow/queue.ts). "יוצא · Waze" is online only (D71). The status shown
-// is the server's, moved on by what the device still holds (effectiveStatus), with the sync state
-// beside it ("ממתין לסנכרון", D46). The Waze tile appears only after "יוצא" (D95 (e)). No recorded
-// times (D68); no video or recorded summary in this version (D95 (g)).
+// The technician's open visit, end to end on one page (D95 as corrected 22.11; TE-02, TE-13 to
+// TE-23): the card with its action, the work screen and the close screen, and the "saved" state
+// after sending. The steps switch on the device (the address bar follows as `?step=work|close` with
+// history.pushState, no server round trip; the page stays the same route, so a refresh never
+// remounts the flow). Version 1 is online only (D06): "הגעתי" and the closure are kept on the
+// device first (IndexedDB, with the device time of the tap) and sent at once; when that fails the
+// technician sees "אין חיבור, … הנתונים שמורים בטלפון", can go on working and closing, and sends
+// everything later with "שלח שוב" (arrival, then media, then the closure; the same operation ids,
+// so a resend or a double tap never duplicates). Nothing is sent on its own: no `online` event, no
+// sending on app open, no timers. The device's data is deleted only after the server confirmed it.
+// "יוצא · Waze" is online only (D71); the Waze tile appears only after it (D95 (e)). The status
+// shown is the server's, moved on by what the device holds, with the "לא נשלח" marker beside it.
+// No recorded times (D68); no video or recorded summary in this version (D95 (g)).
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRef, useState, type MouseEvent, type ReactNode } from "react";
@@ -25,7 +28,7 @@ import { stepOf, type FlowStep } from "@/features/visit-flow/steps";
 import { departVisit } from "@/lib/actions/visit-flow";
 import { ArriveAction, ContinueWorkAction, DepartAction, type DepartOutcome } from "./CardActions";
 import { CloseFlow, type CloseSubmission } from "./CloseFlow";
-import { SyncStatus } from "./SyncStatus";
+import { NotSentPill, SyncStatus } from "./SyncStatus";
 import { useVisitQueue } from "./useVisitQueue";
 import { WorkFlow } from "./WorkFlow";
 
@@ -81,7 +84,7 @@ export function VisitFlow(p: VisitFlowProps) {
     setStep(to);
   };
 
-  const syncPanel = <SyncStatus q={q} syncing={queue.syncing} online={queue.online} sentCount={queue.sentCount} storeError={queue.storeError} onRetry={() => void queue.sync()} />;
+  const syncPanel = <SyncStatus q={q} sending={queue.sending} lastOffline={queue.lastOffline} sentCount={queue.sentCount} storeError={queue.storeError} onSend={() => void queue.send()} />;
 
   const header = (backHref: string, backLabel: string, backAriaLabel: string) => (
     <VisitHeader
@@ -94,6 +97,7 @@ export function VisitFlow(p: VisitFlowProps) {
         <>
           {p.isTest && <TestPill />}
           <StatusPill status={status} />
+          {q.pending > 0 && <NotSentPill />}
         </>
       }
     />
@@ -110,11 +114,20 @@ export function VisitFlow(p: VisitFlowProps) {
     return r.code === "retry" ? "offline" : "refused";
   };
 
+  const arriving = useRef(false);
   const arrive = async () => {
+    // A double tap stores one arrival only (one operation id).
+    if (arriving.current || q.arrivePending) return;
+    arriving.current = true;
+    const clock = deviceClock();
     const ok = await queue.enqueue([
-      { kind: "arrive", userId: p.userId, visitId: p.visitId, opId: crypto.randomUUID(), queuedAt: new Date().toISOString(), attempts: 0, error: null, expectedFieldVersion: fieldVersion, clock: deviceClock() },
+      { kind: "arrive", userId: p.userId, visitId: p.visitId, opId: crypto.randomUUID(), queuedAt: new Date().toISOString(), attempts: 0, error: null, expectedFieldVersion: fieldVersion, clock },
     ]);
-    if (ok) setStep("work");
+    arriving.current = false;
+    if (!ok) return;
+    // The work screen opens at once; the send's answer (or "אין חיבור…") shows there.
+    setStep("work");
+    await queue.send();
   };
 
   const submitClose = async (s: CloseSubmission): Promise<string | null> => {
@@ -165,8 +178,9 @@ export function VisitFlow(p: VisitFlowProps) {
       clock: deviceClock(),
     });
     const ok = await queue.enqueue(items, p.visitId);
-    if (!ok) return "לא ניתן לשמור במכשיר. נסה שוב";
+    if (!ok) return "לא ניתן לשמור בטלפון. נסה שוב";
     setStep("card");
+    void queue.send();
     return null;
   };
 
@@ -180,7 +194,7 @@ export function VisitFlow(p: VisitFlowProps) {
         <section className="card" style={{ padding: "16px 14px", display: "flex", flexDirection: "column", gap: 10, borderColor: look.c }}>
           <h2 style={{ fontSize: 18, color: look.fg }}>הביקור נשמר · {status === "done" ? "✓ טופל" : "↻ המשך טיפול"}</h2>
           <div style={{ fontSize: 14, lineHeight: 1.5 }}>
-            {q.pending > 0 ? "הסגירה שמורה במכשיר ותישלח לשרת כשיש חיבור. אין צורך לחזור על הפעולה." : "נשלח לשרת."}
+            {q.pending > 0 ? "הסגירה שמורה בטלפון. אם אין חיבור, לחץ ׳שלח שוב׳ כשיחזור. אין צורך למלא שוב." : "נשלח לשרת."}
           </div>
           <Link href={p.homeHref} className="btn" style={{ height: 44, display: "flex", alignItems: "center", justifyContent: "center" }}>
             חזרה להיום

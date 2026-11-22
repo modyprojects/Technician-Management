@@ -1,24 +1,24 @@
-// The device work queue of the visit flow (D46, D95 (d)): "הגעתי" and the closure, with its photos
-// and signature, are saved on the device first and sent when there is a connection. Pure engine
-// over two ports, so the ordering, replay, persistence and error rules are unit-tested without a
+// The visit's data kept on the device (D46; D95 as corrected by the owner 22.11: Version 1 is
+// online only, D06): "הגעתי" and the closure, with its photos and signature, are stored on the
+// device first and sent only when the technician acts (the tap itself, or "שלח שוב"). Pure engine
+// over two ports, so the ordering, resend, persistence and error rules are unit-tested without a
 // browser: a store (IndexedDB on the device, features/visit-flow/idb.ts) and the server API (the
 // server actions of lib/actions/visit-flow.ts).
 // Rules:
-// - Every operation carries its own stable operation_id, created once when it is queued; the
-//   Migration 7 writers are idempotent, so a replay returns the stored outcome (exactly once).
+// - Every operation carries its own stable operation_id, created once when it is stored; the
+//   Migration 7 writers are idempotent, so a resend returns the stored outcome (never twice).
 // - Order per visit: arrive → media (add_visit_media → upload to the returned path →
 //   confirm_visit_media) → close. A visit's later items wait while an earlier one is not done.
-// - A missing connection stops the run and keeps everything ("ממתין לסנכרון"). A refusal
-//   (PT409, 55000, 42501, 22023, 23505 …) keeps the item with its error, shown inline; nothing is
-//   ever dropped silently. An item leaves the queue only after the server confirmed it.
-// - Runs only when asked (the `online` event, the app opening, the technician's own action): no
-//   timers, no background jobs.
+// - A missing connection stops the send and keeps everything. A refusal (PT409, 55000, 42501,
+//   22023, 23505 …) keeps the item with its error, shown inline; nothing is ever dropped. An item
+//   is deleted from the device only after the server confirmed it.
+// - No automatic sending: no `online` event, no app-open run, no timers.
 // - Values a later item needs from an earlier one are written into the later item before the
 //   earlier one is removed: the field_version after "הגעתי" (the closure's expected version) and
-//   the signature's media id. Once written they never change, so a replay hashes the same payload.
+//   the signature's media id. Once written they never change, so a resend hashes the same payload.
 import type { CloseOutcome, MediaMime, PhotoPhase } from "./rules";
 
-/** The device's clock values sent with each action (D45: reported values, not proof). */
+/** The device's clock values sent with each action (D45: reported values, not proof; the time of the tap). */
 export type DeviceClock = { reportedAt: string; deviceTz: string; deviceUtcOffsetMin: number };
 
 /** The device's time zone and UTC offset now, in the database's accepted form. */
@@ -318,14 +318,14 @@ export function effectiveStatus(server: FlowStatus, q: VisitQueueState, confirme
 
 /** The inline message of a refusal (Hebrew, no recorded times, D68). */
 export const QUEUE_ERROR_MESSAGE: Readonly<Record<QueueErrorCode, string>> = {
-  PT409: "הביקור שונה במשרד מאז שנפתח במכשיר. הפריט נשמר במכשיר; פנה למשרד",
-  "55000": "מצב הביקור לא מאפשר את הפעולה. הפריט נשמר במכשיר; פנה למשרד",
-  "42501": "אין הרשאה לביקור הזה. הפריט נשמר במכשיר; פנה למשרד",
-  "22023": "השרת דחה את הנתונים. הפריט נשמר במכשיר; פנה למשרד",
-  "23505": "הפעולה כבר נשלחה עם נתונים אחרים. הפריט נשמר במכשיר; פנה למשרד",
-  limit: "הגעת למספר התמונות המרבי. הפריט נשמר במכשיר; פנה למשרד",
-  "after-required": "חסרה תמונה אחרי הטיפול בשרת. הפריט נשמר במכשיר; נסה שוב",
-  invalid: "הפריט לא שלם. הוא נשמר במכשיר; פנה למשרד",
-  upload: "העלאת הקובץ נכשלה. הפריט נשמר במכשיר; נסה שוב",
-  unknown: "השליחה נכשלה. הפריט נשמר במכשיר; נסה שוב",
+  PT409: "הביקור שונה במשרד מאז שנפתח במכשיר. הנתונים שמורים בטלפון; פנה למשרד",
+  "55000": "מצב הביקור לא מאפשר את הפעולה. הנתונים שמורים בטלפון; פנה למשרד",
+  "42501": "אין הרשאה לביקור הזה. הנתונים שמורים בטלפון; פנה למשרד",
+  "22023": "השרת דחה את הנתונים. הנתונים שמורים בטלפון; פנה למשרד",
+  "23505": "הפעולה כבר נשלחה עם נתונים אחרים. הנתונים שמורים בטלפון; פנה למשרד",
+  limit: "הגעת למספר התמונות המרבי. הנתונים שמורים בטלפון; פנה למשרד",
+  "after-required": "חסרה תמונה אחרי הטיפול בשרת. הנתונים שמורים בטלפון; לחץ ׳שלח שוב׳",
+  invalid: "הפריט לא שלם. הנתונים שמורים בטלפון; פנה למשרד",
+  upload: "העלאת הקובץ נכשלה. הנתונים שמורים בטלפון; לחץ ׳שלח שוב׳",
+  unknown: "השליחה נכשלה. הנתונים שמורים בטלפון; לחץ ׳שלח שוב׳",
 };
